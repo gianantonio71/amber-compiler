@@ -41,7 +41,7 @@ using
                      next_set_it_var_id = next_set_it_var_id + 1
                    );
  
-      code := [ maybe_op(block_success_if(is_empty_set(obj), res_var), not type.nonempty),
+      code := [ // maybe_op(block_success_if(is_empty_set(obj), res_var), not type.nonempty),
                 block_failure_if_not(is_ne_set(obj), res_var),
                 get_iter(it_var, obj),
                 repeat(
@@ -74,7 +74,7 @@ using
                      next_seq_it_var_id = next_seq_it_var_id + 1
                    );
       
-      code := [ maybe_op(block_success_if(is_empty_seq(obj), res_var), not type.nonempty),
+      code := [ //maybe_op(block_success_if(is_empty_seq(obj), res_var), not type.nonempty),
                 block_failure_if_not(is_ne_seq(obj), res_var),
                 get_iter(it_var, obj),
                 repeat(
@@ -93,39 +93,39 @@ using
     },
 
 
-    fixed_seq_type(ts) =
-    {
-      len_var  := ivar(next_int_var_id);
-      elem_var := lvar(next_obj_var_id);
-      it_var   := seq_it_var(next_seq_it_var_id);
+    // fixed_seq_type(ts) =
+    // {
+    //   len_var  := ivar(next_int_var_id);
+    //   elem_var := lvar(next_obj_var_id);
+    //   it_var   := seq_it_var(next_seq_it_var_id);
       
-      len  := length(ts);
+    //   len  := length(ts);
 
-      code := [ set_bvar(res_var, false),
-                exit_block_if_not(is_ne_seq(obj)),
-                set_ivar(len_var, get_seq_len(obj)),
-                exit_block_if_not(is_eq(len_var, len)),
-                get_iter(it_var, obj)
-              ];
+    //   code := [ set_bvar(res_var, false),
+    //             exit_block_if_not(is_ne_seq(obj)),
+    //             set_ivar(len_var, get_seq_len(obj)),
+    //             exit_block_if_not(is_eq(len_var, len)),
+    //             get_iter(it_var, obj)
+    //           ];
 
-      let ( next_int_var_id = next_int_var_id + 1,
-            next_obj_var_id = next_obj_var_id + 1,
-            next_seq_it_var_id = next_seq_it_var_id + 1)
+    //   let ( next_int_var_id = next_int_var_id + 1,
+    //         next_obj_var_id = next_obj_var_id + 1,
+    //         next_seq_it_var_id = next_seq_it_var_id + 1)
                   
-        for (t, i : ts)
-          code := code &
-                  [get_curr_obj(elem_var, it_var)] &
-                  gen_type_checking_code(t, elem_var, res_var) &
-                  [ exit_block_if_not(res_var),
-                    maybe_op(move_forward(it_var), i /= len - 1)
-                  ];
-        ;
-      ;
+    //     for (t, i : ts)
+    //       code := code &
+    //               [get_curr_obj(elem_var, it_var)] &
+    //               gen_type_checking_code(t, elem_var, res_var) &
+    //               [ exit_block_if_not(res_var),
+    //                 maybe_op(move_forward(it_var), i /= len - 1)
+    //               ];
+    //     ;
+    //   ;
       
-      code := code & [set_bvar(res_var, true)];
+    //   code := code & [set_bvar(res_var, true)];
       
-      return [execute_block(code)];
-    },
+    //   return [execute_block(code)];
+    // },
 
 
     map_type() =
@@ -244,7 +244,6 @@ using
 
 
 BoolExpr gen_type_checking_expr(Type type, AtomicExpr obj):
-  :type_any       = true,
   :atom_type      = is_symb(obj),
   symb_type(s)    = is_eq(s, obj),
   :integer        = is_int(obj),
@@ -254,6 +253,6 @@ BoolExpr gen_type_checking_expr(Type type, AtomicExpr obj):
   type_ref(ts)    = eval_bool_fn(:memb_test(ts), [obj]),
   type_var()      = true, //## BUG BUG BUG THIS IS TEMPORARY...
   :empty_seq_type = is_eq(obj, empty_seq),
-  :empty_set_type = is_eq(obj, empty_seq),
+  :empty_set_type = is_eq(obj, empty_set),
   :empty_map_type = is_eq(obj, empty_map);
 

@@ -9,6 +9,8 @@ using
 
   [Instr+] gen_ptrn_matching_code(Pattern ptrn, AtomicExpr obj, BoolVar res_var):
     
+    :ptrn_any           = [set_bvar(res_var, true)],
+
     obj_ptrn(LeafObj x) = [set_bvar(res_var, is_eq(obj, x))],
     
     type_ptrn(t)        = gen_type_checking_code(t, obj, res_var),

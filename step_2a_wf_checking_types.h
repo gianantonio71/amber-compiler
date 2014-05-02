@@ -33,8 +33,6 @@ using (TypeSymbol => Type) typedefs
     
     seq_type()          = type_is_wf(type.elem_type, type_vars),
     
-    fixed_seq_type(ts)  = all([type_is_wf(t, type_vars) : t <- ts]),
-    
     set_type()          = type_is_wf(type.elem_type, type_vars),
     
     map_type()          = type_is_wf(type.key_type, type_vars) and

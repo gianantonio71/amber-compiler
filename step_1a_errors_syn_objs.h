@@ -1,8 +1,8 @@
 
 using
 {
-  (TypeSymbol => SynType)   typedefs,
-  [BasicTypeSymbol, NzNat]* all_par_type_symbols;
+  (TypeSymbol => SynType)                   typedefs,
+  (symbol: BasicTypeSymbol, arity: NzNat)*  all_par_type_symbols;
 
 
   SynObjErr* fndef_wf_errors(SynFnDef fn_def, UntypedSgn* global_fns, BasicUntypedSgn* impl_pars) =
@@ -48,11 +48,11 @@ using
 
 using
 {
-  (TypeSymbol => SynType)   typedefs,
-  [BasicTypeSymbol, NzNat]* all_par_type_symbols,
-  TypeVar*                  type_vars_in_scope,
-  UntypedSgn*               fns_in_scope,
-  BasicUntypedSgn*          impl_params;
+  (TypeSymbol => SynType)                   typedefs,
+  (symbol: BasicTypeSymbol, arity: NzNat)*  all_par_type_symbols,
+  TypeVar*                                  type_vars_in_scope,
+  UntypedSgn*                               fns_in_scope,
+  BasicUntypedSgn*                          impl_params;
 
 
   SynObjErr* expr_wf_errors(SynExpr expr, Var* def_vars):
@@ -397,6 +397,8 @@ using
   //## loc_vars AND ext_vars SHOULD PROBABLY BE IMPLICIT VARS
 
   SynObjErr* ptrn_wf_errors(Pattern ptrn, Var* ext_vars):
+
+    :ptrn_any       = {},
 
     obj_ptrn()      = {},
 

@@ -116,7 +116,7 @@ CCodeOutput compile_to_c(ProcDef* prg)
 
 
   String typesymb2str(ts, par_types):
-    type_symbol(a)      = _str_(a),
+    type_symbol(a)      = upper(_str_(a)),
     par_type_symbol()   = typesymb2str(ts.symbol, par_types) & "__" & to_str(index_first(ts, par_types));
 }
 
@@ -422,6 +422,8 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
       code := code & [ "release(" & env_var & ");",
                        env_var & " = " & bk_var & ";"
                      ];
+
+      code := ["{"] & indent(code) & ["}"];
       
       return code;
     },
@@ -484,6 +486,8 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
       for (i : inc_seq(env_size))
         code := code & ["release(" & new_data_var & "[" & to_str(i) & "]);"];
       ;
+
+      code := ["{"] & indent(code) & ["}"];
        
       return code;
     };

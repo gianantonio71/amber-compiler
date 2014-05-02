@@ -58,6 +58,7 @@ Var* gen_vars(Expr expr):
 //## CONSIDER THE VARIABLES THAT ARE ALREADY DEFINED
 
 Var* new_vars(Pattern ptrn):
+  :ptrn_any       = {},
   obj_ptrn()      = {},
   type_ptrn()     = {},
   ext_var_ptrn()  = {},

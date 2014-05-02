@@ -128,7 +128,7 @@ UserErr* wf_errors(SynPrg prg)
 
   let (fns_in_scope         = all_def_fns,
        typedefs             = inst_tdefs,
-       all_par_type_symbols = {[p.name, length(p.params)] : p <- par_tdefs})
+       all_par_type_symbols = {(symbol: p.name, arity: length(p.params)) : p <- par_tdefs})
 
     decl_errs := tdef_errs(tdefs)                     &
                  par_tdef_errs(par_tdefs)             &
@@ -199,7 +199,7 @@ using (TypeSymbol => SynType) typedefs
 
 
 
-using (TypeSymbol => SynType) typedefs, [BasicTypeSymbol, NzNat]* all_par_type_symbols
+using (TypeSymbol => SynType) typedefs, (symbol: BasicTypeSymbol, arity: NzNat)* all_par_type_symbols
 {
   UserErr* tdef_errs(SynTypedef* tdefs) =
     for (td <- tdefs, es = type_wf_errors(td.type; type_vars_in_scope = {}))

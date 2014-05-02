@@ -19,7 +19,6 @@ Type norm_type(SynType type)
 //  LeafType                      = stype,
 //  seq_type(t)                   = mk_seq_type(t), //syn_type_to_type(t)),
 //  ne_seq_type(t)                = mk_ne_seq_type(t), //syn_type_to_type(t)),
-//  fixed_seq_type(ts)            = mk_fixed_seq_type([syn_type_to_type(t) : t <- ts]),
 //  map_type()                    = mk_map_type(syn_type_to_type(stype.key), syn_type_to_type(stype.value), false),
 //  ne_map_type()                 = mk_map_type(syn_type_to_type(stype.key), syn_type_to_type(stype.value), true),
 //  //set_type(bs)                  = :set_type(syn_branch_to_branch(b) : b <- set(bs)),

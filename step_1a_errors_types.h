@@ -1,8 +1,8 @@
 using
 {
-  (TypeSymbol => SynType)   typedefs,
-  [BasicTypeSymbol, NzNat]* all_par_type_symbols,
-  TypeVar*                  type_vars_in_scope;
+  (TypeSymbol => SynType)                   typedefs,
+  (symbol: BasicTypeSymbol, arity: NzNat)*  all_par_type_symbols,
+  TypeVar*                                  type_vars_in_scope;
 
 
   TDefUserErr* type_wf_errors(SynType type):
@@ -15,18 +15,15 @@ using
                                       :undef_par_type_name(
                                         name:  ts.symbol,
                                         arity: length(ts.params)
-                                      ) if not in([ts.symbol, length(ts.params)], all_par_type_symbols)
+                                      ) if not in((symbol: ts.symbol, arity: length(ts.params)), all_par_type_symbols)
                                     },
                                      
     TypeVar                       = {:undef_type_var(type) if not in(type, type_vars_in_scope)},
 
-    //seq_type(elem_type: Type, nonempty: Bool)
+    //seq_type(elem_type: Type)
     seq_type()                    = type_wf_errors(type.elem_type),
     
-    //fixed_seq_type([Type+])
-    fixed_seq_type(ts)            = union({type_wf_errors(t) : t <- set(ts)}),
-
-    //set_type(elem_type: Type, nonempty: Bool);
+    //set_type(elem_type: Type);
     set_type()                    = type_wf_errors(type.elem_type),
 
     //map_type(key_type: Type, value_type: Type);

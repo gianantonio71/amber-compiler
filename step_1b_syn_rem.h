@@ -4,10 +4,11 @@ Program rem_syntax(SynPrg prg)
   norm_prg := replace Type t in prg with norm_type(t) end;
   decls    := set(untag(norm_prg));
   
-  tdefs     := {d : SynTypedef d <- decls};
-  par_tdefs := {d : SynParTypedef d <- decls};
-  fndefs    := {d : SynFnDef d <- decls};
-  ublocks   := {d : SynUsingBlock d <- decls};
+  tdefs         := {d : SynTypedef d <- decls};
+  par_tdefs     := {d : SynParTypedef d <- decls};
+  fndefs        := {d : SynFnDef d <- decls};
+  ublocks       := {d : SynUsingBlock d <- decls};
+  subtype_decls := {d : SynSubtypeDecl d <- decls};
 
   inst_tdefs := create_type_map(norm_prg);
   
@@ -19,7 +20,7 @@ Program rem_syntax(SynPrg prg)
                               }
                             );
 
-  return program(tdefs: inst_tdefs, fndefs: desugared_fndefs & desugared_block_fndefs);
+  return program(tdefs: inst_tdefs, subtype_decls: subtype_decls, fndefs: desugared_fndefs & desugared_block_fndefs);
 }
 
 //  nps    := closures & set([if arity(fd) == 0 then :named_par(untag(fd.name)) else untyped_sgn(fd) end : fd <- stmt.asgnms]); //## BAD BAD BAD

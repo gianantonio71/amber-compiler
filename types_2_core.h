@@ -12,8 +12,7 @@ type TypeSymbol       = BasicTypeSymbol, ParTypeSymbol;
 
 ///////////////////////////////////////////////////////////////////////////////
 
-type Type       = type_any,
-                  atom_type,
+type Type       = atom_type,
                   SymbType,
                   IntType,
                   TypeRef,
@@ -33,16 +32,20 @@ type TypeRef    = type_ref(TypeSymbol);
 
 type TypeVar    = type_var(Atom);
 
-type SeqType    = empty_seq_type, seq_type(elem_type: Type, nonempty: Bool), fixed_seq_type([Type+]);
+//## seq_type IS IN FACT THE ne_seq_type
+type SeqType    = empty_seq_type, seq_type(elem_type: Type);
 
-type SetType    = empty_set_type, set_type(elem_type: Type, nonempty: Bool);
+//## set_type IS IN FACT THE ne_set_type
+type SetType    = empty_set_type, set_type(elem_type: Type);
 
+//## REDUNDANCY: empty_map_type IS A SUBSET OF ANY map_type(...)
 type MapType    = empty_map_type, map_type(key_type: Type, value_type: Type);
 
 type TupleType  = tuple_type((label: SymbObj, type: Type, optional: Bool)+);
 
-                  //## THE FIELD tag_type SHOULD BE OF TYPE <SymbType, SymbType+, atom_type>
-type TagType    = tag_type(tag_type: Type, obj_type: Type);
+//## REDUNDANCY: (tag_type: :symb_type(:a)) IS THE SAME AS (tag_type: {:symb_type(:a)})
+//## WHEN CHANGING THIS, REMEMBER TO CHANGE THE CODE IN utils_2_partitions.h
+type TagType    = tag_type(tag_type: <SymbType, SymbType+, atom_type>, obj_type: Type);
 
 type UnionType  = union_type(Type+);
 
@@ -51,6 +54,16 @@ type UnionType  = union_type(Type+);
 type ClsType  = cls_type(in_types: [Type+], out_type: Type);
 
 type ExtType  = Type, ClsType;
+
+type FnType     = fn_type(
+                    params:       [ExtType*],
+                    named_params: (<named_par(Atom)> => ExtType),
+                    ret_type:     Type
+                  );
+
+///////////////////////////////////////////////////////////////////////////////
+
+type SubtypeDecl  = subtype_decl(subtype: Type, supertype: Type);
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -118,10 +131,11 @@ type ExtExpr  = Expr, ClsExpr;
 
 ///////////////////////////////////////////////////////////////////////////////
 
-type Pattern  = obj_ptrn(LeafObj),  //## TO LIMIT IT TO SYMBOL/INTEGER?
+type Pattern  = ptrn_any, //## IN THEORY THIS IS REDUNDANT...
+                obj_ptrn(LeafObj),  //## TO LIMIT IT TO SYMBOL/INTEGER?
                 type_ptrn(Type),
                 ext_var_ptrn(Var),
-                var_ptrn(name: Var, ptrn: Pattern?),
+                var_ptrn(name: Var, ptrn: Pattern?), //## PTRN SHOULD BE MADE NON-OPTIONAL, NOW THAT WE HAVE ptrn_any back
                 //## FIELDS SHOULD BE A MAP FROM LABELS TO PATTERNS
                 //## THIS WOULD CAUSE PROBLEMS AT LEVEL 1 THOUGH
                 //## AND I WOULD NEED A NON-EMPTY MAP TYPE
@@ -169,6 +183,7 @@ type FnDef      = fn_def(
                   );
 
 type Program    = program(
-                    tdefs:  (TypeSymbol => Type),
-                    fndefs: FnDef*
+                    tdefs:          (TypeSymbol => Type),
+                    subtype_decls:  SubtypeDecl*,
+                    fndefs:         FnDef*
                   );

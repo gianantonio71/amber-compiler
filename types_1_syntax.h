@@ -98,8 +98,8 @@ type SynFnDef       = syn_fn_def(
 
 type SynSgn         = syn_sgn(
                         name:     FnSymbol,
-                        params:   [Type*],
-                        res_type: Type
+                        params:   [SynType*],
+                        res_type: SynType
                       );
 
 type SynUsingBlock  = using_block(
@@ -107,6 +107,8 @@ type SynUsingBlock  = using_block(
                         fn_defs:    [SynFnDef+]
                       );
 
-type PrgDecl        = SynTypedef, SynParTypedef, SynFnDef, SynUsingBlock;
+type SynSubtypeDecl = SubtypeDecl;
+
+type PrgDecl        = SynTypedef, SynParTypedef, SynFnDef, SynUsingBlock, SynSubtypeDecl;
 
 type SynPrg         = prg([PrgDecl*]);

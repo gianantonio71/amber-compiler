@@ -1,6 +1,5 @@
 
-type LeafType     = type_any,
-                    atom_type,
+type LeafType     = atom_type,
                     empty_seq_type,
                     empty_set_type,
                     empty_map_type,
@@ -11,11 +10,14 @@ type LeafType     = type_any,
 //                    excl_clause(ptrn: Pattern, src: Expr);
 //
 ////## FIND A BETTER NAME
-//type NuType       = type_any, atom_type, empty_set_type, SymbType, IntType, SetType, TermType;
+//type NuType       = atom_type, empty_set_type, SymbType, IntType, SetType, TermType;
 
 ////////////////////////////////////////////////////////////////////////////////
 
 Int max(<int_range(min: Int, size: NzNat)> t) = t.min + t.size - 1; //## BAD BAD
+Int max(<low_ints(max: Int)> t) = t.max;
+
+// integer, low_ints(max: Int), high_ints(min: Int), int_range(min: Int, size: NzNat)
 
 ////////////////////////////////////////////////////////////////////////////////
 

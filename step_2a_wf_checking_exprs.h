@@ -174,6 +174,8 @@ using
 
   Tautology ptrn_is_wf(Pattern ptrn, Var* ext_vars):
 
+    :ptrn_any         = true,
+    
     obj_ptrn()        = true,
 
     //## NOT SURE ABOUT TYPE VARS HERE. SHOULD I ALLOW THEM IN PATTERNS?

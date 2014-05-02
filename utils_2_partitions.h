@@ -1,10 +1,10 @@
 
-type ObjPart    = symbol(Atom), integers, sets, sequences, maps, tagged_obj(Atom);
+type ObjPart    = symbol(Atom), integers, empty_set, ne_sets, empty_seq, ne_sequences, maps, tagged_obj(Atom);
 
 type ObjPartSet = <symbols, tagged_objs, ObjPart>+; //## BAD
 
 
-ObjPartSet all_objects = {:symbols, :integers, :sets, :sequences, :maps, :tagged_objs};
+ObjPartSet all_objects = {:symbols, :integers, :empty_set, :ne_sets, :empty_seq, :ne_sequences, :maps, :tagged_objs};
 
 
 Bool includes(ObjPartSet ps, ObjPart p)
@@ -25,9 +25,6 @@ Bool are_disjoint(ObjPartSet ps, <symbols, tagged_objs, ObjPart> p):
 Bool are_disjoint(ObjPartSet ps1, ObjPartSet ps2) = not (? p <- ps1 : not are_disjoint(ps2, p));
 
 
-//Bool is_subset(ObjPartSet ps1, ObjPartSet ps2) = not (? p <- ps1 : not include
-
-
 ObjPartSet merge_partitions(ObjPartSet* part_sets)
 {
   ps := union(part_sets);
@@ -40,8 +37,8 @@ ObjPartSet merge_partitions(ObjPartSet* part_sets)
 ObjPart partition(Obj):
   object(Atom a)  = :symbol(a),
   object(Int)     = :integers,
-  object(Set)     = :sets,
-  object(Seq)     = :sequences,
+  object(Set s)   = if s == {} then :empty_set else :ne_sets end,
+  object(Seq s)   = if s == [] then :empty_seq else :ne_sequences end,
   object(Map)     = :maps,
   tag @ obj       = :tagged_obj(tag);
 
@@ -49,7 +46,6 @@ ObjPart partition(Obj):
 using (TypeSymbol => Type) typedefs
 {
   ObjPartSet partitions(Type type):
-    :type_any       = all_objects,
     :atom_type      = {:symbols},
     symb_type(s)    = {partition(s)},
     IntType         = {:integers},
@@ -57,16 +53,23 @@ using (TypeSymbol => Type) typedefs
     //## BUG BUG BUG ALSO ASSUMING NO TYPE REFERENCE IS "DANGLING"
     type_ref(ts)    = partitions(typedefs[ts]),
     TypeVar         = all_objects,
-    SetType         = {:sets},
-    SeqType         = {:sequences},
+    :empty_set_type = {:empty_set},
+    set_type()      = {:ne_sets},
+    :empty_seq_type = {:empty_seq},
+    seq_type()      = {:ne_sequences},
     MapType         = {:maps},
     TupleType       = {:maps},
     union_type(ts)  = merge_partitions({partitions(t) : t <- ts}),
-    tag_type()      = { assert type.tag_type :: SymbType; //## BUG BUG BUG
-                        return {:tagged_obj(untag(untag(type.tag_type)))};
+    tag_type()      = { tag_type := type.tag_type;
+                        tag_type := {tag_type} if tag_type :: SymbType;
+                        return {:tagged_obj(untag(untag(t))) : t <- tag_type} if tag_type :: <SymbType+>;
+                        assert tag_type == :atom_type;
+                        return {:tagged_objs};
                       };
 
+
   ObjPartSet partitions(Pattern ptrn):
+    :ptrn_any                               = all_objects,
     obj_ptrn(obj)                           = {partition(obj)},
     type_ptrn(type)                         = partitions(type),
     ext_var_ptrn()                          = all_objects,  //## COULD THIS BE IMPROVED?

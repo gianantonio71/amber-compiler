@@ -9,9 +9,8 @@ type NegInt         = [*..-1] ;
 
 type Rat            = Int, rat(num: Int, den: [2..*]);
 
-type Any            = <*>;
 type Atom           = <+>;
-//type Any            = Atom, Int, Seq, Set, Map, TagObj
+type Any            = Atom, Int, Seq, Set, Map, TagObj;
 
 type Point          = point(x: Rat, y: Rat);
 
@@ -27,8 +26,17 @@ type NeSeq          = [Any+];
 type Tuple          = (Atom => Any);
 type Map            = (Any => Any);
 
+type TagObj         = (<+> @ Any);
+
 type Char           = char(Nat);
 type String         = string([Nat*]);
+
+type Maybe[T]       = nil, just(T);
+
+////////////////////////////////////////////////////////////////////////////////
+
+// Replace this with === or ~=
+Bool is_eq(T x, Maybe[T] maybe) = maybe == :just(x);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -86,8 +94,20 @@ Nat length(Seq seq) = _len_(seq);
 
 T at([T+] seq, Nat idx, T default) = if idx < _len_(seq) then _at_(seq, idx) else default end;
 
-T1 left([T1, T2] s)  = _at_(s, 0);
-T2 right([T1, T2] s) = _at_(s, 1);
+// Should be like this...
+// T1 left((T1, T2) s)  = _at_(s, 0);
+// T2 right((T1, T2) s) = _at_(s, 1);
+T left([T*] s)
+{
+  assert length(s) == 2;
+  return s[0];
+}
+
+T right([T*] s)
+{
+  assert length(s) == 2;
+  return s[1];
+}
 
 T head([T+] s) = _at_(s, 0);
 T tail([T+] s) = _slice_(s, 1, _len_(s)-1);
@@ -221,7 +241,7 @@ using Bool is_strictly_ordered(T, T) //## BAD BAD BAD
 
 Bool in(Any e, Set s) = (? #e <- s);
 
-[T1, T2]* cart_prod(T1* s1, T2* s2)  = {[e1, e2] : e1 <- s1, e2 <- s2};
+// [T1, T2]* cart_prod(T1* s1, T2* s2)  = {[e1, e2] : e1 <- s1, e2 <- s2};
 
 //Set cart_prod([{T*}+] ss) = {[e1a, e1b, e2] : [e1a, e1b] <- s1 /\ e2 <- s2};
 
@@ -337,10 +357,11 @@ T* seq_union([(T*)*] sets) = union(set(sets));
 
 T2 op_[]((T1 => T2) map, T1 key) = only_element({val : #key => val <- map});
  
-//#### T2 lookup((T1 => T2) map, T1 key, T2 default) = only_element_or_def_if_empty({val : [!key, val] <- map}, default);
-//#### 
-//#### (T1 => T2) update((T1 => T2) map, (T1 => T2) diffs) = [k -> v : ([k, v] <- map, [k, _] </- diffs.*) \/
-//####                                                                  [k, v] <- diffs];
+T2 lookup((T1 => T2) map, T1 key, T2 default) = only_element_or_def_if_empty({val : #key => val <- map}, default);
+
+(T1 => T2) update((T1 => T2) map, (T1 => T2) diffs) = (k => v : (k => v <- map, k => _ </- diffs) \/ k => v <- diffs);
+
+Nat size((Any => Any) map) = size(keys(map));
 
 T1* keys((T1 => T2) map) = {k : k => _ <- map};
 
@@ -374,6 +395,11 @@ Bool has_key((T1 => T2) map, T1 key) = (? #key => _ <- map);
   all_keys := union({keys(m) : m <- maps});
   return (k => {m[k] : m <- maps ; has_key(m, k)} : k <- all_keys);
 }
+
+(T1 => T2) merge((T1 => T2)* maps) = (k => v : m <- maps, k => v <- m);
+
+(T1 => T2) remove_keys((T1 => T2) m, T1* ks) = (k => m[k] : k <- keys(m) - ks);
+
 
 //#### (T1 => T2) merge((T1 => T2)* maps):
 //####   {}          = [->],
@@ -410,8 +436,8 @@ Bool has_duplicates([Any*] s) = dupl_elems(s) /= {};
 
 [T*] rand_sort(T* set) = _isort_(set);
 
-//## Add the result type
-[[TK, TV]*] rand_sort_pairs((TK => TV) map) = rand_sort({[k, v] : k => v <- map});
+//## Add the result type. Something like: [(TK, TV)]
+rand_sort_pairs((TK => TV) map) = rand_sort({[k, v] : k => v <- map});
 
 
 T rand_elem(T+ s) = {ses := rand_sort(s); return ses[0];};
@@ -441,7 +467,8 @@ untag(x): tag @ obj = obj;
     missing := all_refs - all_starts;
     
     return true if missing == {};
-    //print "------------------------------------------------------------------------------";
+    print "------------------------------------------------------------------------------";
+    print map;
     print missing;
     return false;
   };
@@ -690,7 +717,7 @@ String to_text(Any obj, Nat line_len)
 
 ///////////////////////////////////////////////////////////////////////////////
 
-String string([Int*] raw)   = :string(raw);
+String string([Int*] raw)   = :string(raw); //## SHOULDN't IT BE string([Nat*] raw) ?
 
 Nat length(String s)        = length(untag(s));
 Nat op_[](String s, Nat n)  = op_[](untag(s), n);
@@ -724,6 +751,14 @@ Bool op_<(String str1, String str2)
   return len1 < len2;
 }
 
+Bool is_digit(Nat ch) = ch >= 48 and ch <= 57;
+Bool is_lower(Nat ch) = ch >= 97 and ch <= 122;
+Bool is_upper(Nat ch) = ch >= 65 and ch <= 90;
+
+Nat upper(Nat ch) = if is_lower(ch) then ch - 32 else ch end;
+
+String upper(String str) = :string([upper(ch) : ch <- untag(str)]);
+
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -748,9 +783,6 @@ PunctSymb left_brace        = :left(:brace);
 PunctSymb right_brace       = :right(:brace);
 
 ///////////////////////////////////////////////////////////////////////////////
-
-Bool is_digit(Int ch) = ch >= 48 and ch <= 57;
-Bool is_lower(Int ch) = ch >= 97 and ch <= 122;
 
 Bool is_space(Int ch) = ch == ascii_space or ch == ascii_newline;
 

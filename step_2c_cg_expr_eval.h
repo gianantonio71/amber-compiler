@@ -581,7 +581,9 @@ using
     //},
 
   //## THIS FUNCTION IS IN A REALLY BAD POSITION, SHOULD BE CLOSE TO THE gen_code CASE FOR fn_call(). ALSO, IT COULD HAVE A BETTER NAME
-  [Instr+] make_scopes([[<named_par(Atom)>, ExtExpr]*] asgnms, body_gen_info) //[Instr+] body_code)
+  //## WHEN TUPLE TYPES ARE REENABLED, FILL IN THE METHOD SIGNATURE
+  // [Instr+] make_scopes([(<named_par(Atom)>, ExtExpr)*] asgnms, body_gen_info) //[Instr+] body_code)
+  [Instr+] make_scopes(asgnms, body_gen_info) //[Instr+] body_code)
   {
     // THIS IS SUPER SUPER BAD BAD BAD
     if (asgnms == [])
@@ -595,7 +597,6 @@ using
         return gen_code(body_gen_info.body, body_gen_info.res_var, body_gen_info.all_rel_vars, body_gen_info.break_vars, body_gen_info.surv_vars); //## NOT SURE ABOUT THIS ONE
       ;
     ;
-
 
     var  := left(asgnms[0]);
     expr := right(asgnms[0]);
@@ -836,8 +837,8 @@ Expr simplify(Expr expr)
     cond_expr := match_expr(
                    exprs: [fn_par(0)],
                    cases: [
-                     (ptrns: [ptrn],                  expr: sel_expr),
-                     (ptrns: [:type_ptrn(:type_any)], expr: obj_false)
+                     (ptrns: [ptrn],        expr: sel_expr),
+                     (ptrns: [:ptrn_any],   expr: obj_false)
                    ]
                  );
 
