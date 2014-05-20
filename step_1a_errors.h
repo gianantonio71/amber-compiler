@@ -10,7 +10,8 @@ type TDefUserErr  = undef_type_name(BasicTypeSymbol),
                     undef_par_type_name(name: BasicTypeSymbol, arity: NzNat),
                     undef_type_var(TypeVar),
                     //incompatible_types_in_set_type(SynType++),
-                    incompatible_types_in_union_type(SynType++);
+                    incompatible_types_in_union_type(SynType++),
+                    invalid_type_for_tag(Type);
 
 //:rep_labels_in_map(SymbObj*)
 

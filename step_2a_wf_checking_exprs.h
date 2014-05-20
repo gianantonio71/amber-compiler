@@ -1,3 +1,4 @@
+//## CLOSURES SHOULD NOT INHERIT THE IMPLICIT PARAMETERS FROM THE FUNCTION THEY ARE DEFINED IN
 
 using
 {
@@ -18,7 +19,7 @@ using
     rest_is_wf(expr, scalar_vars):
       Var              = in(expr, scalar_vars),
       fn_call()        = fn_call_is_wf(expr, fns_in_scope, scalar_vars),
-      cls_call()       = has_key(cls_vars, expr.name) and cls_vars[expr.name] == length(expr.params),
+      cls_call()       = has_key(cls_vars, expr.name) and cls_vars[expr.name] == length(expr.params), //## SHOULDN'T IT VERIFY THAT THE ACTUAL PARAMETER EXPRESSIONS ARE WELL FORMED?
       builtin_call()   = arity_is_correct(expr.name, length(expr.params)),
       membership()     = type_is_wf(expr.type, type_vars),
       ex_qual()        = clause_is_wf(expr.source, scalar_vars),
@@ -198,15 +199,6 @@ using
     //                        ptrn_is_wf(ptrn.ptrn, ext_vars)
     //                      )
     //                    ),
-
-    tuple_ptrn()      = { ls := apply(ptrn.fields; f(b) = b.label);
-                          return false if (? l => c <- ls : c > 1);
-                          fs := ptrn.fields;
-                          return false if (? b <- fs : not ptrn_is_wf(b.ptrn, ext_vars));
-                          //## BAD BAD BAD
-                          return not (? b1 <- fs, b2 <- fs : b1 /= b2,
-                                        not disjoint(new_vars(b1.ptrn), new_vars(b2.ptrn)));
-                        },
 
     tag_ptrn()        = { if (ptrn.tag :: <var_ptrn(Any)>) //## BAD BAD BAD
                             return false if in(ptrn.tag.name, new_vars(ptrn.obj));

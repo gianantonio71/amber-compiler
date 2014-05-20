@@ -28,7 +28,7 @@ using
   [Instr+] gen_type_checking_code(Type type, AtomicExpr obj, BoolVar res_var):
 
     //## OPTIMIZE FOR SETS OF ANY
-    set_type() =
+    ne_set_type() =
     {
       it_var   := set_it_var(next_set_it_var_id);
       elem_var := lvar(next_obj_var_id);
@@ -61,7 +61,7 @@ using
 
 
     //## OPTIMIZE FOR SEQUENCES OF ANY
-    seq_type() =
+    ne_seq_type() =
     {
       elem_var := lvar(next_obj_var_id);
       it_var   := seq_it_var(next_seq_it_var_id);
@@ -128,13 +128,13 @@ using
     // },
 
 
-    map_type() =
+    ne_map_type() =
     {
       obj_var := lvar(next_obj_var_id);
       it_var  := map_it_var(next_map_it_var_id);
       
       let (next_obj_var_id = next_obj_var_id + 1, next_map_it_var_id = next_map_it_var_id + 1)
-        code := [ block_success_if(is_empty_map(obj), res_var),
+        code := [ //block_success_if(is_empty_map(obj), res_var),
                   block_failure_if_not(is_ne_map(obj), res_var),
                   get_iter(it_var, obj),
                   repeat(
@@ -209,7 +209,7 @@ using
     },
 
 
-    tag_type() =
+    tag_obj_type() =
     {
       obj_var := lvar(next_obj_var_id);
 

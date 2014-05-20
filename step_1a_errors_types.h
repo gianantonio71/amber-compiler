@@ -20,14 +20,14 @@ using
                                      
     TypeVar                       = {:undef_type_var(type) if not in(type, type_vars_in_scope)},
 
-    //seq_type(elem_type: Type)
-    seq_type()                    = type_wf_errors(type.elem_type),
+    //ne_seq_type(elem_type: Type)
+    ne_seq_type()                 = type_wf_errors(type.elem_type),
     
-    //set_type(elem_type: Type);
-    set_type()                    = type_wf_errors(type.elem_type),
+    //ne_set_type(elem_type: Type);
+    ne_set_type()                 = type_wf_errors(type.elem_type),
 
     //map_type(key_type: Type, value_type: Type);
-    map_type()                    = type_wf_errors(type.key_type) & type_wf_errors(type.value_type),
+    ne_map_type()                 = type_wf_errors(type.key_type) & type_wf_errors(type.value_type),
 
     //tuple_type((label: SymbObj, type: Type, optional: Bool)+)
     tuple_type(fs)                = { lab_count := apply(fs; f(f) = f.label);
@@ -36,12 +36,12 @@ using
                                       return union({type_wf_errors(f.type) : f <- fs});
                                     },
 
-    //tag_type(tag_type: Type, obj_type: Type)
-    tag_type()                    = { //## THIS DOES NOT HANDLE TYPE REFERENCES YET
-                                      if (type.tag_type :: <SymbType, SymbType+, atom_type>)
+    //tag_obj_type(tag_type: TagType, obj_type: Type)
+    tag_obj_type()                = { //## THIS DOES NOT HANDLE TYPE REFERENCES YET
+                                      if (type.tag_type :: TagType)
                                         tag_errs := {};
                                       else
-                                        tag_errs := :invalid_type_for_tag(type.tag_type);
+                                        tag_errs := {:invalid_type_for_tag(type.tag_type)};
                                       ;
                                       
                                       return tag_errs & type_wf_errors(type.obj_type);    

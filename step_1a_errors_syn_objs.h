@@ -12,7 +12,7 @@ using
   //## OR IT COULD BE DEFINED INSIDE A USING BLOCK
   SynObjErr* fndef_wf_errors(SynFnDef fn_def, UntypedSgn* global_fns, TypeVar* type_vars, BasicUntypedSgn* impl_pars)
   {
-    vs := set([:fn_par(i) : i <- inc_seq(length(fn_def.params))]); //## BAD BAD BAD
+    vs := set([:fn_par(i) : i <- indexes(fn_def.params)]); //## BAD BAD BAD
 
     //## WHAT IF THE LOCAL FUNCTIONS ARE INSIDE A USING BLOCK? IT SHOULD NOT MATTER, BUT I'M NOT QUITE SURE
     all_fns := merge_and_override(global_fns, {untyped_sgn(lfd) : lfd <- set(fn_def.local_fns)});
@@ -410,28 +410,6 @@ using
                         var_errs  := if in(ptrn.name, vs) then :dupl_ptrn_vars({ptrn.name}) else {} end;
                         ptrn_errs := if ptrn.ptrn? then ptrn_wf_errors(ptrn.ptrn, ext_vars) else {} end;
                         return var_errs & ptrn_errs;
-                      },
-
-    tuple_ptrn()    = { //## BAD BAD BAD THERE SHOULD BE A WAY TO DO THIS
-                        //## WITHOUT CONVERTING THE SEQUENCE TO AN ARRAY FIRST
-                        bs   := rand_sort(ptrn.fields);
-                        len  := length(bs);
-                        ls   := [b.label : b <- bs];
-                        bvs  := [new_vars(b.ptrn) : b <- bs];
-
-                        dupl_labs := {};
-                        dupl_vars := {};
-                        for (i1 = 0..len-2 ; i2 = i1+1..len-1)
-                          dupl_labs := dupl_labs & {ls[i1]} if ls[i1] == ls[i2];
-                          vs := intersection(bvs[i1], bvs[i2]);
-                          dupl_vars := dupl_vars & vs if vs /= {};
-                        ;
-
-                        dupl_lab_errs := if dupl_labs == {} then {} else :dupl_ptrn_labels(dupl_labs) end;
-                        dupl_var_errs := if dupl_vars == {} then {} else :dupl_ptrn_vars(dupl_vars) end;
-                        sub_ptrn_errs := union({ptrn_wf_errors(f.ptrn, ext_vars) : f <- ptrn.fields});
-                          
-                        return dupl_lab_errs & dupl_var_errs & sub_ptrn_errs;
                       },
 
     //tag_ptrn(tag: <obj_ptrn(Symbol), var_ptrn(name: Var)>, obj: Pattern)

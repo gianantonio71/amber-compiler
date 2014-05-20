@@ -1,5 +1,5 @@
 
-Any gen_prg_code(Program prg)
+ProcDef* gen_prg_code(Program prg)
 {
   simpl_prg  := merge_fns_same_name_and_arity(prg);
   

@@ -31,11 +31,11 @@ using (TypeSymbol => Type) typedefs
                             return true;
                           },
     
-    seq_type()          = type_is_wf(type.elem_type, type_vars),
+    ne_seq_type()       = type_is_wf(type.elem_type, type_vars),
     
-    set_type()          = type_is_wf(type.elem_type, type_vars),
+    ne_set_type()       = type_is_wf(type.elem_type, type_vars),
     
-    map_type()          = type_is_wf(type.key_type, type_vars) and
+    ne_map_type()       = type_is_wf(type.key_type, type_vars) and
                           type_is_wf(type.value_type, type_vars),
     
     tuple_type(bs)      = { ls := apply(bs; f(b) = b.label);
@@ -44,7 +44,7 @@ using (TypeSymbol => Type) typedefs
                           },
     
     //## BUG BUG BUG THIS IS INCOMPLETE, THE TAG TYPE MUST BE A SUBSET OF atom_type
-    tag_type()          = type_is_wf(type.tag_type, type_vars) and
+    tag_obj_type()      = type_is_wf(type.tag_type, type_vars) and
                           type_is_wf(type.obj_type, type_vars),
     
                         //## I DON'T LIKE ALL THESE DOUBLE NEGATIONS.
