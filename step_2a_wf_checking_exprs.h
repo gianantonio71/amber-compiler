@@ -185,20 +185,7 @@ using
 
     ext_var_ptrn(v)   = in(v, ext_vars),
 
-    var_ptrn()        = { return false if in(ptrn.name, ext_vars);
-                          return true  if not ptrn.ptrn?;
-                          return not in(ptrn.name, new_vars(ptrn.ptrn)) and
-                                 ptrn_is_wf(ptrn.ptrn, ext_vars);
-                        },
-
-    //## WHICH ONE IS BETTER THE PREVIOUS ONE OR THIS ONE?
-    //## I DON'T PARTICULARLY LIKE EITHER. IS THERE A BETTER WAY?
-    //var_ptrn()        = not in(ptrn.name, ext_vars) and
-    //                    ( not ptrn.ptrn? or
-    //                      ( not in(ptrn.name, new_vars(ptrn.ptrn)) and
-    //                        ptrn_is_wf(ptrn.ptrn, ext_vars)
-    //                      )
-    //                    ),
+    var_ptrn()        = not in(ptrn.name, ext_vars) and not in(ptrn.name, new_vars(ptrn.ptrn)) and ptrn_is_wf(ptrn.ptrn, ext_vars),
 
     tag_ptrn()        = { if (ptrn.tag :: <var_ptrn(Any)>) //## BAD BAD BAD
                             return false if in(ptrn.tag.name, new_vars(ptrn.obj));

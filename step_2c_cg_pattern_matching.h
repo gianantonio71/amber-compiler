@@ -19,12 +19,7 @@ using
     
     //## THIS WORKS ONLY IF THE PATTERNS THAT REFERENCE A LOCALLY BOUND VAR
     //## ARE TURNED INTO ext_var_ptrn() OBJECTS
-    var_ptrn()          = if ptrn.ptrn? then
-                            gen_ptrn_matching_code(ptrn.ptrn, obj, res_var) &
-                            [do_if(res_var, set_var(ptrn.name, obj))]
-                          else
-                            [set_var(ptrn.name, obj), set_bvar(res_var, true)]
-                          end,
+    var_ptrn()          = gen_ptrn_matching_code(ptrn.ptrn, obj, res_var) & [do_if(res_var, set_var(ptrn.name, obj))],
     
     tag_ptrn() = {
       var  := lvar(next_obj_var_id);

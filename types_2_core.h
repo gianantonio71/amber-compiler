@@ -145,12 +145,12 @@ type ExtExpr  = Expr, ClsExpr;
 
 ///////////////////////////////////////////////////////////////////////////////
 
-type Pattern  = ptrn_any,            //## IN THEORY THIS IS REDUNDANT...
+type Pattern  = ptrn_any, //## IN THEORY THIS IS REDUNDANT...
                 obj_ptrn(LeafObj),
                 type_ptrn(Type),
                 ext_var_ptrn(Var),
-                var_ptrn(name: Var, ptrn: Pattern?), //## PTRN SHOULD BE MADE NON-OPTIONAL, NOW THAT WE HAVE ptrn_any back
-                tag_ptrn(tag: <obj_ptrn(SymbObj), var_ptrn(name: Var)>, obj: Pattern);
+                var_ptrn(name: Var, ptrn: Pattern),
+                tag_ptrn(tag: <obj_ptrn(SymbObj), var_ptrn(name: Var, ptrn: ptrn_any)>, obj: Pattern);
 
 ////////////////////////////////////////////////////////////////////////////////
 

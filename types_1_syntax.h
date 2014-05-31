@@ -79,12 +79,12 @@ type SynCondExpr  = cond_expr(expr: SynExpr, cond: SynExpr);
 type SynSubExpr   = SynExpr, SynCondExpr;
 
 
-type SynPtrn      = ptrn_any,            //## IN THEORY THIS IS REDUNDANT...
+type SynPtrn      = ptrn_any,
                     obj_ptrn(LeafObj),
                     type_ptrn(SynType),
                     ext_var_ptrn(Var),
-                    var_ptrn(name: Var, ptrn: SynPtrn?), //## PTRN SHOULD BE MADE NON-OPTIONAL, NOW THAT WE HAVE ptrn_any back
-                    tag_ptrn(tag: <obj_ptrn(SymbObj), var_ptrn(name: Var)>, obj: SynPtrn);
+                    var_ptrn(name: Var, ptrn: SynPtrn),
+                    tag_ptrn(tag: <obj_ptrn(SymbObj), var_ptrn(name: Var, ptrn: ptrn_any)>, obj: SynPtrn);
 
 
 type SynClause    = in_clause(ptrn: SynPtrn, src: SynExpr),

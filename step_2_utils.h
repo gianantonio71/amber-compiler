@@ -62,7 +62,7 @@ Var* new_vars(Pattern ptrn):
   obj_ptrn()      = {},
   type_ptrn()     = {},
   ext_var_ptrn()  = {},
-  var_ptrn()      = {ptrn.name} & if ptrn.ptrn? then new_vars(ptrn.ptrn) else {} end,
+  var_ptrn()      = {ptrn.name} & new_vars(ptrn.ptrn),
   tag_ptrn()      = new_vars(ptrn.tag) & new_vars(ptrn.obj);
 
 Var* new_vars(Clause clause):

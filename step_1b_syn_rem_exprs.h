@@ -278,7 +278,7 @@ using
     eq_clause()         = { assert not in(clause.var, def_vars);
                             
                             return in_clause(
-                                     ptrn: var_ptrn(name: clause.var),
+                                     ptrn: var_ptrn(name: clause.var, ptrn: :ptrn_any),
                                      src:  :set_expr({desugar_expr(clause.expr, def_vars)})
                                    );
                           },

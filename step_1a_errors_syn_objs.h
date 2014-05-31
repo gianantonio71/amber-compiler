@@ -406,9 +406,9 @@ using
 
     ext_var_ptrn(v) = {:undef_bound_ptrn_var(v) if not in(v, ext_vars)},
 
-    var_ptrn()      = { vs := if ptrn.ptrn? then syn_new_vars(ptrn.ptrn) else {} end;
+    var_ptrn()      = { vs := syn_new_vars(ptrn.ptrn);
                         var_errs  := if in(ptrn.name, vs) then :dupl_ptrn_vars({ptrn.name}) else {} end;
-                        ptrn_errs := if ptrn.ptrn? then ptrn_wf_errors(ptrn.ptrn, ext_vars) else {} end;
+                        ptrn_errs := ptrn_wf_errors(ptrn.ptrn, ext_vars);
                         return var_errs & ptrn_errs;
                       },
 

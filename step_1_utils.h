@@ -87,7 +87,7 @@ Var* syn_new_vars(SynPtrn ptrn):
   obj_ptrn()      = {},
   type_ptrn()     = {},
   ext_var_ptrn()  = {},
-  var_ptrn()      = {ptrn.name} & if ptrn.ptrn? then syn_new_vars(ptrn.ptrn) else {} end,
+  var_ptrn()      = {ptrn.name} & syn_new_vars(ptrn.ptrn),
   tag_ptrn()      = syn_new_vars(ptrn.tag) & syn_new_vars(ptrn.obj);
 
 
