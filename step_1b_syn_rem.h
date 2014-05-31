@@ -1,7 +1,8 @@
 
 Program rem_syntax(SynPrg prg)
 {
-  norm_prg := replace Type t in prg with norm_type(t) end;
+  norm_prg := replace SynType t in prg with syn_type_to_raw_type(t) end;
+
   decls    := set(untag(norm_prg));
   
   tdefs         := {d : SynTypedef d <- decls};
@@ -23,9 +24,6 @@ Program rem_syntax(SynPrg prg)
   return program(tdefs: inst_tdefs, subtype_decls: subtype_decls, fndefs: desugared_fndefs & desugared_block_fndefs);
 }
 
-//  nps    := closures & set([if arity(fd) == 0 then :named_par(untag(fd.name)) else untyped_sgn(fd) end : fd <- stmt.asgnms]); //## BAD BAD BAD
-
-
 
 FnDef* syn_fndef_to_fndefs(SynFnDef fndef, SynSgn* named_params)
 {
@@ -45,7 +43,7 @@ FnDef* syn_fndef_to_fndefs(SynFnDef fndef, SynSgn* named_params)
   FnDef mk_fndef(SynFnDef fndef, FnSymbol fn_name, FnSymbol outer_fn, SynSgn* named_params, BasicUntypedSgn* lfns) =
     fn_def(
       name:         fn_name,
-      params:       fndef.params,
+      params:       fndef.params, //## [(type: syn_type_to_raw_type(p.type) if p.type?, var: p.var if p.var?) : p <- fndef.params],
       named_params: syn_sgns_to_named_params(named_params),
       res_type:     fndef.res_type if fndef.res_type?,
                     // No need to include fn_par(i) among the variables
@@ -62,40 +60,20 @@ FnDef* syn_fndef_to_fndefs(SynFnDef fndef, SynSgn* named_params)
     //## THIS FAILS IF THERE ARE TWO IMPLICIT PARAMS WITH THE SAME NAME BUT DIFFERENT ARITIES.
     //## MAKE SURE THIS IS CHECKED IN THE WELL-FORMEDNESS CHECKING PHASE
     (:named_par(untag(ss.name)) => if ss.params == []
-                                     then ss.res_type
+                                     then ss.res_type //##syn_type_to_raw_type(ss.res_type)
                                      else cls_type(in_types: ss.params, out_type: ss.res_type)
+                                     //## else cls_type(in_types: [syn_type_to_raw_type(p) : p <- ss.params], out_type: syn_type_to_raw_type(ss.res_type))
                                    end : ss <- syn_sgns); //## BAD UGLY UGLY UGLY
 }
 
-//type SynSgn         = syn_sgn(
-//                        name:     FnSymbol,
-//                        params:   [Type*],
-//                        res_type: Type
-//                      );
 
-//type ClsType  = cls_type(in_types: [Type+], out_type: Type);
-
-//type FnDef      = fn_def(
-//                    name:         FnSymbol,
-//                    params:       [(var: var(Atom)?, type: ExtType?)*], //## BAD BAD
-//                    named_params: (<var(Atom)> => ExtType),             //## NEW BAD BAD
-//                    res_type:     Type?,
-//                    expr:         Expr
-//                    //impl_env: Signature*, //## NEW
-//                  );
-
-// fn_call(name: FnSymbol, params: [ExtSynExpr*], named_params: [SynFnDef*]), //## NEW
-// fn_call(name: FnSymbol, params: [ExtExpr*], named_params: (<var(Atom)> => ExtExpr)), //## NEW BAD BAD
-
-
-//type SynFnDef       = syn_fn_def(
-//                        name:       FnSymbol,
-//                        params:     [(type: SynType?, var: var(Atom)?)*],
-//                        res_type:   SynType?,
-//                        expr:       SynExpr,
-//                        local_fns:  [SynFnDef*]
-//                      );
-
-//type ClsExpr  = cls_expr(params: [<var(Atom)>+], expr: Expr);
-
-
+RawType syn_type_to_raw_type(SynType type):
+  LeafType          = type,
+  TypeRef           = type,
+  TypeVar           = type,
+  ne_seq_type()     = ne_seq_type(syn_type_to_raw_type(type.elem_type)),
+  ne_set_type()     = ne_set_type(syn_type_to_raw_type(type.elem_type)),
+  ne_map_type()     = ne_map_type(syn_type_to_raw_type(type.key_type), syn_type_to_raw_type(type.value_type)),
+  tuple_type(fs)    = tuple_type((f.label => (type: syn_type_to_raw_type(f.type), optional: f.optional) : f <- fs)),
+  tag_obj_type()    = tag_obj_type(type.tag_type, syn_type_to_raw_type(type.obj_type)),
+  union_type(ts)    = union_type({syn_type_to_raw_type(t) : t <- ts});

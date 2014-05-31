@@ -1,11 +1,4 @@
 
-type LeafType     = atom_type,
-                    empty_seq_type,
-                    empty_set_type,
-                    empty_map_type,
-                    SymbType,
-                    IntType;
-
 //type LeafClause   = incl_clause(ptrn: Pattern, src: Expr),  // UGLY
 //                    excl_clause(ptrn: Pattern, src: Expr);
 //

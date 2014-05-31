@@ -82,6 +82,15 @@ Bool is_almost_def(FnSymbol name, Nat arity, UntypedSgn* env) = (? s <- env : s.
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
+Var* syn_new_vars(SynPtrn ptrn):
+  :ptrn_any       = {},
+  obj_ptrn()      = {},
+  type_ptrn()     = {},
+  ext_var_ptrn()  = {},
+  var_ptrn()      = {ptrn.name} & if ptrn.ptrn? then syn_new_vars(ptrn.ptrn) else {} end,
+  tag_ptrn()      = syn_new_vars(ptrn.tag) & syn_new_vars(ptrn.obj);
+
+
 Var* syn_new_vars(SynStmt stmt):
   assignment_stmt() = {stmt.var},
   if_stmt()         = intersection(
@@ -95,9 +104,9 @@ Var* syn_new_vars([<SynStmt, SynClause>*] objs) = seq_union([syn_new_vars(obj) :
 
 
 Var* syn_new_vars(SynClause clause):
-  in_clause()           = new_vars(clause.ptrn),
+  in_clause()           = syn_new_vars(clause.ptrn),
   not_in_clause()       = {},
-  map_in_clause()       = new_vars(clause.key_ptrn) & new_vars(clause.value_ptrn),
+  map_in_clause()       = syn_new_vars(clause.key_ptrn) & syn_new_vars(clause.value_ptrn),
   map_not_in_clause()   = {},
   eq_clause()           = {clause.var},
   and_clause(cs)        = seq_union([syn_new_vars(c) : c <- cs]),
@@ -108,3 +117,32 @@ Var* syn_new_vars(SynIter iter):
   seq_iter()    = {iter.var, iter.idx_var if iter.idx_var?},
   range_iter()  = {iter.var};
 
+
+//## BAD: THIS IS ALMOST IDENTICAL TO partitions(Type)
+using (TypeSymbol => SynType) typedefs
+{
+  ObjPartSet syn_partitions(SynType type):
+    :atom_type      = {:symbols},
+    symb_type(s)    = {partition(s)},
+    IntType         = {:integers},
+    //## BUG BUG BUG ASSUMING THERE ARE NO DIRECT CYCLES IN TYPEDEFS
+    //## BUG BUG BUG ALSO ASSUMING NO TYPE REFERENCE IS "DANGLING"
+    type_ref(ts)    = syn_partitions(typedefs[ts]),
+    TypeVar         = all_objects,
+    :empty_set_type = {:empty_set},
+    ne_set_type()   = {:ne_sets},
+    :empty_seq_type = {:empty_seq},
+    ne_seq_type()   = {:ne_seqs},
+    :empty_map_type = {:empty_map},
+    ne_map_type()   = {:ne_maps},
+    tuple_type(fs)  = match (fs)
+                        <(label: SymbObj, type: SynType, optional: Bool)+>  = {:ne_maps, :empty_map if (? f <- fs : not f.optional)},
+                        <(SymbObj => (type: SynType, optional: Bool))>      = {:ne_maps, :empty_map if (? l => f <- fs : not f.optional)};
+                      ,
+    union_type(ts)  = merge_partitions({syn_partitions(t) : t <- ts}),
+    tag_obj_type()  = match (type.tag_type)
+                        symb_type(object(a))  = {:tagged_obj(a)},
+                        :atom_type            = {:tagged_objs},
+                        TypeVar               = {:tagged_objs};
+                      ;
+}

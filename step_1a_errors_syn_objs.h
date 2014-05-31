@@ -158,7 +158,7 @@ using
     
     select_expr()       = type_wf_errors(expr.type) & expr_wf_errors(expr.src_expr, def_vars),
     
-    retrieve_expr()     = { vs   := def_vars & new_vars(expr.ptrn);
+    retrieve_expr()     = { vs   := def_vars & syn_new_vars(expr.ptrn);
                             errs := ptrn_wf_errors(expr.ptrn, def_vars);
                             errs := errs & expr_wf_errors(expr.src_expr, def_vars);
                             errs := errs & expr_wf_errors(expr.expr, vs);
@@ -168,7 +168,7 @@ using
     
     replace_expr()      = ptrn_wf_errors(expr.ptrn, def_vars) &
                           expr_wf_errors(expr.src_expr, def_vars) &
-                          expr_wf_errors(expr.src_expr, def_vars & new_vars(expr.ptrn)),
+                          expr_wf_errors(expr.src_expr, def_vars & syn_new_vars(expr.ptrn)),
     
     is_expr()           = type_wf_errors(expr.type) & expr_wf_errors(expr.expr, def_vars),
     
@@ -323,7 +323,7 @@ using
     vs   := def_vars;
     errs := {};
     for (p : syn_case.patterns)
-      pvs  := new_vars(p);
+      pvs  := syn_new_vars(p);
       errs := errs & {:already_def_ptrn_var(v) : v <- intersection(pvs, vs)};
       errs := errs & {:free_var_in_try_expr(p.name)} if p :: <ptrn_var(name: Var)>; //## BAD BAD
       errs := errs & ptrn_wf_errors(p, {}); //## BAD BAD THIS WOULD GENERATE A WEIRD ERROR MESSAGE...
@@ -350,7 +350,7 @@ using
 
     //not_in_clause(ptrn: Pattern, src: SynExpr)
     not_in_clause()     = { ptrn_errs := ptrn_wf_errors(clause.ptrn, ext_vars);
-                            vs := new_vars(clause.ptrn) - loc_vars;
+                            vs := syn_new_vars(clause.ptrn) - loc_vars;
                             ptrn_errs := ptrn_errs & {:unbound_vars_in_excl_clause(vs)} if vs /= {};
                             expr_errs := expr_wf_errors(clause.src, ext_vars);
                             return ptrn_errs & expr_errs;
@@ -364,7 +364,7 @@ using
     //map_not_in_clause(key_ptrn: Pattern, value_ptrn: Pattern, src: SynExpr)
     map_not_in_clause() = { ptrn_errs := ptrn_wf_errors(clause.key_ptrn, ext_vars) &
                                          ptrn_wf_errors(clause.value_ptrn, ext_vars);
-                            vs := new_vars(clause.key_ptrn) & new_vars(clause.value_ptrn) - loc_vars;
+                            vs := syn_new_vars(clause.key_ptrn) & syn_new_vars(clause.value_ptrn) - loc_vars;
                             ptrn_errs := ptrn_errs & {:unbound_vars_in_excl_clause(vs)} if vs /= {};
                             expr_errs := expr_wf_errors(clause.src, ext_vars);
                             return ptrn_errs & expr_errs;
@@ -406,7 +406,7 @@ using
 
     ext_var_ptrn(v) = {:undef_bound_ptrn_var(v) if not in(v, ext_vars)},
 
-    var_ptrn()      = { vs := if ptrn.ptrn? then new_vars(ptrn.ptrn) else {} end;
+    var_ptrn()      = { vs := if ptrn.ptrn? then syn_new_vars(ptrn.ptrn) else {} end;
                         var_errs  := if in(ptrn.name, vs) then :dupl_ptrn_vars({ptrn.name}) else {} end;
                         ptrn_errs := if ptrn.ptrn? then ptrn_wf_errors(ptrn.ptrn, ext_vars) else {} end;
                         return var_errs & ptrn_errs;
@@ -417,7 +417,7 @@ using
                         tag_ptrn := ptrn.tag;
                         if (tag_ptrn :: <var_ptrn(name: Var)>) //## BAD BAD BAD
                           var := tag_ptrn.name;
-                          obj_vs := new_vars(ptrn.obj);
+                          obj_vs := syn_new_vars(ptrn.obj);
                           errs := errs & {:dupl_ptrn_vars({var})} if in(var, obj_vs);
                         ;
                         return errs;

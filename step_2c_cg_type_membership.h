@@ -165,7 +165,7 @@ using
       it_var   := map_it_var(next_map_it_var_id);
 
       max_fields := size(fs);
-      min_fields := size({f : f <- fs ; not f.optional});
+      min_fields := size({f : l => f <- fs ; not f.optional});
       
       code := [ maybe_op(block_success_if(is_empty_map(obj), res_var), min_fields == 0),
                 block_failure_if_not(is_ne_map(obj), res_var),
@@ -174,7 +174,8 @@ using
                 get_iter(it_var, obj)
               ];
 
-      sorted_fields := sort_set(fs; is_strictly_ordered(f1, f2) = f1.label < f2.label);
+      //## BAD: THIS IS PROBABLY NOT IDEAL, IT IS LIKE THIS IN ORDER TO MINIMIZE THE AMOUNT OF CODE THAT HAD TO BE CHANGED WHEN I CHANGED THE TUPLE TYPE
+      sorted_fields := sort_set({(label: l, type: f.type, optional: f.optional) : l => f <- fs}; is_strictly_ordered(f1, f2) = f1.label < f2.label);
 
       for (b : sorted_fields)
         inner_code := [set_var(obj_var, get_curr_value(it_var))] &

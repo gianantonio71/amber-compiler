@@ -11,7 +11,7 @@ type TDefUserErr  = undef_type_name(BasicTypeSymbol),
                     undef_type_var(TypeVar),
                     //incompatible_types_in_set_type(SynType++),
                     incompatible_types_in_union_type(SynType++),
-                    invalid_type_for_tag(Type);
+                    invalid_type_for_tag(SynType);
 
 //:rep_labels_in_map(SymbObj*)
 
@@ -188,14 +188,14 @@ using (TypeSymbol => SynType) typedefs
     // Types are supposed to have already passed the "no direct ref cycles" test
     //## IMPLEMENT THE ABOVE TEST
 
-    Bool are_part_compatible(SynType t1, SynType t2) = are_disjoint(partitions(t1), partitions(t2));
+    Bool are_part_compatible(SynType t1, SynType t2) = are_disjoint(syn_partitions(t1), syn_partitions(t2));
 
     //Bool are_part_compatible(SynType t1, SynType t2):
       //IntType,  IntType   = separated(t1, t2),
-      //_,        _         = are_disjoint(partitions(t1), partitions(t2));
+      //_,        _         = are_disjoint(syn_partitions(t1), syn_partitions(t2));
   }
 
-  [ObjPartSet*] par_parts(SynFnDef fd) = [if p.type? then partitions(p.type) else :all_objs end : p <- fd.params];
+  [ObjPartSet*] par_parts(SynFnDef fd) = [if p.type? then syn_partitions(p.type) else :all_objs end : p <- fd.params];
 }
 
 

@@ -1,6 +1,23 @@
 //## IT WOULD BE USEFUL TO HAVE SYNTACTIC PATTERNS, WITH TUPLE PATTERNS AS SEQUENCES RATHER THAN SETS
 
-type SynType       = Type;
+type SynType        = LeafType,
+                      TypeRef,
+                      TypeVar,
+                      NeSeqType[SynType],
+                      NeSetType[SynType],
+                      NeMapType[SynType],
+                      SynTupleType,
+                      SynTagObjType,
+                      UnionType[SynType];
+
+type SynTupleType   = tuple_type(<
+                        (label: SymbObj, type: SynType, optional: Bool)+,
+                        (SymbObj => (type: SynType, optional: Bool)) // This is here to make RawType a subtype of SynType  //## WOULD NEED A NON-EMPTY MAP TYPE HERE...
+                      >);
+
+type SynTagObjType  = tag_obj_type(tag_type: SynType, obj_type: SynType);
+
+/////////////////////////////////////////////////////////////////////////////////////
 
 type SynTypedef    = typedef(name: BasicTypeSymbol, type: SynType);
 
@@ -8,7 +25,7 @@ type SynParTypedef = par_typedef(name: BasicTypeSymbol, params: [TypeVar+], type
 
 /////////////////////////////////////////////////////////////////////////////////////
 
-type SynExpr = object(<Atom, Int>),
+type SynExpr = LeafObj,
 
                seq_expr(head: [SynSubExpr*], tail: SynExpr?),
                set_expr(SynSubExpr*),
@@ -44,8 +61,8 @@ type SynExpr = object(<Atom, Int>),
                do_expr([SynStmt+]),
 
                select_expr(type: SynType, src_expr: SynExpr),
-               retrieve_expr(expr: SynExpr, ptrn: Pattern, src_expr: SynExpr, cond: SynExpr?),
-               replace_expr(expr: SynExpr, src_expr: SynExpr, ptrn: Pattern),
+               retrieve_expr(expr: SynExpr, ptrn: SynPtrn, src_expr: SynExpr, cond: SynExpr?),
+               replace_expr(expr: SynExpr, src_expr: SynExpr, ptrn: SynPtrn),
 
                //is_expr(expr: SynExpr, type: SynType),
                //where_expr(expr: SynExpr, fndefs: [SynFnDef+]),
@@ -61,15 +78,24 @@ type SynCondExpr  = cond_expr(expr: SynExpr, cond: SynExpr);
 
 type SynSubExpr   = SynExpr, SynCondExpr;
 
-type SynClause    = in_clause(ptrn: Pattern, src: SynExpr),
-                    not_in_clause(ptrn: Pattern, src: SynExpr),
-                    map_in_clause(key_ptrn: Pattern, value_ptrn: Pattern, src: SynExpr),
-                    map_not_in_clause(key_ptrn: Pattern, value_ptrn: Pattern, src: SynExpr),
+
+type SynPtrn      = ptrn_any,            //## IN THEORY THIS IS REDUNDANT...
+                    obj_ptrn(LeafObj),
+                    type_ptrn(SynType),
+                    ext_var_ptrn(Var),
+                    var_ptrn(name: Var, ptrn: SynPtrn?), //## PTRN SHOULD BE MADE NON-OPTIONAL, NOW THAT WE HAVE ptrn_any back
+                    tag_ptrn(tag: <obj_ptrn(SymbObj), var_ptrn(name: Var)>, obj: SynPtrn);
+
+
+type SynClause    = in_clause(ptrn: SynPtrn, src: SynExpr),
+                    not_in_clause(ptrn: SynPtrn, src: SynExpr),
+                    map_in_clause(key_ptrn: SynPtrn, value_ptrn: SynPtrn, src: SynExpr),
+                    map_not_in_clause(key_ptrn: SynPtrn, value_ptrn: SynPtrn, src: SynExpr),
                     eq_clause(var: Var, expr: SynExpr),
                     and_clause([SynClause+]),
                     or_clause(left: SynClause, right: SynClause);
 
-type SynCase      = case(patterns: [Pattern+], expr: SynExpr);  //## CHANGE
+type SynCase      = case(patterns: [SynPtrn+], expr: SynExpr);  //## CHANGE
 
 type SynStmt      = assignment_stmt(var: Var, value: SynExpr),
                     return_stmt(SynExpr),

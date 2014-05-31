@@ -72,7 +72,7 @@ using
       TypeVar,  _         = false,
       _,        TypeVar   = false, //## BAD
       IntType,  IntType   = true,
-      _,        _         = are_disjoint(partitions(t1), partitions(t2));
+      _,        _         = are_disjoint(syn_partitions(t1), syn_partitions(t2));
   }
 }
 

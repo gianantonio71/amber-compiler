@@ -59,7 +59,7 @@ using (TypeSymbol => Type) typedefs
     ne_seq_type()   = {:ne_seqs},
     :empty_map_type = {:empty_map},
     ne_map_type()   = {:ne_maps},
-    tuple_type(fs)  = {:ne_maps, :empty_map if (? f <- fs : not f.optional)},
+    tuple_type(fs)  = {:ne_maps, :empty_map if (? l => f <- fs : not f.optional)},
     union_type(ts)  = merge_partitions({partitions(t) : t <- ts}),
     tag_obj_type()  = match (type.tag_type)
                         symb_type(object(a))  = {:tagged_obj(a)},

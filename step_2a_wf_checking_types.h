@@ -38,10 +38,7 @@ using (TypeSymbol => Type) typedefs
     ne_map_type()       = type_is_wf(type.key_type, type_vars) and
                           type_is_wf(type.value_type, type_vars),
     
-    tuple_type(bs)      = { ls := apply(bs; f(b) = b.label);
-                            return not (? l => c <- ls : c > 1) and
-                                   not (? b <- bs : not type_is_wf(b.type, type_vars));  
-                          },
+    tuple_type(bs)      = not (? l => b <- bs : not type_is_wf(b.type, type_vars)),
     
     //## BUG BUG BUG THIS IS INCOMPLETE, THE TAG TYPE MUST BE A SUBSET OF atom_type
     tag_obj_type()      = type_is_wf(type.tag_type, type_vars) and
@@ -51,8 +48,8 @@ using (TypeSymbol => Type) typedefs
                         //## IT WOULD BE GOOD TO HAVE UNIVERSAL QUALIFICATION
     union_type(ts)      = size(ts) >= 2                                             and
                           //## BAD BAD BAD THIS SHOULD BE ENFORCED IN THE TYPE DEFINITION
-                          not (? UnionType <- ts)                                   and
-                          not (? t <- ts : not type_is_wf(t, type_vars))  and
+                          not (? union_type() <- ts)                                and
+                          not (? t <- ts : not type_is_wf(t, type_vars))            and
                           //## BAD BAD BAD
                           not (? t1 <- ts, t2 <- ts : t1 /= t2, not are_compatible(t1, t2));
 }

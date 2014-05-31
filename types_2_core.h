@@ -12,39 +12,58 @@ type TypeSymbol       = BasicTypeSymbol, ParTypeSymbol;
 
 ///////////////////////////////////////////////////////////////////////////////
 
-type Type       = atom_type,
-                  SymbType,
-                  IntType,
-                  TypeRef,
-                  TypeVar,
-                  SetType,
-                  SeqType,
-                  MapType,
-                  TupleType,
-                  TagObjType,
-                  UnionType;
+// type Type           = LeafType, TypeVar, SelfType, CompType[Type], UnionType[Type], SelfRecType[Type], MutRecType[Type];
+type AnonType       = LeafType, TypeVar, SelfType, CompType[AnonType], UnionType[AnonType], SelfRecType[AnonType], MutRecType[AnonType];
 
-type SymbType   = symb_type(SymbObj);
+// type Type           = LeafType, TypeVar, CompType[Type], UnionType[Type], SelfRecType[SelfRefPretype], MutRecType[MutRefPretype];
+// type SelfRefPretype = LeafType, TypeVar, self, CompType[Type], UnionType[Type], SelfRecType[SelfRefPretype], MutRecType[MutRefPretype];
+// type MutRefPretype  = LeafType, TypeVar, self(Nat), CompType[Type], UnionType[Type], SelfRecType[SelfRefPretype], MutRecType[MutRefPretype];
 
-type IntType    = integer, low_ints(max: Int), high_ints(min: Int), int_range(min: Int, size: NzNat);
+type VoidType       = void_type;
+type ClosedType     = void_type, Type; //## FIND BETTER NAME
 
-type TypeRef    = type_ref(TypeSymbol);
+// type NonRecType     = LeafType, TypeVar, CompType[NonRecType], UnionType[NonRecType];
+// type NonParType     = LeafType, SelfType, CompType[NonParType], UnionType[NonParType], SelfRecType[NonParType], MutRecType[NonParType];
 
-type TypeVar    = type_var(Atom);
+type SymbType       = symb_type(SymbObj);
 
-type SeqType    = empty_seq_type, ne_seq_type(elem_type: Type);
+type IntType        = integer, low_ints(max: Int), high_ints(min: Int), int_range(min: Int, size: NzNat);
 
-type SetType    = empty_set_type, ne_set_type(elem_type: Type);
+type LeafType       = atom_type, SymbType, IntType, empty_seq_type, empty_set_type, empty_map_type;
 
-type MapType    = empty_map_type, ne_map_type(key_type: Type, value_type: Type);
+type SelfType       = self, self(Nat);
 
-type TupleType  = tuple_type((label: SymbObj, type: Type, optional: Bool)+);
+type TypeVar        = type_var(Atom);
 
-type TagType    = SymbType, atom_type, TypeVar;
+type NeSeqType[T]   = ne_seq_type(elem_type: T);
+type SeqType[T]     = empty_seq_type, NeSeqType[T];
 
-type TagObjType = tag_obj_type(tag_type: TagType, obj_type: Type);
+type NeSetType[T]   = ne_set_type(elem_type: T);
+type SetType[T]     = empty_set_type, NeSetType[T];
 
-type UnionType  = union_type(Type+);
+type NeMapType[T]   = ne_map_type(key_type: T, value_type: T);
+type MapType[T]     = empty_map_type, NeMapType[T];
+
+type TupleType[T]   = tuple_type((SymbObj => (type: T, optional: Bool))); //## THE EMPTY MAP SHOULD NOT BE INCLUDED
+
+type TagType        = SymbType, atom_type, TypeVar;
+type TagObjType[T]  = tag_obj_type(tag_type: TagType, obj_type: T);
+
+type CompType[T]    = NeSeqType[T], NeSetType[T], NeMapType[T], TupleType[T], TagObjType[T]; //## FIND BETTER NAME
+
+type UnionType[T]   = union_type(T+);
+
+type SelfRecType[T] = self_rec_type(T);
+
+type MutRecType[T]  = mut_rec_type(index: Nat, types: [T+]);
+
+///////////////////////////////////////////////////////////////////////////////
+
+type RawType  = LeafType, TypeRef, TypeVar, CompType[RawType], UnionType[RawType];
+
+type TypeRef  = type_ref(TypeSymbol);
+
+type Type     = RawType;
 
 ///////////////////////////////////////////////////////////////////////////////
 
