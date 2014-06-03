@@ -177,6 +177,8 @@ reverse(Seq seq) = _rev_(seq);
 
 [Nat*] indexes(Seq s) = inc_seq(length(s));
 
+Nat* index_set(Seq s) = set(indexes(s));
+
 using Bool is_strictly_ordered(T, T) //## BAD BAD BAD
 {
   [T*] sort_set(T* s) = sort(rand_sort(s));
@@ -378,7 +380,7 @@ Bool has_key((T1 => T2) map, T1 key) = (? #key => _ <- map);
     ;
 
     return true;
-        
+
     //disj  := disjoint(ks1, ks2);
     //
     //if (not disj)
@@ -400,6 +402,7 @@ Bool has_key((T1 => T2) map, T1 key) = (? #key => _ <- map);
 
 (T1 => T2) remove_keys((T1 => T2) m, T1* ks) = (k => m[k] : k <- keys(m) - ks);
 
+(T1 => T2) select_by_key((T1 => T2) map, T1* keys) = (k => map[k] : k <- keys);
 
 //#### (T1 => T2) merge((T1 => T2)* maps):
 //####   {}          = [->],

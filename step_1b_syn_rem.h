@@ -12,7 +12,9 @@ Program rem_syntax(SynPrg prg)
   subtype_decls := {d : SynSubtypeDecl d <- decls};
 
   inst_tdefs := create_type_map(norm_prg);
-  
+
+  anon_tdefs := normalize_and_anonymize_types(inst_tdefs);
+
   desugared_fndefs := union({syn_fndef_to_fndefs(fd, {}) : fd <- fndefs});
   
   desugared_block_fndefs := union(
@@ -21,7 +23,7 @@ Program rem_syntax(SynPrg prg)
                               }
                             );
 
-  return program(tdefs: inst_tdefs, subtype_decls: subtype_decls, fndefs: desugared_fndefs & desugared_block_fndefs);
+  return program(tdefs: inst_tdefs, anon_tdefs: anon_tdefs, subtype_decls: subtype_decls, fndefs: desugared_fndefs & desugared_block_fndefs);
 }
 
 

@@ -7,8 +7,18 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 
+[Type*] params(TypeSymbol ts):
+  BasicTypeSymbol = [],
+  ParTypeSymbol   = ts.params;
+
+
 Int max(<int_range(min: Int, size: NzNat)> t) = t.min + t.size - 1; //## BAD BAD
 Int max(<low_ints(max: Int)> t) = t.max;
+
+
+TypeName type_symb_to_name(TypeSymbol ts):
+  BasicTypeSymbol   = type_name(symbol: ts, arity: 0),
+  ParTypeSymbol     = type_name(symbol: ts.symbol, arity: length(ts.params));
 
 // integer, low_ints(max: Int), high_ints(min: Int), int_range(min: Int, size: NzNat)
 

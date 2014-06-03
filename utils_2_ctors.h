@@ -3,6 +3,8 @@ BasicTypeSymbol type_symbol(Atom a) = :type_symbol(a);
 
 ParTypeSymbol par_type_symbol(BasicTypeSymbol s, [Type+] ps) = par_type_symbol(symbol: s, params: ps);
 
+TypeName type_name(BasicTypeSymbol ts, Nat arity) = type_name(symbol: ts, arity: arity);
+
 ////////////////////////////////////////////////////////////////////////////////
 
 void_type = :void_type;
@@ -19,7 +21,7 @@ IntType int_range(Int min, Int max) = int_range(min: min, size: max-min+1);
 
 TypeRef type_ref(TypeSymbol s) = :type_ref(s);
 
-TypeVar type_var(Atom n) = :type_var(n);
+TypeVar type_var(<Atom, Nat> n) = :type_var(n);
 
 empty_seq_type = :empty_seq_type;
 empty_set_type = :empty_set_type;
@@ -64,9 +66,12 @@ UnionType[T] union_type(T+ types) //## BAD: HERE I SHOULD CONSTRAIN THE TYPE OF 
 
 }
 
-SelfRecType[T] self_rec_type(T pretype)              = self_rec_type(pretype);
+SelfPretype self        = :self;
+SelfPretype self(Nat n) = :self(n);
 
-MutRecType[T] mut_rec_type(Nat index, [T+] pretypes) = mut_rec_type(index: index, types: pretypes);
+SelfRecType[T] self_rec_type(T pretype)              = :self_rec_type(pretype);
+
+MutRecType[T] mut_rec_type(Nat index, [T+] pretypes) = :mut_rec_type(index: index, types: pretypes);
 
 ////////////////////////////////////////////////////////////////////////////////
 

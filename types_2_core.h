@@ -10,10 +10,12 @@ type BasicTypeSymbol  = type_symbol(Atom);
 type ParTypeSymbol    = par_type_symbol(symbol: BasicTypeSymbol, params: [Type+]);
 type TypeSymbol       = BasicTypeSymbol, ParTypeSymbol;
 
+type TypeName         = type_name(symbol: BasicTypeSymbol, arity: Nat);
+
 ///////////////////////////////////////////////////////////////////////////////
 
-// type Type           = LeafType, TypeVar, SelfType, CompType[Type], UnionType[Type], SelfRecType[Type], MutRecType[Type];
-type AnonType       = LeafType, TypeVar, SelfType, CompType[AnonType], UnionType[AnonType], SelfRecType[AnonType], MutRecType[AnonType];
+// type Type           = LeafType, TypeVar, SelfPretype, CompType[Type], UnionType[Type], SelfRecType[Type], MutRecType[Type];
+type AnonType       = LeafType, TypeVar, SelfPretype, CompType[AnonType], UnionType[AnonType], SelfRecType[AnonType], MutRecType[AnonType];
 
 // type Type           = LeafType, TypeVar, CompType[Type], UnionType[Type], SelfRecType[SelfRefPretype], MutRecType[MutRefPretype];
 // type SelfRefPretype = LeafType, TypeVar, self, CompType[Type], UnionType[Type], SelfRecType[SelfRefPretype], MutRecType[MutRefPretype];
@@ -23,7 +25,7 @@ type VoidType       = void_type;
 type ClosedType     = void_type, Type; //## FIND BETTER NAME
 
 // type NonRecType     = LeafType, TypeVar, CompType[NonRecType], UnionType[NonRecType];
-// type NonParType     = LeafType, SelfType, CompType[NonParType], UnionType[NonParType], SelfRecType[NonParType], MutRecType[NonParType];
+// type NonParType     = LeafType, SelfPretype, CompType[NonParType], UnionType[NonParType], SelfRecType[NonParType], MutRecType[NonParType];
 
 type SymbType       = symb_type(SymbObj);
 
@@ -31,9 +33,9 @@ type IntType        = integer, low_ints(max: Int), high_ints(min: Int), int_rang
 
 type LeafType       = atom_type, SymbType, IntType, empty_seq_type, empty_set_type, empty_map_type;
 
-type SelfType       = self, self(Nat);
+type SelfPretype    = self, self(Nat);
 
-type TypeVar        = type_var(Atom);
+type TypeVar        = type_var(<Atom, Nat>);
 
 type NeSeqType[T]   = ne_seq_type(elem_type: T);
 type SeqType[T]     = empty_seq_type, NeSeqType[T];
@@ -194,6 +196,7 @@ type FnDef      = fn_def(
 
 type Program    = program(
                     tdefs:          (TypeSymbol => Type),
+                    anon_tdefs:     (TypeName => AnonType),
                     subtype_decls:  SubtypeDecl*,
                     fndefs:         FnDef*
                   );

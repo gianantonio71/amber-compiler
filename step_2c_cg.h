@@ -104,7 +104,7 @@ Program merge_fns_same_name_and_arity(Program prg)
   
   new_fns := merged_fns & (prg.fndefs - union(fns_to_merge));
   
-  return program(tdefs: prg.tdefs, subtype_decls: prg.subtype_decls, fndefs: new_fns);
+  return program(tdefs: prg.tdefs, anon_tdefs: prg.anon_tdefs, subtype_decls: prg.subtype_decls, fndefs: new_fns);
 }
 
 FnDef merge_fns(FnDef+ fds)
