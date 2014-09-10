@@ -12,16 +12,16 @@ type UntypedSgn       = untyped_sgn(
 //                                             arity: arity(d)
 //                                           );
 
-//BasicUntypedSgn untyped_sgn(Var v, ExtType t):
+//BasicUntypedSgn untyped_sgn(Var v, UserExtType t):
 //  var(a), Type      = untyped_sgn(name: :fn_symbol(a), arity: 0),
-//  var(a), ClsType   = untyped_sgn(name: :fn_symbol(a), arity: length(t.in_types));
+//  var(a), UserClsType   = untyped_sgn(name: :fn_symbol(a), arity: length(t.in_types));
 
 
-BasicUntypedSgn untyped_sgn(<named_par(Atom)> var, ExtType type):
-  named_par(a), Type    = untyped_sgn(name: :fn_symbol(a), arity: 0),
-  named_par(a), ClsType = untyped_sgn(name: :fn_symbol(a), arity: length(type.in_types));
+BasicUntypedSgn untyped_sgn(<named_par(Atom)> var, UserExtType type):
+  named_par(a), UserType  = untyped_sgn(name: :fn_symbol(a), arity: 0),
+  named_par(a), UserClsType   = untyped_sgn(name: :fn_symbol(a), arity: length(type.in_types));
 
-//BasicUntypedSgn* untyped_sgns((<named_par(Atom)> => ExtType) nps) = {untyped_sgn(v, t) : v => t <- nps};
+//BasicUntypedSgn* untyped_sgns((<named_par(Atom)> => UserExtType) nps) = {untyped_sgn(v, t) : v => t <- nps};
 
 UntypedSgn untyped_sgn(FnDef fd) =
   untyped_sgn(
@@ -36,7 +36,7 @@ BasicUntypedSgn untyped_sgn(Var v, ExtExpr e):
   var(a), ClsExpr = untyped_sgn(name: :fn_symbol(a), arity: length(e.params));
 
 //BasicUntypedSgn* untyped_sgns((<named_par(Atom)> => ExtExpr) nps) = {untyped_sgn(v, e) : v => e <- nps};
-BasicUntypedSgn* untyped_sgns((<named_par(Atom)> => <ExtType, ExtExpr>) nps) = {untyped_sgn(v, type_or_expr) : v => type_or_expr <- nps};
+BasicUntypedSgn* untyped_sgns((<named_par(Atom)> => <UserExtType, ExtExpr>) nps) = {untyped_sgn(v, type_or_expr) : v => type_or_expr <- nps};
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -93,9 +93,10 @@ Var* syn_new_vars(SynPtrn ptrn):
 
 Var* syn_new_vars(SynStmt stmt):
   assignment_stmt() = {stmt.var},
-  if_stmt()         = intersection(
-                        {syn_new_vars(b.body) : b <- set(stmt.branches)} & {syn_new_vars(stmt.else)}
-                      ),
+  if_stmt()         = {
+    bodies := {b.body : b <- set(stmt.branches)} & {stmt.else};
+    return intersection({syn_new_vars(ss) : ss <- bodies ; not never_falls_through(ss)});
+  },
   let_stmt()        = syn_new_vars(stmt.body),                      
   _                 = {};
 

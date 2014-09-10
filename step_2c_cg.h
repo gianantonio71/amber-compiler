@@ -5,7 +5,8 @@ ProcDef* gen_prg_code(Program prg)
   
   memb_tests := {mk_named_type_memb_test_fn(tn, prg.tdefs) : tn <- keys(simpl_prg.tdefs)}; // where type_map = simpl_prg.tdefs;;
                 
-  fndefs     := {gen_fn_code(fd; type_map = simpl_prg.tdefs) : fd <- simpl_prg.fndefs};
+  // fndefs     := {gen_fn_code(fd; type_map = simpl_prg.tdefs) : fd <- simpl_prg.fndefs};
+  fndefs     := {gen_fn_code(fd) : fd <- simpl_prg.fndefs};
 
   return memb_tests & fndefs;
   //return {normalize_var_numbers(pd) : pd <- memb_tests & fndefs};
@@ -49,52 +50,49 @@ ProcDef* gen_prg_code(Program prg)
 
 
 
-using (Any => Type) type_map
+ObjProcDef gen_fn_code(FnDef fndef)
 {
-  ObjProcDef gen_fn_code(FnDef fndef)
-  {
-    fn_res_var := lvar(0);
-    tmp_bvar   := bvar(0);
+  fn_res_var := lvar(0);
+  tmp_bvar   := bvar(0);
 
-    body := [];
+  body := [];
 
-    let ( next_set_it_var_id = 0,
-          next_seq_it_var_id = 0,
-          next_map_it_var_id = 0,
-          next_obj_var_id    = 1,
-          next_int_var_id    = 0,
-          next_bool_var_id   = 1,
-          next_vector_var_id = 0,
-          next_stream_var_id = 0)
+  let ( next_set_it_var_id = 0,
+        next_seq_it_var_id = 0,
+        next_map_it_var_id = 0,
+        next_obj_var_id    = 1,
+        next_int_var_id    = 0,
+        next_bool_var_id   = 1,
+        next_vector_var_id = 0,
+        next_stream_var_id = 0)
 
-      //// Checking parameter types
-      //for (p, i : fndef.params)
-      //  body := body & gen_type_checking_code(p.type, fn_par(i), tmp_bvar) & [check(tmp_bvar)] if p.type?;
-      //;
-      
-      // Setting named variables for parameters
-      body := body & [set_var(p.var, fn_par(i)) : p, i <- fndef.params, p.var?];
+    //// Checking parameter types
+    //for (p, i : fndef.params)
+    //  body := body & gen_type_checking_code(p.type, fn_par(i), tmp_bvar) & [check(tmp_bvar)] if p.type?;
+    //;
 
-      // Evaluating the expression
-      body := body & gen_eval_code(fndef.expr, fn_res_var);
-      
-      //// Checking the type of the result
-      //if (fndef.res_type?)
-      //  body := body & gen_type_checking_code(fndef.res_type, fn_res_var, tmp_bvar) & [check(tmp_bvar)];
-      //;
-    ;
-        
-    body := body & [ret_val(fn_res_var)];
-    
-    return obj_proc_def(fndef.name, length(fndef.params), (v => arity(t) : v => t <- fndef.named_params), body);
-  }
+    // Setting named variables for parameters
+    body := body & [set_var(p.var, fn_par(i)) : p, i <- fndef.params, p.var?];
+
+    // Evaluating the expression
+    body := body & gen_eval_code(fndef.expr, fn_res_var);
+
+    //// Checking the type of the result
+    //if (fndef.res_type?)
+    //  body := body & gen_type_checking_code(fndef.res_type, fn_res_var, tmp_bvar) & [check(tmp_bvar)];
+    //;
+  ;
+
+  body := body & [ret_val(fn_res_var)];
+
+  return obj_proc_def(fndef.name, length(fndef.params), (v => arity(t) : v => t <- fndef.named_params), body);
 }
 
 
 Program merge_fns_same_name_and_arity(Program prg)
 {
-  mult_map := apply(prg.fndefs; f(fd) = [fd.name, arity(fd)]);
-  
+  mult_map := bag([[fd.name, arity(fd)] : fd <- rand_sort(prg.fndefs)]); //## BAD: USING A SEQUENCE INSTEAD OF A BAG AND AGAIN A SEQUENCE INSTEAD OF A TUPLE
+
   fns_to_merge := for (na => m <- mult_map)
                     if (m > 1) {{
                       fd : fd <- prg.fndefs ; [fd.name, arity(fd)] == na
@@ -123,7 +121,7 @@ FnDef merge_fns(FnDef+ fds)
   ;
   
   //## I DON'T LIKE THIS...
-  rand_fd      := rand_elem(fds); 
+  rand_fd      := an_elem(fds); 
   name         := rand_fd.name;
   arity        := arity(rand_fd);
   named_params := rand_fd.named_params;

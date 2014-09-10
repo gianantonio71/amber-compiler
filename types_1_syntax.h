@@ -12,7 +12,7 @@ type SynType        = LeafType,
 
 type SynTupleType   = tuple_type(<
                         (label: SymbObj, type: SynType, optional: Bool)+,
-                        (SymbObj => (type: SynType, optional: Bool)) // This is here to make RawType a subtype of SynType  //## WOULD NEED A NON-EMPTY MAP TYPE HERE...
+                        (SymbObj => (type: SynType, optional: Bool)) // This is here to make UserType a subtype of SynType  //## WOULD NEED A NON-EMPTY MAP TYPE HERE...
                       >);
 
 type SynTagObjType  = tag_obj_type(tag_type: SynType, obj_type: SynType);
@@ -47,6 +47,7 @@ type SynExpr = LeafObj,
                neq(left: SynExpr, right: SynExpr),
                
                membership(obj: SynExpr, type: SynType),
+               cast_expr(expr: SynExpr, type: SynType),
 
                accessor(expr: SynExpr, field: SymbObj),
                accessor_test(expr: SynExpr, field: SymbObj),

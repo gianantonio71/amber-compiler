@@ -7,7 +7,7 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 
-[Type*] params(TypeSymbol ts):
+[UserType*] params(TypeSymbol ts):
   BasicTypeSymbol = [],
   ParTypeSymbol   = ts.params;
 
@@ -19,6 +19,7 @@ Int max(<low_ints(max: Int)> t) = t.max;
 TypeName type_symb_to_name(TypeSymbol ts):
   BasicTypeSymbol   = type_name(symbol: ts, arity: 0),
   ParTypeSymbol     = type_name(symbol: ts.symbol, arity: length(ts.params));
+
 
 // integer, low_ints(max: Int), high_ints(min: Int), int_range(min: Int, size: NzNat)
 
@@ -40,7 +41,7 @@ TypeName type_symb_to_name(TypeSymbol ts):
 //
 //////////////////////////////////////////////////////////////////////////////////
 
-using (Any => Type) typedefs
+using (Any => UserType) typedefs //## IS THIS CORRECT? UserType INSTEAD OF AnonType? AND WHAT ABOUT THE TYPE Any IN THE KEY?
 {
   //// Types are supposed to have already passed the "no direct ref cycles" test
   //Bool are_compatible(Type t1, Type t2):
@@ -48,13 +49,19 @@ using (Any => Type) typedefs
   //  _,                _               = are_disjoint(partitions(t1), partitions(t2));
 
   //## REENABLE THE ABOVE IMPLEMENTATION AT SOME STAGE
-  Bool are_compatible(Type t1, Type t2) = are_disjoint(partitions(t1), partitions(t2));
+  Bool are_compatible(UserType t1, UserType t2) = are_disjoint(partitions(t1), partitions(t2));
 
 //  NuType* expand(Type type):
 //    type_id(id)    = expand(type_map[id]),
 //    union_type(ts) = union({expand(t) : t <- ts}),
 //    _              = {type};
 }
+
+
+Bool anon_types_are_compatible(AnonType t1, AnonType t2) = anon_types_are_compatible(t1, t2, ());
+
+Bool anon_types_are_compatible(AnonType t1, AnonType t2, (SelfPretype => ObjPartSet) self_partitions) =
+  are_disjoint(anon_pretype_partitions(t1, self_partitions), anon_pretype_partitions(t2, self_partitions));
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -84,21 +91,21 @@ Var first_unused_int_var(Var *vars)
 //Nat arity(<FnDef, Signature> obj) = length(obj.params);
 Nat arity(FnDef fd) = length(fd.params);
 
-NzNat arity(ClsType t) = length(t.in_types);
-Nat arity(Type)        = 0;
+NzNat arity(UserClsType t) = length(t.in_types);
+Nat arity(UserType)        = 0;
 
 NzNat arity(ClsExpr e) = length(e.params);
 Nat arity(Expr)        = 0;
 
 
-Var* scalar_vars(FnDef fn_def) = {p.var : p <- set(fn_def.params) ; p.var? and (not p.type? or p.type :: Type)} &
-                                 set([:fn_par(i) : p, i <- fn_def.params, not p.type? or p.type :: Type])       &
-                                 {v : v => Type t <- fn_def.named_params};
+Var* scalar_vars(FnDef fn_def) = {p.var : p <- set(fn_def.params) ; p.var? and (not p.type? or p.type :: UserType)} &
+                                 set([:fn_par(i) : p, i <- fn_def.params, not p.type? or p.type :: UserType])       &
+                                 {v : v => UserType t <- fn_def.named_params};
 
 //## FOR THE TIME BEING, THE fn_par(Nat) VARIABLES ARE DEFINED ONLY FOR SCALAR PARAMETERS, NOT CLOSURES
 // THIS FUNCTION FAILS IF THERE ARE DUPLICATE PARAMETER NAMES. THIS IS CHECHED BEFORE THE FUNCTION IS INVOKED THOUGH
-(Var => NzNat) cls_vars(FnDef fn_def) = (p.var => length(p.type.in_types) : p <- set(fn_def.params) ; p.var? and (p.type? and p.type :: ClsType)) &
-                                        (v => length(t.in_types) : v => ClsType t <- fn_def.named_params);
+(Var => NzNat) cls_vars(FnDef fn_def) = (p.var => length(p.type.in_types) : p <- set(fn_def.params) ; p.var? and (p.type? and p.type :: UserClsType)) &
+                                        (v => length(t.in_types) : v => UserClsType t <- fn_def.named_params);
 
 
 //Bool is_def(Var cls_var, NzNat arity, (Var* => NzNat) cls_vars_in_scope) = has_key(cls_vars_in_scope, cls_var) and cls_vars_in_scope[cls_var] == arity;

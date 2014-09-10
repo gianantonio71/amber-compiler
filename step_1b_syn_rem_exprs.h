@@ -105,6 +105,7 @@ using
                       ),
 
     membership()    = membership(obj: desugar_expr(expr.obj, def_vars), type: expr.type),
+    cast_expr()     = cast_expr(expr: desugar_expr(expr.expr, def_vars), type: expr.type),
 
     accessor()      = accessor(expr: desugar_expr(expr.expr, def_vars), field: expr.field),
     accessor_test() = accessor_test(expr: desugar_expr(expr.expr, def_vars), field: expr.field),

@@ -58,18 +58,18 @@ FnDef* syn_fndef_to_fndefs(SynFnDef fndef, SynSgn* named_params)
                     )
     );
   
-  (<named_par(Atom)> => ExtType) syn_sgns_to_named_params(SynSgn* syn_sgns) =
+  (<named_par(Atom)> => UserExtType) syn_sgns_to_named_params(SynSgn* syn_sgns) =
     //## THIS FAILS IF THERE ARE TWO IMPLICIT PARAMS WITH THE SAME NAME BUT DIFFERENT ARITIES.
     //## MAKE SURE THIS IS CHECKED IN THE WELL-FORMEDNESS CHECKING PHASE
     (:named_par(untag(ss.name)) => if ss.params == []
                                      then ss.res_type //##syn_type_to_raw_type(ss.res_type)
-                                     else cls_type(in_types: ss.params, out_type: ss.res_type)
-                                     //## else cls_type(in_types: [syn_type_to_raw_type(p) : p <- ss.params], out_type: syn_type_to_raw_type(ss.res_type))
+                                     else user_cls_type(in_types: ss.params, out_type: ss.res_type)
+                                     //## else user_cls_type(in_types: [syn_type_to_raw_type(p) : p <- ss.params], out_type: syn_type_to_raw_type(ss.res_type))
                                    end : ss <- syn_sgns); //## BAD UGLY UGLY UGLY
 }
 
 
-RawType syn_type_to_raw_type(SynType type):
+UserType syn_type_to_raw_type(SynType type):
   LeafType          = type,
   TypeRef           = type,
   TypeVar           = type,

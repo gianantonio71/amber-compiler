@@ -11,9 +11,8 @@ type TDefUserErr  = undef_type_name(BasicTypeSymbol),
                     undef_type_var(TypeVar),
                     //incompatible_types_in_set_type(SynType++),
                     incompatible_types_in_union_type(SynType++),
-                    invalid_type_for_tag(SynType);
-
-//:rep_labels_in_map(SymbObj*)
+                    invalid_type_for_tag(SynType),
+                    rep_labels_in_map(SymbObj*);
 
 type UBlockErr    = TDefUserErr,
                     dupl_type_pars(Var+);

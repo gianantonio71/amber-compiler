@@ -14,6 +14,7 @@ Expr* ordinary_subexprs(Expr expr):
   not_expr(e)     = {e},
   eq()            = {expr.left, expr.right}, //## BAD
   membership()    = {expr.obj},
+  cast_expr()     = {expr.expr},
   accessor()      = {expr.expr},
   accessor_test() = {expr.expr},
   if_expr()       = {expr.cond, expr.then, expr.else},
@@ -75,8 +76,8 @@ Var* new_vars(Clause clause):
 
 Var* new_vars(Statement stmt):
   assignment_stmt() = {stmt.var},
-  if_stmt()         = intersection(new_vars(stmt.body), new_vars(stmt.else)),
-  let_stmt()        = new_vars(stmt.body),  
+  if_stmt()         = intersection({new_vars(stmt.body) if may_fall_through(stmt.body), new_vars(stmt.else) if may_fall_through(stmt.else)}),
+  let_stmt()        = new_vars(stmt.body),
   _                 = {};
 
 Var* new_vars([Statement*] stmts) = seq_union([new_vars(s) : s <- stmts]);
@@ -156,62 +157,69 @@ Var* extern_vars(ClsExpr e) = extern_vars(e.expr) - (set(e.params) - {nil});
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Bool can_fall_through([Statement*] stmts) = none([is_last_for_sure(s) : s <- stmts]);
+type StmtOutcome = fails, returns, breaks, falls_through;
 
 
-Bool is_last_for_sure(Statement stmt):
-  return_stmt()   = true,
-  :fail_stmt      = true,
-  if_stmt()       = at_least_one([is_last_for_sure(s) : s <- stmt.body]) and
-                    at_least_one([is_last_for_sure(s) : s <- stmt.else]),
-  loop_stmt(ss)   = none([can_break_loop(s) : s <- ss]),
-  //:break_stmt     = //## NOT SURE HERE
-  _               = false;
+StmtOutcome+ outcomes([Statement*] stmts)
+{
+  outcomes := {:falls_through};
+  for (s : stmts)
+    outcomes := (outcomes - {:falls_through}) & outcomes(s);
+    break if not in(:falls_through, outcomes);
+  ;
+  return outcomes;
+}
 
 
-Bool can_break_loop(Statement stmt):
-  :break_stmt = true,
-  if_stmt()   = at_least_one([can_break_loop(s) : s <- stmt.body]) or at_least_one([can_break_loop(s) : s <- stmt.else]),
-  let_stmt()  = at_least_one([can_break_loop(s) : s <- stmt.body]), // This should not be necessary for now, but if and when I remove the limitation on the let statement body, it will become
-  _           = false;
-
-////////////////////////////////////////////////////////////////////////////////
-
-Bool flow_control_can_jump_out([Statement*] stmts) = flow_control_can_jump_out(stmts, false);
-
-Bool flow_control_can_jump_out([Statement*] stmts, Bool inside_loop) = at_least_one([flow_control_can_jump_out(s, inside_loop) : s <- stmts]);
-
-Bool flow_control_can_jump_out(Statement stmt, Bool inside_loop):
-  assignment_stmt() = false,
-  return_stmt()     = true,
-  if_stmt()         = flow_control_can_jump_out(stmt.body, inside_loop) or flow_control_can_jump_out(stmt.else, inside_loop),
-  loop_stmt(ss)     = flow_control_can_jump_out(ss, true),
-  foreach_stmt()    = flow_control_can_jump_out(stmt.body, true),
-  for_stmt()        = flow_control_can_jump_out(stmt.body, true),
-  let_stmt()        = flow_control_can_jump_out(stmt.body, inside_loop),
-  :break_stmt       = not inside_loop,
-  :fail_stmt        = false,
-  assert_stmt()     = false,
-  print_stmt()      = false;
+StmtOutcome+ outcomes(Statement stmt):
+  assignment_stmt() = {:fails, :falls_through},
+  return_stmt()     = {:fails, :returns},
+  if_stmt()         = {:fails} & outcomes(stmt.body) & outcomes(stmt.else),
+  loop_stmt(body)   = {
+    outcomes := outcomes(body);
+    // Failures and returns in the body are transferred to the loop.
+    // Fall throughs in the body are neutralized by the loop, but they
+    // create the possibility of an infinite loop, which counts as failure.
+    outcomes := (outcomes - {:falls_through}) & {:fails} if in(:falls_through, outcomes);
+    // A break in the body becomes a fall through for the loop itself
+    outcomes := (outcomes - {:breaks}) & {:falls_through} if in(:breaks, outcomes);
+    return outcomes;
+  },
+  foreach_stmt()    = {:fails, :falls_through} & outcomes(stmt.body) - {:breaks},
+  for_stmt()        = {:fails, :falls_through} & outcomes(stmt.body) - {:breaks}, //## BAD: SAME AS ABOVE
+  let_stmt()        = {:fails} & outcomes(stmt.body),
+  :break_stmt       = {:breaks},
+  :fail_stmt        = {:fails},
+  assert_stmt()     = {:falls_through, :fails},
+  print_stmt()      = {:falls_through, :fails};
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Bool arity_is_correct(BuiltIn name, NzNat arity) = arity == arity_map[name]
-                                                   let
-                                                     arity_map := (
-                                                       neg:         1,
-                                                       add:         2,
-                                                       str:         1,
-                                                       symb:        1,
-                                                       counter:     1,
-                                                       at:          2,
-                                                       len:         1,
-                                                       slice:       3,
-                                                       cat:         2,
-                                                       rev:         1,
-                                                       set:         1,
-                                                       mset:        1,
-                                                       isort:       1,
-                                                       list_to_seq: 1
-                                                     );
-                                                   ;
+Bool may_fall_through(Statement stmt) = in(:falls_through, outcomes(stmt));
+
+Bool may_fall_through([Statement*] stmts) = in(:falls_through, outcomes(stmts));
+
+////////////////////////////////////////////////////////////////////////////////
+
+Bool arity_is_correct(BuiltIn name, NzNat arity) = arity == builtin_arity_map[name];
+
+(BuiltIn => NzNat) builtin_arity_map = (
+  neg:         1,
+  add:         2,
+  str:         1,
+  symb:        1,
+  counter:     1,
+  at:          2,
+  len:         1,
+  slice:       3,
+  cat:         2,
+  rev:         1,
+  set:         1,
+  mset:        1,
+  isort:       1,
+  list_to_seq: 1,
+  tag:         1,
+  obj:         1,
+  rand_nat:    1,
+  rand_elem:   1
+);

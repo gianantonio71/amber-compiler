@@ -43,9 +43,9 @@ ObjPart partition(Obj):
   tag @ obj       = :tagged_obj(tag);
 
 
-using (TypeSymbol => Type) typedefs
+using (TypeSymbol => UserType) typedefs
 {
-  ObjPartSet partitions(Type type):
+  ObjPartSet partitions(UserType type):
     :atom_type      = {:symbols},
     symb_type(s)    = {partition(s)},
     IntType         = {:integers},
@@ -80,3 +80,47 @@ using (TypeSymbol => Type) typedefs
                           var_ptrn()          = {:tagged_objs};
                         ;
 }
+
+
+//## BAD: MUCH OF THE IMPLEMENTATION IS SHARED WITH THE CORRISPONDENT METHOD FOR USER TYPES...
+ObjPartSet anon_pretype_partitions(AnonType type, (SelfPretype => ObjPartSet) self_partitions):
+  :self             = self_partitions[type],
+  self()            = self_partitions[type],
+  :atom_type        = {:symbols},
+  symb_type(s)      = {partition(s)},
+  IntType           = {:integers},
+  TypeVar           = all_objects,
+  :empty_set_type   = {:empty_set},
+  ne_set_type()     = {:ne_sets},
+  :empty_seq_type   = {:empty_seq},
+  ne_seq_type()     = {:ne_seqs},
+  :empty_map_type   = {:empty_map},
+  ne_map_type()     = {:ne_maps},
+  tuple_type(fs)    = {:ne_maps, :empty_map if (? l => f <- fs : not f.optional)},
+  union_type(ts)    = merge_partitions({anon_pretype_partitions(t, self_partitions) : t <- ts}),
+  tag_obj_type()    = match (type.tag_type)
+                        symb_type(object(a))  = {:tagged_obj(a)},
+                        :atom_type            = {:tagged_objs},
+                        TypeVar               = {:tagged_objs};
+                      ,
+  self_rec_type(t)  = anon_pretype_partitions(t, ()), //## NOT ENTIRELY SURE
+  mut_rec_type()    = parts[self(type.index)] let parts := mut_rec_type_partitions(type);;
+
+
+(SelfPretype => ObjPartSet) mut_rec_type_partitions(MutRecType[AnonType] type)
+{
+  refs := [{s : s <- top_level_rec_refs(t)} : t <- type.types];
+  parts := ();
+  loop
+    next_type_idxs := {i : i <- index_set(type.types) ; not has_key(parts, self(i)) and subset(refs[i], keys(parts))};
+    assert next_type_idxs /= {} or keys(parts) == {self(i) : i <- index_set(type.types)};
+    return parts if next_type_idxs == {};
+    parts := parts & (self(i) => anon_pretype_partitions(type.types[i], parts) : i <- next_type_idxs);
+  ;
+}
+
+
+SelfPretype* top_level_rec_refs(AnonType type):
+  SelfPretype     = {type},
+  union_type(ts)  = union({top_level_rec_refs(t) : t <- ts}),
+  _               = {};

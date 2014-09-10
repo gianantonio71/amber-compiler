@@ -119,6 +119,7 @@ using
     neq()               = expr_wf_errors(expr.left, def_vars) & expr_wf_errors(expr.right, def_vars), //## BAD
 
     membership()        = expr_wf_errors(expr.obj, def_vars) & type_wf_errors(expr.type),
+    cast_expr()         = expr_wf_errors(expr.expr, def_vars) & type_wf_errors(expr.type),
 
     accessor()          = expr_wf_errors(expr.expr, def_vars),
     accessor_test()     = expr_wf_errors(expr.expr, def_vars), //## BAD
@@ -233,7 +234,6 @@ using
     vs        := all_def_vars;
     reachable := true;
     errs      := {};
-
     for (s : stmts)
       errs      := errs & {:unreachable_code} if not reachable;
       errs      := errs & stmt_wf_errors(s, vs, readonly_vars, inside_loop);
@@ -433,6 +433,7 @@ Bool syn_is_last_for_sure(SynStmt stmt):
                       and at_least_one([syn_is_last_for_sure(s) : s <- stmt.else]),
   inf_loop_stmt(ss) = none([syn_can_break_loop(s) : s <- ss]),
   //:break_stmt     = //## NOT SURE HERE
+  let_stmt()        = at_least_one([syn_is_last_for_sure(s) : s <- stmt.body]),
   _                 = false;
 
 
@@ -475,6 +476,8 @@ Bool never_falls_through(SynStmt stmt):
                         ;
                         return never_falls_through(stmt.else);
                       },
+
+  let_stmt()        = never_falls_through(stmt.body),
 
   //## WHY DID I DO THIS? IT MAKES NO SENSE...
   //loop_stmt()       = never_falls_through(stmt.body),

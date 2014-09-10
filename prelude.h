@@ -38,6 +38,8 @@ type Maybe[T]       = nil, just(T);
 // Replace this with === or ~=
 Bool is_eq(T x, Maybe[T] maybe) = maybe == :just(x);
 
+T just(T x) = :just(x);
+
 ////////////////////////////////////////////////////////////////////////////////
 
 // Still not ideal, both of them. No need to always evaluate all arguments.
@@ -79,6 +81,26 @@ Bool op_<=(Int a, Int b) = a < b or a == b;
 
 Int min(Int a, Int b) = if a < b then a else b end;
 Int max(Int a, Int b) = if a > b then a else b end;
+
+Int min(Int+ ns)
+{
+  ns_seq := rand_sort(ns);
+  min := ns_seq[0];
+  for (n : ns_seq)
+    min := n if n < min;
+  ;
+  return min;
+}
+
+Int max(Int+ ns)
+{
+  ns_seq := rand_sort(ns);
+  max := ns_seq[0];
+  for (n : ns_seq)
+    max := n if n > max;
+  ;
+  return max;
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -241,7 +263,7 @@ using Bool is_strictly_ordered(T, T) //## BAD BAD BAD
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
-Bool in(Any e, Set s) = (? #e <- s);
+Bool in(Any x, Set s) = (? e <- s : e == x);
 
 // [T1, T2]* cart_prod(T1* s1, T2* s2)  = {[e1, e2] : e1 <- s1, e2 <- s2};
 
@@ -305,17 +327,17 @@ T only_element_or_def_if_empty(T* set, T default)
   return if length(seq) == 1 then seq[0] else default end;
 }
 
-Int max(Int+ set)
-{
-  seq := rand_sort(set);
+// Int max(Int+ set)
+// {
+//   seq := rand_sort(set);
   
-  max := seq[0];
-  for (x : seq)
-    max := x if x > max;
-  ;
+//   max := seq[0];
+//   for (x : seq)
+//     max := x if x > max;
+//   ;
   
-  return max;
-}
+//   return max;
+// }
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
@@ -357,9 +379,9 @@ T* seq_union([(T*)*] sets) = union(set(sets));
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
-T2 op_[]((T1 => T2) map, T1 key) = only_element({val : #key => val <- map});
+T2 op_[]((T1 => T2) map, T1 key) = only_element({v : k => v <- map ; k == key});
  
-T2 lookup((T1 => T2) map, T1 key, T2 default) = only_element_or_def_if_empty({val : #key => val <- map}, default);
+T2 lookup((T1 => T2) map, T1 key, T2 default) = only_element_or_def_if_empty({v : k => v <- map ; k == key}, default);
 
 (T1 => T2) update((T1 => T2) map, (T1 => T2) diffs) = (k => v : (k => v <- map, k => _ </- diffs) \/ k => v <- diffs);
 
@@ -367,7 +389,7 @@ Nat size((Any => Any) map) = size(keys(map));
 
 T1* keys((T1 => T2) map) = {k : k => _ <- map};
 
-Bool has_key((T1 => T2) map, T1 key) = (? #key => _ <- map);
+Bool has_key((T1 => T2) map, T1 key) = (? k => _ <- map : k == key);
 
 (T1 => T2) op_&((T1 => T2) map1, (T1 => T2) map2)
 {
@@ -397,6 +419,8 @@ Bool has_key((T1 => T2) map, T1 key) = (? #key => _ <- map);
   all_keys := union({keys(m) : m <- maps});
   return (k => {m[k] : m <- maps ; has_key(m, k)} : k <- all_keys);
 }
+
+(K => V+) merge_value_sets((K => V+)* maps) = (k => union(vss) : k => vss <- merge_values(maps));
 
 (T1 => T2) merge((T1 => T2)* maps) = (k => v : m <- maps, k => v <- m);
 
@@ -443,7 +467,7 @@ Bool has_duplicates([Any*] s) = dupl_elems(s) /= {};
 rand_sort_pairs((TK => TV) map) = rand_sort({[k, v] : k => v <- map});
 
 
-T rand_elem(T+ s) = {ses := rand_sort(s); return ses[0];};
+T an_elem(T+ s) = {ses := rand_sort(s); return ses[0];};
 
 (T => NzNat) set_to_mset(T* s) = (e => 1 : e <- s);
 
@@ -451,10 +475,12 @@ T rand_elem(T+ s) = {ses := rand_sort(s); return ses[0];};
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
-using T2 f(T1)
-{
-  (T2 => NzNat) apply(T1* s) = _mset_([f(x) : x <- rand_sort(s)]);
-}
+// using T2 f(T1)
+// {
+//   (T2 => NzNat) apply(T1* s) = _mset_([f(x) : x <- rand_sort(s)]);
+// }
+
+(T => NzNat) bag([T*] s) = _mset_(s);
 
 T2* values((T1 => T2) map) = {v : _ => v <- map};
 

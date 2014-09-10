@@ -7,7 +7,7 @@ type LeafObj    = object(<Atom, Int>);
 ///////////////////////////////////////////////////////////////////////////////
 
 type BasicTypeSymbol  = type_symbol(Atom);
-type ParTypeSymbol    = par_type_symbol(symbol: BasicTypeSymbol, params: [Type+]);
+type ParTypeSymbol    = par_type_symbol(symbol: BasicTypeSymbol, params: [UserType+]);
 type TypeSymbol       = BasicTypeSymbol, ParTypeSymbol;
 
 type TypeName         = type_name(symbol: BasicTypeSymbol, arity: Nat);
@@ -15,14 +15,15 @@ type TypeName         = type_name(symbol: BasicTypeSymbol, arity: Nat);
 ///////////////////////////////////////////////////////////////////////////////
 
 // type Type           = LeafType, TypeVar, SelfPretype, CompType[Type], UnionType[Type], SelfRecType[Type], MutRecType[Type];
-type AnonType       = LeafType, TypeVar, SelfPretype, CompType[AnonType], UnionType[AnonType], SelfRecType[AnonType], MutRecType[AnonType];
+type AnonType       = LeafType, TypeVar, SelfPretype, CompType[AnonType], UnionType[AnonType], RecType[AnonType];
 
-// type Type           = LeafType, TypeVar, CompType[Type], UnionType[Type], SelfRecType[SelfRefPretype], MutRecType[MutRefPretype];
-// type SelfRefPretype = LeafType, TypeVar, self, CompType[Type], UnionType[Type], SelfRecType[SelfRefPretype], MutRecType[MutRefPretype];
-// type MutRefPretype  = LeafType, TypeVar, self(Nat), CompType[Type], UnionType[Type], SelfRecType[SelfRefPretype], MutRecType[MutRefPretype];
-
+// type Type              = LeafType, TypeVar, CompType[Type], UnionType[Type], SelfRecType[SelfRefPretype], MutRecType[MutRefPretype];
+// type SelfRefPretype    = LeafType, TypeVar, CompType[Type], UnionType[Type], SelfRecType[SelfRefPretype], MutRecType[MutRefPretype];
+// type MutRefPretype     = LeafType, TypeVar, CompType[Type], UnionType[Type], SelfRecType[SelfRefPretype], MutRecType[MutRefPretype];
+// type SelfRefPrePretype = LeafType, TypeVar, self, CompType[Type], UnionType[Type], SelfRecType[SelfRefPretype], MutRecType[MutRefPretype];
+// type MutRefPrePretype  = LeafType, TypeVar, self(Nat), CompType[Type], UnionType[Type], SelfRecType[SelfRefPretype], MutRecType[MutRefPretype];
 type VoidType       = void_type;
-type ClosedType     = void_type, Type; //## FIND BETTER NAME
+type ClosedType     = void_type, AnonType; //## FIND BETTER NAME
 
 // type NonRecType     = LeafType, TypeVar, CompType[NonRecType], UnionType[NonRecType];
 // type NonParType     = LeafType, SelfPretype, CompType[NonParType], UnionType[NonParType], SelfRecType[NonParType], MutRecType[NonParType];
@@ -46,9 +47,9 @@ type SetType[T]     = empty_set_type, NeSetType[T];
 type NeMapType[T]   = ne_map_type(key_type: T, value_type: T);
 type MapType[T]     = empty_map_type, NeMapType[T];
 
-type TupleType[T]   = tuple_type((SymbObj => (type: T, optional: Bool))); //## THE EMPTY MAP SHOULD NOT BE INCLUDED
+type TupleType[T]   = tuple_type((SymbObj => (type: T, optional: Bool))); //## THE EMPTY MAP SHOULD NOT BE INCLUDED. OR SHOULD IT?
 
-type TagType        = SymbType, atom_type, TypeVar;
+type TagType        = SymbType, atom_type; //, TypeVar; //## THE CODE HASN'T BEEN UPDATED YET
 type TagObjType[T]  = tag_obj_type(tag_type: TagType, obj_type: T);
 
 type CompType[T]    = NeSeqType[T], NeSetType[T], NeMapType[T], TupleType[T], TagObjType[T]; //## FIND BETTER NAME
@@ -59,35 +60,39 @@ type SelfRecType[T] = self_rec_type(T);
 
 type MutRecType[T]  = mut_rec_type(index: Nat, types: [T+]);
 
+type RecType[T]     = SelfRecType[T], MutRecType[T];
+
 ///////////////////////////////////////////////////////////////////////////////
 
-type RawType  = LeafType, TypeRef, TypeVar, CompType[RawType], UnionType[RawType];
+type ClsType  = cls_type(in_types: [AnonType+], out_type: AnonType);
+type ExtType  = AnonType, ClsType;
+
+type FnType   = fn_type(
+                  params:       [ExtType*],
+                  named_params: (<named_par(Atom)> => ExtType),
+                  ret_type:     AnonType
+                );
+
+///////////////////////////////////////////////////////////////////////////////
+
+type UserType = LeafType, TypeRef, TypeVar, CompType[UserType], UnionType[UserType];
 
 type TypeRef  = type_ref(TypeSymbol);
 
-type Type     = RawType;
+///////////////////////////////////////////////////////////////////////////////
+
+type UserClsType  = user_cls_type(in_types: [UserType+], out_type: UserType);
+type UserExtType  = UserType, UserClsType;
 
 ///////////////////////////////////////////////////////////////////////////////
 
-type ClsType  = cls_type(in_types: [Type+], out_type: Type);
-
-type ExtType  = Type, ClsType;
-
-type FnType     = fn_type(
-                    params:       [ExtType*],
-                    named_params: (<named_par(Atom)> => ExtType),
-                    ret_type:     Type
-                  );
-
-///////////////////////////////////////////////////////////////////////////////
-
-type SubtypeDecl  = subtype_decl(subtype: Type, supertype: Type);
+type SubtypeDecl  = subtype_decl(subtype: UserType, supertype: UserType);
 
 ///////////////////////////////////////////////////////////////////////////////
 
 type Operator = plus, minus, star, slash, exp, amp, lower, greater, lower_eq, greater_eq, brackets;
 
-type BuiltIn  = neg, add, counter, str, symb, at, len, slice, cat, rev, set, mset, isort, list_to_seq;
+type BuiltIn  = neg, add, str, symb, at, len, slice, cat, rev, set, mset, isort, list_to_seq, tag, obj, rand_nat, rand_elem, counter;
 
 type FnSymbol = fn_symbol(Atom),
                 op_symbol(Operator),
@@ -120,8 +125,10 @@ type Expr     = LeafObj, //## UPDATE ALL REFERENCES
                 not_expr(Expr),                    //## NOT SURE HERE
                 
                 eq(left: Expr, right: Expr),
-                membership(obj: Expr, type: Type),
                 
+                membership(obj: Expr, type: UserType),
+                cast_expr(expr: Expr, type: UserType),
+
                 accessor(expr: Expr, field: SymbObj),      //## SHOULD <field> BE AN OBJECT OR JUST A PLAIN SYMBOL?
                 accessor_test(expr: Expr, field: SymbObj), //## DITTO
 
@@ -149,7 +156,7 @@ type ExtExpr  = Expr, ClsExpr;
 
 type Pattern  = ptrn_any, //## IN THEORY THIS IS REDUNDANT...
                 obj_ptrn(LeafObj),
-                type_ptrn(Type),
+                type_ptrn(UserType),
                 ext_var_ptrn(Var),
                 var_ptrn(name: Var, ptrn: Pattern),
                 tag_ptrn(tag: <obj_ptrn(SymbObj), var_ptrn(name: Var, ptrn: ptrn_any)>, obj: Pattern);
@@ -171,7 +178,7 @@ type Statement  = assignment_stmt(var: Var, value: Expr),
                   loop_stmt([Statement+]),
                   foreach_stmt(var: Var, idx_var: Var?, values: Expr, body: [Statement+]),
                   for_stmt(var: Var, start_val: Expr, end_val: Expr, body: [Statement+]),
-                  let_stmt(asgnms: (<named_par(Atom)> => ExtExpr), body: [Statement+]), //## BAD
+                  let_stmt(asgnms: (<named_par(Atom)> => Expr), body: [Statement+]), //## BAD
                   break_stmt,
                   fail_stmt,
                   assert_stmt(Expr),
@@ -187,15 +194,15 @@ type Statement  = assignment_stmt(var: Var, value: Expr),
 
 type FnDef      = fn_def(
                     name:         FnSymbol,
-                    params:       [(var: var(Atom)?, type: ExtType?)*], //## BAD BAD
-                    named_params: (<named_par(Atom)> => ExtType), //## BAD: THIS DOESN'T ALLOW FOR IMPLICIT PARAMETER WITH THE SAME NAME BUT DIFFERENT ARITIES. ALSO THE TYPE IS TOO LOOSE. INCLUDE A CHECK IN THE WELL-FORMEDNESS CHECKING LAYER
-                    res_type:     Type?,
+                    params:       [(var: var(Atom)?, type: UserExtType?)*], //## BAD BAD
+                    named_params: (<named_par(Atom)> => UserExtType), //## BAD: THIS DOESN'T ALLOW FOR IMPLICIT PARAMETER WITH THE SAME NAME BUT DIFFERENT ARITIES. ALSO THE TYPE IS TOO LOOSE. INCLUDE A CHECK IN THE WELL-FORMEDNESS CHECKING LAYER
+                    res_type:     UserType?,
                     expr:         Expr
                     //impl_env: Signature*,
                   );
 
 type Program    = program(
-                    tdefs:          (TypeSymbol => Type),
+                    tdefs:          (TypeSymbol => UserType),
                     anon_tdefs:     (TypeName => AnonType),
                     subtype_decls:  SubtypeDecl*,
                     fndefs:         FnDef*

@@ -2,11 +2,11 @@
 
 using
 {
-  (TypeSymbol => Type)  typedefs,
-  TypeVar*              type_vars,
-  FnDef*                fns_in_scope,
-  //Var*                  scalar_vars,
-  (Var => NzNat)        cls_vars;
+  (TypeSymbol => UserType)  typedefs,
+  TypeVar*                  type_vars,
+  FnDef*                    fns_in_scope,
+  //Var*                      scalar_vars,
+  (Var => NzNat)            cls_vars;
 
 
   Tautology expr_is_wf(Expr expr, Var* scalar_vars)
@@ -22,6 +22,7 @@ using
       cls_call()       = has_key(cls_vars, expr.name) and cls_vars[expr.name] == length(expr.params), //## SHOULDN'T IT VERIFY THAT THE ACTUAL PARAMETER EXPRESSIONS ARE WELL FORMED?
       builtin_call()   = arity_is_correct(expr.name, length(expr.params)),
       membership()     = type_is_wf(expr.type, type_vars),
+      cast_expr()      = type_is_wf(expr.type, type_vars),
       ex_qual()        = clause_is_wf(expr.source, scalar_vars),
       set_comp()       = clause_is_wf(expr.source, scalar_vars),
       map_comp()       = clause_is_wf(expr.source, scalar_vars),
@@ -91,8 +92,8 @@ using
 
 //type FnDef      = fn_def(
 //                    name:         FnSymbol,
-//                    params:       [(var: var(Atom)?, type: ExtType?)*], //## BAD BAD
-//                    named_params: (<named_par(Atom)> => ExtType), //## NEW BAD BAD THIS DOESN'T ALLOW FOR IMPLICIT PARAMETER WITH THE SAME NAME BUT DIFFERENT ARITIES. ALSO THE TYPE IS TOO LOOSE. INCLUDE A CHECK IN THE WELL-FORMEDNESS CHECKING LAYER
+//                    params:       [(var: var(Atom)?, type: UserExtType?)*], //## BAD BAD
+//                    named_params: (<named_par(Atom)> => UserExtType), //## NEW BAD BAD THIS DOESN'T ALLOW FOR IMPLICIT PARAMETER WITH THE SAME NAME BUT DIFFERENT ARITIES. ALSO THE TYPE IS TOO LOOSE. INCLUDE A CHECK IN THE WELL-FORMEDNESS CHECKING LAYER
 //                    res_type:     Type?,
 //                    expr:         Expr
 //                    //impl_env: Signature*,
@@ -205,7 +206,7 @@ using
     for (s, i : stmts)
       return false if not reachable or not stmt_is_wf(s, vs, is_inside_loop);
       vs        := vs & new_vars(s);
-      reachable := reachable and not is_last_for_sure(s);
+      reachable := reachable and may_fall_through(s);
     ;
 
     return not needs_return or not reachable;

@@ -5,7 +5,7 @@ Tautology prg_is_wf(Program prg) = types_are_wf(prg.tdefs) and fndefs_are_wf(prg
 
 
 
-using (TypeSymbol => Type) typedefs
+using (TypeSymbol => UserType) typedefs
 {
   Tautology fndefs_are_wf(FnDef* fndefs)
   {

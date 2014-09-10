@@ -1,4 +1,4 @@
-BoolProcDef mk_named_type_memb_test_fn(TypeSymbol type_name, (TypeSymbol => Type) typedefs)
+BoolProcDef mk_named_type_memb_test_fn(TypeSymbol type_name, (TypeSymbol => UserType) typedefs)
 {
   res_var := bvar(0);
   
@@ -25,7 +25,7 @@ using
   Nat next_int_var_id;
 
 
-  [Instr+] gen_type_checking_code(Type type, AtomicExpr obj, BoolVar res_var):
+  [Instr+] gen_type_checking_code(UserType type, AtomicExpr obj, BoolVar res_var):
 
     //## OPTIMIZE FOR SETS OF ANY
     ne_set_type() =
@@ -244,7 +244,7 @@ using
 }
 
 
-BoolExpr gen_type_checking_expr(Type type, AtomicExpr obj):
+BoolExpr gen_type_checking_expr(UserType type, AtomicExpr obj):
   :atom_type      = is_symb(obj),
   symb_type(s)    = is_eq(s, obj),
   :integer        = is_int(obj),

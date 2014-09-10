@@ -648,7 +648,7 @@ using
       vs   := vs & (new_vars(s) - all_rel_vars); //## BUG? BUG? BUG?
     ;
     
-    if (can_fall_through(stmts))
+    if (may_fall_through(stmts))
       code := code & [release(v) : v <- rand_sort(vs - surv_vars)];
     //## Try to reenable it if there are memory leaks
     //## else
@@ -692,7 +692,7 @@ using
     {
       //## THIS SHOULD BE CHECKED IN THE PROPER PLACE, BOTH IN LAYER 1 AND 2
       //## IT'S A TEMPORARY LIMITATION THAT SHOULD BE REMOVED
-      assert not flow_control_can_jump_out(stmt.body);
+      assert subset(outcomes(stmt.body), {:fails, :falls_through});
       
       surv_vars := new_vars(stmt.body) - all_rel_vars;
       return make_scopes(rand_sort_pairs(stmt.asgnms), (body: stmt.body, res_var: res_var, all_rel_vars: all_rel_vars, break_vars: break_vars, surv_vars: surv_vars));
