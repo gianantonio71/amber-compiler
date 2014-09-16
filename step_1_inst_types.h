@@ -4,7 +4,7 @@
 
 (TypeSymbol => SynType) create_type_map(SynPrg prg)
 {
-  tdef_map     := (td.name => td.type : SynTypedef td <- set(untag(prg)));
+  tdef_map     := (td.name => td.type : typedef() td <- set(untag(prg)));
   par_tdef_map := inst_req_par_types(prg);
   
   return tdef_map & par_tdef_map;
@@ -14,13 +14,9 @@
 (ParTypeSymbol => SynType) inst_req_par_types(SynPrg prg)
 {
   decls     := set(untag(prg));
-  
-  tdefs     := {d : SynTypedef d <- decls};
-  par_tdefs := {d : SynParTypedef d <- decls};
-  fndefs    := {d : SynFnDef d <- decls};
-  ublocks   := {d : SynUsingBlock d <- decls};
-  
-  symbs_to_inst     := get_type_symbols_to_instantiate(fndefs & ublocks & tdefs);
+  par_tdefs := {d : par_typedef() d <- decls};
+
+  symbs_to_inst     := get_type_symbols_to_instantiate(decls) & {par_type_symbol(ptd.name, ptd.params) : ptd <- par_tdefs};
   inst_symbs_so_far := {};
   inst_par_tdefs    := ();
 
@@ -55,7 +51,7 @@ ParTypeSymbol* get_type_symbols_to_instantiate(Any obj)
 SynType inst_par_type(ParTypeSymbol symb, SynParTypedef* par_tdefs)
 {
   arity := length(symb.params);
-  //## BUG BUG CAN THIS POSSIBLY FAIL?
+  //## BUG BUG: CAN THIS POSSIBLY FAIL?
   par_tdef := only_element({d : d <- par_tdefs ; d.name == symb.symbol, length(d.params) == arity});
   return replace TypeVar v in par_tdef.type with symb.params[index_first(v, par_tdef.params)] end;
 }

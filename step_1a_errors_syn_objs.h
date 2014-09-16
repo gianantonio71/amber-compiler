@@ -159,17 +159,18 @@ using
     
     select_expr()       = type_wf_errors(expr.type) & expr_wf_errors(expr.src_expr, def_vars),
     
-    retrieve_expr()     = { vs   := def_vars & syn_new_vars(expr.ptrn);
-                            errs := ptrn_wf_errors(expr.ptrn, def_vars);
-                            errs := errs & expr_wf_errors(expr.src_expr, def_vars);
-                            errs := errs & expr_wf_errors(expr.expr, vs);
-                            errs := errs & expr_wf_errors(expr.cond, vs) if expr.cond?;
-                            return errs;
-                          },
+    // retrieve_expr()     = { vs   := def_vars & syn_new_vars(expr.ptrn);
+    //                         errs := ptrn_wf_errors(expr.ptrn, def_vars);
+    //                         errs := errs & expr_wf_errors(expr.src_expr, def_vars);
+    //                         errs := errs & expr_wf_errors(expr.expr, vs);
+    //                         errs := errs & expr_wf_errors(expr.cond, vs) if expr.cond?;
+    //                         return errs;
+    //                       },
     
-    replace_expr()      = ptrn_wf_errors(expr.ptrn, def_vars) &
+    replace_expr()      = {:var_redef(expr.var) if in(expr.var, def_vars)} &
+                          type_wf_errors(expr.type) &
                           expr_wf_errors(expr.src_expr, def_vars) &
-                          expr_wf_errors(expr.src_expr, def_vars & syn_new_vars(expr.ptrn)),
+                          expr_wf_errors(expr.src_expr, def_vars & {expr.var}),
     
     is_expr()           = type_wf_errors(expr.type) & expr_wf_errors(expr.expr, def_vars),
     
@@ -325,7 +326,7 @@ using
     for (p : syn_case.patterns)
       pvs  := syn_new_vars(p);
       errs := errs & {:already_def_ptrn_var(v) : v <- intersection(pvs, vs)};
-      errs := errs & {:free_var_in_try_expr(p.name)} if p :: <ptrn_var(name: Var)>; //## BAD BAD
+      // errs := errs & {:free_var_in_try_expr(p.name)} if p :: <ptrn_var(name: Var)>; //## BAD BAD
       errs := errs & ptrn_wf_errors(p, {}); //## BAD BAD THIS WOULD GENERATE A WEIRD ERROR MESSAGE...
       vs   := vs & pvs;
     ;
@@ -345,30 +346,10 @@ using
     in_clause()         = ptrn_wf_errors(clause.ptrn, ext_vars) &
                           expr_wf_errors(clause.src, loc_vars & ext_vars),
 
-    //## IN AN EXCLUSION CLAUSE, CAN THE PATTERN HAVE FREE VARIABLES, APART FROM THE ANONYMOUS ONE?
-    //## HOW IS THE ANONYMOUS VAR (_) REPRESENTED, ANYWAY?
-
-    //not_in_clause(ptrn: Pattern, src: SynExpr)
-    not_in_clause()     = { ptrn_errs := ptrn_wf_errors(clause.ptrn, ext_vars);
-                            vs := syn_new_vars(clause.ptrn) - loc_vars;
-                            ptrn_errs := ptrn_errs & {:unbound_vars_in_excl_clause(vs)} if vs /= {};
-                            expr_errs := expr_wf_errors(clause.src, ext_vars);
-                            return ptrn_errs & expr_errs;
-                          },
-
     //map_in_clause(key_ptrn: Pattern, value_ptrn: Pattern, src: SynExpr)
     map_in_clause()     = ptrn_wf_errors(clause.key_ptrn, ext_vars)   &
                           ptrn_wf_errors(clause.value_ptrn, ext_vars) &
                           expr_wf_errors(clause.src, loc_vars & ext_vars),
-
-    //map_not_in_clause(key_ptrn: Pattern, value_ptrn: Pattern, src: SynExpr)
-    map_not_in_clause() = { ptrn_errs := ptrn_wf_errors(clause.key_ptrn, ext_vars) &
-                                         ptrn_wf_errors(clause.value_ptrn, ext_vars);
-                            vs := syn_new_vars(clause.key_ptrn) & syn_new_vars(clause.value_ptrn) - loc_vars;
-                            ptrn_errs := ptrn_errs & {:unbound_vars_in_excl_clause(vs)} if vs /= {};
-                            expr_errs := expr_wf_errors(clause.src, ext_vars);
-                            return ptrn_errs & expr_errs;
-                          },
 
     //eq_clause(var: Var, expr: SynExpr)
     eq_clause()         = expr_wf_errors(clause.expr, loc_vars & ext_vars) &
@@ -396,32 +377,32 @@ using
 
   //## loc_vars AND ext_vars SHOULD PROBABLY BE IMPLICIT VARS
 
-  SynObjErr* ptrn_wf_errors(Pattern ptrn, Var* ext_vars):
+  SynObjErr* ptrn_wf_errors(SynPtrn ptrn, Var* ext_vars):
+    :ptrn_symbol      = {},
+    :ptrn_integer     = {},
+    :ptrn_seq         = {},
+    :ptrn_set         = {},
+    :ptrn_map         = {},
+    :ptrn_tag_obj     = {},
+    :ptrn_any         = {},
+    ptrn_symbol()     = {},
+    ptrn_integer()    = {},
+    ptrn_tag_obj()    = {
+      errs := ptrn_wf_errors(ptrn.tag, ext_vars) & ptrn_wf_errors(ptrn.obj, ext_vars);
+      tag_vars := syn_new_vars(ptrn.tag);
+      obj_vars := syn_new_vars(ptrn.obj);
+      common_vars := intersection(tag_vars, obj_vars);
+      errs := errs & {:dupl_ptrn_vars(common_vars)} if common_vars /= {};
+      return errs;
+    },
+    ptrn_var()        = {
+      vs := syn_new_vars(ptrn.ptrn);
+      var_errs  := {:dupl_ptrn_vars({ptrn.name}) if in(ptrn.var, vs), :var_redef({ptrn.var}) if in(ptrn.var, ext_vars)};
+      ptrn_errs := ptrn_wf_errors(ptrn.ptrn, ext_vars);
 
-    :ptrn_any       = {},
-
-    obj_ptrn()      = {},
-
-    type_ptrn(type) = type_wf_errors(type),
-
-    ext_var_ptrn(v) = {:undef_bound_ptrn_var(v) if not in(v, ext_vars)},
-
-    var_ptrn()      = { vs := syn_new_vars(ptrn.ptrn);
-                        var_errs  := if in(ptrn.name, vs) then :dupl_ptrn_vars({ptrn.name}) else {} end;
-                        ptrn_errs := ptrn_wf_errors(ptrn.ptrn, ext_vars);
-                        return var_errs & ptrn_errs;
-                      },
-
-    //tag_ptrn(tag: <obj_ptrn(Symbol), var_ptrn(name: Var)>, obj: Pattern)
-    tag_ptrn()      = { errs := ptrn_wf_errors(ptrn.obj, ext_vars);
-                        tag_ptrn := ptrn.tag;
-                        if (tag_ptrn :: <var_ptrn(name: Var)>) //## BAD BAD BAD
-                          var := tag_ptrn.name;
-                          obj_vs := syn_new_vars(ptrn.obj);
-                          errs := errs & {:dupl_ptrn_vars({var})} if in(var, obj_vs);
-                        ;
-                        return errs;
-                      };
+      return var_errs & ptrn_errs;
+    },
+    ptrn_type(type)   = type_wf_errors(type);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

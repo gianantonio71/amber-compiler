@@ -2,16 +2,17 @@ type CCodeOutput = (body: [String*], header: [String*]);
 
 CCodeOutput compile_to_c(ProcDef* prg)
 {
-  tss := retrieve ts from memb_test(ts) in prg end;
+  // tss := retrieve ts from memb_test(ts) in prg end;
+  tss := {_obj_(mt) : mt <- select <memb_test(Any)> in prg end}; //## THE VERSION WITH RETRIEVE WAS LESS UGLY
 
-  btss := {ts : BasicTypeSymbol ts <- tss};
-  ptss := {ts : ParTypeSymbol ts <- tss};
+  btss := {ts : type_symbol()     ts <- tss};
+  ptss := {ts : par_type_symbol() ts <- tss};
 
   btss := rand_sort(btss);
   ptss := rand_sort(ptss);
 
-  bool_proc_defs := rand_sort({p : BoolProcDef p <- prg});
-  obj_proc_defs  := rand_sort({p : ObjProcDef  p <- prg});
+  bool_proc_defs := rand_sort({p : bool_proc_def() p <- prg});
+  obj_proc_defs  := rand_sort({p : obj_proc_def()  p <- prg});
 
   symbs := select SymbObj in prg end & {obj_true, obj_false, :object(:string)};
   symbs := sort_set(symbs; is_strictly_ordered(s1, s2) = s1 < s2);
@@ -161,16 +162,16 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     return ret_type_str(pd) & to_c_fn_name(pd.name) & "(" & par_list & ");";
     
     Nat arity(ProcDef pd):
-      ObjProcDef    = pd.in_arity,
-      BoolProcDef   = pd.arity;
+      obj_proc_def()    = pd.in_arity,
+      bool_proc_def()   = pd.arity;
     
     String ret_type_str(ProcDef):
-      ObjProcDef    = "Obj ",
-      BoolProcDef   = "bool ";
+      obj_proc_def()    = "Obj ",
+      bool_proc_def()   = "bool ";
     
     [String*] extra_params(ProcDef):
-      ObjProcDef    = ["Env &"],
-      BoolProcDef   = [];
+      obj_proc_def()    = ["Env &"],
+      bool_proc_def()   = [];
   }
 
   String gen_c_decl(ClsDef cd, Nat id)
@@ -207,16 +208,16 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
     
     Nat arity(ProcDef pd):
-      ObjProcDef    = pd.in_arity,
-      BoolProcDef   = pd.arity;
+      obj_proc_def()    = pd.in_arity,
+      bool_proc_def()   = pd.arity;
     
     String ret_type_str(ProcDef):
-      ObjProcDef    = "Obj ",
-      BoolProcDef   = "bool ";
+      obj_proc_def()    = "Obj ",
+      bool_proc_def()   = "bool ";
 
     [String*] extra_params(ProcDef):
-      ObjProcDef    = ["Env &env"],
-      BoolProcDef   = [];
+      obj_proc_def()    = ["Env &env"],
+      bool_proc_def()   = [];
   }
 
   //## DUPLICATED CODE

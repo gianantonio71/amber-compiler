@@ -131,9 +131,8 @@ TypeSymbol** type_clusters_to_expand((TypeSymbol => UserType) types, TypeSymbol*
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-
 AnonType replace_type_refs(UserType type, (TypeSymbol => UserType) in_progress_type_map, (TypeSymbol => AnonType) subst_map, (TypeSymbol => SelfPretype) rec_subst_map) =
-  normalize_type_unions(replace type_ref(ts) in type with replace_type_ref(ts, in_progress_type_map, subst_map, rec_subst_map) end);
+  normalize_type_unions(replace TypeRef tr in type with replace_type_ref(_obj_(tr), in_progress_type_map, subst_map, rec_subst_map) end);
 
 
 AnonType replace_type_ref(TypeSymbol target_type_symbol, (TypeSymbol => UserType) in_progress_type_map, (TypeSymbol => AnonType) subst_map, (TypeSymbol => SelfPretype) rec_subst_map)
@@ -153,7 +152,8 @@ AnonType replace_type_ref(TypeSymbol target_type_symbol, (TypeSymbol => UserType
 }
 
 
-TypeSymbol* ref_type_symbols(type) = retrieve ts from type_ref(ts) in type end;
+// TypeSymbol* ref_type_symbols(type) = retrieve ts from type_ref(ts) in type end;
+TypeSymbol* ref_type_symbols(type) = {_obj_(r) : r <- select TypeRef in type end};
 
 
 AnonType normalize_type_unions(AnonType type):

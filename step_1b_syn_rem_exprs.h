@@ -2,9 +2,10 @@
 
 using
 {
-  <named_par(Atom)>* named_params,
-  BasicUntypedSgn*   local_fns,
-  FnSymbol           curr_outer_fn;
+  <named_par(Atom)>*      named_params,
+  BasicUntypedSgn*        local_fns,
+  FnSymbol                curr_outer_fn,
+  (TypeName => AnonType)  typedefs;
 
 
   Expr desugar_expr(SynExpr expr, Var* def_vars):
@@ -158,48 +159,26 @@ using
                         return res;
                       },
 
-//               match_expr(exprs: [SynExpr+], cases: [SynCase+]),
-
     match_expr()    = { n  := length(expr.cases[0].patterns);
                         es := [desugar_expr(e, def_vars) : e <- subseq(expr.exprs, 0, n)];
-                        cs := [{ vs := def_vars & seq_union([new_vars(p) : p <- c.patterns]);
-                                 return (ptrns: c.patterns, expr: desugar_expr(c.expr, vs));
+                        cs := [{ ps := [desugar_ptrn(p) : p <- c.patterns];
+                                 vs := def_vars & seq_union([new_vars(p) : p <- ps]);
+                                 return (ptrns: ps, expr: desugar_expr(c.expr, vs));
                                } : c <- expr.cases];
                         return match_expr(exprs: es, cases: cs);
                       },
 
     do_expr(ss)     = :do_expr(desugar_stmts(ss, def_vars)), //##  IMPLEMENT
 
-    select_expr()   = { var  := first_unused_int_var(def_vars);
-                        ptrn := var_ptrn(name: var, ptrn: :type_ptrn(expr.type));
-                        src  := desugar_expr(expr.src_expr, def_vars);
-                        return select_expr(expr: var, ptrn: ptrn, src_expr: src);
-                      },
+    select_expr()   = select_expr(type: expr.type, src_expr: desugar_expr(expr.src_expr, def_vars)),
     
-    retrieve_expr() = { vs    := def_vars & new_vars(expr.ptrn);
-                        res   := desugar_expr(expr.expr, vs);
-                        ptrn  := expr.ptrn;
-                        src   := desugar_expr(expr.src_expr, def_vars);
-                        tuple := (expr: res, ptrn: ptrn, src_expr: src);
-                        tuple := tuple & (desugar_expr(expr.cond, vs)) if expr.cond?;
-                        return :select_expr(tuple);
-                      },
-
     replace_expr()  = replace_expr(
-                        expr:     desugar_expr(expr.expr, def_vars & new_vars(expr.ptrn)),
+                        expr:     desugar_expr(expr.expr, def_vars & {expr.var}),
                         src_expr: desugar_expr(expr.src_expr, def_vars),
-                        ptrn:     expr.ptrn
+                        type:     expr.type,
+                        var:      expr.var
                       ),
     
-    //where_expr()    = { fds  := for (fd <- set(expr.fndefs)) {{
-    //                              params := [p.var : p <- fd.params];
-    //                              all_vs := def_vars & set(params);
-    //                              body   := desugar_expr(fd.expr, all_vs);
-    //                              return (name: fd.name, vars: params, body: body);                                    
-    //                            }};
-    //                    return where_expr(expr: desugar_expr(expr.expr, def_vars), fndefs: fds);
-    //                  },
-
     let_expr()      = :do_expr(desugar_stmts(expr.stmts & [:return_stmt(expr.expr)], def_vars));
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -243,43 +222,32 @@ using
   }
 
   //## REMEMBER TO CHECK THAT ALL VAR_PTRN() WITH A "BOUND" VARIABLE
-  //## DON'T HAVE A PATTERN ASSOCIATED WITH THT VARIABLE
+  //## DON'T HAVE A PATTERN ASSOCIATED WITH THAT VARIABLE
   
   //## THIS IS A HACK TO GET AROUND A BUG IN THE REPLACE COMMAND IN THE INTERPRETER
-  Pattern replace_bound_vars(Pattern ptrn, Var* def_vars) =
-    replace var_ptrn() p in ptrn with
-      if in(p.name, def_vars) then :ext_var_ptrn(p.name) else p end
-    end;
+  // Pattern replace_bound_vars(Pattern ptrn, Var* def_vars) =
+  //   replace var_ptrn() p in ptrn with
+  //     if in(p.name, def_vars) then :ext_var_ptrn(p.name) else p end
+  //   end;
     
 
   Clause desugar_clause(SynClause clause, Var* def_vars):
 
     in_clause()         = in_clause(
-                            ptrn: replace_bound_vars(clause.ptrn, def_vars),
+                            ptrn: desugar_ptrn(clause.ptrn),
                             src:  desugar_expr(clause.src, def_vars)
                           ),
                       
-    not_in_clause()     = not_in_clause(
-                            ptrn: replace_bound_vars(clause.ptrn, def_vars),
-                            src:  desugar_expr(clause.src, def_vars)
-                          ),
-
     map_in_clause()     = map_in_clause(
-                            key_ptrn:   replace_bound_vars(clause.key_ptrn, def_vars),
-                            value_ptrn: replace_bound_vars(clause.value_ptrn, def_vars),
-                            src:        desugar_expr(clause.src, def_vars)
-                          ),
-    
-    map_not_in_clause() = map_not_in_clause(
-                            key_ptrn:   replace_bound_vars(clause.key_ptrn, def_vars),
-                            value_ptrn: replace_bound_vars(clause.value_ptrn, def_vars),
+                            key_ptrn:   desugar_ptrn(clause.key_ptrn),
+                            value_ptrn: desugar_ptrn(clause.value_ptrn),
                             src:        desugar_expr(clause.src, def_vars)
                           ),
     
     eq_clause()         = { assert not in(clause.var, def_vars);
                             
                             return in_clause(
-                                     ptrn: var_ptrn(name: clause.var, ptrn: :ptrn_any),
+                                     ptrn: ptrn_var(clause.var, ptrn_any),
                                      src:  :set_expr({desugar_expr(clause.expr, def_vars)})
                                    );
                           },
@@ -397,6 +365,25 @@ using
       return res[0]; //## BAD BAD BAD
     };
 
+  ////////////////////////////////////////////////////////////////////////////////
+
+  Pattern desugar_ptrn(SynPtrn ptrn):
+    :ptrn_seq             = ptrn_seq,
+    :ptrn_set             = ptrn_set,
+    :ptrn_map             = ptrn_map,
+    ptrn_integer(int_obj) = ptrn_integer(int_obj),
+    ptrn_tag_obj()        = ptrn_tag_obj(ptrn.tag, desugar_ptrn(ptrn.obj)),
+    ptrn_var()            = ptrn_var(ptrn.var, desugar_ptrn(ptrn.ptrn)),
+    ptrn_type(type)       = {
+      if (not user_type_can_be_converted_into_pattern(type, typedefs))
+        print type;
+        assert type /= :type_ref(:type_symbol(:set));
+      ;
+      return user_type_to_pattern(type, typedefs);
+    },
+    _                     = ptrn;
+
+  ////////////////////////////////////////////////////////////////////////////////
 
   //## FIND BETTER NAME
   (<named_par(Atom)> => ExtExpr) syn_fn_defs_to_named_params([SynFnDef*] fds, Var* def_vars) =
@@ -410,5 +397,3 @@ using
     return expr;
   }
 }
-
-

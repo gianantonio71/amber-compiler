@@ -81,4 +81,40 @@ FnType fn_type([ExtType*] ps, (<named_par(Atom)> => ExtType) nps, AnonType rt) =
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Var fn_par(Nat n)      = :fn_par(n);
+Pattern ptrn_symbol                             = :ptrn_symbol;
+Pattern ptrn_integer                            = :ptrn_integer;
+
+Pattern ptrn_empty_set                          = :ptrn_empty_set;
+Pattern ptrn_ne_set                             = :ptrn_ne_set;
+Pattern ptrn_empty_seq                          = :ptrn_empty_seq;
+Pattern ptrn_ne_seq                             = :ptrn_ne_seq;
+Pattern ptrn_empty_map                          = :ptrn_empty_map;
+Pattern ptrn_ne_map                             = :ptrn_ne_map;
+
+Pattern ptrn_seq                                = ptrn_union({ptrn_empty_seq, ptrn_ne_seq});
+Pattern ptrn_set                                = ptrn_union({ptrn_empty_set, ptrn_ne_set});
+Pattern ptrn_map                                = ptrn_union({ptrn_empty_map, ptrn_ne_map});
+
+Pattern ptrn_tag_obj                            = :ptrn_tag_obj;
+Pattern ptrn_any                                = :ptrn_any;
+Pattern ptrn_symbol(Atom a)                     = :ptrn_symbol(:object(a));
+Pattern ptrn_symbol(SymbObj s)                  = :ptrn_symbol(s);
+Pattern ptrn_integer(Int n)                     = ptrn_integer(int_range(n, n));
+Pattern ptrn_integer(IntObj n)                  = ptrn_integer(_obj_(n));
+Pattern ptrn_integer(IntType type)              = :ptrn_integer(type);
+Pattern ptrn_tag_obj(TagPtrn tag, Pattern obj)  = ptrn_tag_obj(tag: tag, obj: obj);
+Pattern ptrn_var(Var v, Pattern p)              = ptrn_var(var: v, ptrn: p);
+Pattern ptrn_union(Pattern+ ps)                 = :ptrn_union(ps);
+
+////////////////////////////////////////////////////////////////////////////////
+
+FnSymbol fn_symbol(Atom a) = :fn_symbol(a);
+
+Var fn_par(Nat n)     = :fn_par(n);
+Var named_par(Atom a) = :named_par(a);
+
+Expr fn_call(FnSymbol name, [ExtExpr*] params, (<named_par(Atom)> => ExtExpr) named_params) = fn_call(name: name, params: params, named_params: named_params);
+Expr membership(Expr obj, UserType type) = membership(obj: obj, type: type);
+Expr if_expr(Expr cond, Expr true_expr, Expr false_expr) = if_expr(cond: cond, then: true_expr, else: false_expr);
+
+ClsExpr cls_expr([<var(Atom), nil>+] params, Expr expr) = cls_expr(params: params, expr: expr);

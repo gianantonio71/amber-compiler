@@ -65,15 +65,22 @@ Int op_+(Int a, Int b)  = _add_(a, b);
 
 Int op_-(Int a, Int b) = a + -b;
 
-Int op_*(Int a, Int b):
-  [0..0]  = 0,
-  [1..*]  = (a-1) * b + b,
-  [*..-1] = -(-a * b);
+Int op_*(Int a, Int b) = if a == 0      then 0,
+                            a :: [1..*] then (a-1) * b + b
+                                        else -(-a * b);
+                         ;
 
-Bool op_<(Int a, Int b):
-  [0..0], [1..*]  = true,
-  [0..0], _       = false,
-  _, _            = 0 < b - a;
+Bool op_<(Int a, Int b) = (b - a) :: [1..*];
+
+// Int op_*(Int a, Int b):
+//   [0..0]  = 0,
+//   [1..*]  = (a-1) * b + b,
+//   [*..-1] = -(-a * b);
+
+// Bool op_<(Int a, Int b):
+//   [0..0], [1..*]  = true,
+//   [0..0], _       = false,
+//   _, _            = 0 < b - a;
 
 Bool op_>(Int a, Int b) = b < a;
 Bool op_>=(Int a, Int b) = a > b or a == b;
@@ -271,7 +278,7 @@ Bool in(Any x, Set s) = (? e <- s : e == x);
 
 T* union(T* s1, T* s2)         = {e : e <- s1 \/ e <- s2};
 T* intersection(T* s1, T* s2)  = {e : e <- s1, e <- s2};
-T* difference(T* s1, T* s2)    = {e : e <- s1, e </- s2};
+T* difference(T* s1, T* s2)    = {e : e <- s1 ; not in(e, s2)};
 
 T* op_&(T* s1, T* s2) = union(s1, s2);
 T* op_-(T* s1, T* s2) = difference(s1, s2);
@@ -341,40 +348,6 @@ T only_element_or_def_if_empty(T* set, T default)
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
-//#### Nat instances(Any e, [Any -> NzNat] m) = only_element_or_def_if_empty({n : [!e, n] <- m}, 0);
-
-//Nat instances((Any e), [Any -> NzNat]):
-//  [e -> n, ...]  = n,
-//  _              = 0
-//;
-
-//#### [T -> NzNat] op_&([T -> NzNat] ms1, [T -> NzNat] ms2) = [e -> n :
-//####                                                                 ([e, m] <- ms1, n = m + instances(e, ms2)) \/
-//####                                                                 ([e, n] <- ms2, [e, _] </- ms1)
-//####                                                         ];
-
-//#### [T -> NzNat] op_-([T -> NzNat] ms1, [T -> NzNat] ms2) = [e -> n : [e, m] <- ms1,
-//####                                                                   n = m - instances(e, ms2);
-//####                                                                   n > 0
-//####                                                         ];
-
-//[T -> NzNat] multiset_union([T -> NzNat]*):
-//  {}         = [->],
-//  {s}        = s,
-//  {s1 | s2}  = multiset_union(s1) & multiset_union(s2)
-//;
-
-//#### using [T1, T2]
-//####   f(T1) -> T2;
-//#### 
-//#### def
-//####   [T2 -> NzNat] apply(T1* s):
-//####     {}         = [->],
-//####     {e}        = [f(e) -> 1],
-//####     {s1 | s2}  = apply(s1) & apply(s2);
-//#### end
-//#### 
-
 T* seq_union([(T*)*] sets) = union(set(sets));
 
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -383,7 +356,7 @@ T2 op_[]((T1 => T2) map, T1 key) = only_element({v : k => v <- map ; k == key});
  
 T2 lookup((T1 => T2) map, T1 key, T2 default) = only_element_or_def_if_empty({v : k => v <- map ; k == key}, default);
 
-(T1 => T2) update((T1 => T2) map, (T1 => T2) diffs) = (k => v : (k => v <- map, k => _ </- diffs) \/ k => v <- diffs);
+(T1 => T2) update((T1 => T2) map, (T1 => T2) diffs) = (k => map[k] : k <- keys(map) - keys(diffs)) & diffs;
 
 Nat size((Any => Any) map) = size(keys(map));
 
@@ -515,32 +488,36 @@ untag(x): tag @ obj = obj;
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
-using Bool condition(Any), Any eval(Any)
+using Bool condition(Any)
 {
   Any* select_expr_fn(Any obj)
   {
-    return {eval(obj)} if condition(obj);
+    return {obj} if condition(obj);
     
     return match (obj)
-             Atom       = {},
-             Int        = {}, //## BAD
-             Set        = union({select_expr_fn(x) : x <- obj}),
-             Seq        = union({select_expr_fn(x) : x <- set(obj)}),
-             Map        = union({select_expr_fn(k) & select_expr_fn(v) : k => v <- obj}),
+             +          = {},
+             *          = {},
+             {...}      = union({select_expr_fn(x) : x <- obj}),
+             [...]      = union({select_expr_fn(x) : x <- set(obj)}),
+             (...)      = union({select_expr_fn(k) & select_expr_fn(v) : k => v <- obj}),
              tag @ iobj = select_expr_fn(iobj); //## SHOULD I EXTEND THE SEARCH TO THE TAG AS WELL?
            ;
   }
+}
 
+
+using Bool condition(Any), Any eval(Any)
+{
   Any replace_expr_fn(Any obj)
   {
     return eval(obj) if condition(obj);
     
     return match (obj)
-             Atom       = obj,
-             Int        = obj, //## BAD
-             Set        = {replace_expr_fn(x) : x <- obj},
-             Seq        = [replace_expr_fn(x) : x <- obj],
-             Map        = (replace_expr_fn(k) => replace_expr_fn(v) : k => v <- obj),
+             +          = obj,
+             *          = obj, //## BAD
+             {...}      = {replace_expr_fn(x) : x <- obj},
+             [...]      = [replace_expr_fn(x) : x <- obj],
+             (...)      = (replace_expr_fn(k) => replace_expr_fn(v) : k => v <- obj),
              tag @ iobj = tag @ replace_expr_fn(iobj); //## SHOULD I EXTEND THE REPLACEMENT TO THE TAG AS WELL?
            ;
   }
@@ -621,18 +598,20 @@ String to_text(Any obj)
   return to_txt(obj);
 
   String to_txt(Any obj):
-    Atom      = _str_(obj),
-    Int       = to_str(obj),
-    String    = "\"" & quote(obj) & "\"",
-    Seq       = "[" & append(intermix([to_txt(x) : x <- obj], ", ")) & "]",
-    Set       = "{" & append(intermix([to_txt(x) : x <- rand_sort(obj)], ", ")) & "}",
-    Tuple     = to_txt(obj, ": "),
-    Map       = to_txt(obj, " => "),
-    tag @ inner_obj = {
-      str := to_txt(inner_obj);
-      str := "(" & str & ")" if not inner_obj :: Tuple;
-      return _str_(tag) & str;
-    };
+    +           = _str_(obj),
+    *           = to_str(obj),
+    string()    = if obj :: String then "\"" & quote(obj) & "\"" else to_txt(:string, _obj_(obj)) end,
+    [...]       = "[" & append(intermix([to_txt(x) : x <- obj], ", ")) & "]",
+    {...}       = "{" & append(intermix([to_txt(x) : x <- rand_sort(obj)], ", ")) & "}",
+    (...)       = to_txt(obj, if keys(obj) :: <Atom*> then ": " else " => " end),
+    tag @ iobj  = to_txt(tag,  iobj);
+
+  String to_txt(Atom tag, Any obj)
+  {
+    str := to_txt(obj);
+    str := "(" & str & ")" if not obj :: Tuple;
+    return _str_(tag) & str;
+  }
     
   String to_txt(Map map, String key_val_sep)
   {
@@ -1057,7 +1036,10 @@ ParseResult parse_obj([Token*] tokens)
 
     res := match (tokens[offset])
              symbol()                 = parse_tagged_obj_or_symbol(tokens, offset),
-             <Int, String, Char> obj  = (obj: obj, offset: offset+1),
+             // <Int, String, Char> obj  = (obj: obj, offset: offset+1),
+             Int obj                  = (obj: obj, offset: offset+1), //## SHOULD USE A PATTERN UNION HERE ONCE IT IS IMPLEMENTED
+             Char obj                 = (obj: obj, offset: offset+1),
+             string() obj             = (obj: obj, offset: offset+1),
              left(:brace)             = parse_set(tokens, offset),
              left(:parenthesis)       = parse_map_or_tuple(tokens, offset),
              left(:bracket)           = parse_seq(tokens, offset),

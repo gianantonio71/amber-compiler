@@ -33,19 +33,19 @@ type SynExpr = LeafObj,
                tag_obj_expr(tag: SynExpr, obj: SynExpr),
 
                Var,
-                    
+
                const_or_var(Atom), //## NOT SURE ATOM IS THE RIGHT THING HERE
-               
+
                fn_call(name: FnSymbol, params: [ExtSynExpr*], named_params: [SynFnDef*]), //## NEW
                builtin_call(name: BuiltIn, params: [SynExpr+]),
-               
+
                and(left: SynExpr, right: SynExpr),
                or(left: SynExpr, right: SynExpr),
                not(SynExpr),
-               
+
                eq(left: SynExpr, right: SynExpr),
                neq(left: SynExpr, right: SynExpr),
-               
+
                membership(obj: SynExpr, type: SynType),
                cast_expr(expr: SynExpr, type: SynType),
 
@@ -62,11 +62,8 @@ type SynExpr = LeafObj,
                do_expr([SynStmt+]),
 
                select_expr(type: SynType, src_expr: SynExpr),
-               retrieve_expr(expr: SynExpr, ptrn: SynPtrn, src_expr: SynExpr, cond: SynExpr?),
-               replace_expr(expr: SynExpr, src_expr: SynExpr, ptrn: SynPtrn),
+               replace_expr(expr: SynExpr, src_expr: SynExpr, type: SynType, var: Var),
 
-               //is_expr(expr: SynExpr, type: SynType),
-               //where_expr(expr: SynExpr, fndefs: [SynFnDef+]),
                let_expr(expr: SynExpr, stmts: [SynStmt+]);
 
 
@@ -80,18 +77,22 @@ type SynCondExpr  = cond_expr(expr: SynExpr, cond: SynExpr);
 type SynSubExpr   = SynExpr, SynCondExpr;
 
 
-type SynPtrn      = ptrn_any,
-                    obj_ptrn(LeafObj),
-                    type_ptrn(SynType),
-                    ext_var_ptrn(Var),
-                    var_ptrn(name: Var, ptrn: SynPtrn),
-                    tag_ptrn(tag: <obj_ptrn(SymbObj), var_ptrn(name: Var, ptrn: ptrn_any)>, obj: SynPtrn);
+type SynPtrn      = ptrn_symbol,
+                    ptrn_integer,
+                    ptrn_seq,
+                    ptrn_set,
+                    ptrn_map,
+                    ptrn_tag_obj,
+                    ptrn_any,
+                    ptrn_symbol(SymbObj),
+                    ptrn_integer(IntObj),
+                    ptrn_tag_obj(tag: TagPtrn, obj: SynPtrn),
+                    ptrn_var(var: Var, ptrn: SynPtrn),
+                    ptrn_type(SynType);
 
 
 type SynClause    = in_clause(ptrn: SynPtrn, src: SynExpr),
-                    not_in_clause(ptrn: SynPtrn, src: SynExpr),
                     map_in_clause(key_ptrn: SynPtrn, value_ptrn: SynPtrn, src: SynExpr),
-                    map_not_in_clause(key_ptrn: SynPtrn, value_ptrn: SynPtrn, src: SynExpr),
                     eq_clause(var: Var, expr: SynExpr),
                     and_clause([SynClause+]),
                     or_clause(left: SynClause, right: SynClause);

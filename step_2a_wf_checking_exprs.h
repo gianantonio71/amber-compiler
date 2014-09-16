@@ -2,41 +2,35 @@
 
 using
 {
-  (TypeSymbol => UserType)  typedefs,
+  (TypeName => AnonType)    typedefs,
+  (TypeSymbol => UserType)  user_typedefs,
   TypeVar*                  type_vars,
   FnDef*                    fns_in_scope,
-  //Var*                      scalar_vars,
   (Var => NzNat)            cls_vars;
 
 
-  Tautology expr_is_wf(Expr expr, Var* scalar_vars)
+  True expr_is_wf(Expr expr, Var* scalar_vars)
   {
     return false if (? e <- ordinary_subexprs(expr) : not expr_is_wf(e, scalar_vars));
     gvs := scalar_vars & gen_vars(expr);
     return false if (? e <- special_subexprs(expr) : not expr_is_wf(e, gvs));
     return rest_is_wf(expr, scalar_vars);
     
-    rest_is_wf(expr, scalar_vars):
+    True rest_is_wf(Expr expr, Var* scalar_vars):
       Var              = in(expr, scalar_vars),
       fn_call()        = fn_call_is_wf(expr, fns_in_scope, scalar_vars),
       cls_call()       = has_key(cls_vars, expr.name) and cls_vars[expr.name] == length(expr.params), //## SHOULDN'T IT VERIFY THAT THE ACTUAL PARAMETER EXPRESSIONS ARE WELL FORMED?
       builtin_call()   = arity_is_correct(expr.name, length(expr.params)),
-      membership()     = type_is_wf(expr.type, type_vars),
-      cast_expr()      = type_is_wf(expr.type, type_vars),
+      membership()     = user_type_is_wf(expr.type, type_vars),
+      cast_expr()      = user_type_is_wf(expr.type, type_vars),
       ex_qual()        = clause_is_wf(expr.source, scalar_vars),
       set_comp()       = clause_is_wf(expr.source, scalar_vars),
       map_comp()       = clause_is_wf(expr.source, scalar_vars),
       seq_comp()       = (not expr.idx_var? or expr.var /= expr.idx_var) and disjoint(gen_vars(expr), scalar_vars),
       match_expr()     = all([case_is_wf(c, scalar_vars, length(expr.exprs)) : c <- expr.cases]),
       do_expr(ss)      = stmts_are_wf(ss, scalar_vars),
-      select_expr()    = ptrn_is_wf(expr.ptrn, scalar_vars),
-      replace_expr()   = ptrn_is_wf(expr.ptrn, scalar_vars),
-      //where_expr()     = { gen_params := for (fd <- expr.fndefs) {
-      //                                     untyped_sgn(name: fd.name, arity: length(fd.vars))
-      //                                   };
-      //                     new_named_params := named_params & gen_params; //## BAD, IT'S NECESSARY BECAUSE OF A BUG OF THE INTERPRETER
-      //                     return expr_is_wf(expr.expr, scalar_vars; named_params = new_named_params);
-      //                   },
+      select_expr()    = user_type_is_wf(expr.type, type_vars),
+      replace_expr()   = user_type_is_wf(expr.type, type_vars) and not in(expr.var, scalar_vars),
       _                = true;
   }
 
@@ -47,11 +41,8 @@ using
     
     Bool could_match(Expr fn_call, FnDef fndef, Var* scalar_vars)     //## BAD BAD BAD THE FIRST PARAMETERS SHOULD BE OF A MORE SPECIFIC TYPE
     {
-      //print "could_match#1";
       return false if fn_call.name /= fndef.name;
-      //print "could_match#2";
       return false if length(fn_call.params) /= arity(fndef);
-      //print "could_match#3";
       
       for (i : indexes(fn_call.params))
         actual_par := fn_call.params[i];
@@ -59,24 +50,16 @@ using
         if (formal_par.type?)
           return false if arity(actual_par) /= arity(formal_par.type);
         else
-        //print "could_match#4";
           return false if arity(actual_par) /= 0;
         ;
-        //print "could_match#5";
       ;
       
       for (v : keys(fndef.named_params))
-        //print "could_match#6";
         par_arity := arity(fndef.named_params[v]);
-        //print "could_match#7";
         if (has_key(fn_call.named_params, v))
-          //print "could_match#8";
           return false if arity(fn_call.named_params[v]) /= par_arity;
-          //print "could_match#9";
         elif (has_key(cls_vars, v))
-          //print "could_match#10";
           return false if cls_vars[v] /= par_arity;
-          //print "could_match#11";
         elif (in(v, scalar_vars))
           return false if par_arity /= 0;
         else
@@ -88,18 +71,8 @@ using
     }
   }
 
-// fn_call(name: FnSymbol, params: [ExtExpr*], named_params: (<named_par(Atom)> => ExtExpr)), //## NEW BAD BAD
 
-//type FnDef      = fn_def(
-//                    name:         FnSymbol,
-//                    params:       [(var: var(Atom)?, type: UserExtType?)*], //## BAD BAD
-//                    named_params: (<named_par(Atom)> => UserExtType), //## NEW BAD BAD THIS DOESN'T ALLOW FOR IMPLICIT PARAMETER WITH THE SAME NAME BUT DIFFERENT ARITIES. ALSO THE TYPE IS TOO LOOSE. INCLUDE A CHECK IN THE WELL-FORMEDNESS CHECKING LAYER
-//                    res_type:     Type?,
-//                    expr:         Expr
-//                    //impl_env: Signature*,
-//                  );
-
-  Tautology case_is_wf(<(ptrns: [Pattern+], expr: Expr)> case, Var *scalar_vars, NzNat arg_count) //## UGLY UGLY
+  True case_is_wf(<(ptrns: [Pattern+], expr: Expr)> case, Var *scalar_vars, NzNat arg_count) //## UGLY UGLY
   {
     return false if length(case.ptrns) /= arg_count;
     
@@ -107,8 +80,10 @@ using
     
     for (p : case.ptrns)
       pvs := new_vars(p);
-      // Passing an empty ext env here allows for detection of bound variables.
-      return false if not disjoint(pvs, vs) or not ptrn_is_wf(p, {});
+      //## BUG: HERE WE ARE ONLY CHECKING SCALAR VARIABLES. WHAT ABOUT CLOSURES?
+      //## AND WHAT ABOUT NAMED PARAMETERS? THEY HAVE A DIFFERENT REPRESENTATION,
+      //## EVEN THOUGH THEY LOOK THE SAME TO THE USER. IS THAT A PROBLEM?
+      return false if not disjoint(pvs, vs);
       return false if p :: <var_ptrn(name: Var)>;  //## BAD BAD BAD
       vs  := vs & pvs;
     ;
@@ -118,87 +93,9 @@ using
 
   //////////////////////////////////////////////////////////////////////////////
 
-  //Tautology clause_is_wf(Clause clause, Var* ext_vars) = clause_is_wf(clause, ext_vars, {});
-  //
-  //Tautology clause_is_wf(Clause clause, Var* ext_vars, Var* loc_vars): //## BAD BAD BAD
+  True stmts_are_wf([Statement+] stmts, Var* scalar_vars) = stmts_are_wf(stmts, scalar_vars, false, true);
 
-  //  in_clause()         = ptrn_is_wf(clause.ptrn, ext_vars) and
-  //                        expr_is_wf(clause.src, ext_vars & loc_vars),
-
-  //  not_in_clause()     = ptrn_is_wf(clause.ptrn, ext_vars) and
-  //                        expr_is_wf(clause.src, ext_vars & loc_vars),
-  //                        //## WHAT WAS THIS FOR?
-  //                        //and disjoint(new_vars(clause.ptrn), vars_in_scope),
-
-  //  map_in_clause()     = ptrn_is_wf(clause.key_ptrn, ext_vars)   and
-  //                        ptrn_is_wf(clause.value_ptrn, ext_vars) and
-  //                        expr_is_wf(clause.src, ext_vars & loc_vars),
-  //  
-  //  map_not_in_clause() = ptrn_is_wf(clause.key_ptrn, ext_vars)   and
-  //                        ptrn_is_wf(clause.value_ptrn, ext_vars) and
-  //                        expr_is_wf(clause.src, ext_vars & loc_vars),
-  //                        //## WHAT WAS THIS FOR?
-  //                        //and disjoint(new_vars(clause.ptrn), vars_in_scope),
-
-  //  and_clause()        = clause_is_wf(clause.left, ext_vars, loc_vars) and
-  //                        clause_is_wf(clause.right, ext_vars, loc_vars & new_vars(clause.left)),
-
-  //  or_clause()         = clause_is_wf(clause.left, ext_vars, loc_vars) and
-  //                        clause_is_wf(clause.right, ext_vars, loc_vars);
-
-  Tautology clause_is_wf(Clause clause, Var* ext_vars):
-
-    in_clause()         = ptrn_is_wf(clause.ptrn, ext_vars) and
-                          expr_is_wf(clause.src, ext_vars),
-
-    not_in_clause()     = ptrn_is_wf(clause.ptrn, ext_vars) and
-                          expr_is_wf(clause.src, ext_vars),
-                          //## WHAT WAS THIS FOR?
-                          //and disjoint(new_vars(clause.ptrn), vars_in_scope),
-
-    map_in_clause()     = ptrn_is_wf(clause.key_ptrn, ext_vars)   and
-                          ptrn_is_wf(clause.value_ptrn, ext_vars) and
-                          expr_is_wf(clause.src, ext_vars),
-    
-    map_not_in_clause() = ptrn_is_wf(clause.key_ptrn, ext_vars)   and
-                          ptrn_is_wf(clause.value_ptrn, ext_vars) and
-                          expr_is_wf(clause.src, ext_vars),
-                          //## WHAT WAS THIS FOR?
-                          //and disjoint(new_vars(clause.ptrn), vars_in_scope),
-
-    and_clause()        = clause_is_wf(clause.left, ext_vars) and
-                          clause_is_wf(clause.right, ext_vars & new_vars(clause.left)),
-
-    or_clause()         = clause_is_wf(clause.left, ext_vars) and
-                          clause_is_wf(clause.right, ext_vars);
-
-  //////////////////////////////////////////////////////////////////////////////
-
-  Tautology ptrn_is_wf(Pattern ptrn, Var* ext_vars):
-
-    :ptrn_any         = true,
-    
-    obj_ptrn()        = true,
-
-    //## NOT SURE ABOUT TYPE VARS HERE. SHOULD I ALLOW THEM IN PATTERNS?
-    //## IN ANY CASE, I DON'T THINK THIS IS CHECKED AT LEVEL 1, SO FIX THAT
-    type_ptrn(t)      = type_is_wf(t, {}),
-
-    ext_var_ptrn(v)   = in(v, ext_vars),
-
-    var_ptrn()        = not in(ptrn.name, ext_vars) and not in(ptrn.name, new_vars(ptrn.ptrn)) and ptrn_is_wf(ptrn.ptrn, ext_vars),
-
-    tag_ptrn()        = { if (ptrn.tag :: <var_ptrn(Any)>) //## BAD BAD BAD
-                            return false if in(ptrn.tag.name, new_vars(ptrn.obj));
-                          ;
-                          return ptrn_is_wf(ptrn.obj, ext_vars);                        
-                        };
-
-  //////////////////////////////////////////////////////////////////////////////
-
-  Tautology stmts_are_wf([Statement+] stmts, Var* scalar_vars) = stmts_are_wf(stmts, scalar_vars, false, true);
-
-  Tautology stmts_are_wf([Statement+] stmts, Var* scalar_vars, Bool is_inside_loop, Bool needs_return)
+  True stmts_are_wf([Statement+] stmts, Var* scalar_vars, Bool is_inside_loop, Bool needs_return)
   {
     vs        := scalar_vars;
     reachable := true;
@@ -213,9 +110,9 @@ using
   }
 
   
-  Tautology stmt_is_wf(Statement stmt, Var* scalar_vars, Bool is_inside_loop):
+  True stmt_is_wf(Statement stmt, Var* scalar_vars, Bool is_inside_loop):
 
-    assignment_stmt() = expr_is_wf(stmt.value, scalar_vars), // and (not stmt.type? or type_is_wf(stmt.type)),
+    assignment_stmt() = expr_is_wf(stmt.value, scalar_vars), // and (not stmt.type? or user_type_is_wf(stmt.type)),
     
     return_stmt(e)    = expr_is_wf(e, scalar_vars),
     
@@ -234,14 +131,12 @@ using
     let_stmt()        = not (? _ => e <- stmt.asgnms : not expr_is_wf(e, scalar_vars)) and
                         stmts_are_wf(
                           stmt.body,
-                          scalar_vars & {v : v => Expr e <- stmt.asgnms},
+                          scalar_vars & keys(stmt.asgnms),
                           is_inside_loop,
                           false;
                           //## HUGE BUG HERE BUG BUG BUG
-                          cls_vars = cls_vars & (v => length(e.params) : v => ClsExpr e <- stmt.asgnms) //## BAD BAD BUG WHAT HAPPENS IF THE LET STATEMENT REDEFINE A NAMED PARAM CHANGING ITS ARITY?
+                          cls_vars = cls_vars & (v => length(e.params) : v => cls_expr() e <- stmt.asgnms) //## BAD BAD BUG WHAT HAPPENS IF THE LET STATEMENT REDEFINE A NAMED PARAM CHANGING ITS ARITY?
                         ),
-
-//                  let_stmt(asgnms: (<var(Atom)> => ExtExpr), body: [Statement+]), //## NEW BAD BAD
 
                         //## THERE MUST BE A WAY OUT, A BREAK OR A RETURN
     loop_stmt(ss)     = stmts_are_wf(ss, scalar_vars, true, false),
@@ -258,4 +153,40 @@ using
                         expr_is_wf(stmt.start_val, scalar_vars)  and
                         expr_is_wf(stmt.end_val, scalar_vars)    and
                         stmts_are_wf(stmt.body, scalar_vars & {stmt.var}, true, false);
+
+//////////////////////////////////////////////////////////////////////////////
+
+True clause_is_wf(Clause clause, Var* ext_vars) = clause_is_wf(clause, ext_vars, {});
+
+True clause_is_wf(Clause clause, Var* ext_vars, Var* loc_vars):
+
+  in_clause()         = ptrn_is_wf(clause.ptrn, ext_vars, loc_vars) and
+                        expr_is_wf(clause.src, ext_vars & loc_vars),
+
+  map_in_clause()     = ptrn_is_wf(clause.key_ptrn, ext_vars, loc_vars)   and
+                        ptrn_is_wf(clause.value_ptrn, ext_vars, loc_vars) and
+                        expr_is_wf(clause.src, ext_vars & loc_vars),
+
+  and_clause()        = clause_is_wf(clause.left, ext_vars, loc_vars) and
+                        clause_is_wf(clause.right, ext_vars, loc_vars & new_vars(clause.left)),
+
+  or_clause()         = clause_is_wf(clause.left, ext_vars, loc_vars) and
+                        clause_is_wf(clause.right, ext_vars, loc_vars);
+
+//////////////////////////////////////////////////////////////////////////////
+
+True ptrn_is_wf(Pattern ptrn, Var* ext_vars, Var* loc_vars) = ptrn_is_wf(ptrn, ext_vars, loc_vars, ptrn_any);
+
+True ptrn_is_wf(Pattern ptrn, Var* ext_vars, Var* loc_vars, Pattern bound_vars_ptrn):
+
+  ptrn_tag_obj()  = ptrn_is_wf(ptrn.tag, ext_vars, loc_vars, ptrn_symbol) and
+                    ptrn_is_wf(ptrn.obj, ext_vars, loc_vars, bound_vars_ptrn),
+
+  ptrn_var()      = ptrn_is_wf(ptrn.ptrn, ext_vars, loc_vars, bound_vars_ptrn) and
+                    not in(ptrn.var, ext_vars) and not in(ptrn.var, new_vars(ptrn.ptrn)) and
+                    (not in(ptrn.var, loc_vars) or ptrn.ptrn == bound_vars_ptrn), //## THIS IS NOT CHECKED IN STAGE 1
+
+  ptrn_union(ps)  = not (? p <- ps : not ptrn_is_wf(p, ext_vars, loc_vars, bound_vars_ptrn)),
+
+  _               = true;
 }

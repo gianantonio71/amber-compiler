@@ -171,7 +171,7 @@ using
 
   [SubExpr*] sort_exprs_first(SubExpr* exprs)
   {
-    pure_exprs := {e : Expr e <- exprs};
+    pure_exprs := {e : e <- exprs ; e :: Expr};
     cond_exprs := exprs - pure_exprs;
     return rand_sort(pure_exprs) & rand_sort(cond_exprs);
   }
@@ -179,7 +179,10 @@ using
 
   [Instr*] gen_eval_code(BuiltIn name, [AtomicExpr*] params, ObjVar res_var)
   {
-    return [gen_eval_instr(name, params, res_var)];
+    return match (name)
+             :obj   = [set_var(res_var, get_inner_obj(params[0])), add_ref(res_var)],
+             _      = [gen_eval_instr(name, params, res_var)];
+           ;
 
     Instr gen_eval_instr(BuiltIn name, [AtomicExpr*] ps, ObjVar res_var):
       :slice        = get_seq_slice(res_var, ps[0], get_int_val(ps[1]), get_int_val(ps[2])),
@@ -193,13 +196,17 @@ using
       _             = set_var(res_var, gen_eval_expr(name, ps));
     
     ObjExpr gen_eval_expr(BuiltIn name, [AtomicExpr*] ps):
-      :str      = to_str(ps[0]),
-      :symb     = to_symb(ps[0]),
-      :neg      = to_obj(minus(get_int_val(ps[0]))),
-      :add      = to_obj(add(get_int_val(ps[0]), get_int_val(ps[1]))),
-      :mult     = to_obj(mult(get_int_val(ps[0]), get_int_val(ps[1]))),
-      :counter  = to_obj(unique_int),
-      :len      = to_obj(get_seq_len(ps[0]));
+      :str        = to_str(ps[0]),
+      :symb       = to_symb(ps[0]),
+      :neg        = to_obj(minus(get_int_val(ps[0]))),
+      :add        = to_obj(add(get_int_val(ps[0]), get_int_val(ps[1]))),
+      :mult       = to_obj(mult(get_int_val(ps[0]), get_int_val(ps[1]))),
+      :counter    = to_obj(unique_int),
+      :len        = to_obj(get_seq_len(ps[0])),
+      :tag        = get_tag(ps[0]);
+      // :rand_nat   =
+      // :rand_elem  =
+      // :counter    =
   }
   
   
@@ -435,14 +442,20 @@ using
           for (p, i : reverse(c.ptrns))
             // No need for now to set next_bool_var_id as it's not used
             // by gen_ptrn_matching_code
-            case_code := gen_ptrn_matching_code(p, rev_at(info.exprs, i), tmp_bvar) &
+            case_code := gen_ptrn_matching_code(p, rev_at(info.exprs, i), tmp_bvar, {}) &
                          [do_if(tmp_bvar, case_code)];
           ;
+// print "@@@@@@@@@";
+// print case_code;
+
         ;
         code := case_code & code;
       ;
       code := [execute_block(code)];
-      
+
+// print "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@";
+// print info.eval_code & code & info.cleanup_code;
+
       return info.eval_code & code & info.cleanup_code;
     },
 
@@ -452,7 +465,7 @@ using
       action := set_found_var_and_leave(res_var);
       action := action(expr.sel_expr, action) if expr.sel_expr?;
       
-      code := gen_iter_code(expr.source, action);
+      code := gen_iter_code(expr.source, {}, action);
       
       return [set_var(res_var, obj_false), execute_block(code)];
     },
@@ -465,7 +478,7 @@ using
       action := eval_expr_and_add_to_set(expr.expr, strm_var);
       action := action(expr.sel_expr, action) if expr.sel_expr?;
       
-      code := gen_iter_code(expr.source, action; next_stream_var_id = next_stream_var_id + 1);
+      code := gen_iter_code(expr.source, {}, action; next_stream_var_id = next_stream_var_id + 1);
       
       return [init_stream(strm_var)] & code & [mk_set_from_stream(res_var, strm_var)];
     },
@@ -479,7 +492,7 @@ using
       action := eval_exprs_and_add_to_map(expr.key_expr, expr.value_expr, key_strm_var, value_strm_var);
       action := action(expr.sel_expr, action) if expr.sel_expr?;
       
-      code := gen_iter_code(expr.source, action; next_stream_var_id = next_stream_var_id + 2);
+      code := gen_iter_code(expr.source, {}, action; next_stream_var_id = next_stream_var_id + 2);
 
       return [init_stream(key_strm_var), init_stream(value_strm_var)] & code &
              [mk_map_from_streams(res_var, key_strm_var, value_strm_var)];
@@ -804,6 +817,34 @@ using
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
+Expr simplify(Expr expr)
+{
+  return match (expr)
+           select_expr()  = make_sel_expr(expr.src_expr, expr.type),
+           replace_expr() = make_repl_expr(expr.src_expr, expr.type, expr.var, expr.expr);
+         ;
+
+  Expr make_sel_expr(Expr src_expr, UserType type)
+  {
+    cond_expr := if_expr(membership(fn_par(0), type), obj_true, obj_false);
+    cond_cls  := cls_expr([nil], cond_expr);  //## FIX THIS
+    named_ps  := (named_par(:condition) => cond_cls);
+    return fn_call(fn_symbol(:select_expr_fn), [src_expr], named_ps);
+  }
+
+  Expr make_repl_expr(Expr src_expr, UserType type, <var(Atom)> var, Expr res_expr)
+  {
+    cond_expr := if_expr(membership(fn_par(0), type), obj_true, obj_false);
+    cond_cls  := cls_expr([nil], cond_expr);  //## FIX THIS
+    eval_cls  := cls_expr([var], res_expr);
+    named_ps  := (named_par(:condition) => cond_cls, named_par(:eval) => eval_cls);
+    return fn_call(fn_symbol(:replace_expr_fn), [src_expr], named_ps);
+  }
+}
+
+
+// ClsExpr cls_expr([<var(Atom), nil>+] params, Expr expr) = cls_expr(params: params, expr: expr);
+
 // select_expr(expr: Expr, ptrn: Pattern, src_expr: Expr, cond: Expr?),
 // replace_expr(expr: Expr, src_expr: Expr, ptrn: Pattern);
 
@@ -811,49 +852,43 @@ using
 
 // type ClsExpr  = cls_expr(params: [<var(Atom)>+], expr: Expr);
 
-Expr simplify(Expr expr)
-{
-  return make(expr);
-  
-  Expr make(Expr expr):
-    select_expr()   = make(
-                       :select_expr_fn,
-                       expr.src_expr,
-                       expr.ptrn,
-                       if expr.cond? then expr.cond else obj_true end,
-                       expr.expr
-                     ),
 
-    replace_expr()  = make(
-                       :replace_expr_fn,
-                       expr.src_expr,
-                       expr.ptrn,
-                       obj_true,
-                       expr.expr
-                     );
+// select_expr(type: UserType, src_expr: Expr),
+// replace_expr(expr: Expr, src_expr: Expr, type: UserType, var: Var);
 
-  Expr make(Atom fn_name, Expr src_expr, Pattern ptrn, Expr sel_expr, Expr expr)
-  {
-    cond_expr := match_expr(
-                   exprs: [fn_par(0)],
-                   cases: [
-                     (ptrns: [ptrn],        expr: sel_expr),
-                     (ptrns: [:ptrn_any],   expr: obj_false)
-                   ]
-                 );
 
-    cond_cls  := cls_expr(params: [nil], expr: cond_expr);  //## FIX THIS
-    
-    eval_expr := match_expr(
-                   exprs: [fn_par(0)],
-                   cases: [(ptrns: [ptrn], expr: expr)]
-                 );
 
-    eval_cls  := cls_expr(params: [nil], expr: eval_expr);  //## FIX THIS
-    
-    nps := (:named_par(:condition) => cond_cls, :named_par(:eval) => eval_cls);
-    
-    return fn_call(name: :fn_symbol(fn_name), params: [src_expr], named_params: nps);
-  }
-}
 
+// membership(obj: Expr, type: UserType)
+// if_expr(cond: Expr, then: Expr, else: Expr)
+
+
+
+//     cond_expr := match_expr(
+//                    exprs: [fn_par(0)],
+//                    cases: [
+//                      (ptrns: [ptrn],        expr: sel_expr),
+//                      (ptrns: [:ptrn_any],   expr: obj_false)
+//                    ]
+//                  );
+
+// return make(expr);
+
+// Expr make(Expr expr):
+//   select_expr()   = make(:select_expr_fn,  expr.src_expr, expr.type, expr.expr),
+//   replace_expr()  = make(:replace_expr_fn, expr.src_expr, expr.type, expr.expr);
+
+// Expr make(Atom fn_name, Expr src_expr, UserType type, Expr expr)
+// {
+
+//   eval_expr := match_expr(
+//                  exprs: [fn_par(0)],
+//                  cases: [(ptrns: [ptrn], expr: expr)]
+//                );
+
+//   eval_cls  := cls_expr(params: [nil], expr: eval_expr);  //## FIX THIS
+
+//   nps := (:named_par(:condition) => cond_cls, :named_par(:eval) => eval_cls);
+
+//   return fn_call(name: :fn_symbol(fn_name), params: [src_expr], named_params: nps);
+// }

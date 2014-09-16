@@ -2,6 +2,7 @@
 type Obj        = object(Any);
 
 type SymbObj    = object(Atom);
+type IntObj     = object(Int);
 type LeafObj    = object(<Atom, Int>);
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -141,8 +142,8 @@ type Expr     = LeafObj, //## UPDATE ALL REFERENCES
                 map_comp(key_expr: Expr, value_expr: Expr, source: Clause, sel_expr: Expr?),
                 seq_comp(expr: Expr, var: Var, idx_var: Var?, src_expr: Expr, sel_expr: Expr?),
 
-                select_expr(expr: Expr, ptrn: Pattern, src_expr: Expr, cond: Expr?),
-                replace_expr(expr: Expr, src_expr: Expr, ptrn: Pattern);
+                select_expr(type: UserType, src_expr: Expr),
+                replace_expr(expr: Expr, src_expr: Expr, type: UserType, var: Var);
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -154,19 +155,33 @@ type ExtExpr  = Expr, ClsExpr;
 
 ///////////////////////////////////////////////////////////////////////////////
 
-type Pattern  = ptrn_any, //## IN THEORY THIS IS REDUNDANT...
-                obj_ptrn(LeafObj),
-                type_ptrn(UserType),
-                ext_var_ptrn(Var),
-                var_ptrn(name: Var, ptrn: Pattern),
-                tag_ptrn(tag: <obj_ptrn(SymbObj), var_ptrn(name: Var, ptrn: ptrn_any)>, obj: Pattern);
+type Pattern  = ptrn_symbol, //## THE CORRESPONDING TYPE IS CALLED atom_type. RENAME ONE OF THE TWO?
+                ptrn_integer, //## THIS IS ACTUALLY REDUNDANT, AS IT IS THE SAME AS ptrn_integer(integer)
+                ptrn_empty_set,
+                ptrn_ne_set,
+                ptrn_empty_seq,
+                ptrn_ne_seq,
+                ptrn_empty_map,
+                ptrn_ne_map,
+                // ptrn_seq,
+                // ptrn_set,
+                // ptrn_map,
+                ptrn_tag_obj,
+                ptrn_any,
+                ptrn_symbol(SymbObj),
+                ptrn_integer(IntType),
+                ptrn_tag_obj(tag: TagPtrn, obj: Pattern),
+                // ptrn_record((SymbObj => Pattern)),
+                ptrn_var(var: Var, ptrn: Pattern),
+                ptrn_union(Pattern+);
+
+
+type TagPtrn  = ptrn_symbol, ptrn_symbol(SymbObj), ptrn_var(var: Var, ptrn: ptrn_symbol);
 
 ////////////////////////////////////////////////////////////////////////////////
 
 type Clause   = in_clause(ptrn: Pattern, src: Expr),
-                not_in_clause(ptrn: Pattern, src: Expr),
                 map_in_clause(key_ptrn: Pattern, value_ptrn: Pattern, src: Expr),
-                map_not_in_clause(key_ptrn: Pattern, value_ptrn: Pattern, src: Expr),
                 and_clause(left: Clause, right: Clause),
                 or_clause(left: Clause, right: Clause);
 

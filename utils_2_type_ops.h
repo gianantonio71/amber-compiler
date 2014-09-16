@@ -56,13 +56,31 @@ AnonType rec_type_union_superset(AnonType* types)
   }
 
 
-  AnonType replace_preunions(Pretype pretype, (AnonType+ => SelfPretype) rec_map) = replace union_pretype(ts) in pretype with rec_map[ts] end;
+  // AnonType replace_preunions(Pretype pretype, (AnonType+ => SelfPretype) rec_map) = replace union_pretype(ts) in pretype with rec_map[ts] end;
+
+  //## replace_preunions() AND replace_final_unions() ARE SO SIMILAR. ISN'T THERE A WAY OF MERGING THEM?
+
+  //## THERE MUST BE A BETTER WAY EVEN WITHOUT A REPLACE INSTRUCTION...
+  AnonType replace_preunions(Pretype pretype, (AnonType+ => SelfPretype) rec_map):
+    LeafType          = pretype,
+    TypeVar           = pretype,
+    SelfPretype       = pretype,
+    ne_seq_type()     = ne_seq_type(replace_preunions(pretype.elem_type, rec_map)),
+    ne_set_type()     = ne_set_type(replace_preunions(pretype.elem_type, rec_map)),
+    ne_map_type()     = ne_map_type(replace_preunions(pretype.key_type, rec_map), replace_preunions(pretype.value_type, rec_map)),
+    tuple_type(fs)    = tuple_type((l => (type: replace_preunions(f.type, rec_map), optional: f.optional) : l => f <- fs)),
+    tag_obj_type()    = tag_obj_type(pretype.tag_type, replace_preunions(pretype.obj_type, rec_map)),
+    union_type(ts)    = union_type({replace_preunions(t, rec_map) : t <- ts}),
+    union_pretype(ts) = rec_map[ts],
+    self_rec_type(t)  = self_rec_type(replace_preunions(t, rec_map)),
+    mut_rec_type()    = mut_rec_type(pretype.index, [replace_preunions(t, rec_map) : t <- pretype.types]);
 
   // Pretype replace_final_preunions(Pretype pretype, (AnonType+ => AnonType) final_unions) =
   //   replace union_pretype(ts) pt
   //   in pretype
   //   with lookup(final_unions, ts, pt) end; //## WHY DO WE HAVE TO PROVIDE A DEFAULT HERE? I CAN'T REMEMBER...
 
+  //## THERE MUST BE A BETTER WAY EVEN WITHOUT A REPLACE INSTRUCTION...
   Pretype replace_final_preunions(Pretype pretype, (AnonType+ => AnonType) final_unions):
     LeafType          = pretype,
     TypeVar           = pretype,
@@ -70,7 +88,7 @@ AnonType rec_type_union_superset(AnonType* types)
     ne_seq_type()     = ne_seq_type(replace_final_preunions(pretype.elem_type, final_unions)),
     ne_set_type()     = ne_set_type(replace_final_preunions(pretype.elem_type, final_unions)),
     ne_map_type()     = ne_map_type(replace_final_preunions(pretype.key_type, final_unions), replace_final_preunions(pretype.value_type, final_unions)),
-    tuple_type(fs)    = tuple_type((l => (type: replace_final_preunions(f.pretype, final_unions), optional: f.optional) : l => f <- fs)),
+    tuple_type(fs)    = tuple_type((l => (type: replace_final_preunions(f.type, final_unions), optional: f.optional) : l => f <- fs)),
     tag_obj_type()    = tag_obj_type(pretype.tag_type, replace_final_preunions(pretype.obj_type, final_unions)),
     union_type(ts)    = union_type({replace_final_preunions(t, final_unions) : t <- ts}),
     union_pretype(ts) = lookup(final_unions, ts, pretype), //## WHY DO WE HAVE TO PROVIDE A DEFAULT HERE? I CAN'T REMEMBER...
@@ -86,7 +104,8 @@ AnonType rec_type_union_superset(AnonType* types)
     return min_conn_comps;
   }
 
-  AnonType+* illegal_unions(Pretype pretype) = retrieve ts from union_pretype(ts) in pretype end;
+  // AnonType+* illegal_unions(Pretype pretype) = retrieve ts from union_pretype(ts) in pretype end;
+  AnonType+* illegal_unions(Pretype pretype) = {_obj_(pt) : pt <- select UnionPretype in pretype end}; //## THE ABOVE VERSION WITH RETRIEVE WAS LESS UGLY
 }
 
 using Bool allow_incompatible_groups
@@ -266,7 +285,7 @@ using AnonType* already_expanded_rec_types
                     union_type(ts)  = ts,
                     _               = {type1};
                   ;
-    rec_types_1 := {t : <self_rec_type(Any), mut_rec_type(Any)> t <- nu_types_1}; //## UGLY UGLY
+    rec_types_1 := {t : self_rec_type() t <- nu_types_1} & {t : mut_rec_type() t <- nu_types_1}; //## BAD: WE SHOULD USE A PATTERN UNION HERE, ONCE IT IS IMPLEMENTED
     return type1 if not disjoint(rec_types_1, already_expanded_rec_types);
 
     let (already_expanded_rec_types = already_expanded_rec_types & rec_types_1)
@@ -466,21 +485,21 @@ using AnonType* already_expanded_rec_types
 //## THIS IS TOTALLY UNTESTED. IT SHOULD BE TESTED WITH THE TYPE SUBSET TESTING CODE,
 //## AND MAYBE IT WOULD BE GOOD TO DO SOME MANUAL TESTING, ESPECIALLY FOR TUPLE TYPES
 Bool type_contains_obj(AnonType type, Any obj):
-  :atom_type,       Atom        = true,
+  :atom_type,       +           = true,
   :atom_type,       _           = false,
 
   symb_type(s),     _           = obj == s,
 
-  :integer,         Int         = true,
+  :integer,         *           = true,
   :integer,         _           = false,
 
-  low_ints(),       Int         = obj <= type.max,
+  low_ints(),       *           = obj <= type.max,
   low_ints(),       _           = false,
 
-  high_ints(),      Int         = obj >= type.min,
+  high_ints(),      *           = obj >= type.min,
   high_ints(),      _           = false,
 
-  int_range(),      Int         = obj >= type.min and obj <= max(type),
+  int_range(),      *           = obj >= type.min and obj <= max(type),
   int_range(),      _           = false,
 
   type_var(),       _           = {fail;},
@@ -489,16 +508,16 @@ Bool type_contains_obj(AnonType type, Any obj):
   :empty_set_type,  _           = obj == {},
   :empty_map_type,  _           = obj == (),
 
-  ne_seq_type(),    NeSeq       = all([type_contains_obj(type.elem_type, e) : e <- obj]),
+  ne_seq_type(),    [...]       = obj /= [] and all([type_contains_obj(type.elem_type, e) : e <- obj]),
   ne_seq_type(),    _           = false,
 
-  ne_set_type(),    NeSet       = not (? e <- obj : not type_contains_obj(type.elem_type, e)),
+  ne_set_type(),    {...}       = obj /= {} and not (? e <- obj : not type_contains_obj(type.elem_type, e)),
   ne_set_type(),    _           = false,
 
-  ne_map_type(),    Map         = obj /= () and not (? k => v <- obj : not type_contains_obj(type.key_type, k) or not type_contains_obj(type.value_type, v)),
+  ne_map_type(),    (...)       = obj /= () and not (? k => v <- obj : not type_contains_obj(type.key_type, k) or not type_contains_obj(type.value_type, v)),
   ne_map_type(),    _           = false,
 
-  tuple_type(fs),   Map         = not (? k => v <- obj : not has_key(fs, k) or not type_contains_obj(fs[k].type, v)) and
+  tuple_type(fs),   (...)       = not (? k => v <- obj : not has_key(fs, k) or not type_contains_obj(fs[k].type, v)) and
                                   subset({l : l => f <- fs ; not f.optional}, keys(obj)),
   tuple_type(fs),   _           = false,
 

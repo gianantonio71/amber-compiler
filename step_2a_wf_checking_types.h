@@ -1,29 +1,11 @@
 
-Tautology types_are_wf((TypeSymbol => UserType) typedefs)
+using (TypeName => AnonType) typedefs, (TypeSymbol => UserType) user_typedefs
 {
-  //## COULD THE FOLLOWING BE PART OF A MORE GENERAL AND ELEGANT CONSTRAINT?
-  // No top-level reference cycles
-  tl_ref_map      := (s => top_level_refs(t) : s => t <- typedefs);
-  tl_ref_deep_map := transitive_closure(tl_ref_map);
-  return false if (? s => es <- tl_ref_deep_map : in(s, es));
-  
-  // Every Type must be well formed
-  return not (? s => t <- typedefs : not type_is_wf(t, select TypeVar in s end; typedefs = typedefs));
-  
-  // Local functions
-  TypeSymbol* top_level_refs(UserType type):
-    type_ref(s)     = {s},
-    union_type(ts)  = union({top_level_refs(t) : t <- ts}),
-    _               = {};
-}
-
-using (TypeSymbol => UserType) typedefs
-{
-  Tautology type_is_wf(UserType type, TypeVar* type_vars):
+  True user_type_is_wf(UserType type, TypeVar* type_vars):
     
     LeafType            = true,
     
-    type_ref(ts)        = has_key(typedefs, ts),
+    type_ref(ts)        = has_key(typedefs, type_symb_to_name(ts)) and has_key(user_typedefs, ts),
     
     //type_var(a)         = in(type, type_vars),
     //## BUG FIX FIX FIX
@@ -31,36 +13,38 @@ using (TypeSymbol => UserType) typedefs
                             return true;
                           },
     
-    ne_seq_type()       = type_is_wf(type.elem_type, type_vars),
+    ne_seq_type()       = user_type_is_wf(type.elem_type, type_vars),
     
-    ne_set_type()       = type_is_wf(type.elem_type, type_vars),
+    ne_set_type()       = user_type_is_wf(type.elem_type, type_vars),
     
-    ne_map_type()       = type_is_wf(type.key_type, type_vars) and
-                          type_is_wf(type.value_type, type_vars),
+    ne_map_type()       = user_type_is_wf(type.key_type, type_vars) and
+                          user_type_is_wf(type.value_type, type_vars),
     
-    tuple_type(bs)      = not (? l => b <- bs : not type_is_wf(b.type, type_vars)),
+    tuple_type(bs)      = not (? l => b <- bs : not user_type_is_wf(b.type, type_vars)),
     
     //## BUG BUG BUG THIS IS INCOMPLETE, THE TAG TYPE MUST BE A SUBSET OF atom_type
-    tag_obj_type()      = type_is_wf(type.tag_type, type_vars) and
-                          type_is_wf(type.obj_type, type_vars),
+    tag_obj_type()      = user_type_is_wf(type.tag_type, type_vars) and
+                          user_type_is_wf(type.obj_type, type_vars),
     
                           //## I DON'T LIKE ALL THESE DOUBLE NEGATIONS.
                           //## IT WOULD BE GOOD TO HAVE UNIVERSAL QUALIFICATION
     union_type(ts)      = size(ts) >= 2                                             and
                           //## BAD BAD BAD THIS SHOULD BE ENFORCED IN THE TYPE DEFINITION
                           not (? union_type() <- ts)                                and
-                          not (? t <- ts : not type_is_wf(t, type_vars))            and
+                          not (? t <- ts : not user_type_is_wf(t, type_vars))            and
                           //## BAD BAD BAD
-                          not (? t1 <- ts, t2 <- ts : t1 /= t2, not are_compatible(t1, t2));
+                          not (? t1 <- ts, t2 <- ts : t1 /= t2, not are_compatible(t1, t2, typedefs));
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 Bool anon_type_is_wf(AnonType type) = anon_type_is_wf(type, select TypeVar in type end);
 
 Bool anon_type_is_wf(AnonType type, TypeVar* type_vars) = not has_rec_branches(type) and anon_pretype_is_wf(type, (), type_vars);
 
 
-Bool anon_pretype_is_wf(AnonType type, (SelfPretype => ObjPartSet) self_parts, TypeVar* type_vars)
+Bool anon_pretype_is_wf(AnonType type, (SelfPretype => PseudoType) self_parts, TypeVar* type_vars)
 {
   res := anon_pretype_is_wf_impl(type, self_parts, type_vars);
 // if (not res)
@@ -70,7 +54,7 @@ Bool anon_pretype_is_wf(AnonType type, (SelfPretype => ObjPartSet) self_parts, T
   return res;
 }
 
-Bool anon_pretype_is_wf_impl(AnonType type, (SelfPretype => ObjPartSet) self_parts, TypeVar* type_vars):
+Bool anon_pretype_is_wf_impl(AnonType type, (SelfPretype => PseudoType) self_parts, TypeVar* type_vars):
   LeafType              = true,
 
   :self                 = has_key(self_parts, type),
@@ -94,7 +78,7 @@ Bool anon_pretype_is_wf_impl(AnonType type, (SelfPretype => ObjPartSet) self_par
                           not (? t <- ts : not anon_pretype_is_wf(t, self_parts, type_vars)) and
                           not (? t1 <- ts, t2 <- ts : t1 /= t2, not anon_types_are_compatible(t1, t2, self_parts)), //## BAD: EVERY CONDITION IS EVALUATED TWICE
 
-  self_rec_type(t)      = not has_top_level_self(t, self) and has_ground_branches(t) and has_rec_branches(t) and anon_pretype_is_wf(t, (self => anon_pretype_partitions(t, ())), type_vars),
+  self_rec_type(t)      = not has_top_level_self(t, self) and has_ground_branches(t) and has_rec_branches(t) and anon_pretype_is_wf(t, (self => pretype_pseudotype(t, ())), type_vars),
 
   mut_rec_type()        = {
     //## THIS COULD BE MADE STRICTER BY MAKING SURE THAT THE TYPES DO HAVE CROSS REFERENCES AMONG THEM
@@ -118,7 +102,7 @@ Bool anon_pretype_is_wf_impl(AnonType type, (SelfPretype => ObjPartSet) self_par
       ground_branch_idxs := new_ground_branch_idxs;
     ;
 
-    return not (? t <- set(type.types) : not anon_pretype_is_wf(t, mut_rec_type_partitions(type), type_vars));
+    return not (? t <- set(type.types) : not anon_pretype_is_wf(t, mut_rec_type_pseudotype(type), type_vars));
   };
 
 

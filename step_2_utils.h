@@ -24,23 +24,20 @@ Expr* ordinary_subexprs(Expr expr):
   map_comp()      = {},
   seq_comp()      = {expr.src_expr},
   select_expr()   = {expr.src_expr},
-  replace_expr()  = {expr.src_expr}, //## BAD
   // Expression that require special treatment
+  replace_expr()  = {expr.src_expr},
   match_expr()    = set(expr.exprs),
   do_expr()       = {};
-  //where_expr()    = {};
 
 //## FIND BETTER NAME
-Expr* subexprs(SubExpr expr):
-  Expr      = {expr},
-  CondExpr  = {expr.expr, expr.cond};
+Expr* subexprs(Expr expr)     = {expr};
+Expr* subexprs(CondExpr expr) = {expr.expr, expr.cond};
 
 Expr* special_subexprs(Expr expr):
   ex_qual()       = {expr.sel_expr if expr.sel_expr?},
   set_comp()      = {expr.expr, expr.sel_expr if expr.sel_expr?},
   map_comp()      = {expr.key_expr, expr.value_expr, expr.sel_expr if expr.sel_expr?},
   seq_comp()      = {expr.expr, expr.sel_expr if expr.sel_expr?}, //## BAD
-  select_expr()   = {expr.expr, expr.sel_expr if expr.sel_expr?}, //## BAD
   replace_expr()  = {expr.expr},
   _               = {};
 
@@ -49,8 +46,7 @@ Var* gen_vars(Expr expr):
   set_comp()      = new_vars(expr.source), //## BAD
   map_comp()      = new_vars(expr.source), //## BAD
   seq_comp()      = {expr.var, expr.idx_var if expr.idx_var?},
-  select_expr()   = new_vars(expr.ptrn),
-  replace_expr()  = new_vars(expr.ptrn),
+  replace_expr()  = {expr.var},
   _               = {};
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -59,18 +55,14 @@ Var* gen_vars(Expr expr):
 //## CONSIDER THE VARIABLES THAT ARE ALREADY DEFINED
 
 Var* new_vars(Pattern ptrn):
-  :ptrn_any       = {},
-  obj_ptrn()      = {},
-  type_ptrn()     = {},
-  ext_var_ptrn()  = {},
-  var_ptrn()      = {ptrn.name} & new_vars(ptrn.ptrn),
-  tag_ptrn()      = new_vars(ptrn.tag) & new_vars(ptrn.obj);
+  ptrn_var()      = new_vars(ptrn.ptrn) & {ptrn.var},
+  ptrn_tag_obj()  = new_vars(ptrn.tag) & new_vars(ptrn.obj),
+  ptrn_union(ps)  = union({new_vars(p) : p <- ps}),
+  _               = {};
 
 Var* new_vars(Clause clause):
   in_clause()         = new_vars(clause.ptrn),
-  not_in_clause()     = {},
   map_in_clause()     = new_vars(clause.key_ptrn) & new_vars(clause.value_ptrn),
-  map_not_in_clause() = {},
   and_clause()        = new_vars(clause.left) & new_vars(clause.right),
   or_clause()         = intersection(new_vars(clause.left), new_vars(clause.right));
 
@@ -99,12 +91,6 @@ Var* extern_vars(Expr expr)
       set_comp()     = extern_vars(expr.source), //## BAD
       map_comp()     = extern_vars(expr.source), //## BAD
       do_expr(ss)    = extern_vars(ss),
-      select_expr()  = extern_vars(expr.ptrn),
-      replace_expr() = extern_vars(expr.ptrn), //## BAD
-
-      //where_expr()   = extern_vars(expr.expr) &
-      //                 union({extern_vars(fd.body) - set(fd.vars) : fd <- expr.fndefs}),
-
       match_expr()   = { vs := {};
                          for (c : expr.cases)
                            pvs := seq_union([new_vars(p) : p <- c.ptrns]);
@@ -116,15 +102,13 @@ Var* extern_vars(Expr expr)
       _              = {};
 }
 
-Var* extern_vars(Pattern ptrn) = retrieve v from ext_var_ptrn(Var v) in ptrn end;
 
 Var* extern_vars(Clause clause):
-  in_clause()         = extern_vars(clause.src) & extern_vars(clause.ptrn),
-  not_in_clause()     = extern_vars(clause.src) & extern_vars(clause.ptrn), //## BAD
-  map_in_clause()     = extern_vars(clause.src) & extern_vars(clause.key_ptrn) & extern_vars(clause.value_ptrn),
-  map_not_in_clause() = extern_vars(clause.src) & extern_vars(clause.key_ptrn) & extern_vars(clause.value_ptrn),
+  in_clause()         = extern_vars(clause.src),
+  map_in_clause()     = extern_vars(clause.src),
   and_clause()        = extern_vars(clause.left) & (extern_vars(clause.right) - new_vars(clause.left)),
   or_clause()         = extern_vars(clause.left) & extern_vars(clause.right);
+
 
 Var* extern_vars([Statement*] stmts)
 {
@@ -150,8 +134,6 @@ Var* extern_vars(Statement s):
   :fail_stmt        = {},
   assert_stmt(e)    = extern_vars(e),
   print_stmt(e)     = extern_vars(e);
-
-//type ClsExpr  = cls_expr(params: [<var(Atom), nil>+], expr: Expr);
 
 Var* extern_vars(ClsExpr e) = extern_vars(e.expr) - (set(e.params) - {nil});
 

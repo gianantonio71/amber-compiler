@@ -1,15 +1,7 @@
 
-//type LeafClause   = incl_clause(ptrn: Pattern, src: Expr),  // UGLY
-//                    excl_clause(ptrn: Pattern, src: Expr);
-//
-////## FIND A BETTER NAME
-//type NuType       = atom_type, empty_set_type, SymbType, IntType, SetType, TermType;
-
-////////////////////////////////////////////////////////////////////////////////
-
 [UserType*] params(TypeSymbol ts):
-  BasicTypeSymbol = [],
-  ParTypeSymbol   = ts.params;
+  type_symbol()     = [],
+  par_type_symbol() = ts.params;
 
 
 Int max(<int_range(min: Int, size: NzNat)> t) = t.min + t.size - 1; //## BAD BAD
@@ -17,56 +9,18 @@ Int max(<low_ints(max: Int)> t) = t.max;
 
 
 TypeName type_symb_to_name(TypeSymbol ts):
-  BasicTypeSymbol   = type_name(symbol: ts, arity: 0),
-  ParTypeSymbol     = type_name(symbol: ts.symbol, arity: length(ts.params));
+  type_symbol()     = type_name(symbol: ts, arity: 0),
+  par_type_symbol() = type_name(symbol: ts.symbol, arity: length(ts.params));
 
 
-// integer, low_ints(max: Int), high_ints(min: Int), int_range(min: Int, size: NzNat)
-
-////////////////////////////////////////////////////////////////////////////////
-
-//Bool separated(IntType t1, IntType t2):
-//  :integer,     _            = false,
-//  
-//  low_ints(),   low_ints()   = false,
-//  low_ints(),   high_ints()  = t2.min > t1.max + 1,
-//  low_ints(),   int_range()  = t2.min > t1.max + 1,
-//
-//  high_ints(),  high_ints()  = false,
-//  high_ints(),  int_range()  = t1.min > t2.min + t2.size,
-//  
-//  int_range(),  int_range()  = t1.min > t2.min + t2.size or t2.min > t1.min + t1.size,
-//  
-//  _,            _            = separated(t2, t1);
-//
-//////////////////////////////////////////////////////////////////////////////////
-
-using (Any => UserType) typedefs //## IS THIS CORRECT? UserType INSTEAD OF AnonType? AND WHAT ABOUT THE TYPE Any IN THE KEY?
-{
-  //// Types are supposed to have already passed the "no direct ref cycles" test
-  //Bool are_compatible(Type t1, Type t2):
-  //  IntType,          IntType         = separated(t1, t2),
-  //  _,                _               = are_disjoint(partitions(t1), partitions(t2));
-
-  //## REENABLE THE ABOVE IMPLEMENTATION AT SOME STAGE
-  Bool are_compatible(UserType t1, UserType t2) = are_disjoint(partitions(t1), partitions(t2));
-
-//  NuType* expand(Type type):
-//    type_id(id)    = expand(type_map[id]),
-//    union_type(ts) = union({expand(t) : t <- ts}),
-//    _              = {type};
-}
+Bool are_compatible(UserType t1, UserType t2, (TypeName => AnonType) typedefs) = are_disjoint(pseudotype(t1, typedefs), pseudotype(t2, typedefs));
 
 
 Bool anon_types_are_compatible(AnonType t1, AnonType t2) = anon_types_are_compatible(t1, t2, ());
 
-Bool anon_types_are_compatible(AnonType t1, AnonType t2, (SelfPretype => ObjPartSet) self_partitions) =
-  are_disjoint(anon_pretype_partitions(t1, self_partitions), anon_pretype_partitions(t2, self_partitions));
-
-////////////////////////////////////////////////////////////////////////////////
-
-//Type bool_type = :union_type({:singleton(:symbol(true)), :singleton(:symbol(false))});
-//Type nat_type  = high_ints(min: 0);
+//## BAD: I REALLY DON'T LIKE THIS FUNCTION. ISN'T THERE A WAY NOT TO USE IT?
+Bool anon_types_are_compatible(AnonType t1, AnonType t2, (SelfPretype => PseudoType) self_pseudotypes) =
+  are_disjoint(pretype_pseudotype(t1, self_pseudotypes), pretype_pseudotype(t2, self_pseudotypes));
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -78,15 +32,7 @@ Var first_unused_int_var(Var *vars)
   return :unique_var(i);
 }
 
-//Var new_unique_var = :unique_var(_counter_(nil));
-
 ////////////////////////////////////////////////////////////////////////////////
-
-//Bool empty_set_is_member(SetType type) = not {? b <- untag(type) ; in(b.card, {:required, :multiple})};
-
-////////////////////////////////////////////////////////////////////////////////
-
-
 
 //Nat arity(<FnDef, Signature> obj) = length(obj.params);
 Nat arity(FnDef fd) = length(fd.params);
@@ -100,15 +46,13 @@ Nat arity(Expr)        = 0;
 
 Var* scalar_vars(FnDef fn_def) = {p.var : p <- set(fn_def.params) ; p.var? and (not p.type? or p.type :: UserType)} &
                                  set([:fn_par(i) : p, i <- fn_def.params, not p.type? or p.type :: UserType])       &
-                                 {v : v => UserType t <- fn_def.named_params};
+                                 {v : v => t <- fn_def.named_params ; t :: UserType};
 
 //## FOR THE TIME BEING, THE fn_par(Nat) VARIABLES ARE DEFINED ONLY FOR SCALAR PARAMETERS, NOT CLOSURES
 // THIS FUNCTION FAILS IF THERE ARE DUPLICATE PARAMETER NAMES. THIS IS CHECHED BEFORE THE FUNCTION IS INVOKED THOUGH
 (Var => NzNat) cls_vars(FnDef fn_def) = (p.var => length(p.type.in_types) : p <- set(fn_def.params) ; p.var? and (p.type? and p.type :: UserClsType)) &
-                                        (v => length(t.in_types) : v => UserClsType t <- fn_def.named_params);
+                                        (v => length(t.in_types) : v => t <- fn_def.named_params ; t :: UserClsType);
 
-
-//Bool is_def(Var cls_var, NzNat arity, (Var* => NzNat) cls_vars_in_scope) = has_key(cls_vars_in_scope, cls_var) and cls_vars_in_scope[cls_var] == arity;
 
 Bool op_< (SymbObj s1, SymbObj s2) = lower_than(untag(s1), untag(s2));
 

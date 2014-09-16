@@ -6,6 +6,8 @@ type UntypedSgn       = untyped_sgn(
                           named_params: BasicUntypedSgn+?
                         );
 
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 
 //BasicUntypedSgn untyped_sgn(Signature d) = untyped_sgn(
 //                                             name:  d.name,
@@ -17,9 +19,12 @@ type UntypedSgn       = untyped_sgn(
 //  var(a), UserClsType   = untyped_sgn(name: :fn_symbol(a), arity: length(t.in_types));
 
 
-BasicUntypedSgn untyped_sgn(<named_par(Atom)> var, UserExtType type):
-  named_par(a), UserType  = untyped_sgn(name: :fn_symbol(a), arity: 0),
-  named_par(a), UserClsType   = untyped_sgn(name: :fn_symbol(a), arity: length(type.in_types));
+// BasicUntypedSgn untyped_sgn(<named_par(Atom)> var, UserExtType type):
+//   named_par(a), UserType  = untyped_sgn(name: :fn_symbol(a), arity: 0),
+//   named_par(a), UserClsType   = untyped_sgn(name: :fn_symbol(a), arity: length(type.in_types));
+
+BasicUntypedSgn untyped_sgn(<named_par(Atom)> var, UserType type)    = untyped_sgn(name: :fn_symbol(_obj_(var)), arity: 0);
+BasicUntypedSgn untyped_sgn(<named_par(Atom)> var, UserClsType type) = untyped_sgn(name: :fn_symbol(_obj_(var)), arity: length(type.in_types));
 
 //BasicUntypedSgn* untyped_sgns((<named_par(Atom)> => UserExtType) nps) = {untyped_sgn(v, t) : v => t <- nps};
 
@@ -31,9 +36,12 @@ UntypedSgn untyped_sgn(FnDef fd) =
   );
 
 
-BasicUntypedSgn untyped_sgn(Var v, ExtExpr e):
-  var(a), Expr    = untyped_sgn(name: :fn_symbol(a), arity: 0),
-  var(a), ClsExpr = untyped_sgn(name: :fn_symbol(a), arity: length(e.params));
+// BasicUntypedSgn untyped_sgn(Var v, ExtExpr e):
+//   var(a), Expr    = untyped_sgn(name: :fn_symbol(a), arity: 0),
+//   var(a), ClsExpr = untyped_sgn(name: :fn_symbol(a), arity: length(e.params));
+
+BasicUntypedSgn untyped_sgn(Var v, Expr e)    = untyped_sgn(name: :fn_symbol(_obj_(v)), arity: 0);
+BasicUntypedSgn untyped_sgn(Var v, ClsExpr e) = untyped_sgn(name: :fn_symbol(_obj_(v)), arity: length(e.params));
 
 //BasicUntypedSgn* untyped_sgns((<named_par(Atom)> => ExtExpr) nps) = {untyped_sgn(v, e) : v => e <- nps};
 BasicUntypedSgn* untyped_sgns((<named_par(Atom)> => <UserExtType, ExtExpr>) nps) = {untyped_sgn(v, type_or_expr) : v => type_or_expr <- nps};
@@ -69,7 +77,7 @@ Bool is_def(FnSymbol name, Nat arity, UntypedSgn* env, BasicUntypedSgn* actual_n
   Bool could_match(FnSymbol name, Nat arity, UntypedSgn sgn, BasicUntypedSgn* actual_named_params)
   {
     return false if sgn.name /= name or sgn.arity /= arity;
-    //## IGNORING THE DIFFERENCE BETWEEN SCALAR AND CLOSURES FOR POSITIONAL PARAMETERS
+    //## IGNORING THE DIFFERENCE BETWEEN SCALARS AND CLOSURES FOR POSITIONAL PARAMETERS
     //## NOT SURE ABOUT NAMED PARAMETERS, I SEEM TO REMEMBERS THE ORIGINAL VERSION OF THIS FUNCTION (THE ONE THAT GOT DELETED) WAS DIFFERENT
     formal_named_params := if sgn.named_params? then sgn.named_params else {} end;
     return subset(formal_named_params, actual_named_params);
@@ -83,12 +91,9 @@ Bool is_almost_def(FnSymbol name, Nat arity, UntypedSgn* env) = (? s <- env : s.
 ////////////////////////////////////////////////////////////////////////////////
 
 Var* syn_new_vars(SynPtrn ptrn):
-  :ptrn_any       = {},
-  obj_ptrn()      = {},
-  type_ptrn()     = {},
-  ext_var_ptrn()  = {},
-  var_ptrn()      = {ptrn.name} & syn_new_vars(ptrn.ptrn),
-  tag_ptrn()      = syn_new_vars(ptrn.tag) & syn_new_vars(ptrn.obj);
+    ptrn_var()      = {ptrn.var} & syn_new_vars(ptrn.ptrn),
+    ptrn_tag_obj()  = syn_new_vars(ptrn.tag) & syn_new_vars(ptrn.obj),
+    _               = {};
 
 
 Var* syn_new_vars(SynStmt stmt):
@@ -106,9 +111,7 @@ Var* syn_new_vars([<SynStmt, SynClause>*] objs) = seq_union([syn_new_vars(obj) :
 
 Var* syn_new_vars(SynClause clause):
   in_clause()           = syn_new_vars(clause.ptrn),
-  not_in_clause()       = {},
   map_in_clause()       = syn_new_vars(clause.key_ptrn) & syn_new_vars(clause.value_ptrn),
-  map_not_in_clause()   = {},
   eq_clause()           = {clause.var},
   and_clause(cs)        = seq_union([syn_new_vars(c) : c <- cs]),
   or_clause()           = intersection(syn_new_vars(clause.left), syn_new_vars(clause.right));
@@ -118,32 +121,44 @@ Var* syn_new_vars(SynIter iter):
   seq_iter()    = {iter.var, iter.idx_var if iter.idx_var?},
   range_iter()  = {iter.var};
 
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 
-//## BAD: THIS IS ALMOST IDENTICAL TO partitions(Type)
+UserType syn_type_to_user_type(SynType type):
+  LeafType          = type,
+  TypeRef           = type,
+  TypeVar           = type,
+  ne_seq_type()     = ne_seq_type(syn_type_to_user_type(type.elem_type)),
+  ne_set_type()     = ne_set_type(syn_type_to_user_type(type.elem_type)),
+  ne_map_type()     = ne_map_type(syn_type_to_user_type(type.key_type), syn_type_to_user_type(type.value_type)),
+  tuple_type(fs)    = tuple_type((f.label => (type: syn_type_to_user_type(f.type), optional: f.optional) : f <- fs)),
+  tag_obj_type()    = tag_obj_type(type.tag_type, syn_type_to_user_type(type.obj_type)),
+  union_type(ts)    = union_type({syn_type_to_user_type(t) : t <- ts});
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+// PseudoType syn_pseudotype(SynType type, (TypeName => AnonType) typedefs) = pseudotype(syn_type_to_user_type(type), typedefs);
+// PseudoType syn_pseudotype(SynType type, (TypeName => AnonType) typedefs) = pseudotype(UserType(type), typedefs);
+
+//## BAD: THIS SHOULD BE IMPLEMENTED AS SHOWN ABOVE. IT IS STILL IN USE ONLY BECAUSE ALL THE LEVEL 1 ERROR
+//## CHECKING CODE HAS TO BE REWRITTEN FROM SCRATCH AND IT DOESN'T MAKE ANY SENSE TO CHANGE IT NOW
 using (TypeSymbol => SynType) typedefs
 {
-  ObjPartSet syn_partitions(SynType type):
-    :atom_type      = {:symbols},
-    symb_type(s)    = {partition(s)},
-    IntType         = {:integers},
+  PseudoType syn_pseudotype(SynType type):
+    LeafType              = pseudotype(type),
     //## BUG BUG BUG ASSUMING THERE ARE NO DIRECT CYCLES IN TYPEDEFS
     //## BUG BUG BUG ALSO ASSUMING NO TYPE REFERENCE IS "DANGLING"
-    type_ref(ts)    = syn_partitions(typedefs[ts]),
-    TypeVar         = all_objects,
-    :empty_set_type = {:empty_set},
-    ne_set_type()   = {:ne_sets},
-    :empty_seq_type = {:empty_seq},
-    ne_seq_type()   = {:ne_seqs},
-    :empty_map_type = {:empty_map},
-    ne_map_type()   = {:ne_maps},
-    tuple_type(fs)  = match (fs)
-                        <(label: SymbObj, type: SynType, optional: Bool)+>  = {:ne_maps, :empty_map if (? f <- fs : not f.optional)},
-                        <(SymbObj => (type: SynType, optional: Bool))>      = {:ne_maps, :empty_map if (? l => f <- fs : not f.optional)};
-                      ,
-    union_type(ts)  = merge_partitions({syn_partitions(t) : t <- ts}),
-    tag_obj_type()  = match (type.tag_type)
-                        symb_type(object(a))  = {:tagged_obj(a)},
-                        :atom_type            = {:tagged_objs},
-                        TypeVar               = {:tagged_objs};
-                      ;
+    type_ref(ts)          = syn_pseudotype(typedefs[ts]),
+    TypeVar               = pseudotype_any,
+    ne_set_type()         = pseudotype_ne_seqs,
+    ne_seq_type()         = pseudotype_ne_sets,
+    ne_map_type()         = pseudotype_ne_maps,
+    tuple_type((...) fs)  = pseudotype_union({pseudotype_ne_maps, pseudotype_empty_map if (? l => f <- fs : not f.optional)}),
+    tuple_type()          = syn_pseudotype(syn_type_to_user_type(type)),
+    union_type(ts)        = pseudotype_union({syn_pseudotype(t) : t <- ts}),
+    tag_obj_type()        = match (type.tag_type)
+                              symb_type(object(a))  = pseudotype_tag_obj(a),
+                              :atom_type            = pseudotype_tag_objs;
+                            ;
 }

@@ -98,28 +98,27 @@ Program merge_fns_same_name_and_arity(Program prg)
                       fd : fd <- prg.fndefs ; [fd.name, arity(fd)] == na
                     }};
   
-  merged_fns := {merge_fns(fns) : fns <- fns_to_merge};
+  merged_fns := {merge_fns(fns, prg.anon_tdefs) : fns <- fns_to_merge};
   
   new_fns := merged_fns & (prg.fndefs - union(fns_to_merge));
   
   return program(tdefs: prg.tdefs, anon_tdefs: prg.anon_tdefs, subtype_decls: prg.subtype_decls, fndefs: new_fns);
 }
 
-FnDef merge_fns(FnDef+ fds)
+FnDef merge_fns(FnDef+ fds, (TypeName => AnonType) typedefs)
 {
   assert size(fds) > 1;
-  //if (size({[fd.name, arity(fd), fd.impl_env] : fd <- fds}) /= 1)
-  //  print {[fd.name, arity(fd)] : fd <- fds};;
-  //assert size({[fd.name, arity(fd), fd.impl_env] : fd <- fds}) = 1;
-  
-  // try_expr(exprs: [Expr+], cases: [(ptrns: [Pattern+], expr: Expr)+]),
+
   cases := [];
   for (fd : rand_sort(fds))
-    ptrns := [mk_ptrn(p) : p <- fd.params];
+    ptrns := [mk_ptrn(p, typedefs) : p <- fd.params];
     case  := (ptrns: ptrns, expr: fd.expr);
     cases := [case | cases];  
   ;
-  
+
+// print "*****************";
+// print cases;
+
   //## I DON'T LIKE THIS...
   rand_fd      := an_elem(fds); 
   name         := rand_fd.name;
@@ -131,6 +130,18 @@ FnDef merge_fns(FnDef+ fds)
                 cases: cases
               );
 
+// print "$$$$$$$$$$$$$$$$$$$";
+// print new_expr;
+
+// print "###################";
+// print fn_def(
+//            name:          name,
+//            params:        rep_seq(arity, ()), //## BAD
+//            named_params:  named_params,
+//            //res_type: ????
+//            expr:          new_expr
+//          );
+
   
   return fn_def(
            name:          name,
@@ -140,10 +151,18 @@ FnDef merge_fns(FnDef+ fds)
            expr:          new_expr
          );
 
-  mk_ptrn(param)
+  Pattern mk_ptrn(<(var: var(Atom)?, type: UserExtType?)> param, (TypeName => AnonType) typedefs)
   {
-    ptrn := if param.type? then :type_ptrn(param.type) else :ptrn_any end;
-    ptrn := var_ptrn(name: param.var, ptrn: ptrn) if param.var?;
+// Pattern user_type_to_pseudotype_pattern(UserType type, (TypeName => AnonType) typedefs);
+    ptrn := if param.type? then user_type_to_pseudotype_pattern(param.type, typedefs) else ptrn_any end;
+    ptrn := ptrn_var(param.var, ptrn) if param.var?;
+
+    // ptrn := if param.type? then :type_ptrn(param.type) else :ptrn_any end;
+    // ptrn := var_ptrn(name: param.var, ptrn: ptrn) if param.var?;
+// print "----------------";
+// print param;
+// print ptrn;
+
     return ptrn;
   }
 }

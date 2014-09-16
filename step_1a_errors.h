@@ -1,7 +1,7 @@
 
 type UserErr      = dup_tdef(BasicTypeSymbol),
                     dup_par_tdef(name: BasicTypeSymbol, arity: NzNat),
-                    incomp_fndefs(name: FnSymbol, arity: Nat, params: [ObjPartSet*]+),
+                    incomp_fndefs(name: FnSymbol, arity: Nat, params: [PseudoType*]+),
                     tdef_err(type: TypeSymbol, errs: TDefUserErr*),
                     fndef_err(name: FnSymbol, params: [<SynType, nil>*], errs: SynObjErr*),
                     ublock_err(errs: UBlockErr*);
@@ -79,10 +79,13 @@ UserErr* wf_errors(SynPrg prg)
 {
   decls       := set(untag(prg));
   
-  tdefs       := {d : SynTypedef d <- decls};
-  par_tdefs   := {d : SynParTypedef d <- decls};
-  fndefs      := {d : SynFnDef d <- decls};
-  ublocks     := {d : SynUsingBlock d <- decls};
+  tdefs         := {d : typedef()       d <- decls};
+  par_tdefs     := {d : par_typedef()   d <- decls};
+  fndefs        := {d : syn_fn_def()    d <- decls};
+  ublocks       := {d : using_block()   d <- decls};
+  subtype_decls := {d : subtype_decl()  d <- decls};
+
+  assert tdefs & par_tdefs & fndefs & ublocks & subtype_decls == decls;
   
   all_def_fns := {untyped_sgn(fd) : fd <- fndefs} &
                  for (ub <- ublocks, fd <- set(ub.fn_defs)) {
@@ -156,15 +159,15 @@ using (TypeSymbol => SynType) typedefs
     return {tdef_err(type: ts, errs: {make_err_obj(ts)}) : ts <- missing_type_symbs};
     
     TDefUserErr make_err_obj(TypeSymbol ts):
-      BasicTypeSymbol   = :undef_type_name(ts),
-      ParTypeSymbol     = undef_par_type_name(name: ts.name, arity: length(ts.params));
+      type_symbol()     = :undef_type_name(ts),
+      par_type_symbol() = undef_par_type_name(name: ts.name, arity: length(ts.params));
     
     TypeSymbol* all_type_symbols(Any obj)
     {
       type_symbs := select TypeSymbol in obj end;
       
       loop
-        new_type_symbs := union({all_type_symbols(ts.params) : ParTypeSymbol ts <- type_symbs});
+        new_type_symbs := union({all_type_symbols(ts.params) : par_type_symbol() ts <- type_symbs});
         new_type_symbs := new_type_symbs - type_symbs;
         return type_symbs if new_type_symbs == {};
         type_symbs := type_symbs & new_type_symbs;
@@ -187,14 +190,14 @@ using (TypeSymbol => SynType) typedefs
     // Types are supposed to have already passed the "no direct ref cycles" test
     //## IMPLEMENT THE ABOVE TEST
 
-    Bool are_part_compatible(SynType t1, SynType t2) = are_disjoint(syn_partitions(t1), syn_partitions(t2));
+    Bool are_part_compatible(SynType t1, SynType t2) = are_disjoint(syn_pseudotype(t1), syn_pseudotype(t2));
 
     //Bool are_part_compatible(SynType t1, SynType t2):
       //IntType,  IntType   = separated(t1, t2),
-      //_,        _         = are_disjoint(syn_partitions(t1), syn_partitions(t2));
+      //_,        _         = are_disjoint(syn_pseudotype(t1), syn_pseudotype(t2));
   }
 
-  [ObjPartSet*] par_parts(SynFnDef fd) = [if p.type? then syn_partitions(p.type) else :all_objs end : p <- fd.params];
+  [PseudoType*] par_parts(SynFnDef fd) = [if p.type? then syn_pseudotype(p.type) else :all_objs end : p <- fd.params];
 }
 
 
