@@ -376,8 +376,8 @@ using
     ptrn_var()            = ptrn_var(ptrn.var, desugar_ptrn(ptrn.ptrn)),
     ptrn_type(type)       = {
       if (not user_type_can_be_converted_into_pattern(type, typedefs))
-        print type;
-        assert type /= :type_ref(:type_symbol(:set));
+        // print type;
+        assert type /= :type_ref(:type_symbol(:set)); //## WHY THIS?
       ;
       return user_type_to_pattern(type, typedefs);
     },

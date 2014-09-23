@@ -23,11 +23,9 @@ type ObjFnName    = FnSymbol;
 
 type BoolFnName   = memb_test(TypeSymbol);
 
-type AtomicExpr   = LeafObj,
-                    empty_set,
-                    empty_seq,
-                    empty_map,
-                    ObjVar;
+type InlineObj    = LeafObj, empty_set, empty_seq, empty_map;
+
+type AtomicExpr   = InlineObj, ObjVar;
 
 type NatBoolOp    = is_symb(ObjExpr),
                     is_int(ObjExpr),
@@ -35,6 +33,7 @@ type NatBoolOp    = is_symb(ObjExpr),
                     is_ne_seq(ObjExpr),
                     is_ne_map(ObjExpr),
                     is_tagged_obj(ObjExpr),
+                    has_elem(set: ObjExpr, elem: ObjExpr),
                     //has_key(map: ObjExpr, key: ObjExpr),
                     //comes_before(expr1: ObjExpr, expr2: ObjExpr),
                     is_eq_bool(expr1: BoolExpr, expr2: BoolExpr),
@@ -44,6 +43,7 @@ type NatBoolOp    = is_symb(ObjExpr),
                     is_ge(expr1: IntExpr, expr2: IntExpr),
                     is_lt(expr1: IntExpr, expr2: IntExpr),
                     is_le(expr1: IntExpr, expr2: IntExpr),
+                    inline_is_eq(expr: ObjExpr, value: InlineObj),
                     is_out_of_range(ItVar);
 
 type NatIntOp     = get_int_val(ObjExpr),
@@ -62,6 +62,7 @@ type NatObjOp     = //at(seq: ObjExpr, idx: ObjExpr),
                     get_inner_obj(ObjExpr), //## RENAME?
                     
                     to_obj(<BoolExpr, IntExpr>),
+                    obj_neg(ObjExpr),
 
                     to_str(ObjExpr), //## FOR THIS TO BE A NO-DELETE OPERATION, THE STRING MUST BE CACHED
                     to_symb(ObjExpr),
@@ -112,7 +113,9 @@ type Instr        = init_stream(StreamVar),
 
                     lookup(success_var: BoolVar?, var: ObjVar, map: ObjExpr, key: ObjExpr),
                     ext_lookup(success_var: BoolVar?, var: ObjVar, map: ObjExpr, key: ObjExpr),
-                    merge_maps(var: ObjVar, map1: ObjExpr, map2: ObjExpr),
+
+                    merge_sets(var: ObjVar, sets: ObjExpr),
+                    merge_maps(var: ObjVar, maps: ObjExpr),
                     
                     seq_to_set(var: ObjVar, seq: ObjExpr),
                     seq_to_mset(var: ObjVar, seq: ObjExpr),

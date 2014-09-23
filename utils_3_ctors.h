@@ -18,20 +18,28 @@ AtomicExpr empty_set = :empty_set;
 AtomicExpr empty_seq = :empty_seq;
 AtomicExpr empty_map = :empty_map;
 
-NatBoolOp is_symb(ObjExpr e)                   = :is_symb(e);
-NatBoolOp is_int(ObjExpr e)                    = :is_int(e);
-NatBoolOp is_ne_set(ObjExpr e)                 = :is_ne_set(e);
-NatBoolOp is_ne_seq(ObjExpr e)                 = :is_ne_seq(e);
-NatBoolOp is_ne_map(ObjExpr e)                 = :is_ne_map(e);
-NatBoolOp is_tagged_obj(ObjExpr e)             = :is_tagged_obj(e);
-NatBoolOp is_eq(BoolExpr e1, BoolExpr e2)      = is_eq_bool(expr1: e1, expr2: e2);
-NatBoolOp is_eq(IntExpr e1, IntExpr e2)        = is_eq_int(expr1: e1, expr2: e2);
-NatBoolOp is_eq(ObjExpr e1, ObjExpr e2)        = is_eq(expr1: e1, expr2: e2);
-NatBoolOp is_gt(IntExpr e1, IntExpr e2)        = is_gt(expr1: e1, expr2: e2);
-NatBoolOp is_ge(IntExpr e1, IntExpr e2)        = is_ge(expr1: e1, expr2: e2);
-NatBoolOp is_lt(IntExpr e1, IntExpr e2)        = is_lt(expr1: e1, expr2: e2);
-NatBoolOp is_le(IntExpr e1, IntExpr e2)        = is_le(expr1: e1, expr2: e2);
-NatBoolOp is_out_of_range(ItVar v)             = :is_out_of_range(v);
+NatBoolOp is_symb(ObjExpr e)                    = :is_symb(e);
+NatBoolOp is_int(ObjExpr e)                     = :is_int(e);
+NatBoolOp is_ne_set(ObjExpr e)                  = :is_ne_set(e);
+NatBoolOp is_ne_seq(ObjExpr e)                  = :is_ne_seq(e);
+NatBoolOp is_ne_map(ObjExpr e)                  = :is_ne_map(e);
+NatBoolOp is_tagged_obj(ObjExpr e)              = :is_tagged_obj(e);
+NatBoolOp has_elem(ObjExpr s, ObjExpr e)        = has_elem(set: s, elem: e);
+NatBoolOp is_eq(BoolExpr e1, BoolExpr e2)       = is_eq_bool(expr1: e1, expr2: e2);
+NatBoolOp is_eq(IntExpr e1, IntExpr e2)         = is_eq_int(expr1: e1, expr2: e2);
+// NatBoolOp is_eq(ObjExpr e1, ObjExpr e2)         = is_eq(expr1: e1, expr2: e2);
+NatBoolOp is_gt(IntExpr e1, IntExpr e2)         = is_gt(expr1: e1, expr2: e2);
+NatBoolOp is_ge(IntExpr e1, IntExpr e2)         = is_ge(expr1: e1, expr2: e2);
+NatBoolOp is_lt(IntExpr e1, IntExpr e2)         = is_lt(expr1: e1, expr2: e2);
+NatBoolOp is_le(IntExpr e1, IntExpr e2)         = is_le(expr1: e1, expr2: e2);
+NatBoolOp inline_is_eq(ObjExpr e, InlineObj v)  = inline_is_eq(expr: e, value: v);
+NatBoolOp is_out_of_range(ItVar v)              = :is_out_of_range(v);
+
+BoolExpr is_eq(ObjExpr e1, ObjExpr e2):
+  InlineObj,  InlineObj   = e1 == e2,
+  _,          InlineObj   = inline_is_eq(e1, e2),
+  InlineObj,  _           = inline_is_eq(e2, e1),
+  _,          _           = is_eq(expr1: e1, expr2: e2);
 
 NatIntOp get_int_val(ObjExpr e)       = :get_int_val(e);
 NatIntOp get_set_size(ObjExpr e)      = :get_set_size(e);
@@ -47,6 +55,7 @@ NatIntOp unique_int                   = :unique_int;
 NatObjOp get_tag(ObjExpr e)                    = :get_tag(e);
 NatObjOp get_inner_obj(ObjExpr e)              = :get_inner_obj(e);
 NatObjOp to_obj(<BoolExpr, IntExpr> e)         = :to_obj(e);
+NatObjOp obj_neg(ObjExpr e)                    = :obj_neg(e);
 NatObjOp to_str(ObjExpr e)                     = :to_str(e);
 NatObjOp to_symb(ObjExpr e)                    = :to_symb(e);
 NatObjOp get_curr_obj(<SetItVar, SeqItVar> it) = :get_curr_obj(it);
@@ -87,7 +96,9 @@ Instr lookup(BoolVar sv, ObjVar v, ObjExpr m, ObjExpr k)     = lookup(success_va
 Instr lookup(ObjVar v, ObjExpr m, ObjExpr k)                 = lookup(var: v, map: m, key: k);
 Instr ext_lookup(BoolVar sv, ObjVar v, ObjExpr m, ObjExpr k) = ext_lookup(success_var: sv, var: v, map: m, key: k);
 Instr ext_lookup(ObjVar v, ObjExpr m, ObjExpr k)             = ext_lookup(var: v, map: m, key: k);
-Instr merge_maps(ObjVar v, ObjExpr m1, ObjExpr m2)           = merge_maps(var: v, map1: m1, map2: m2);
+
+Instr merge_sets(ObjVar v, ObjExpr ss)  = merge_sets(var: v, sets: ss);
+Instr merge_maps(ObjVar v, ObjExpr ms)  = merge_maps(var: v, maps: ms);
 
 Instr seq_to_set(ObjVar v, ObjExpr s)    = seq_to_set(var: v, seq: s);
 Instr seq_to_mset(ObjVar v, ObjExpr s)   = seq_to_mset(var: v, seq: s);
@@ -231,6 +242,7 @@ Instr ret_false_if_not(BoolExpr cond) = do_if_not(cond, ret_false);
 Instr ret_false_if_not_in(ObjExpr val, SymbObj+ values) = do_if_not_in(val, values, [ret_false]);
 
 Instr check(BoolExpr e) = do_if_not(e, terminate);
+// Instr check(BoolExpr e) = no_op;
 
 Instr check_is_bool(ObjExpr e) = check(is_bool(e));
 

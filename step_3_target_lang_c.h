@@ -14,6 +14,8 @@ CCodeOutput compile_to_c(ProcDef* prg)
   bool_proc_defs := rand_sort({p : bool_proc_def() p <- prg});
   obj_proc_defs  := rand_sort({p : obj_proc_def()  p <- prg});
 
+  // symbs := (select SymbObj in prg end - {obj_true, obj_false}) & {:object(:string)};
+  // symbs := [obj_true, obj_false] & sort_set(symbs; is_strictly_ordered(s1, s2) = s1 < s2);
   symbs := select SymbObj in prg end & {obj_true, obj_false, :object(:string)};
   symbs := sort_set(symbs; is_strictly_ordered(s1, s2) = s1 < s2);
 
@@ -309,8 +311,9 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
                               if instr.success_var? then [instr.success_var] else [] end
                             ),
     
-    merge_maps()          = mk_call(instr.var, "merge_maps", [instr.map1, instr.map2]),
-    
+    merge_sets()          = mk_call(instr.var, "merge_sets", [instr.sets]),
+    merge_maps()          = mk_call(instr.var, "merge_maps", [instr.maps]),
+
     seq_to_set()          = mk_call(instr.var, "seq_to_set", [instr.seq]),
     seq_to_mset()         = mk_call(instr.var, "seq_to_mset", [instr.seq]),
     list_to_seq()         = mk_call(instr.var, "list_to_seq", [instr.list]),
@@ -534,6 +537,7 @@ using String typesymb2name(TypeSymbol)
     get_tag(e)          = "get_tag("        & to_c_expr(e)     & ")",
     get_inner_obj(e)    = "get_inner_obj("  & to_c_expr(e)     & ")",
     to_obj(e)           = "to_obj("         & to_c_expr(e)     & ")",
+    obj_neg(e)          = "obj_neg("        & to_c_expr(e)     & ")",
     to_str(e)           = "to_str("         & to_c_expr(e)     & ")",
     to_symb(e)          = "to_symb("        & to_c_expr(e)     & ")",
     get_curr_obj(v)     = "get_curr_obj("   & to_c_var_name(v) & ")",
@@ -555,6 +559,8 @@ using String typesymb2name(TypeSymbol)
     is_ne_seq(e)          = "is_ne_seq("  & to_c_expr(e) & ")",
     is_ne_map(e)          = "is_ne_map("  & to_c_expr(e) & ")",
     is_tagged_obj(e)      = "is_tag_obj(" & to_c_expr(e) & ")",
+
+    has_elem()            = "has_elem(" & to_c_expr(expr.set) & ", " & to_c_expr(expr.elem) & ")",
     
     is_eq_bool()          = to_nary_op(" == ", [expr.expr1, expr.expr2], parentesised), //## BAD
     is_eq_int()           = to_nary_op(" == ", [expr.expr1, expr.expr2], parentesised), //## BAD
@@ -566,6 +572,8 @@ using String typesymb2name(TypeSymbol)
     is_ge()               = to_nary_op(" >= ", [expr.expr1, expr.expr2], parentesised), //## BAD
     is_lt()               = to_nary_op(" < ",  [expr.expr1, expr.expr2], parentesised), //## BAD
     is_le()               = to_nary_op(" <= ", [expr.expr1, expr.expr2], parentesised), //## BAD
+
+    inline_is_eq()        = "inline_eq(" & to_c_expr(expr.expr) & ", " & to_c_expr(expr.value) & ")",
 
     is_out_of_range(v)    = "is_out_of_range(" & to_c_var_name(v) & ")",
 

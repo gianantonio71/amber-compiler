@@ -172,11 +172,25 @@ join(Seq seqs)
 
 reverse(Seq seq) = _rev_(seq);
 
+[T*] right_subseq([T*] seq, Nat first) = _slice_(seq, first, length(seq) - first);
+
 [T*] subseq([T*] seq, Nat first, Nat count) = _slice_(seq, first, count);
 
 [T*] subseq([T*] s, <nil>, Nat m, Nat r) = subseq(s, length(s)-m-r, m);
 [T*] subseq([T*] s, Nat l, <nil>, Nat r) = subseq(s, l, length(s)-l-r); 
 [T*] subseq([T*] s, Nat l, Nat m, <nil>) = subseq(s, l, m);
+
+
+[T*] op_*(Nat count, [T*] seq)
+{
+  res := [];
+  for (i : inc_seq(count))
+    for (x : reverse(seq))
+      res := [x | res];
+    ;
+  ;
+  return res;
+}
 
 [T*] rep_seq(Nat size, T value)
 {
@@ -189,22 +203,24 @@ reverse(Seq seq) = _rev_(seq);
   return s;
 }
 
-[Nat*] inc_seq(Nat n)
+[Nat*] inc_seq(Nat n) = inc_seq(0, n);
+
+[Nat*] inc_seq(Nat m, Nat n)
 {
-  i := n-1;
+  i := n - 1;
   s := [];
-  
-  while (i >= 0)
+  while(i >= m)
     s := [i | s];
     i := i - 1;
   ;
-  
-  return s;  
+  return s;
 }
 
 [Nat*] dec_seq(Nat n) = reverse(inc_seq(n));
 
 [Nat*] indexes(Seq s) = inc_seq(length(s));
+
+[Nat*] indexes(Seq s, Nat m) = inc_seq(m, length(s));
 
 Nat* index_set(Seq s) = set(indexes(s));
 
@@ -270,13 +286,15 @@ using Bool is_strictly_ordered(T, T) //## BAD BAD BAD
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
-Bool in(Any x, Set s) = (? e <- s : e == x);
+// Bool in(Any x, Set s) = (? e <- s : e == x);
+Bool in(Any x, Set s) = _in_(x, s);
 
 // [T1, T2]* cart_prod(T1* s1, T2* s2)  = {[e1, e2] : e1 <- s1, e2 <- s2};
 
 //Set cart_prod([{T*}+] ss) = {[e1a, e1b, e2] : [e1a, e1b] <- s1 /\ e2 <- s2};
 
-T* union(T* s1, T* s2)         = {e : e <- s1 \/ e <- s2};
+// T* union(T* s1, T* s2)         = {e : e <- s1 \/ e <- s2};
+T* union(T* s1, T* s2)         = _union_({s1, s2});
 T* intersection(T* s1, T* s2)  = {e : e <- s1, e <- s2};
 T* difference(T* s1, T* s2)    = {e : e <- s1 ; not in(e, s2)};
 
@@ -286,15 +304,17 @@ T* op_-(T* s1, T* s2) = difference(s1, s2);
 Bool disjoint(Set s1, Set s2)     = intersection(s1, s2) == {};
 Bool subset(Set s1, Set s2)       = s1 - s2 == {};
 
-T* union(T** sets)
-{
-  ss := rand_sort(sets);
-  u  := {};
-  for (s : ss)
-    u := union(u, s);
-  ;
-  return u;  
-}
+T* union(T** sets) = _union_(sets);
+
+// T* union(T** sets)
+// {
+//   ss := rand_sort(sets);
+//   u  := {};
+//   for (s : ss)
+//     u := union(u, s);
+//   ;
+//   return u;
+// }
 
 T* intersection(T** sets)
 {
@@ -352,9 +372,12 @@ T* seq_union([(T*)*] sets) = union(set(sets));
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
-T2 op_[]((T1 => T2) map, T1 key) = only_element({v : k => v <- map ; k == key});
+T2 op_[]((T1 => T2) map, T1 key) = _lookup_(map, key); // = only_element({v : k => v <- map ; k == key});
  
-T2 lookup((T1 => T2) map, T1 key, T2 default) = only_element_or_def_if_empty({v : k => v <- map ; k == key}, default);
+// T2 lookup((T1 => T2) map, T1 key, T2 default) = only_element_or_def_if_empty({v : k => v <- map ; k == key}, default);
+
+T2 lookup((T1 => T2) map, T1 key, T2 default) = if has_key(map, key) then map[key] else default end;
+
 
 (T1 => T2) update((T1 => T2) map, (T1 => T2) diffs) = (k => map[k] : k <- keys(map) - keys(diffs)) & diffs;
 
@@ -362,30 +385,32 @@ Nat size((Any => Any) map) = size(keys(map));
 
 T1* keys((T1 => T2) map) = {k : k => _ <- map};
 
-Bool has_key((T1 => T2) map, T1 key) = (? k => _ <- map : k == key);
+Bool has_key((T1 => T2) map, T1 key) = _has_key_(map, key); // = (? k => _ <- map : k == key);
 
-(T1 => T2) op_&((T1 => T2) map1, (T1 => T2) map2)
-{
-  assert {
-    ks1 := keys(map1);
-    ks2 := keys(map2);
+(T1 => T2) op_&((T1 => T2) map1, (T1 => T2) map2) = _merge_({map1, map2});
+
+// (T1 => T2) op_&((T1 => T2) map1, (T1 => T2) map2)
+// {
+//   assert {
+//     ks1 := keys(map1);
+//     ks2 := keys(map2);
     
-    for (k : rand_sort(intersection(ks1, ks2)))
-      return false if map1[k] /= map2[k];
-    ;
+//     for (k : rand_sort(intersection(ks1, ks2)))
+//       return false if map1[k] /= map2[k];
+//     ;
 
-    return true;
+//     return true;
 
-    //disj  := disjoint(ks1, ks2);
-    //
-    //if (not disj)
-    //  print intersection(ks1, ks2);;
+//     //disj  := disjoint(ks1, ks2);
+//     //
+//     //if (not disj)
+//     //  print intersection(ks1, ks2);;
 
-    //return disj;
-  };
+//     //return disj;
+//   };
 
-  return (k => v : k => v <- map1 \/ k => v <- map2);
-}
+//   return (k => v : k => v <- map1 \/ k => v <- map2);
+// }
 
 (K => V+) merge_values((K => V)* maps)
 {
@@ -395,7 +420,8 @@ Bool has_key((T1 => T2) map, T1 key) = (? k => _ <- map : k == key);
 
 (K => V+) merge_value_sets((K => V+)* maps) = (k => union(vss) : k => vss <- merge_values(maps));
 
-(T1 => T2) merge((T1 => T2)* maps) = (k => v : m <- maps, k => v <- m);
+// (T1 => T2) merge((T1 => T2)* maps) = (k => v : m <- maps, k => v <- m);
+(T1 => T2) merge((T1 => T2)* maps) = _merge_(maps);
 
 (T1 => T2) remove_keys((T1 => T2) m, T1* ks) = (k => m[k] : k <- keys(m) - ks);
 

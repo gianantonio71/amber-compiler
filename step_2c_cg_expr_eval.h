@@ -180,8 +180,12 @@ using
   [Instr*] gen_eval_code(BuiltIn name, [AtomicExpr*] params, ObjVar res_var)
   {
     return match (name)
-             :obj   = [set_var(res_var, get_inner_obj(params[0])), add_ref(res_var)],
-             _      = [gen_eval_instr(name, params, res_var)];
+             :obj     = [set_var(res_var, get_inner_obj(params[0])), add_ref(res_var)],
+             :has_key = { bvar := bvar(next_bool_var_id);
+                          return [lookup(bvar, res_var, params[0], params[1]), set_var(res_var, to_obj(bvar))];
+                        },
+             :lookup  = [lookup(res_var, params[0], params[1]), add_ref(res_var)],
+             _        = [gen_eval_instr(name, params, res_var)];
            ;
 
     Instr gen_eval_instr(BuiltIn name, [AtomicExpr*] ps, ObjVar res_var):
@@ -192,6 +196,8 @@ using
       :at           = get_at(res_var, ps[0], get_int_val(ps[1])),
       :mset         = seq_to_mset(res_var, ps[0]),
       :isort        = internal_sort(res_var, ps[0]),
+      :union        = merge_sets(res_var, ps[0]),
+      :merge        = merge_maps(res_var, ps[0]),
       :list_to_seq  = list_to_seq(res_var, ps[0]),
       _             = set_var(res_var, gen_eval_expr(name, ps));
     
@@ -203,7 +209,8 @@ using
       :mult       = to_obj(mult(get_int_val(ps[0]), get_int_val(ps[1]))),
       :counter    = to_obj(unique_int),
       :len        = to_obj(get_seq_len(ps[0])),
-      :tag        = get_tag(ps[0]);
+      :tag        = get_tag(ps[0]),
+      :in         = to_obj(has_elem(ps[1], ps[0]));
       // :rand_nat   =
       // :rand_elem  =
       // :counter    =
@@ -241,13 +248,7 @@ using
                       ],
     
                       //## BAD BAD BAD
-    not_expr(e)     = gen_eval_code(e, res_var) &
-                      [ check(is_bool(res_var)),
-                        branch(is_true(res_var),
-                          [set_var(res_var, obj_false)],
-                          [set_var(res_var, obj_true)]
-                        )
-                      ],
+    not_expr(e)     = gen_eval_code(e, res_var) & [set_var(res_var, obj_neg(res_var))],
 
     
     set_expr(es) =
@@ -687,6 +688,7 @@ using
     assert_stmt(e)  = { info := gen_eval_info(e);
                         return info.eval_code & [check(is_true(info.expr))];
                       },
+    // assert_stmt(e)  = [no_op],
 
     print_stmt(e)   = { info := gen_eval_info(e);
                         return info.eval_code & [print_obj(info.expr)] & info.cleanup_code;

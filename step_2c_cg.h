@@ -108,10 +108,36 @@ Program merge_fns_same_name_and_arity(Program prg)
 FnDef merge_fns(FnDef+ fds, (TypeName => AnonType) typedefs)
 {
   assert size(fds) > 1;
+  assert size({length(fd.params) : fd <- fds}) == 1; // All functions have the same arity
+
+  //## I DON'T PARTICULARLY LIKE THIS...
+  rand_fd      := an_elem(fds);
+  name         := rand_fd.name;
+  arity        := arity(rand_fd);
+  named_params := rand_fd.named_params;
+
+  candidates := [];
+  for (i : inc_seq(arity))
+    params := [fd.params[i] : fd <- rand_sort(fds)];
+    ptypes := [if p.type? then pseudotype(p.type, typedefs) else pseudotype_any end : p <- params];
+    good := all([all([are_disjoint(p1, p2) : p2 <- right_subseq(ptypes, j+1)]) : p1, j <- ptypes]); //## BAD: INEFFICIENT. ALSO A BIT UGLY...
+    candidates := candidates & [i] if good;
+  ;
+
+  // If not single parameter is enough to discriminate between all the functions,
+  // then we just check all of them. Otherwise we use the first parameter that can do the job.
+  //## EVEN IF NO SINGLE PARAMETER IS ENOUGHT TO DISCRIMINATE BETWEEN ALL THE FUNCTIONS,
+  //## CHANCES ARE THAT WE STILL DON'T NEED TO CHECK ALL OF THEM. ALSO, IF THERE IS MORE
+  //## THAN ONE CANDIDATE PARAMETER, WE SHOULD CHOOSE THE BEST ONE, THAT IS, THE ONE THAT
+  //## CAN DO THE JOB MORE EFFICIENTLY.
+  //## ALSO, THE PARAMETERS THAT ARE NOT CHECKED AND THAT DO NOT DEFINE ANY VARIABLES
+  //## SHOULD NOT BE INCLUDED IN THE MATCH AT ALL (ALTHOUGH THIS WOULD MAKE A DIFFERENCE
+  //## ONLY WHEN AT LEAST ONE PARAMETER IS NOT NAMED IN ANY OF THE FUNCTIONS)
+  is_checked := if candidates == [] then arity * [true] else [i == candidates[0] : i <- inc_seq(arity)] end;
 
   cases := [];
   for (fd : rand_sort(fds))
-    ptrns := [mk_ptrn(p, typedefs) : p <- fd.params];
+    ptrns := [mk_ptrn(p, typedefs, is_checked[i]) : p, i <- fd.params];
     case  := (ptrns: ptrns, expr: fd.expr);
     cases := [case | cases];  
   ;
@@ -119,11 +145,6 @@ FnDef merge_fns(FnDef+ fds, (TypeName => AnonType) typedefs)
 // print "*****************";
 // print cases;
 
-  //## I DON'T LIKE THIS...
-  rand_fd      := an_elem(fds); 
-  name         := rand_fd.name;
-  arity        := arity(rand_fd);
-  named_params := rand_fd.named_params;
 
   new_expr := match_expr(
                 exprs: [fn_par(i) : i <- inc_seq(arity)], //## BAD
@@ -151,10 +172,10 @@ FnDef merge_fns(FnDef+ fds, (TypeName => AnonType) typedefs)
            expr:          new_expr
          );
 
-  Pattern mk_ptrn(<(var: var(Atom)?, type: UserExtType?)> param, (TypeName => AnonType) typedefs)
+  Pattern mk_ptrn(<(var: var(Atom)?, type: UserExtType?)> param, (TypeName => AnonType) typedefs, Bool is_checked)
   {
 // Pattern user_type_to_pseudotype_pattern(UserType type, (TypeName => AnonType) typedefs);
-    ptrn := if param.type? then user_type_to_pseudotype_pattern(param.type, typedefs) else ptrn_any end;
+    ptrn := if param.type? and is_checked then user_type_to_pseudotype_pattern(param.type, typedefs) else ptrn_any end;
     ptrn := ptrn_var(param.var, ptrn) if param.var?;
 
     // ptrn := if param.type? then :type_ptrn(param.type) else :ptrn_any end;

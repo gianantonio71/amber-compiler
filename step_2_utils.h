@@ -190,7 +190,6 @@ Bool arity_is_correct(BuiltIn name, NzNat arity) = arity == builtin_arity_map[na
   add:         2,
   str:         1,
   symb:        1,
-  counter:     1,
   at:          2,
   len:         1,
   slice:       3,
@@ -202,6 +201,12 @@ Bool arity_is_correct(BuiltIn name, NzNat arity) = arity == builtin_arity_map[na
   list_to_seq: 1,
   tag:         1,
   obj:         1,
+  in:          2,
+  has_key:     2,
+  lookup:      2,
+  union:       1,
+  merge:       1,
   rand_nat:    1,
-  rand_elem:   1
+  rand_elem:   1,
+  counter:     1
 );
