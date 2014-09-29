@@ -686,7 +686,7 @@ using
     loop_stmt(ss)   = [repeat(gen_code(ss, res_var, all_rel_vars, {}, {}))],
 
     assert_stmt(e)  = { info := gen_eval_info(e);
-                        return info.eval_code & [check(is_true(info.expr))];
+                        return info.eval_code & [runtime_check(info.expr)];
                       },
     // assert_stmt(e)  = [no_op],
 

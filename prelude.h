@@ -109,6 +109,15 @@ Int max(Int+ ns)
   return max;
 }
 
+Int sum([Int*] ns)
+{
+  res := 0;
+  for (n : ns)
+    res := res + n;
+  ;
+  return res;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 // Should it be defined for empty sequences (and negative integers)
@@ -626,13 +635,14 @@ String to_text(Any obj)
   String to_txt(Any obj):
     +           = _str_(obj),
     *           = to_str(obj),
-    string()    = if obj :: String then "\"" & quote(obj) & "\"" else to_txt(:string, _obj_(obj)) end,
+    string()    = if obj :: String then quote(obj) else to_txt_tag_obj(:string, _obj_(obj)) end,
     [...]       = "[" & append(intermix([to_txt(x) : x <- obj], ", ")) & "]",
     {...}       = "{" & append(intermix([to_txt(x) : x <- rand_sort(obj)], ", ")) & "}",
     (...)       = to_txt(obj, if keys(obj) :: <Atom*> then ": " else " => " end),
-    tag @ iobj  = to_txt(tag,  iobj);
+    // tag @ iobj  = to_txt(tag,  iobj);
+    tag @ iobj  = to_txt_tag_obj(tag,  iobj);
 
-  String to_txt(Atom tag, Any obj)
+  String to_txt_tag_obj(Atom tag, Any obj)
   {
     str := to_txt(obj);
     str := "(" & str & ")" if not obj :: Tuple;
@@ -645,108 +655,133 @@ String to_text(Any obj)
     strs := [to_txt(e.key) & key_val_sep & to_txt(e.value) : e <- es];
     return "(" & append(intermix(strs, ", ")) & ")";
   }
-
-  String quote(String str)
-  {
-    qr_str := [];
-    for (ch : untag(str))
-      if (ch == 10)   // '\n'
-        qr_str := [110, 92 | qr_str];
-      elif (ch == 92) // '\\'
-        qr_str := [92, 92 | qr_str];
-      elif (ch == 34) // '\"'
-        qr_str := [34, 92 | qr_str];
-      else
-        qr_str := [ch | qr_str];
-      ;
-    ;
-    return string(reverse(qr_str));
-  }
 }
 
-String to_text(Any obj, Nat line_len)
+
+String quote(String str)
 {
-  return wrap(to_text(obj), line_len);
-    
-  
-  String wrap(String str, Nat line_len)
-  {
-    len   := length(str);
-    midxs := match_idxs(str);
-    
-    i       := 0;
-    wstr    := "";
-    ind_lev := 0;
-    
-    while (i < len)
-      ch := str[i];
-      
-      if (ch == ascii_comma)
-        wstr := wstr & ",\n" & rep_str(2*ind_lev, ascii_space);
-        loop
-          i := i + 1;
-        while (at(str, i) == ascii_space);
-      
-      elif (is_right_par(ch))
-        assert ind_lev > 0;
-        ind_lev := ind_lev - 1;
-        wstr    := wstr & "\n" & rep_str(2*ind_lev, ascii_space) & string([ch]); //## BIT UGLY
-        i := i + 1;
+  qr_str := [];
+  for (ch : untag(str))
+    if (ch == 10)   // '\n'
+      qr_str := [110, 92 | qr_str];
+    elif (ch == 92) // '\\'
+      qr_str := [92, 92 | qr_str];
+    elif (ch == 34) // '\"'
+      qr_str := [34, 92 | qr_str];
+    else
+      qr_str := [ch | qr_str];
+    ;
+  ;
+  return "\"" & string(reverse(qr_str)) & "\"";
+}
 
-      elif (midxs[i] == nil)
-        wstr := wstr & string([ch]); //## BIT UGLY
-        i    := i + 1;
-      
+
+String to_text(Any obj, Nat line_len, Nat indent_level)
+{
+  ind_str := rep_str(2 * indent_level, ascii_space);
+  return append(intermix([ind_str & l : l <- to_text(obj, line_len)], "\n"));
+}
+
+
+[String+] to_text(Any obj, Nat line_len)
+{
+  return to_txt(obj, line_len);
+
+  [String+] to_txt(Any obj, Nat line_len):
+    +           = [_str_(obj)],
+    *           = [to_str(obj)],
+    string()    = if obj :: String then [quote(obj)] else to_txt_tag_obj(:string, _obj_(obj), line_len) end,
+    [...]       = to_txt_collection(obj, line_len, "[", "]"),
+    {...}       = to_txt_collection(rand_sort(obj), line_len, "{", "}"),
+    (...)       = to_txt_map(obj, line_len),
+    tag @ iobj  = to_txt_tag_obj(tag, iobj, line_len);
+
+  [String+] to_txt_tag_obj(Atom tag, Any obj, Nat line_len)
+  {
+    obj_is_tuple := match (obj)
+                      (...)   = keys(obj) :: <Atom*>,
+                      _       = false;
+                    ;
+    tag_str      := _str_(tag);
+    obj_lines    := to_txt(obj, line_len);
+    line_count   := length(obj_lines);
+    first_line   := obj_lines[0];
+
+    if (line_count == 1)
+      if (obj_is_tuple or length(first_line) + length(tag_str) + 2 <= line_len)
+        return [tag_str & if obj_is_tuple then first_line else "(" & first_line & ")" end];
       else
-        blk_len := midxs[i] - i - 1;
-        if (blk_len < line_len) //## IMPROVE
-          wstr := wstr & substr(str, i, blk_len+2);
-          i := i + blk_len + 2;
+        return [tag_str & "(", "  " & first_line, ")"];
+      ;
+    else
+      middle_lines := subseq(obj_lines, 1, line_count-2);
+      last_line    := rev_at(obj_lines, 0);
+      if (length(first_line) == 1)
+        indent := "";
+        head   := [tag_str & if obj_is_tuple then "" else "(" end & first_line];
+        tail   := [last_line & if obj_is_tuple then "" else ")" end];
+      else
+        indent := "  ";
+        head := [tag_str & "(", "  " & first_line];
+        tail := ["  " & last_line, ")"];
+      ;
+    ;
+
+    return head & [indent & l : l <- middle_lines] & tail;
+  }
+
+  [String+] to_txt_collection(Seq seq, Nat line_len, String left_del, String right_del)
+  {
+    lines_seq := [to_txt(obj, line_len) : obj <- seq];
+    if (all([length(ls) == 1 : ls <- lines_seq]))
+      len_sum := sum([length(ls[0]) : ls <- lines_seq]);
+      if (len_sum + 2 * length(seq) + 2 < line_len)
+        return [left_del & append(intermix([ls[0] : ls <- lines_seq], ", ")) & right_del];
+      ;
+    ;
+    last_idx := length(lines_seq) - 1;
+    indented_lines_with_commas := join([["  " & l : l <- if i /= last_idx then append_to_last(ls, ",") else ls end] : ls, i <- lines_seq]);
+    return [left_del] & indented_lines_with_commas & [right_del];
+  }
+
+  [String+] append_to_last([String+] lines, String str) = [if i /= last_idx then l else l & str end : l, i <- lines] let last_idx := length(lines) - 1;;
+  
+
+  [String+] to_txt_map(Map map, Nat line_len)
+  {
+    is_tuple    := keys(map) :: <Atom*>;
+    key_val_sep := if is_tuple then ": " else " => " end;
+    size        := size(map);
+    es          := rand_sort({(key: k, value: v) : k => v <- map});
+    lines       := [];
+    single_line := "";
+    is_single_line_so_far := true;
+    for (e, i : es)
+      key_ls := to_txt(e.key, line_len);
+      value_ls := to_txt(e.value, line_len);
+      // The pair goes in a single line if both key and value must be on a single line and
+      // either it's a tuple or the entire pair (including the separator) fits in a single line
+      if (length(key_ls) == 1 and length(value_ls) == 1 and (is_tuple or length(key_ls[0]) + length(value_ls[0]) + 2 < line_len))
+        ls := [key_ls[0] & key_val_sep & value_ls[0]];
+      else
+        ls := append_to_last(key_ls, key_val_sep) & value_ls;
+      ;
+      ls := append_to_last(ls, ",") if i < size - 1;
+      lines := lines & ls;
+      if (is_single_line_so_far)
+        if (length(ls) == 1 and length(single_line) + length(ls[0]) < line_len)
+          single_line := single_line & if single_line == "" then "" else " " end & ls[0];
         else
-          ind_lev := ind_lev + 1;
-          wstr := wstr & string([ch]) & "\n" & rep_str(2*ind_lev, ascii_space);
-          i := i + 1;
-        ;      
+          is_single_line_so_far := false;
+        ;
       ;
     ;
-    
-    return wstr;  
-  }
-  
-  [<Nat, end, nil>*] match_idxs(String str)
-  {
-    len := length(str);
-    ms  := [];
-    open_par_idxs := [];
-    for (ch, i : reverse(untag(str)))
-      if (is_left_par(ch))
-        assert open_par_idxs /= [];
-        mtc := open_par_idxs[0];
-        open_par_idxs := tail(open_par_idxs);
-      else
-        open_par_idxs := [len-i-1 | open_par_idxs] if is_right_par(ch);
-        mtc := nil;
-      ;
-      ms := [mtc | ms];
+    if (is_single_line_so_far)
+      return ["(" & single_line & ")"];
+    else
+      return ["("] & ["  " & l : l <- lines] & [")"];
     ;
-    return ms;
   }
-
-  Bool is_left_par(Nat ch) = in(ch, left_pars)
-                             let
-                               left_pars := { ascii_left_parenthesis,
-                                              ascii_left_bracket,
-                                              ascii_left_brace
-                                            };
-                             ;
-
-  Bool is_right_par(Nat ch) = in(ch, right_pars)
-                              let
-                                right_pars := { ascii_right_parenthesis,
-                                                ascii_right_bracket,
-                                                ascii_right_brace
-                                              };
-                              ;
 }
 
 ///////////////////////////////////////////////////////////////////////////////

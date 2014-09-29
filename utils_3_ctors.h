@@ -143,6 +143,11 @@ Instr exit_block                = :exit_block;
 Instr call_proc(ObjVar v, ObjFnName n, [ObjExpr*] ps) = call_proc(var: v, name: n, params: ps);
 Instr call_cls(ObjVar v, Var cv, [ObjExpr*] ps)  = call_cls(var: v, cls_var: cv, params: ps);
 
+Instr push_call_info(FnSymbol fn_name, [ObjVar*] params) = push_call_info(fn_name: fn_name, params: params);
+Instr pop_call_info = :pop_call_info;
+
+Instr runtime_check(ObjExpr c) = runtime_check(cond: c);
+
 Instr var_scope(<named_par(Atom)> var, AtomicExpr value, [Instr+] body) = var_scope(var: var, new_value: value, body: body);
 Instr cls_scope(<named_par(Atom)> v, [Var*] e, ClsDef c, [Instr+] b) = cls_scope(var: v, env: e, cls: c, body: b);
 

@@ -83,7 +83,7 @@ ObjProcDef gen_fn_code(FnDef fndef)
     //;
   ;
 
-  body := body & [ret_val(fn_res_var)];
+  body := [push_call_info(fndef.name, [fn_par(i) : i <- indexes(fndef.params)])] & body & [pop_call_info, ret_val(fn_res_var)];
 
   return obj_proc_def(fndef.name, length(fndef.params), (v => arity(t) : v => t <- fndef.named_params), body);
 }

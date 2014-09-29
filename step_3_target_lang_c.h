@@ -65,7 +65,10 @@ CCodeOutput compile_to_c(ProcDef* prg)
   env_decl := env_decl & ["};"] & rep_seq(4, "");
   
   c_code := c_code & env_decl;
-  
+
+  all_fn_arities := set([d.in_arity : d <- obj_proc_defs]);
+  c_code := c_code & join(intermix([generate_push_call_info_wrapper(a) : a <- rand_sort(all_fn_arities)], 2 * [""])) & 4 * [""];
+
 //  print "compile_to_c#1";
 //  
 //  //## BAD CONSTRUCTION OF TUPLE IS REPEATED IN TWO DIFFERENT PLACES
@@ -121,6 +124,23 @@ CCodeOutput compile_to_c(ProcDef* prg)
   String typesymb2str(ts, par_types):
     type_symbol(a)      = upper(_str_(a)),
     par_type_symbol()   = typesymb2str(ts.symbol, par_types) & "__" & to_str(index_first(ts, par_types));
+}
+
+
+[String+] generate_push_call_info_wrapper(Nat arity)
+{
+  signature := "void push_call_info_wrapper(const char *fn_name" & append([", Obj p" & to_str(i) : i <- inc_seq(arity)]) & ")";
+  code := [signature, "{", "#ifndef NDEBUG"];
+  if (arity == 0)
+    code := code & ["  push_call_info(fn_name, 0, (Obj *)0);"];
+  else
+    code := code & ["  Obj *params = new_obj_array(" & to_str(arity) & ");"];
+    for (i : inc_seq(arity))
+      code := code & ["  params[" & to_str(i) & "] = p" & to_str(i) & ";"];
+    ;
+    code := code & ["  push_call_info(fn_name, " & to_str(arity) & ", params);"];
+  ;
+  return code & ["#endif", "}"];
 }
 
 
@@ -361,6 +381,12 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
     call_cls()            = mk_cls_call(instr.var, instr.cls_var, instr.params), //## INLINE THE FUNCTION
 
+    push_call_info()      = [mk_gen_call("push_call_info_wrapper", [quote(fn_name_to_str(instr.fn_name))], instr.params, [])],
+
+    :pop_call_info        = mk_call("pop_call_info", []),
+
+    runtime_check()       = mk_call("runtime_check", [instr.cond]),
+
     branch() =
     {
       assert instr.when_true? or instr.when_false?;
@@ -499,17 +525,17 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
   ///////////////////////////////////////////////////////////////////////////////
   ///////////////////////////////////////////////////////////////////////////////
 
-  String mk_gen_call(String fn_name, [FnCallParam*] params, [String*] trailing_params) =
-    fn_name & "(" & append(intermix([to_c_expr(p) : p <- params] & trailing_params, ", ")) & ");";
+  String mk_gen_call(String fn_name, [String*] leading_params, [FnCallParam*] params, [String*] trailing_params) =
+    fn_name & "(" & append(intermix(leading_params & [to_c_expr(p) : p <- params] & trailing_params, ", ")) & ");";
   
-  String mk_gen_call(AnyVar var, String fn_name, [FnCallParam*] params, [String*] trailing_params) =
-    to_c_var_name(var) & " = " & mk_gen_call(fn_name, params, trailing_params);
+  String mk_gen_call(AnyVar var, String fn_name, [String*] leading_params, [FnCallParam*] params, [String*] trailing_params) =
+    to_c_var_name(var) & " = " & mk_gen_call(fn_name, leading_params, params, trailing_params);
   
-  [String*] mk_call(String fn_name, [FnCallParam*] params)             = [mk_gen_call(fn_name, params, [])];
-  [String*] mk_call(AnyVar var, String fn_name, [FnCallParam*] params) = [mk_gen_call(var, fn_name, params, [])];
+  [String*] mk_call(String fn_name, [FnCallParam*] params)             = [mk_gen_call(fn_name, [], params, [])];
+  [String*] mk_call(AnyVar var, String fn_name, [FnCallParam*] params) = [mk_gen_call(var, fn_name, [], params, [])];
   
-  //[String*] mk_fn_call(String fn_name, [FnCallParam*] params)             = [mk_gen_call(fn_name, params, ["env"])];
-  [String*] mk_fn_call(AnyVar var, String fn_name, [FnCallParam*] params) = [mk_gen_call(var, fn_name, params, ["env"])];
+  //[String*] mk_fn_call(String fn_name, [FnCallParam*] params)             = [mk_gen_call(fn_name, [], params, ["env"])];
+  [String*] mk_fn_call(AnyVar var, String fn_name, [FnCallParam*] params) = [mk_gen_call(var, fn_name, [], params, ["env"])];
 
   //## AnyVar IS WRONG HERE, SHOULD ONLY BE OBJ/BOOL/INT VARS
   [String*] mk_assignment(AnyVar var, AnyExpr value) = [to_c_var_name(var) & " = " & to_c_expr(value) & ";"];
@@ -518,7 +544,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
   [String*] mk_cls_call(ObjVar var, Var cls_var, [ObjExpr*] params)
   {
     name         := to_str(length(params)) & "_" & _str_(untag(cls_var));
-    return [mk_gen_call(var, "env.n" & name, params, ["env.C" & name, "env"])];
+    return [mk_gen_call(var, "env.n" & name, [], params, ["env.C" & name, "env"])];
   }
 }
 
@@ -657,6 +683,16 @@ using String typesymb2name(TypeSymbol)
     nested_fn_symbol()  = to_c_fn_name(fn_symb.outer) & "__" & to_c_fn_name(fn_symb.inner);
 
   String to_c_fn_name(BoolFnName): memb_test(ts) = "is_" & typesymb2name(ts);
+
+  ///////////////////////////////////////////////////////////////////////////////
+  ///////////////////////////////////////////////////////////////////////////////
+
+  String fn_name_to_str(FnSymbol fn_symb):
+    fn_symbol(symb)     = _str_(symb),
+    op_symbol(op)       = _str_(op),
+    //## BUG: THIS DOESN'T SPECIFY WHICH OF THE OUTER FUNCTIONS
+    //## WITH THE SAME NAME THE NESTED FUNCTION BELONGS TO
+    nested_fn_symbol()  = fn_name_to_str(fn_symb.outer) & ":" & fn_name_to_str(fn_symb.inner);
 }
 
 ///////////////////////////////////////////////////////////////////////////////

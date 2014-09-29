@@ -98,6 +98,8 @@ type BuiltIn  = neg, add, str, symb, at, len, slice, cat, rev, set, mset, isort,
 
 type FnSymbol = fn_symbol(Atom),
                 op_symbol(Operator),
+                //## BUG: AN FnSymbol IS NOT ENOUGH TO IDENTIFY WHICH WAS THE OUTER FUNCTION.
+                //## TWO FUNCTIONS WITH THE SAME NAME COULD CONTAIN INNER FUNCTIONS WITH THE SAME NAME
                 nested_fn_symbol(outer: FnSymbol, inner: FnSymbol); //## BAD
 
 type Var      = var(Atom), fn_par(Nat), named_par(Atom), unique_var(Nat); //## BAD

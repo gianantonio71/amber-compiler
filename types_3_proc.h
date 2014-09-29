@@ -156,6 +156,11 @@ type Instr        = init_stream(StreamVar),
                     call_proc(var: ObjVar, name: ObjFnName, params: [ObjExpr*]),
                     call_cls(var: ObjVar, cls_var: Var, params: [ObjExpr*]), //## NEW
                     
+                    push_call_info(fn_name: FnSymbol, params: [ObjVar*]),
+                    pop_call_info,
+
+                    runtime_check(cond: ObjExpr),
+
                     var_scope(var: <named_par(Atom)>, new_value: AtomicExpr, body: [Instr+]),     //## STILL NEW
                     cls_scope(var: <named_par(Atom)>, env: [Var*], cls: ClsDef, body: [Instr+]);  //## NEW
                     
