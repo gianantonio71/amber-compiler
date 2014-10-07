@@ -63,11 +63,11 @@ NatObjOp get_curr_key(MapItVar it)             = :get_curr_key(it);
 NatObjOp get_curr_value(MapItVar it)           = :get_curr_value(it);
 
 BoolExpr neg(BoolExpr e)                           = :neg(e);
-BoolExpr and([BoolExpr+] es)                       = :and(es);
-BoolExpr or([BoolExpr+] es)                        = :or(es);
-BoolExpr and_then([BoolExpr+] es)                  = :and_then(es);
-BoolExpr or_else([BoolExpr+] es)                   = :or_else(es);
-BoolExpr eval_bool_fn(BoolFnName n, [AnyExpr+] ps) = eval_bool_fn(name: n, params: ps);
+BoolExpr and([BoolExpr^] es)                       = :and(es);
+BoolExpr or([BoolExpr^] es)                        = :or(es);
+BoolExpr and_then([BoolExpr^] es)                  = :and_then(es);
+BoolExpr or_else([BoolExpr^] es)                   = :or_else(es);
+BoolExpr eval_bool_fn(BoolFnName n, [AnyExpr^] ps) = eval_bool_fn(name: n, params: ps);
 
 // Basic instructions
 
@@ -126,34 +126,34 @@ Instr ret_val(<ObjExpr, BoolExpr> e) = :ret_val(e);
 
 Instr no_op = :no_op;
 
-Instr branch(BoolExpr c, [Instr*] t, [Instr*] f) =
+Instr branch(BoolExpr c, [Instr] t, [Instr] f) =
   if t /= [] or f == []
     then branch(cond: c, when_true: t, when_false: f)
     else branch(cond: neg(c), when_true: f, when_false: t)
   end;
 
-//Instr symbol_switch() = symbol_switch(val: ObjExpr, cases: (vals: SymbObj+, instrs: [Instr*])*, else: [Instr+]?);
+//Instr symbol_switch() = symbol_switch(val: ObjExpr, cases: (vals: SymbObj+, instrs: [Instr])*, else: [Instr^]?);
 
-Instr repeat([Instr+] b) = :repeat(b);
+Instr repeat([Instr^] b) = :repeat(b);
 Instr break_loop         = :break_loop;
 
-Instr execute_block([Instr+] b) = :execute_block(b);
+Instr execute_block([Instr^] b) = :execute_block(b);
 Instr exit_block                = :exit_block;
 
-Instr call_proc(ObjVar v, ObjFnName n, [ObjExpr*] ps) = call_proc(var: v, name: n, params: ps);
-Instr call_cls(ObjVar v, Var cv, [ObjExpr*] ps)  = call_cls(var: v, cls_var: cv, params: ps);
+Instr call_proc(ObjVar v, ObjFnName n, [ObjExpr] ps) = call_proc(var: v, name: n, params: ps);
+Instr call_cls(ObjVar v, Var cv, [ObjExpr] ps)  = call_cls(var: v, cls_var: cv, params: ps);
 
-Instr push_call_info(FnSymbol fn_name, [ObjVar*] params) = push_call_info(fn_name: fn_name, params: params);
+Instr push_call_info(FnSymbol fn_name, [ObjVar] params) = push_call_info(fn_name: fn_name, params: params);
 Instr pop_call_info = :pop_call_info;
 
 Instr runtime_check(ObjExpr c) = runtime_check(cond: c);
 
-Instr var_scope(<named_par(Atom)> var, AtomicExpr value, [Instr+] body) = var_scope(var: var, new_value: value, body: body);
-Instr cls_scope(<named_par(Atom)> v, [Var*] e, ClsDef c, [Instr+] b) = cls_scope(var: v, env: e, cls: c, body: b);
+Instr var_scope(<named_par(Atom)> var, AtomicExpr value, [Instr^] body) = var_scope(var: var, new_value: value, body: body);
+Instr cls_scope(<named_par(Atom)> v, [Var] e, ClsDef c, [Instr^] b) = cls_scope(var: v, env: e, cls: c, body: b);
 
 //////////////////// //////////////////// ////////////////////
 
-ObjProcDef obj_proc_def(ObjFnName name, Nat arity, (<named_par(Atom)> => Nat) nps, [Instr+] body) =
+ObjProcDef obj_proc_def(ObjFnName name, Nat arity, (<named_par(Atom)> => Nat) nps, [Instr^] body) =
   obj_proc_def(
     name:         name,
     in_arity:     arity,
@@ -161,7 +161,7 @@ ObjProcDef obj_proc_def(ObjFnName name, Nat arity, (<named_par(Atom)> => Nat) np
     body:         body
   );
 
-BoolProcDef bool_proc_def(BoolFnName name, NzNat arity, [Instr+] body) =
+BoolProcDef bool_proc_def(BoolFnName name, NzNat arity, [Instr^] body) =
   bool_proc_def(
     name:  name,
     arity: arity,
@@ -198,7 +198,7 @@ SymbObj obj_false = :object(false);
 
 ObjExpr obj_nil   = :object(nil);
 
-Instr cls_scope(<named_par(Atom)> var, Int arity, [Var*] env, [Instr+] cls_body, [Instr+] body)
+Instr cls_scope(<named_par(Atom)> var, Int arity, [Var] env, [Instr^] cls_body, [Instr^] body)
 {
   cls := cls_def(arity: arity, body: cls_body);
   return cls_scope(var, env, cls, body);
@@ -206,23 +206,23 @@ Instr cls_scope(<named_par(Atom)> var, Int arity, [Var*] env, [Instr+] cls_body,
 
 //////////////////// Derived instructions ////////////////////
 
-Instr repeat_while(BoolExpr cond, [Instr+] body) = repeat([do_if_not(cond, break_loop)] & body);
+Instr repeat_while(BoolExpr cond, [Instr^] body) = repeat([do_if_not(cond, break_loop)] & body);
 
 Instr increment(IntVar v) = set_ivar(v, add(v, 1));
 
-Instr do_if(BoolExpr cond, [Instr*] instrs)      = branch(cond, instrs, []);
-Instr do_if_not(BoolExpr cond, [Instr*] instrs)  = branch(cond, [], instrs);
+Instr do_if(BoolExpr cond, [Instr] instrs)      = branch(cond, instrs, []);
+Instr do_if_not(BoolExpr cond, [Instr] instrs)  = branch(cond, [], instrs);
 
 Instr do_if(BoolExpr cond, Instr instr)      = do_if(cond, [instr]);
 Instr do_if_not(BoolExpr cond, Instr instr)  = do_if_not(cond, [instr]);
 
-Instr do_if_in(ObjExpr val, SymbObj+ values, [Instr*] instrs) =
+Instr do_if_in(ObjExpr val, SymbObj+ values, [Instr] instrs) =
   symbol_switch(
     val:   val,
     cases: {(vals: values, instrs: instrs)}
   );
 
-Instr do_if_not_in(ObjExpr val, SymbObj+ values, [Instr*] instrs) =
+Instr do_if_not_in(ObjExpr val, SymbObj+ values, [Instr] instrs) =
   symbol_switch(
     val:   val,
     cases: {(vals: values, instrs: [])},
@@ -330,7 +330,7 @@ Instr block_failure_if_not(BoolExpr c, BoolVar res_var) = block_failure_if(neg(c
 //////////////////////////////////////////////////////////////////////////////////
 //
 //BoolExpr neg(BoolExpr e)                                  = :neg(e);
-//BoolExpr eval_bool_fn(BoolFnName fn, [AnyExpr+] ps)       = eval_bool_fn(name: fn, params: ps);
+//BoolExpr eval_bool_fn(BoolFnName fn, [AnyExpr^] ps)       = eval_bool_fn(name: fn, params: ps);
 //
 //BoolExpr and(BoolExpr e1, BoolExpr e2)                    = :and([e1, e2]);
 //BoolExpr and(BoolExpr e1, BoolExpr e2, BoolExpr e3)       = :and([e1, e2, e3]);
@@ -391,7 +391,7 @@ Instr block_failure_if_not(BoolExpr c, BoolVar res_var) = block_failure_if(neg(c
 //
 //Instr no_op                     = :no_op;
 //
-//Instr branch(BoolExpr cond, [Instr*] on_true, [Instr*] on_false) = if is_null(on_true) and is_null(on_false) then
+//Instr branch(BoolExpr cond, [Instr] on_true, [Instr] on_false) = if is_null(on_true) and is_null(on_false) then
 //                                                                     no_op
 //                                                                   else
 //                                                                     branch(
@@ -402,33 +402,33 @@ Instr block_failure_if_not(BoolExpr c, BoolVar res_var) = block_failure_if(neg(c
 //                                                                   ;
 //
 ////## SHOULD BE A LOCAL FUNCTION
-//Bool is_null([Instr*] instrs) = rem_no_ops(instrs) = [];
+//Bool is_null([Instr] instrs) = rem_no_ops(instrs) = [];
 //
-//[Instr*] rem_no_ops([Instr*] instrs) = [instr : instr <- instrs, instr /= no_op];
+//[Instr] rem_no_ops([Instr] instrs) = [instr : instr <- instrs, instr /= no_op];
 //
 //
 //
-//Instr symbol_switch(ObjExpr val, (vals: Symbol+, instrs: [Instr*])* cases, [Instr*] def_instrs) =
+//Instr symbol_switch(ObjExpr val, (vals: Symbol+, instrs: [Instr])* cases, [Instr] def_instrs) =
 //  symbol_switch(
 //    val:   val, 
 //    cases: cases, 
 //    else:  def_instrs if def_instrs /= []
 //  );
 //
-//Instr repeat([Instr+] body)         = :repeat(body);
+//Instr repeat([Instr^] body)         = :repeat(body);
 //Instr break_loop                    = :break_loop;
 //
-//Instr execute_block([Instr+] block) = :execute_block(block);
+//Instr execute_block([Instr^] block) = :execute_block(block);
 //Instr exit_block                    = :exit_block;
 //
 //Instr get_iter(ItVar v, ObjExpr e)  = get_iter(var: v, set: e);
 //Instr move_forward(ItVar v)         = :move_forward(v);
 //                    
-//Instr call_proc([ObjVar+] vs, ObjFnName fn, [ObjExpr*] ps) = call_proc(vars: vs, name: fn, params: ps);
-//Instr call_cls(ObjVar v, ObjFnName fn, [ObjExpr*] ps)      = call_cls(var: v, name: fn, params: ps);
+//Instr call_proc([ObjVar^] vs, ObjFnName fn, [ObjExpr] ps) = call_proc(vars: vs, name: fn, params: ps);
+//Instr call_cls(ObjVar v, ObjFnName fn, [ObjExpr] ps)      = call_cls(var: v, name: fn, params: ps);
 //
 //
-//Instr cls_scope(FnSymbol name, [Var*] params, [Var*] env, [Instr+] cls_body, [Instr+] body)
+//Instr cls_scope(FnSymbol name, [Var] params, [Var] env, [Instr^] cls_body, [Instr^] body)
 //{
 //  cls := cls_def(
 //           name:   name,
@@ -454,14 +454,14 @@ Instr block_failure_if_not(BoolExpr c, BoolVar res_var) = block_failure_if(neg(c
 //
 //////////////////////////////////////////////////////////////////////////////////
 //
-//ObjProcDef obj_proc_def(ObjFnName name, Nat arity, [Instr+] body) = obj_proc_def(
+//ObjProcDef obj_proc_def(ObjFnName name, Nat arity, [Instr^] body) = obj_proc_def(
 //                                                                      name:       name,
 //                                                                      in_arity:   arity,
 //                                                                      out_arity:  1,
 //                                                                      body:       body
 //                                                                    );
 //
-//BoolProcDef bool_proc_def(BoolFnName name, NzNat arity, [Instr+] body) = bool_proc_def(
+//BoolProcDef bool_proc_def(BoolFnName name, NzNat arity, [Instr^] body) = bool_proc_def(
 //                                                                           name:  name,
 //                                                                           arity: arity,
 //                                                                           body:  body
@@ -469,23 +469,23 @@ Instr block_failure_if_not(BoolExpr c, BoolVar res_var) = block_failure_if(neg(c
 //
 //////////////////////////////////////////////////////////////////////////////////
 //
-//Instr repeat_while(BoolExpr cond, [Instr+] body) = repeat([do_if_not(cond, break_loop)] & body);
+//Instr repeat_while(BoolExpr cond, [Instr^] body) = repeat([do_if_not(cond, break_loop)] & body);
 //
 //Instr increment(IntVar v) = set_ivar(v, add(v, 1));
 //
-//Instr do_if(BoolExpr cond, [Instr*] instrs)      = branch(cond, instrs, []);
-//Instr do_if_not(BoolExpr cond, [Instr*] instrs)  = branch(cond, [], instrs);
+//Instr do_if(BoolExpr cond, [Instr] instrs)      = branch(cond, instrs, []);
+//Instr do_if_not(BoolExpr cond, [Instr] instrs)  = branch(cond, [], instrs);
 //
 //Instr do_if(BoolExpr cond, Instr instr)      = do_if(cond, [instr]);
 //Instr do_if_not(BoolExpr cond, Instr instr)  = do_if_not(cond, [instr]);
 //
-//Instr do_if_in(ObjExpr val, Symbol+ values, [Instr*] instrs) =
+//Instr do_if_in(ObjExpr val, Symbol+ values, [Instr] instrs) =
 //  symbol_switch(
 //    val:   val,
 //    cases: {(vals: values, instrs: instrs)}
 //  );
 //
-//Instr do_if_not_in(ObjExpr val, Symbol+ values, [Instr*] instrs) =
+//Instr do_if_not_in(ObjExpr val, Symbol+ values, [Instr] instrs) =
 //  symbol_switch(
 //    val:   val,
 //    cases: {(vals: values, instrs: [])},

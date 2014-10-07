@@ -6,11 +6,11 @@
 (TypeName => AnonType) normalize_and_anonymize_types((TypeSymbol => UserType) inst_types)
 {
   all_anon_types := anonymize_types(inst_types);
-  non_par_or_non_inst_anon_types := (ts => t : ts => t <- all_anon_types ; ts :: <BasicTypeSymbol, par_type_symbol(symbol: BasicTypeSymbol, params: [TypeVar+])>);
+  non_par_or_non_inst_anon_types := (ts => t : ts => t <- all_anon_types ; ts :: <BasicTypeSymbol, par_type_symbol(symbol: BasicTypeSymbol, params: [TypeVar^])>);
   pre_res := merge_values({(type_symb_to_name(s) => replace_named_type_vars(t, params(s))) : s => t <- non_par_or_non_inst_anon_types});
   return (s => only_element(ts) : s => ts <- pre_res);
 
-  AnonType replace_named_type_vars(AnonType type, [TypeVar*] type_params) = replace TypeVar v in type with type_var(index_first(v, type_params)) end;
+  AnonType replace_named_type_vars(AnonType type, [TypeVar] type_params) = replace TypeVar v in type with type_var(index_first(v, type_params)) end;
 }
 
 

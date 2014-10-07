@@ -1,4 +1,4 @@
-type CCodeOutput = (body: [String*], header: [String*]);
+type CCodeOutput = (body: [String], header: [String]);
 
 CCodeOutput compile_to_c(ProcDef* prg)
 {
@@ -78,7 +78,7 @@ CCodeOutput compile_to_c(ProcDef* prg)
 //  print "compile_to_c#3";
 //  cls_sgns        := set_cls_sgns & called_cls_sgns;
 //
-////                    call_cls(var: ObjVar, cls_var: Var, params: [ObjExpr*]), //## NEW
+////                    call_cls(var: ObjVar, cls_var: Var, params: [ObjExpr]), //## NEW
 //
 //  //## BAD BAD BAD EXPRESSION TOO MESSY
 //  part_to_max_size := for (s <- cls_sgns) (s => {
@@ -127,7 +127,7 @@ CCodeOutput compile_to_c(ProcDef* prg)
 }
 
 
-[String+] generate_push_call_info_wrapper(Nat arity)
+[String^] generate_push_call_info_wrapper(Nat arity)
 {
   signature := "void push_call_info_wrapper(const char *fn_name" & append([", Obj p" & to_str(i) : i <- inc_seq(arity)]) & ")";
   code := [signature, "{", "#ifndef NDEBUG"];
@@ -150,7 +150,7 @@ type FnCallParam = ObjExpr, VecVar, BoolExpr, IntExpr, ItVar, StreamVar;
 
 using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 {
-  CCodeOutput compile_to_c([ObjProcDef*] obj_proc_defs, [BoolProcDef*] bool_proc_defs, [ClsDef*] cls_defs)
+  CCodeOutput compile_to_c([ObjProcDef] obj_proc_defs, [BoolProcDef] bool_proc_defs, [ClsDef] cls_defs)
   {
     type_checking_fn_decls := [gen_c_decl(pd) : pd <- bool_proc_defs] & rep_seq(4, "");
     print "Type checking function declarations generated";
@@ -191,7 +191,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
       obj_proc_def()    = "Obj ",
       bool_proc_def()   = "bool ";
     
-    [String*] extra_params(ProcDef):
+    [String] extra_params(ProcDef):
       obj_proc_def()    = ["Env &"],
       bool_proc_def()   = [];
   }
@@ -204,7 +204,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
   }
 
 
-  [String*] compile_to_c(ProcDef pd)
+  [String] compile_to_c(ProcDef pd)
   {
     par_list  := ["Obj p" & to_str(n) : n <- inc_seq(arity(pd))] & extra_params(pd); //## BAD
     signature := ret_type_str(pd) & to_c_fn_name(pd.name) & "(" & append(intermix(par_list, ", ")) & ")";
@@ -237,13 +237,13 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
       obj_proc_def()    = "Obj ",
       bool_proc_def()   = "bool ";
 
-    [String*] extra_params(ProcDef):
+    [String] extra_params(ProcDef):
       obj_proc_def()    = ["Env &env"],
       bool_proc_def()   = [];
   }
 
   //## DUPLICATED CODE
-  [String*] compile_to_c(ClsDef cd, Nat id)
+  [String] compile_to_c(ClsDef cd, Nat id)
   {
     par_list  := ["Obj p" & to_str(n) : n <- inc_seq(cd.arity)] & ["const Obj C[]", "Env &env"] ; //## BAD
     signature := "Obj cls_" & to_str(id) & "(" & append(intermix(par_list, ", ")) & ")";
@@ -258,7 +258,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     return [signature, "{"] & indent(var_decls) & [""] & indent(comp_body) & ["}"];
   }
 
-  AnyVar* vars_to_declare([Instr*] instrs) //## BAD BAD BAD
+  AnyVar* vars_to_declare([Instr] instrs) //## BAD BAD BAD
   {
     //vs := {if x :: <mk_seq(Any+)> then x.elems else x end
     //       : x <- select <AnyVar, mk_seq(Any+), ClsDef> in instrs end
@@ -290,9 +290,9 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     StreamVar = "Stream "   & to_c_var_name(v) & ";";
 
 
-  [String*] compile_to_c([Instr*] instrs, <Nat, nil> block_id) = join([compile_to_c(instr, block_id) : instr <- instrs]);
+  [String] compile_to_c([Instr] instrs, <Nat, nil> block_id) = join([compile_to_c(instr, block_id) : instr <- instrs]);
 
-  [String*] compile_to_c(Instr instr, <Nat, nil> block_id):
+  [String] compile_to_c(Instr instr, <Nat, nil> block_id):
 
     init_stream(v)        = mk_call("init", [v]),
     append()              = mk_call("append", [instr.stream, instr.obj]),
@@ -427,7 +427,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     },
 
 
-    // var_scope(var: <named_par(Atom)>, new_value: AtomicExpr, body: [Instr+]),     //## STILL NEW
+    // var_scope(var: <named_par(Atom)>, new_value: AtomicExpr, body: [Instr^]),     //## STILL NEW
 
     var_scope() =
     {
@@ -458,12 +458,12 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
       return code;
     },
 
-    //cls_scope(cls: ClsDef, body: [Instr+]);
+    //cls_scope(cls: ClsDef, body: [Instr^]);
     //cls_def(
     //  name:   FnSymbol,
     //  arity:  NzNat,
-    //  env:    [Var*],
-    //  body:   [Instr+]
+    //  env:    [Var],
+    //  body:   [Instr^]
     //);
 
     cls_scope() =
@@ -525,23 +525,23 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
   ///////////////////////////////////////////////////////////////////////////////
   ///////////////////////////////////////////////////////////////////////////////
 
-  String mk_gen_call(String fn_name, [String*] leading_params, [FnCallParam*] params, [String*] trailing_params) =
+  String mk_gen_call(String fn_name, [String] leading_params, [FnCallParam] params, [String] trailing_params) =
     fn_name & "(" & append(intermix(leading_params & [to_c_expr(p) : p <- params] & trailing_params, ", ")) & ");";
   
-  String mk_gen_call(AnyVar var, String fn_name, [String*] leading_params, [FnCallParam*] params, [String*] trailing_params) =
+  String mk_gen_call(AnyVar var, String fn_name, [String] leading_params, [FnCallParam] params, [String] trailing_params) =
     to_c_var_name(var) & " = " & mk_gen_call(fn_name, leading_params, params, trailing_params);
   
-  [String*] mk_call(String fn_name, [FnCallParam*] params)             = [mk_gen_call(fn_name, [], params, [])];
-  [String*] mk_call(AnyVar var, String fn_name, [FnCallParam*] params) = [mk_gen_call(var, fn_name, [], params, [])];
+  [String] mk_call(String fn_name, [FnCallParam] params)             = [mk_gen_call(fn_name, [], params, [])];
+  [String] mk_call(AnyVar var, String fn_name, [FnCallParam] params) = [mk_gen_call(var, fn_name, [], params, [])];
   
-  //[String*] mk_fn_call(String fn_name, [FnCallParam*] params)             = [mk_gen_call(fn_name, [], params, ["env"])];
-  [String*] mk_fn_call(AnyVar var, String fn_name, [FnCallParam*] params) = [mk_gen_call(var, fn_name, [], params, ["env"])];
+  //[String] mk_fn_call(String fn_name, [FnCallParam] params)             = [mk_gen_call(fn_name, [], params, ["env"])];
+  [String] mk_fn_call(AnyVar var, String fn_name, [FnCallParam] params) = [mk_gen_call(var, fn_name, [], params, ["env"])];
 
   //## AnyVar IS WRONG HERE, SHOULD ONLY BE OBJ/BOOL/INT VARS
-  [String*] mk_assignment(AnyVar var, AnyExpr value) = [to_c_var_name(var) & " = " & to_c_expr(value) & ";"];
+  [String] mk_assignment(AnyVar var, AnyExpr value) = [to_c_var_name(var) & " = " & to_c_expr(value) & ";"];
 
 
-  [String*] mk_cls_call(ObjVar var, Var cls_var, [ObjExpr*] params)
+  [String] mk_cls_call(ObjVar var, Var cls_var, [ObjExpr] params)
   {
     name         := to_str(length(params)) & "_" & _str_(untag(cls_var));
     return [mk_gen_call(var, "env.n" & name, [], params, ["env.C" & name, "env"])];
@@ -635,7 +635,7 @@ using String typesymb2name(TypeSymbol)
   String to_c_expr(<VecVar, ItVar, StreamVar> var) = to_c_var_name(var);
   
   
-  String to_nary_op(String op, [AnyExpr+] exprs, Bool parentesised)
+  String to_nary_op(String op, [AnyExpr^] exprs, Bool parentesised)
   {
     expr := append(intermix([to_c_expr(e, true) : e <- exprs], op));
     expr := "(" & expr & ")" if length(exprs) > 1 and parentesised;
@@ -697,7 +697,7 @@ using String typesymb2name(TypeSymbol)
 
 ///////////////////////////////////////////////////////////////////////////////
 
-[String*] indent([String*] strs) = [indent_line(s) : s <- strs];
+[String] indent([String] strs) = [indent_line(s) : s <- strs];
 
 String indent_line(String str) = "  " & str;
 

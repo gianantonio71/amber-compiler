@@ -76,11 +76,11 @@ type BoolExpr     = true,
                     BoolVar,
                     NatBoolOp,
                     neg(BoolExpr),
-                    and([BoolExpr+]), //## SEQUENCES OR SETS?
-                    or([BoolExpr+]),  //## DITTO
-                    and_then([BoolExpr+]),
-                    or_else([BoolExpr+]),
-                    eval_bool_fn(name: BoolFnName, params: [AnyExpr+]);
+                    and([BoolExpr^]), //## SEQUENCES OR SETS?
+                    or([BoolExpr^]),  //## DITTO
+                    and_then([BoolExpr^]),
+                    or_else([BoolExpr^]),
+                    eval_bool_fn(name: BoolFnName, params: [AnyExpr^]);
 
 type IntExpr      = Int, IntVar, NatIntOp;                    
 
@@ -143,46 +143,46 @@ type Instr        = init_stream(StreamVar),
                     
                     no_op,
                     
-                    branch(cond: BoolExpr, when_true: [Instr*], when_false: [Instr*]),
+                    branch(cond: BoolExpr, when_true: [Instr], when_false: [Instr]),
                     
-                    symbol_switch(val: ObjExpr, cases: (vals: SymbObj+, instrs: [Instr*])*, else: [Instr+]?),
+                    symbol_switch(val: ObjExpr, cases: (vals: SymbObj+, instrs: [Instr])*, else: [Instr^]?),
 
-                    repeat([Instr+]),
+                    repeat([Instr^]),
                     break_loop,
                     
-                    execute_block([Instr+]),
+                    execute_block([Instr^]),
                     exit_block,
 
-                    call_proc(var: ObjVar, name: ObjFnName, params: [ObjExpr*]),
-                    call_cls(var: ObjVar, cls_var: Var, params: [ObjExpr*]), //## NEW
+                    call_proc(var: ObjVar, name: ObjFnName, params: [ObjExpr]),
+                    call_cls(var: ObjVar, cls_var: Var, params: [ObjExpr]), //## NEW
                     
-                    push_call_info(fn_name: FnSymbol, params: [ObjVar*]),
+                    push_call_info(fn_name: FnSymbol, params: [ObjVar]),
                     pop_call_info,
 
                     runtime_check(cond: ObjExpr),
 
-                    var_scope(var: <named_par(Atom)>, new_value: AtomicExpr, body: [Instr+]),     //## STILL NEW
-                    cls_scope(var: <named_par(Atom)>, env: [Var*], cls: ClsDef, body: [Instr+]);  //## NEW
+                    var_scope(var: <named_par(Atom)>, new_value: AtomicExpr, body: [Instr^]),     //## STILL NEW
+                    cls_scope(var: <named_par(Atom)>, env: [Var], cls: ClsDef, body: [Instr^]);  //## NEW
                     
 
 type ClsDef       = cls_def(
                       //name:   FnSymbol, //## NEW
                       arity:  NzNat,
-                      //env:    [Var*],  //## NEW - NOT ENTIRELY SURE ABOUT THIS ONE
-                      body:   [Instr+]
+                      //env:    [Var],  //## NEW - NOT ENTIRELY SURE ABOUT THIS ONE
+                      body:   [Instr^]
                     );
 
 type ObjProcDef   = obj_proc_def(
                       name:         ObjFnName,
                       in_arity:     Nat, //## THIS HAS TO BE UPDATED ONCE I ALLOW CLOSURES AS POSITIONAL PARAMETERS
                       named_params: (<named_par(Atom)> => Nat), //## NEW - SHOULD IT BE <named_var(name: Atom, arity: Nat)>* INSTEAD?
-                      body:         [Instr+]
+                      body:         [Instr^]
                     );
 
 type BoolProcDef  = bool_proc_def(
                       name:  BoolFnName,
                       arity: NzNat,
-                      body:  [Instr+]
+                      body:  [Instr^]
                     );
 
 type ProcDef      = ObjProcDef, BoolProcDef;

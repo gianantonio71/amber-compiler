@@ -25,7 +25,7 @@ using
   Nat next_int_var_id;
 
 
-  [Instr+] gen_type_checking_code(UserType type, AtomicExpr obj, BoolVar res_var):
+  [Instr^] gen_type_checking_code(UserType type, AtomicExpr obj, BoolVar res_var):
 
     //## OPTIMIZE FOR SETS OF ANY
     ne_set_type() =

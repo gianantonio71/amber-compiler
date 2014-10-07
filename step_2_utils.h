@@ -72,7 +72,7 @@ Var* new_vars(Statement stmt):
   let_stmt()        = new_vars(stmt.body),
   _                 = {};
 
-Var* new_vars([Statement*] stmts) = seq_union([new_vars(s) : s <- stmts]);
+Var* new_vars([Statement] stmts) = seq_union([new_vars(s) : s <- stmts]);
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -110,7 +110,7 @@ Var* extern_vars(Clause clause):
   or_clause()         = extern_vars(clause.left) & extern_vars(clause.right);
 
 
-Var* extern_vars([Statement*] stmts)
+Var* extern_vars([Statement] stmts)
 {
   //## BUG BUG WHY IS THIS FUNCTION NEVER CALLED?
   
@@ -142,7 +142,7 @@ Var* extern_vars(ClsExpr e) = extern_vars(e.expr) - (set(e.params) - {nil});
 type StmtOutcome = fails, returns, breaks, falls_through;
 
 
-StmtOutcome+ outcomes([Statement*] stmts)
+StmtOutcome+ outcomes([Statement] stmts)
 {
   outcomes := {:falls_through};
   for (s : stmts)
@@ -179,7 +179,7 @@ StmtOutcome+ outcomes(Statement stmt):
 
 Bool may_fall_through(Statement stmt) = in(:falls_through, outcomes(stmt));
 
-Bool may_fall_through([Statement*] stmts) = in(:falls_through, outcomes(stmts));
+Bool may_fall_through([Statement] stmts) = in(:falls_through, outcomes(stmts));
 
 ////////////////////////////////////////////////////////////////////////////////
 

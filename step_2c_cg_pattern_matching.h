@@ -6,7 +6,7 @@ using
   Nat next_obj_var_id,
   Nat next_int_var_id;
 
-  [Instr+] gen_ptrn_matching_code(Pattern ptrn, AtomicExpr obj, BoolVar res_var, Var* loc_bound_vars):
+  [Instr^] gen_ptrn_matching_code(Pattern ptrn, AtomicExpr obj, BoolVar res_var, Var* loc_bound_vars):
 
     ptrn_var()      = if in(ptrn.var, loc_bound_vars)
                         then [set_bvar(res_var, is_eq(obj, ptrn.var))]

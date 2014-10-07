@@ -48,8 +48,8 @@ using
                         //;
                       },
 
-// fn_call(name: FnSymbol, params: [ExtSynExpr*], named_params: [SynFnDef*]), //## NEW
-// fn_call(name: FnSymbol, params: [ExtExpr*], named_params: (<named_par(Atom)> => ExtExpr)), //## NEW BAD BAD
+// fn_call(name: FnSymbol, params: [ExtSynExpr], named_params: [SynFnDef]), //## NEW
+// fn_call(name: FnSymbol, params: [ExtExpr], named_params: (<named_par(Atom)> => ExtExpr)), //## NEW BAD BAD
 
     fn_call()       = { assert length(expr.params) > 0;
     
@@ -190,7 +190,7 @@ using
     );
 
   
-  Expr mk_and_expr([Expr+] exprs)  // REMOVE DUPLICATES?
+  Expr mk_and_expr([Expr^] exprs)  // REMOVE DUPLICATES?
   {
     len       := length(exprs);
     rev_exprs := reverse(exprs);
@@ -203,7 +203,7 @@ using
 
   ////////////////////////////////////////////////////////////////////////////////
 
-  Clause mk_and_clause([SynClause+] clauses, Var* def_vars)
+  Clause mk_and_clause([SynClause^] clauses, Var* def_vars)
   {
     vs := def_vars;
     cs := [];
@@ -261,7 +261,7 @@ using
 
   ////////////////////////////////////////////////////////////////////////////////
 
-  [Statement*] desugar_stmts([SynStmt*] stmts, Var* def_vars)
+  [Statement] desugar_stmts([SynStmt] stmts, Var* def_vars)
   {
     vs := def_vars;
     ss := [];
@@ -300,15 +300,15 @@ using
       return res[0]; //## BAD BAD BAD
     },
 
-    // let_stmt(asgnms: [SynFnDef+], body: [SynStmt+]), //## NEW
-    // let_stmt(asgnms: (<var(Atom)> => ExtExpr), body: [Statement+]), //## NEW BAD BAD
+    // let_stmt(asgnms: [SynFnDef^], body: [SynStmt^]), //## NEW
+    // let_stmt(asgnms: (<var(Atom)> => ExtExpr), body: [Statement^]), //## NEW BAD BAD
     
     //type SynFnDef       = syn_fn_def(
     //                        name:       FnSymbol,
-    //                        params:     [(type: SynType?, var: var(Atom)?)*],
+    //                        params:     [(type: SynType?, var: var(Atom)?)],
     //                        res_type:   SynType?,
     //                        expr:       SynExpr,
-    //                        local_fns:  [SynFnDef*]
+    //                        local_fns:  [SynFnDef]
     //                      );
 
     let_stmt() =
@@ -386,7 +386,7 @@ using
   ////////////////////////////////////////////////////////////////////////////////
 
   //## FIND BETTER NAME
-  (<named_par(Atom)> => ExtExpr) syn_fn_defs_to_named_params([SynFnDef*] fds, Var* def_vars) =
+  (<named_par(Atom)> => ExtExpr) syn_fn_defs_to_named_params([SynFnDef] fds, Var* def_vars) =
     (:named_par(untag(fd.name)) => syn_fn_def_to_expr(fd, def_vars) : fd <- set(fds));
 
   ExtExpr syn_fn_def_to_expr(SynFnDef fd, Var* def_vars)

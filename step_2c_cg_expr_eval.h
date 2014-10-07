@@ -26,7 +26,7 @@ using
   Nat next_stream_var_id;
 
 
-  [Instr+] gen_fn_body(Expr expr)
+  [Instr^] gen_fn_body(Expr expr)
   {
     fn_res_var := lvar(next_obj_var_id);
     code := gen_eval_code(expr, fn_res_var; next_obj_var_id = next_obj_var_id + 1);
@@ -34,9 +34,9 @@ using
   }
 
 
-  ( eval_code:         [Instr*],
-    cleanup_code:      [Instr*],
-    add_ref_eval_code: [Instr*],
+  ( eval_code:         [Instr],
+    cleanup_code:      [Instr],
+    add_ref_eval_code: [Instr],
     expr:              AtomicExpr,
     var_used:          Bool
   )
@@ -67,9 +67,9 @@ using
                 };
 
 
-  ( eval_code:         [Instr*],
-    cleanup_code:      [Instr*],
-    add_ref_eval_code: [Instr*],
+  ( eval_code:         [Instr],
+    cleanup_code:      [Instr],
+    add_ref_eval_code: [Instr],
     expr:              AtomicExpr,
     var_used:          Bool,
     next_var_id:       Nat
@@ -82,13 +82,13 @@ using
   }
 
 
-  ( eval_code:         [Instr*],
-    cleanup_code:      [Instr*],
-    add_ref_eval_code: [Instr*],
-    exprs:             [AtomicExpr*],
+  ( eval_code:         [Instr],
+    cleanup_code:      [Instr],
+    add_ref_eval_code: [Instr],
+    exprs:             [AtomicExpr],
     next_var_id:       Nat
   )
-  gen_eval_info([Expr*] exprs)
+  gen_eval_info([Expr] exprs)
   {
     eval_code         := [];
     cleanup_code      := [];
@@ -116,8 +116,8 @@ using
 
   
   //## THIS IS ALL WRONG (WHY?)
-  (code: [Instr*], vect_var: VecVar, count_var: IntVar)
-  gen_vector_eval_info([SubExpr*] exprs)
+  (code: [Instr], vect_var: VecVar, count_var: IntVar)
+  gen_vector_eval_info([SubExpr] exprs)
   {
     elems_var := vvar(next_vector_var_id, length(exprs));
     count_var := ivar(next_int_var_id);
@@ -133,7 +133,7 @@ using
     return (code: code, vect_var: elems_var, count_var: count_var);
 
 
-    [Instr*] gen_vector_eval_code([SubExpr*] exprs, VecVar elems_var, IntVar count_var)
+    [Instr] gen_vector_eval_code([SubExpr] exprs, VecVar elems_var, IntVar count_var)
     {
       curr_slot_var := evar(elems_var.id, count_var);
       cond_var      := lvar(next_obj_var_id);
@@ -169,7 +169,7 @@ using
   }
 
 
-  [SubExpr*] sort_exprs_first(SubExpr* exprs)
+  [SubExpr] sort_exprs_first(SubExpr* exprs)
   {
     pure_exprs := {e : e <- exprs ; e :: Expr};
     cond_exprs := exprs - pure_exprs;
@@ -177,7 +177,7 @@ using
   }
    
 
-  [Instr*] gen_eval_code(BuiltIn name, [AtomicExpr*] params, ObjVar res_var)
+  [Instr] gen_eval_code(BuiltIn name, [AtomicExpr] params, ObjVar res_var)
   {
     return match (name)
              :obj     = [set_var(res_var, get_inner_obj(params[0])), add_ref(res_var)],
@@ -188,7 +188,7 @@ using
              _        = [gen_eval_instr(name, params, res_var)];
            ;
 
-    Instr gen_eval_instr(BuiltIn name, [AtomicExpr*] ps, ObjVar res_var):
+    Instr gen_eval_instr(BuiltIn name, [AtomicExpr] ps, ObjVar res_var):
       :slice        = get_seq_slice(res_var, ps[0], get_int_val(ps[1]), get_int_val(ps[2])),
       :cat          = join_seqs(res_var, ps[0], ps[1]),
       :rev          = rev_seq(res_var, ps[0]),
@@ -201,7 +201,7 @@ using
       :list_to_seq  = list_to_seq(res_var, ps[0]),
       _             = set_var(res_var, gen_eval_expr(name, ps));
     
-    ObjExpr gen_eval_expr(BuiltIn name, [AtomicExpr*] ps):
+    ObjExpr gen_eval_expr(BuiltIn name, [AtomicExpr] ps):
       :str        = to_str(ps[0]),
       :symb       = to_symb(ps[0]),
       :neg        = to_obj(minus(get_int_val(ps[0]))),
@@ -217,7 +217,7 @@ using
   }
   
   
-  [Instr+] gen_eval_code(Expr expr, ObjVar res_var):
+  [Instr^] gen_eval_code(Expr expr, ObjVar res_var):
 
     object()        = [set_var(res_var, expr)],
 
@@ -332,7 +332,7 @@ using
     },
 
 
-    // fn_call(name: FnSymbol, params: [ExtExpr*], named_params: (<named_par(Atom)> => ExtExpr)), //## NEW BAD BAD
+    // fn_call(name: FnSymbol, params: [ExtExpr], named_params: (<named_par(Atom)> => ExtExpr)), //## NEW BAD BAD
     fn_call() = make_scopes(rand_sort_pairs(expr.named_params), (expr: expr, res_var: res_var)), //## BAD BAD BAD
     //{
     //  pars_info := gen_eval_info(expr.params);
@@ -560,7 +560,7 @@ using
 
     ////## THERE MIGHT BE A BUG HERE. WHAT HAPPENS IF THE WHERE CLAUSE CONTAINS MORE THAN
     ////## ONE ASSIGNMENT AND THE SECOND ONE REFERENCES THE PARAMETER SET BY THE FIRST?
-    ////## THE PROBLEM IS PROBABLY INTRINSIC IN THE cls_scope(cls: ClsDef, body: [Instr+]) OBJECT
+    ////## THE PROBLEM IS PROBABLY INTRINSIC IN THE cls_scope(cls: ClsDef, body: [Instr^]) OBJECT
     //where_expr() =
     //{
     //  code := gen_eval_code(expr.expr, res_var);
@@ -580,7 +580,7 @@ using
     //};
 
 
-    // fn_call(name: FnSymbol, params: [ExtExpr*], named_params: (<named_par(Atom)> => ExtExpr)), //## NEW BAD BAD
+    // fn_call(name: FnSymbol, params: [ExtExpr], named_params: (<named_par(Atom)> => ExtExpr)), //## NEW BAD BAD
     //fn_call() = make_scopes(rand_sort_pairs(expr.named_params), expr), //## BAD BAD BAD
     //{
     //  pars_info := gen_eval_info(expr.params);
@@ -596,8 +596,8 @@ using
 
   //## THIS FUNCTION IS IN A REALLY BAD POSITION, SHOULD BE CLOSE TO THE gen_code CASE FOR fn_call(). ALSO, IT COULD HAVE A BETTER NAME
   //## WHEN TUPLE TYPES ARE REENABLED, FILL IN THE METHOD SIGNATURE
-  // [Instr+] make_scopes([(<named_par(Atom)>, ExtExpr)*] asgnms, body_gen_info) //[Instr+] body_code)
-  [Instr+] make_scopes(asgnms, body_gen_info) //[Instr+] body_code)
+  // [Instr^] make_scopes([(<named_par(Atom)>, ExtExpr)] asgnms, body_gen_info) //[Instr^] body_code)
+  [Instr^] make_scopes(asgnms, body_gen_info) //[Instr^] body_code)
   {
     // THIS IS SUPER SUPER BAD BAD BAD
     if (asgnms == [])
@@ -637,7 +637,7 @@ using
   }
 
 
-  [Instr*] gen_code([Statement*] stmts, ObjVar res_var) = gen_code(stmts, res_var, {}, {}, {});
+  [Instr] gen_code([Statement] stmts, ObjVar res_var) = gen_code(stmts, res_var, {}, {}, {});
 
 
   // all_rel_vars:  Vars that have been defined in an upper scope and that have to
@@ -649,7 +649,7 @@ using
   // surv_vars:     Vars that are defined in the current scope, but that survive to it.
   //                Disjoint from both all_rel_vars and break_vars
   
-  [Instr*] gen_code([Statement*] stmts, ObjVar res_var, ObjVar* all_rel_vars, ObjVar* break_vars, ObjVar* surv_vars)
+  [Instr] gen_code([Statement] stmts, ObjVar res_var, ObjVar* all_rel_vars, ObjVar* break_vars, ObjVar* surv_vars)
   {
     assert subset(break_vars, all_rel_vars);
     assert not in(res_var, all_rel_vars); //## THINK ABOUT THIS ONE
@@ -677,7 +677,7 @@ using
   //
   // break_vars:    Vars that have to be released before a break statement. It's a subset of all_rel_vars
   
-  [Instr+] gen_code(Statement stmt, ObjVar res_var, ObjVar* all_rel_vars, ObjVar* break_vars):
+  [Instr^] gen_code(Statement stmt, ObjVar res_var, ObjVar* all_rel_vars, ObjVar* break_vars):
 
     :break_stmt     = [release(v) : v <- rand_sort(break_vars)] & [break_loop],
 
@@ -701,7 +701,7 @@ using
                                [exit_block];
                       },
 
-    // let_stmt(asgnms: (<var(Atom)> => ExtExpr), body: [Statement+]), //## NEW BAD BAD
+    // let_stmt(asgnms: (<var(Atom)> => ExtExpr), body: [Statement^]), //## NEW BAD BAD
     //## BUG BUG BUG. THE ASSIGNMENTS ARE DONE IN RANDOM ORDER. FIX THIS
     let_stmt() =
     {
@@ -845,14 +845,14 @@ Expr simplify(Expr expr)
 }
 
 
-// ClsExpr cls_expr([<var(Atom), nil>+] params, Expr expr) = cls_expr(params: params, expr: expr);
+// ClsExpr cls_expr([<var(Atom), nil>^] params, Expr expr) = cls_expr(params: params, expr: expr);
 
 // select_expr(expr: Expr, ptrn: Pattern, src_expr: Expr, cond: Expr?),
 // replace_expr(expr: Expr, src_expr: Expr, ptrn: Pattern);
 
-// fn_call(name: FnSymbol, params: [ExtExpr*], named_params: (<var(Atom)> => ExtExpr)), //## NEW BAD BAD
+// fn_call(name: FnSymbol, params: [ExtExpr], named_params: (<var(Atom)> => ExtExpr)), //## NEW BAD BAD
 
-// type ClsExpr  = cls_expr(params: [<var(Atom)>+], expr: Expr);
+// type ClsExpr  = cls_expr(params: [<var(Atom)>^], expr: Expr);
 
 
 // select_expr(type: UserType, src_expr: Expr),

@@ -126,7 +126,7 @@ if (not res and halt_on_failure_to_typecheck)
       return not (? se <- ses : not typechecks(se, elem_type));
     },
 
-    // seq_expr(head: [SubExpr*], tail: Expr?), //## I DON'T LIKE THIS MUCH
+    // seq_expr(head: [SubExpr], tail: Expr?), //## I DON'T LIKE THIS MUCH
     seq_expr()            = {
       return contains_empty_seq(exp_type) if expr.head == [] and not expr.tail?;
       return false if expr.tail? and not is_typechecking_seq_expr(expr.tail);
@@ -318,7 +318,7 @@ if (not res and halt_on_failure_to_typecheck)
   }
 
 
-  Bool typechecks([Expr*] params, ClsType signature, AnonType exp_type)
+  Bool typechecks([Expr] params, ClsType signature, AnonType exp_type)
   {
     assert length(params) == length(signature.in_types);
 
@@ -419,7 +419,7 @@ if (not res and halt_on_failure_to_typecheck)
     };
 
 
-  Bool typecheck([Statement*] stmts, AnonType exp_type)
+  Bool typecheck([Statement] stmts, AnonType exp_type)
   {
     res := typecheck_impl(stmts, exp_type);
 // if (not res and halt_on_failure_to_typecheck)
@@ -429,7 +429,7 @@ if (not res and halt_on_failure_to_typecheck)
     return res;
   }
 
-  Bool typecheck_impl([Statement*] stmts, AnonType exp_type)
+  Bool typecheck_impl([Statement] stmts, AnonType exp_type)
   {
     env := environment;
     for (s : stmts)
@@ -478,7 +478,7 @@ if (not res and halt_on_failure_to_typecheck)
       env_2 := update_environment(stmt.body; environment=env_1);
       return env_1 == env_2;
     },
-    // for_stmt(var: Var, start_val: Expr, end_val: Expr, body: [Statement+]),
+    // for_stmt(var: Var, start_val: Expr, end_val: Expr, body: [Statement^]),
     //## BUG: THIS IS ALL WRONG
     for_stmt()          = is_typechecking_int_expr(stmt.start_val) and
                           is_typechecking_int_expr(stmt.end_val)   and
@@ -636,7 +636,7 @@ if (not res and halt_on_failure_to_typecheck)
 
 ////////////////////////////////////////////////////////////////////////////////
 
-  ClosedType return_type([Statement+] stmts)
+  ClosedType return_type([Statement^] stmts)
   {
     env := environment;
     ret_types := {};
@@ -693,7 +693,7 @@ if (not res and halt_on_failure_to_typecheck)
     print_stmt()        = void_type;
 
 
-    (Var => AnonType) update_environment([Statement*] stmts)
+    (Var => AnonType) update_environment([Statement] stmts)
     {
       env := environment;
       for (s : stmts)
@@ -788,7 +788,7 @@ if (not res and halt_on_failure_to_typecheck)
 
   (if_true: (Var => AnonType), if_false: (Var => AnonType)) refine_environment(Expr cond) = (if_true: environment, if_false: environment); //## IMPLEMENT FOR REAL
 
-  (Var => AnonType) update_environment([Expr+] exprs, [Pattern+] ptrns)
+  (Var => AnonType) update_environment([Expr^] exprs, [Pattern^] ptrns)
   {
 // print "*--*--*--*--*--*--*--*--*--*--*--*--*--*--*--*--*--*--*";
     assert length(exprs) == length(ptrns);
@@ -839,10 +839,10 @@ if (not res and halt_on_failure_to_typecheck)
 
 
   //## THIS IS ALL A TEMPORARY HACK TO WORK AROUND AN UNFINISHED FEATURE IN CODE GENERATION
-  Bool matches_signature(FnType signature, [ExtExpr*] params, (<named_par(Atom)> => ExtExpr) named_params) =
+  Bool matches_signature(FnType signature, [ExtExpr] params, (<named_par(Atom)> => ExtExpr) named_params) =
     matches_signature_impl(signature, params, named_params; halt_on_failure_to_typecheck=false);
 
-  Bool matches_signature_impl(FnType signature, [ExtExpr*] params, (<named_par(Atom)> => ExtExpr) named_params)
+  Bool matches_signature_impl(FnType signature, [ExtExpr] params, (<named_par(Atom)> => ExtExpr) named_params)
   {
     // let (halt_on_failure_to_typecheck=false)
       return false if length(params) /= length(signature.params);
@@ -883,7 +883,7 @@ if (not res and halt_on_failure_to_typecheck)
   }
 
 
-  AnonType fn_call_type(FnType signature, [ExtExpr*] params, (<named_par(Atom)> => ExtExpr) named_params) //## DO I NEED THE THIRD PARAMETER?
+  AnonType fn_call_type(FnType signature, [ExtExpr] params, (<named_par(Atom)> => ExtExpr) named_params) //## DO I NEED THE THIRD PARAMETER?
   {
     cs  := [subset_conds(expr_type(params[i]), signature.params[i]) : i <- indexes(params)];
     mcs := merge_value_sets(set(cs));

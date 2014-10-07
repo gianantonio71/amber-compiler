@@ -58,7 +58,7 @@ using
   SynObjErr* expr_wf_errors(SynExpr expr, Var* def_vars):
     object()            = {},
 
-    //seq_expr(head: [SynSubExpr*], tail: SynExpr?)
+    //seq_expr(head: [SynSubExpr], tail: SynExpr?)
     seq_expr()          = union({expr_wf_errors(e, def_vars) : e <- set(expr.head)}) &
                           if expr.tail? then expr_wf_errors(expr.tail, def_vars) else {} end,
 
@@ -79,7 +79,7 @@ using
                                      else {:undef_var_or_const(a)};;
                           },
 
-    //where_expr(expr: SynExpr, fndefs: [SynFnDef+]),
+    //where_expr(expr: SynExpr, fndefs: [SynFnDef^]),
     
     //where_expr()        = { ips := impl_params & {untyped_sgn(fd) : fd <- set(expr.fndefs)};
     //                        expr_errs  := expr_wf_errors(expr.expr, def_vars; impl_params = ips);
@@ -87,7 +87,7 @@ using
     //                        return expr_errs & fndef_errs;
     //                      },
 
-    // fn_call(name: FnSymbol, params: [ExtSynExpr*], named_params: [SynFnDef*]), //## NEW
+    // fn_call(name: FnSymbol, params: [ExtSynExpr], named_params: [SynFnDef]), //## NEW
 
     fn_call()           = { ips := impl_params & {untyped_sgn(fd) : fd <- set(expr.named_params)};
     
@@ -215,14 +215,14 @@ using
   
   //////////////////////////////////////////////////////////////////////////////
 
-  SynObjErr* exprs_wf_errors([SynSubExpr*] exprs, Var* vs) = seq_union([expr_wf_errors(e, vs) : e <- exprs]);
+  SynObjErr* exprs_wf_errors([SynSubExpr] exprs, Var* vs) = seq_union([expr_wf_errors(e, vs) : e <- exprs]);
 
   SynObjErr* expr_wf_errors(SynCondExpr se, Var* vs) = expr_wf_errors(se.expr, vs) &
                                                        expr_wf_errors(se.cond, vs);
 
   //////////////////////////////////////////////////////////////////////////////
   
-  SynObjErr* stmts_wf_errors([SynStmt+] stmts, Var* def_vars)
+  SynObjErr* stmts_wf_errors([SynStmt^] stmts, Var* def_vars)
   {
     errs := stmts_wf_errors(stmts, def_vars, def_vars, false);
     errs := errs & {:no_ret_stmt} if not never_falls_through(stmts);
@@ -230,7 +230,7 @@ using
   }
 
 
-  SynObjErr* stmts_wf_errors([SynStmt*] stmts, Var* all_def_vars, Var* readonly_vars, Bool inside_loop)
+  SynObjErr* stmts_wf_errors([SynStmt] stmts, Var* all_def_vars, Var* readonly_vars, Bool inside_loop)
   {
     vs        := all_def_vars;
     reachable := true;
@@ -334,7 +334,7 @@ using
     return errs & expr_wf_errors(syn_case.expr, vs);
   }
 
-  SynObjErr* cases_wf_errors([SynCase+] cs, Var* vs) = seq_union([case_wf_errors(c, vs) : c <- cs]);
+  SynObjErr* cases_wf_errors([SynCase^] cs, Var* vs) = seq_union([case_wf_errors(c, vs) : c <- cs]);
   
   //////////////////////////////////////////////////////////////////////////////
 
@@ -355,7 +355,7 @@ using
     eq_clause()         = expr_wf_errors(clause.expr, loc_vars & ext_vars) &
                           {:already_def_ptrn_var(clause.var) if in(clause.var, loc_vars & ext_vars)},
     
-    //and_clause([SynClause+])
+    //and_clause([SynClause^])
     and_clause(cs)      = { vs   := loc_vars;
                             errs := {};
                             for (c : cs)
@@ -370,7 +370,7 @@ using
                           clause_wf_errors(clause.right, loc_vars, ext_vars);
 
 
-  SynObjErr* clauses_wf_errors([SynClause+] clauses, Var* def_vars) =
+  SynObjErr* clauses_wf_errors([SynClause^] clauses, Var* def_vars) =
                                                     clause_wf_errors(:and_clause(clauses), def_vars);
 
   //////////////////////////////////////////////////////////////////////////////
@@ -425,7 +425,7 @@ Bool syn_can_break_loop(SynStmt stmt):
   _           = false;
 
 
-Bool has_top_level_break([SynStmt*] stmts)
+Bool has_top_level_break([SynStmt] stmts)
 {
   for (s : stmts)
     return true if s == :break_stmt;
@@ -444,7 +444,7 @@ Bool has_top_level_break([SynStmt*] stmts)
 
 //## BUG BUG BUG IF THE RETURN STATEMENT IS INSIDE A NESTED,
 //## DO EXPRESSION IT EXITS THAT AND NOT THE MAIN ONE
-Bool has_return([SynStmt*] stmts) = select <return_stmt(Any)> in stmts end /= {}; //## BAD BAD BAD
+Bool has_return([SynStmt] stmts) = select <return_stmt(Any)> in stmts end /= {}; //## BAD BAD BAD
 
 Bool never_falls_through(SynStmt stmt):
   return_stmt()     = true,
@@ -468,7 +468,7 @@ Bool never_falls_through(SynStmt stmt):
   
 
 //## BAD BAD BAD A LOOP SHOULDN'T BE NEEDED
-Bool never_falls_through([SynStmt*] stmts)
+Bool never_falls_through([SynStmt] stmts)
 {
   for (s : stmts)
     return true if never_falls_through(s);

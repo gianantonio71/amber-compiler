@@ -1,5 +1,5 @@
 
-[UserType*] params(TypeSymbol ts):
+[UserType] params(TypeSymbol ts):
   type_symbol()     = [],
   par_type_symbol() = ts.params;
 

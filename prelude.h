@@ -20,8 +20,8 @@ type BinTree        = BinTree[Any];
 type Set            = Any*;
 type NeSet          = Any+;
 
-type Seq            = [Any*];
-type NeSeq          = [Any+];
+type Seq            = [Any];
+type NeSeq          = [Any];
 
 type Tuple          = (Atom => Any);
 type Map            = (Any => Any);
@@ -29,7 +29,7 @@ type Map            = (Any => Any);
 type TagObj         = (<+> @ Any);
 
 type Char           = char(Nat);
-type String         = string([Nat*]);
+type String         = string([Nat]);
 
 type Maybe[T]       = nil, just(T);
 
@@ -47,16 +47,16 @@ Bool some(Bool+ bs) = (? :true <- bs);
 Bool all(Bool+ bs)  = not (? :false <- bs);
 
 // No element is false
-Bool all([Bool*] s)   = not in(false, s);
+Bool all([Bool] s)   = not in(false, s);
 
 // No element is true
-Bool none([Bool*] s)  = not in(true, s);
+Bool none([Bool] s)  = not in(true, s);
 
 // At least one element is true
-Bool at_least_one([Bool*] s)  = in(true, s);
+Bool at_least_one([Bool] s)  = in(true, s);
 
 // At least one element is false
-Bool not_all([Bool+] s) = in(true, s);
+Bool not_all([Bool^] s) = in(true, s);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -109,7 +109,7 @@ Int max(Int+ ns)
   return max;
 }
 
-Int sum([Int*] ns)
+Int sum([Int] ns)
 {
   res := 0;
   for (n : ns)
@@ -123,33 +123,33 @@ Int sum([Int*] ns)
 // Should it be defined for empty sequences (and negative integers)
 // as well? It's always going to fail...
 
-//T op_[]([T+] seq, Nat idx) = _at_(seq, idx);
+//T op_[]([T^] seq, Nat idx) = _at_(seq, idx);
 op_[](Seq seq, Nat idx) = _at_(seq, idx); //## BAD BAD BAD
 
-T rev_at([T+] seq, Nat idx) = _at_(seq, _len_(seq)-idx-1);
+T rev_at([T^] seq, Nat idx) = _at_(seq, _len_(seq)-idx-1);
 
 Nat length(Seq seq) = _len_(seq);
 
-T at([T+] seq, Nat idx, T default) = if idx < _len_(seq) then _at_(seq, idx) else default end;
+T at([T^] seq, Nat idx, T default) = if idx < _len_(seq) then _at_(seq, idx) else default end;
 
 // Should be like this...
 // T1 left((T1, T2) s)  = _at_(s, 0);
 // T2 right((T1, T2) s) = _at_(s, 1);
-T left([T*] s)
+T left([T] s)
 {
   assert length(s) == 2;
   return s[0];
 }
 
-T right([T*] s)
+T right([T] s)
 {
   assert length(s) == 2;
   return s[1];
 }
 
-T head([T+] s) = _at_(s, 0);
-T tail([T+] s) = _slice_(s, 1, _len_(s)-1);
-T last([T+] s) = _at_(s, _len_(s)-1);
+T head([T^] s) = _at_(s, 0);
+T tail([T^] s) = _slice_(s, 1, _len_(s)-1);
+T last([T^] s) = _at_(s, _len_(s)-1);
 
 op_&(Seq s1, Seq s2) = _cat_(s1, s2);
 
@@ -169,7 +169,7 @@ Nat index_first(Any e, Seq s)
   fail;
 }
 
-//[T*] join([[T*]*] seqs)
+//[T] join([[T]] seqs)
 join(Seq seqs)
 {
   res := [];
@@ -181,16 +181,16 @@ join(Seq seqs)
 
 reverse(Seq seq) = _rev_(seq);
 
-[T*] right_subseq([T*] seq, Nat first) = _slice_(seq, first, length(seq) - first);
+[T] right_subseq([T] seq, Nat first) = _slice_(seq, first, length(seq) - first);
 
-[T*] subseq([T*] seq, Nat first, Nat count) = _slice_(seq, first, count);
+[T] subseq([T] seq, Nat first, Nat count) = _slice_(seq, first, count);
 
-[T*] subseq([T*] s, <nil>, Nat m, Nat r) = subseq(s, length(s)-m-r, m);
-[T*] subseq([T*] s, Nat l, <nil>, Nat r) = subseq(s, l, length(s)-l-r); 
-[T*] subseq([T*] s, Nat l, Nat m, <nil>) = subseq(s, l, m);
+[T] subseq([T] s, <nil>, Nat m, Nat r) = subseq(s, length(s)-m-r, m);
+[T] subseq([T] s, Nat l, <nil>, Nat r) = subseq(s, l, length(s)-l-r); 
+[T] subseq([T] s, Nat l, Nat m, <nil>) = subseq(s, l, m);
 
 
-[T*] op_*(Nat count, [T*] seq)
+[T] op_*(Nat count, [T] seq)
 {
   res := [];
   for (i : inc_seq(count))
@@ -201,7 +201,7 @@ reverse(Seq seq) = _rev_(seq);
   return res;
 }
 
-[T*] rep_seq(Nat size, T value)
+[T] rep_seq(Nat size, T value)
 {
   n := size;
   s := [];
@@ -212,9 +212,9 @@ reverse(Seq seq) = _rev_(seq);
   return s;
 }
 
-[Nat*] inc_seq(Nat n) = inc_seq(0, n);
+[Nat] inc_seq(Nat n) = inc_seq(0, n);
 
-[Nat*] inc_seq(Nat m, Nat n)
+[Nat] inc_seq(Nat m, Nat n)
 {
   i := n - 1;
   s := [];
@@ -225,23 +225,23 @@ reverse(Seq seq) = _rev_(seq);
   return s;
 }
 
-[Nat*] dec_seq(Nat n) = reverse(inc_seq(n));
+[Nat] dec_seq(Nat n) = reverse(inc_seq(n));
 
-[Nat*] indexes(Seq s) = inc_seq(length(s));
+[Nat] indexes(Seq s) = inc_seq(length(s));
 
-[Nat*] indexes(Seq s, Nat m) = inc_seq(m, length(s));
+[Nat] indexes(Seq s, Nat m) = inc_seq(m, length(s));
 
 Nat* index_set(Seq s) = set(indexes(s));
 
 using Bool is_strictly_ordered(T, T) //## BAD BAD BAD
 {
-  [T*] sort_set(T* s) = sort(rand_sort(s));
+  [T] sort_set(T* s) = sort(rand_sort(s));
   
-  [T*] sort([T*] s) = mergesort(s);
+  [T] sort([T] s) = mergesort(s);
 
-  //[T*] quicksort([T*] s) = quicksort(s, false);
+  //[T] quicksort([T] s) = quicksort(s, false);
   //
-  //[T*] quicksort([T*], Bool (no_dups)):
+  //[T] quicksort([T], Bool (no_dups)):
   //  []       = [],
   //  [e]      = [e],
   //  [p | r]  = do
@@ -252,7 +252,7 @@ using Bool is_strictly_ordered(T, T) //## BAD BAD BAD
   //             ;
   //;
 
-  [T*] mergesort([T*] seq)
+  [T] mergesort([T] seq)
   {
     len := length(seq);
     return seq if len <= 1;
@@ -271,7 +271,7 @@ using Bool is_strictly_ordered(T, T) //## BAD BAD BAD
     ;
     return ss[0];
     
-    [T*] merge([T*] seq1, [T*] seq2)
+    [T] merge([T] seq1, [T] seq2)
     {
       l1 := length(seq1);
       l2 := length(seq2);
@@ -300,7 +300,7 @@ Bool in(Any x, Set s) = _in_(x, s);
 
 // [T1, T2]* cart_prod(T1* s1, T2* s2)  = {[e1, e2] : e1 <- s1, e2 <- s2};
 
-//Set cart_prod([{T*}+] ss) = {[e1a, e1b, e2] : [e1a, e1b] <- s1 /\ e2 <- s2};
+//Set cart_prod([{T*}^] ss) = {[e1a, e1b, e2] : [e1a, e1b] <- s1 /\ e2 <- s2};
 
 // T* union(T* s1, T* s2)         = {e : e <- s1 \/ e <- s2};
 T* union(T* s1, T* s2)         = _union_({s1, s2});
@@ -377,7 +377,7 @@ T only_element_or_def_if_empty(T* set, T default)
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
-T* seq_union([(T*)*] sets) = union(set(sets));
+T* seq_union([T*] sets) = union(set(sets));
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
@@ -450,7 +450,7 @@ Bool has_key((T1 => T2) map, T1 key) = _has_key_(map, key); // = (? k => _ <- ma
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
-T* set([T*] seq) = _set_(seq);
+T* set([T] seq) = _set_(seq);
 
 //(T => NzNat) seq_to_multiset(
 
@@ -458,7 +458,7 @@ T* set([T*] seq) = _set_(seq);
 //## IMPLEMENT A seq_to_multiset FUNCTION AND SEE IF IT CAN BE USED TO IMPLEMENT dupl_elements efficiently
 
 //## THIS IS DIFFICULT TO IMPLEMENT EFFICIENTLY WITHOUT ACCESS TO THE INTERNAL COMPARISON OPERATOR  
-T* dupl_elems([T*] s)
+T* dupl_elems([T] s)
 {
   r := {};
   for (e1, i1 : s ; e2, i2 : s)
@@ -467,9 +467,9 @@ T* dupl_elems([T*] s)
   return r;
 }
 
-Bool has_duplicates([Any*] s) = dupl_elems(s) /= {};
+Bool has_duplicates([Any] s) = dupl_elems(s) /= {};
 
-[T*] rand_sort(T* set) = _isort_(set);
+[T] rand_sort(T* set) = _isort_(set);
 
 //## Add the result type. Something like: [(TK, TV)]
 rand_sort_pairs((TK => TV) map) = rand_sort({[k, v] : k => v <- map});
@@ -488,7 +488,7 @@ T an_elem(T+ s) = {ses := rand_sort(s); return ses[0];};
 //   (T2 => NzNat) apply(T1* s) = _mset_([f(x) : x <- rand_sort(s)]);
 // }
 
-(T => NzNat) bag([T*] s) = _mset_(s);
+(T => NzNat) bag([T] s) = _mset_(s);
 
 T2* values((T1 => T2) map) = {v : _ => v <- map};
 
@@ -559,7 +559,7 @@ using Bool condition(Any), Any eval(Any)
 }
 
 
-[T*] intermix([T*] seq, T obj)
+[T] intermix([T] seq, T obj)
 {
   res := [];  
   for (x : reverse(seq))
@@ -683,11 +683,11 @@ String to_text(Any obj, Nat line_len, Nat indent_level)
 }
 
 
-[String+] to_text(Any obj, Nat line_len)
+[String^] to_text(Any obj, Nat line_len)
 {
   return to_txt(obj, line_len);
 
-  [String+] to_txt(Any obj, Nat line_len):
+  [String^] to_txt(Any obj, Nat line_len):
     +           = [_str_(obj)],
     *           = [to_str(obj)],
     string()    = if obj :: String then [quote(obj)] else to_txt_tag_obj(:string, _obj_(obj), line_len) end,
@@ -696,7 +696,7 @@ String to_text(Any obj, Nat line_len, Nat indent_level)
     (...)       = to_txt_map(obj, line_len),
     tag @ iobj  = to_txt_tag_obj(tag, iobj, line_len);
 
-  [String+] to_txt_tag_obj(Atom tag, Any obj, Nat line_len)
+  [String^] to_txt_tag_obj(Atom tag, Any obj, Nat line_len)
   {
     obj_is_tuple := match (obj)
                       (...)   = keys(obj) :: <Atom*>,
@@ -730,7 +730,7 @@ String to_text(Any obj, Nat line_len, Nat indent_level)
     return head & [indent & l : l <- middle_lines] & tail;
   }
 
-  [String+] to_txt_collection(Seq seq, Nat line_len, String left_del, String right_del)
+  [String^] to_txt_collection(Seq seq, Nat line_len, String left_del, String right_del)
   {
     lines_seq := [to_txt(obj, line_len) : obj <- seq];
     if (all([length(ls) == 1 : ls <- lines_seq]))
@@ -744,10 +744,10 @@ String to_text(Any obj, Nat line_len, Nat indent_level)
     return [left_del] & indented_lines_with_commas & [right_del];
   }
 
-  [String+] append_to_last([String+] lines, String str) = [if i /= last_idx then l else l & str end : l, i <- lines] let last_idx := length(lines) - 1;;
+  [String^] append_to_last([String^] lines, String str) = [if i /= last_idx then l else l & str end : l, i <- lines] let last_idx := length(lines) - 1;;
   
 
-  [String+] to_txt_map(Map map, Nat line_len)
+  [String^] to_txt_map(Map map, Nat line_len)
   {
     is_tuple    := keys(map) :: <Atom*>;
     key_val_sep := if is_tuple then ": " else " => " end;
@@ -786,13 +786,13 @@ String to_text(Any obj, Nat line_len, Nat indent_level)
 
 ///////////////////////////////////////////////////////////////////////////////
 
-String string([Int*] raw)   = :string(raw); //## SHOULDN't IT BE string([Nat*] raw) ?
+String string([Int] raw)   = :string(raw); //## SHOULDN't IT BE string([Nat] raw) ?
 
 Nat length(String s)        = length(untag(s));
 Nat op_[](String s, Nat n)  = op_[](untag(s), n);
 
 String op_&(String s1, String s2)     = string(untag(s1) & untag(s2));
-String append([String*] ss)           = string(join([untag(s) : s <- ss]));
+String append([String] ss)           = string(join([untag(s) : s <- ss]));
 String reverse(String s)              = string(reverse(untag(s)));
 String substr(String s, Nat n, Nat m) = string(subseq(untag(s), n, m));
 
@@ -895,7 +895,7 @@ label(Atom a)  = :label(a);
 
 //## CURRENTLY IT DOESN'T RECOGNIZE THE RIGHT ARROW
 
-<[Token*], LexerError> tokenize([Int*] bytes)
+<[Token], LexerError> tokenize([Int] bytes)
 //tokenize(bytes)
 {
   len        := length(bytes);
@@ -983,7 +983,7 @@ label(Atom a)  = :label(a);
 
 ///////////////////////////////////////////////////////////////////////////////
 
-<[Token*], LexerError> fast_tokenize([Int*] bytes)
+<[Token], LexerError> fast_tokenize([Int] bytes)
 {
   len        := length(bytes);
   tokens     := [];
@@ -1073,14 +1073,14 @@ label(Atom a)  = :label(a);
 type ParseError       = parser_error(token: Nat);
 type ParseSuccess     = obj(Any);
 type ParseResult      = ParseSuccess, ParseError;
-type MultParseResult  = [ParseSuccess*], ParseError;
+type MultParseResult  = [ParseSuccess], ParseError;
 
 type ParseIntermRes     = (obj: Any, offset: Nat);//, ParseError;
-type ParseIntermMultRes = (objs: [Any*], offset: Nat);//, ParseError;
+type ParseIntermMultRes = (objs: [Any], offset: Nat);//, ParseError;
 
 
 
-ParseResult parse_obj([Token*] tokens)
+ParseResult parse_obj([Token] tokens)
 {
   return error(0) if tokens == [];
   res := parse_obj(tokens, 0);
@@ -1090,7 +1090,7 @@ ParseResult parse_obj([Token*] tokens)
     
   error(token) = parser_error(token: token);
 
-  //ParseIntermRes parse_obj([Token+] tokens, Nat offset)
+  //ParseIntermRes parse_obj([Token^] tokens, Nat offset)
   parse_obj(tokens, offset)
   {
     assert offset < length(tokens);
@@ -1110,7 +1110,7 @@ ParseResult parse_obj([Token*] tokens)
     return res;
   }
 
-  //ParseIntermRes parse_tagged_obj_or_symbol([Token+] tokens, Nat offset)
+  //ParseIntermRes parse_tagged_obj_or_symbol([Token^] tokens, Nat offset)
   parse_tagged_obj_or_symbol(tokens, offset)
   {
     assert offset < length(tokens) and tokens[offset] :: <symbol(Atom)>;
@@ -1131,7 +1131,7 @@ ParseResult parse_obj([Token*] tokens)
     return (obj: obj, offset: res.offset + if is_tuple then 0 else 1 end);
   }
 
-  //ParseIntermRes parse_set([Token+] tokens, Nat offset)
+  //ParseIntermRes parse_set([Token^] tokens, Nat offset)
   parse_set(tokens, offset)
   {
     assert offset < length(tokens) and tokens[offset] == left_brace;
@@ -1142,7 +1142,7 @@ ParseResult parse_obj([Token*] tokens)
     return (obj: set(res.objs), offset: res.offset);
   }
 
-  //ParseIntermRes parse_seq([Token+] tokens, Nat offset)
+  //ParseIntermRes parse_seq([Token^] tokens, Nat offset)
   parse_seq(tokens, offset)
   {
     assert offset < length(tokens);
@@ -1154,7 +1154,7 @@ ParseResult parse_obj([Token*] tokens)
     return (obj: res.objs, offset: res.offset);
   }
   
-  //<ParseIntermRes, ParseError> parse_map_or_tuple([Token+] tokens, Nat offset)
+  //<ParseIntermRes, ParseError> parse_map_or_tuple([Token^] tokens, Nat offset)
   parse_map_or_tuple(tokens, offset)
   {
     assert offset < length(tokens) and tokens[offset] == left_parenthesis;
@@ -1208,7 +1208,7 @@ ParseResult parse_obj([Token*] tokens)
     return (obj: obj, offset: os+1);
   }
 
-  //ParseIntermMultRes parse_objs([Token+] tokens, Nat offset, Token eof)
+  //ParseIntermMultRes parse_objs([Token^] tokens, Nat offset, Token eof)
   parse_objs(tokens, offset, eof)
   {
     len  := length(tokens);

@@ -616,7 +616,7 @@ Bool is_subset(ClsType t1, ClsType t2)
 }
 
 
-AnonType cls_call_type(ClsType signature, [AnonType+] actual_types) //## FIND BETTER NAME
+AnonType cls_call_type(ClsType signature, [AnonType^] actual_types) //## FIND BETTER NAME
 {
   cs := merge_value_sets({subset_conds(actual_types[i], signature.in_types[i]) : i <- index_set(actual_types)});
   type_var_insts := (v => union_superset(ts) : v => ts <- cs);

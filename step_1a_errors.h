@@ -1,9 +1,9 @@
 
 type UserErr      = dup_tdef(BasicTypeSymbol),
                     dup_par_tdef(name: BasicTypeSymbol, arity: NzNat),
-                    incomp_fndefs(name: FnSymbol, arity: Nat, params: [PseudoType*]+),
+                    incomp_fndefs(name: FnSymbol, arity: Nat, params: [PseudoType]+),
                     tdef_err(type: TypeSymbol, errs: TDefUserErr*),
-                    fndef_err(name: FnSymbol, params: [<SynType, nil>*], errs: SynObjErr*),
+                    fndef_err(name: FnSymbol, params: [<SynType, nil>], errs: SynObjErr*),
                     ublock_err(errs: UBlockErr*);
 
 type TDefUserErr  = undef_type_name(BasicTypeSymbol),
@@ -197,7 +197,7 @@ using (TypeSymbol => SynType) typedefs
       //_,        _         = are_disjoint(syn_pseudotype(t1), syn_pseudotype(t2));
   }
 
-  [PseudoType*] par_parts(SynFnDef fd) = [if p.type? then syn_pseudotype(p.type) else :all_objs end : p <- fd.params];
+  [PseudoType] par_parts(SynFnDef fd) = [if p.type? then syn_pseudotype(p.type) else :all_objs end : p <- fd.params];
 }
 
 

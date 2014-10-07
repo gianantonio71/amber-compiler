@@ -8,7 +8,7 @@ type LeafObj    = object(<Atom, Int>);
 ///////////////////////////////////////////////////////////////////////////////
 
 type BasicTypeSymbol  = type_symbol(Atom);
-type ParTypeSymbol    = par_type_symbol(symbol: BasicTypeSymbol, params: [UserType+]);
+type ParTypeSymbol    = par_type_symbol(symbol: BasicTypeSymbol, params: [UserType^]);
 type TypeSymbol       = BasicTypeSymbol, ParTypeSymbol;
 
 type TypeName         = type_name(symbol: BasicTypeSymbol, arity: Nat);
@@ -59,17 +59,17 @@ type UnionType[T]   = union_type(T+);
 
 type SelfRecType[T] = self_rec_type(T);
 
-type MutRecType[T]  = mut_rec_type(index: Nat, types: [T+]);
+type MutRecType[T]  = mut_rec_type(index: Nat, types: [T^]);
 
 type RecType[T]     = SelfRecType[T], MutRecType[T];
 
 ///////////////////////////////////////////////////////////////////////////////
 
-type ClsType  = cls_type(in_types: [AnonType+], out_type: AnonType);
+type ClsType  = cls_type(in_types: [AnonType^], out_type: AnonType);
 type ExtType  = AnonType, ClsType;
 
 type FnType   = fn_type(
-                  params:       [ExtType*],
+                  params:       [ExtType],
                   named_params: (<named_par(Atom)> => ExtType),
                   ret_type:     AnonType
                 );
@@ -82,7 +82,7 @@ type TypeRef  = type_ref(TypeSymbol);
 
 ///////////////////////////////////////////////////////////////////////////////
 
-type UserClsType  = user_cls_type(in_types: [UserType+], out_type: UserType);
+type UserClsType  = user_cls_type(in_types: [UserType^], out_type: UserType);
 type UserExtType  = UserType, UserClsType;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -111,7 +111,7 @@ type SubExpr  = Expr, CondExpr;
 type Expr     = LeafObj, //## UPDATE ALL REFERENCES
 
                 set_expr(SubExpr*), //## MAYBE I SHOULDN'T ALLOW EMPTY EXPRESSIONS
-                seq_expr(head: [SubExpr*], tail: Expr?), //## I DON'T LIKE THIS MUCH
+                seq_expr(head: [SubExpr], tail: Expr?), //## I DON'T LIKE THIS MUCH
                 map_expr((key: Expr, value: Expr, cond: Expr?)*),
                 tag_obj_expr(tag: Expr, obj: Expr),
 
@@ -120,9 +120,9 @@ type Expr     = LeafObj, //## UPDATE ALL REFERENCES
                 //## CAN LOCAL FUNCTIONS HAVE NAMED PARAMETERS? IT WOULDN'T MAKE MUCH SENSE,
                 //## BUT THE DATA STRUCTURE AND THE SYNTAX ALLOW IT. MAKE SURE IT'S CHECHED
                 //## IN THE WELL-FORMEDNESS CHECKING LAYER.
-                fn_call(name: FnSymbol, params: [ExtExpr*], named_params: (<named_par(Atom)> => ExtExpr)), //## BAD
-                cls_call(name: Var, params: [Expr*]),  //## NEW --- RENAME name: TO var:
-                builtin_call(name: BuiltIn, params: [Expr*]), //## CAN A BUILTIN HAVE NO ARGUMENTS?
+                fn_call(name: FnSymbol, params: [ExtExpr], named_params: (<named_par(Atom)> => ExtExpr)), //## BAD
+                cls_call(name: Var, params: [Expr]),  //## NEW --- RENAME name: TO var:
+                builtin_call(name: BuiltIn, params: [Expr]), //## CAN A BUILTIN HAVE NO ARGUMENTS?
 
                 and_expr(left: Expr, right: Expr), //## NOT SURE HERE
                 or_expr(left: Expr, right: Expr),  //## NOT SURE HERE
@@ -137,8 +137,8 @@ type Expr     = LeafObj, //## UPDATE ALL REFERENCES
                 accessor_test(expr: Expr, field: SymbObj), //## DITTO
 
                 if_expr(cond: Expr, then: Expr, else: Expr),
-                match_expr(exprs: [Expr+], cases: [(ptrns: [Pattern+], expr: Expr)+]),
-                do_expr([Statement+]),
+                match_expr(exprs: [Expr^], cases: [(ptrns: [Pattern^], expr: Expr)^]),
+                do_expr([Statement^]),
 
                 ex_qual(source: Clause, sel_expr: Expr?),
                 set_comp(expr: Expr, source: Clause, sel_expr: Expr?),
@@ -150,9 +150,9 @@ type Expr     = LeafObj, //## UPDATE ALL REFERENCES
 
 ///////////////////////////////////////////////////////////////////////////////
 
-//type Closure  = closure(params: [var(Atom)+], expr: Expr, captured_vars: Var*);
+//type Closure  = closure(params: [var(Atom)^], expr: Expr, captured_vars: Var*);
 
-type ClsExpr  = cls_expr(params: [<var(Atom), nil>+], expr: Expr);
+type ClsExpr  = cls_expr(params: [<var(Atom), nil>^], expr: Expr);
 
 type ExtExpr  = Expr, ClsExpr;
 
@@ -192,11 +192,11 @@ type Clause   = in_clause(ptrn: Pattern, src: Expr),
 
 type Statement  = assignment_stmt(var: Var, value: Expr),
                   return_stmt(Expr),
-                  if_stmt(cond: Expr, body: [Statement+], else: [Statement*]),
-                  loop_stmt([Statement+]),
-                  foreach_stmt(var: Var, idx_var: Var?, values: Expr, body: [Statement+]),
-                  for_stmt(var: Var, start_val: Expr, end_val: Expr, body: [Statement+]),
-                  let_stmt(asgnms: (<named_par(Atom)> => Expr), body: [Statement+]), //## BAD
+                  if_stmt(cond: Expr, body: [Statement^], else: [Statement]),
+                  loop_stmt([Statement^]),
+                  foreach_stmt(var: Var, idx_var: Var?, values: Expr, body: [Statement^]),
+                  for_stmt(var: Var, start_val: Expr, end_val: Expr, body: [Statement^]),
+                  let_stmt(asgnms: (<named_par(Atom)> => Expr), body: [Statement^]), //## BAD
                   break_stmt,
                   fail_stmt,
                   assert_stmt(Expr),
@@ -206,13 +206,13 @@ type Statement  = assignment_stmt(var: Var, value: Expr),
 
 //type Signature  = signature(
 //                    name:     FnSymbol,
-//                    params:   [Type*],
+//                    params:   [Type],
 //                    res_type: Type
 //                  );
 
 type FnDef      = fn_def(
                     name:         FnSymbol,
-                    params:       [(var: var(Atom)?, type: UserExtType?)*], //## BAD BAD
+                    params:       [(var: var(Atom)?, type: UserExtType?)], //## BAD BAD
                     named_params: (<named_par(Atom)> => UserExtType), //## BAD: THIS DOESN'T ALLOW FOR IMPLICIT PARAMETER WITH THE SAME NAME BUT DIFFERENT ARITIES. ALSO THE TYPE IS TOO LOOSE. INCLUDE A CHECK IN THE WELL-FORMEDNESS CHECKING LAYER
                     res_type:     UserType?,
                     expr:         Expr

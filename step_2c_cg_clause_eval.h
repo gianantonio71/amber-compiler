@@ -48,7 +48,7 @@ using
   Nat next_stream_var_id;
 
 
-  [Instr*] gen_code(MatchAction action, Var* loc_bound_vars):
+  [Instr] gen_code(MatchAction action, Var* loc_bound_vars):
   
     match_action() = gen_iter_code(action.clause, loc_bound_vars, action.action),
 
@@ -82,7 +82,7 @@ using
     };
 
 
-  [Instr+] gen_iter_code(Clause clause, Var* loc_bound_vars, MatchAction action):
+  [Instr^] gen_iter_code(Clause clause, Var* loc_bound_vars, MatchAction action):
 
     in_clause() = {
       src_var  := lvar(next_obj_var_id);

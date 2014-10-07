@@ -82,7 +82,7 @@ Set gen_objs(NzNat max_depth, Atom* term_symbols, Atom* func_symbols)
 //   _,                          _           = false;
 
 
-Bool ref_is_subset([Nat*] incl_map_1, [Nat*] incl_map_2)
+Bool ref_is_subset([Nat] incl_map_1, [Nat] incl_map_2)
 {
   // assert length(incl_map_1) == length(incl_map_2);
 
@@ -138,7 +138,7 @@ String*  types_to_str(AnonType* types)         = {type_to_str(t) : t <- types};
 String** typess_to_string(AnonType** typess)   = {{type_to_str(t) : t <- ts} : ts <- typess};
 
 
-Bool test_type_subset_checking([AnonType*] types, [Any*] objs)
+Bool test_type_subset_checking([AnonType] types, [Any] objs)
 {
   incl_matrix := [[i : o, i <- objs, type_contains_obj(t, o)] : t <- types];
   ok := true;
@@ -171,7 +171,7 @@ Bool test_type_subset_checking([AnonType*] types, [Any*] objs)
 }
 
 
-Bool check_intersection(ClosedType inters, [Any*] objs, [Nat*] ns1, [Nat*] ns2)
+Bool check_intersection(ClosedType inters, [Any] objs, [Nat] ns1, [Nat] ns2)
 {
   l1 := length(ns1);
   l2 := length(ns2);
@@ -195,7 +195,7 @@ Bool check_intersection(ClosedType inters, [Any*] objs, [Nat*] ns1, [Nat*] ns2)
 }
 
 
-test_type_intersection_checking([AnonType*] types, [Any*] objs)
+test_type_intersection_checking([AnonType] types, [Any] objs)
 {
   incl_matrix := [[i : o, i <- objs, type_contains_obj(t, o)] : t <- types];
   low_counter := 0;
@@ -556,7 +556,7 @@ using
 
 
 
-[T*] middle_subseq([T*] s, Nat left, Nat right) = _slice_(s, left, max(0, length(s)-left-right));
+[T] middle_subseq([T] s, Nat left, Nat right) = _slice_(s, left, max(0, length(s)-left-right));
 
 test_main =
 {

@@ -6,7 +6,7 @@ LeafObj object(Int n) = :object(n);
 
 BasicTypeSymbol type_symbol(Atom a) = :type_symbol(a);
 
-ParTypeSymbol par_type_symbol(BasicTypeSymbol s, [UserType+] ps) = par_type_symbol(symbol: s, params: ps);
+ParTypeSymbol par_type_symbol(BasicTypeSymbol s, [UserType^] ps) = par_type_symbol(symbol: s, params: ps);
 
 TypeName type_name(BasicTypeSymbol ts, Nat arity) = type_name(symbol: ts, arity: arity);
 
@@ -70,14 +70,14 @@ SelfPretype self(Nat n) = :self(n);
 
 SelfRecType[T] self_rec_type(T pretype)              = :self_rec_type(pretype);
 
-MutRecType[T] mut_rec_type(Nat index, [T+] pretypes) = :mut_rec_type(index: index, types: pretypes);
+MutRecType[T] mut_rec_type(Nat index, [T^] pretypes) = :mut_rec_type(index: index, types: pretypes);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-ClsType cls_type([AnonType+] in_types, AnonType out_type) = cls_type(in_types: in_types, out_type: out_type);
+ClsType cls_type([AnonType^] in_types, AnonType out_type) = cls_type(in_types: in_types, out_type: out_type);
 
-FnType fn_type([ExtType*] ps, AnonType rt) = fn_type(ps, (), rt);
-FnType fn_type([ExtType*] ps, (<named_par(Atom)> => ExtType) nps, AnonType rt) = fn_type(params: ps, named_params: nps, ret_type: rt);
+FnType fn_type([ExtType] ps, AnonType rt) = fn_type(ps, (), rt);
+FnType fn_type([ExtType] ps, (<named_par(Atom)> => ExtType) nps, AnonType rt) = fn_type(params: ps, named_params: nps, ret_type: rt);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -113,8 +113,8 @@ FnSymbol fn_symbol(Atom a) = :fn_symbol(a);
 Var fn_par(Nat n)     = :fn_par(n);
 Var named_par(Atom a) = :named_par(a);
 
-Expr fn_call(FnSymbol name, [ExtExpr*] params, (<named_par(Atom)> => ExtExpr) named_params) = fn_call(name: name, params: params, named_params: named_params);
+Expr fn_call(FnSymbol name, [ExtExpr] params, (<named_par(Atom)> => ExtExpr) named_params) = fn_call(name: name, params: params, named_params: named_params);
 Expr membership(Expr obj, UserType type) = membership(obj: obj, type: type);
 Expr if_expr(Expr cond, Expr true_expr, Expr false_expr) = if_expr(cond: cond, then: true_expr, else: false_expr);
 
-ClsExpr cls_expr([<var(Atom), nil>+] params, Expr expr) = cls_expr(params: params, expr: expr);
+ClsExpr cls_expr([<var(Atom), nil>^] params, Expr expr) = cls_expr(params: params, expr: expr);

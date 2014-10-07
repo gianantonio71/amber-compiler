@@ -106,7 +106,7 @@ Var* syn_new_vars(SynStmt stmt):
   _                 = {};
 
 
-Var* syn_new_vars([<SynStmt, SynClause>*] objs) = seq_union([syn_new_vars(obj) : obj <- objs]);
+Var* syn_new_vars([<SynStmt, SynClause>] objs) = seq_union([syn_new_vars(obj) : obj <- objs]);
 
 
 Var* syn_new_vars(SynClause clause):

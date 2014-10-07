@@ -43,7 +43,7 @@ ProcDef* gen_prg_code(Program prg)
 //  return update_body(pd, body);
 //  
 //  //## BAD BAD BAD
-//  ProcDef update_body(ProcDef pd, [Instr+] body):
+//  ProcDef update_body(ProcDef pd, [Instr^] body):
 //    ObjProcDef    = obj_proc_def(pd.name, pd.in_arity, body),
 //    BoolProcDef   = bool_proc_def(pd.name, pd.arity, body);
 //}

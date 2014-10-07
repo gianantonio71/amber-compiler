@@ -72,7 +72,7 @@ using
   }
 
 
-  True case_is_wf(<(ptrns: [Pattern+], expr: Expr)> case, Var *scalar_vars, NzNat arg_count) //## UGLY UGLY
+  True case_is_wf(<(ptrns: [Pattern^], expr: Expr)> case, Var *scalar_vars, NzNat arg_count) //## UGLY UGLY
   {
     return false if length(case.ptrns) /= arg_count;
     
@@ -93,9 +93,9 @@ using
 
   //////////////////////////////////////////////////////////////////////////////
 
-  True stmts_are_wf([Statement+] stmts, Var* scalar_vars) = stmts_are_wf(stmts, scalar_vars, false, true);
+  True stmts_are_wf([Statement^] stmts, Var* scalar_vars) = stmts_are_wf(stmts, scalar_vars, false, true);
 
-  True stmts_are_wf([Statement+] stmts, Var* scalar_vars, Bool is_inside_loop, Bool needs_return)
+  True stmts_are_wf([Statement^] stmts, Var* scalar_vars, Bool is_inside_loop, Bool needs_return)
   {
     vs        := scalar_vars;
     reachable := true;

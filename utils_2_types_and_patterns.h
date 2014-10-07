@@ -26,7 +26,7 @@ using (TypeName => AnonType) typedefs
   }
 
   //## BAD: IS THIS THE SAME AS replace_type_vars()?
-  AnonType instantiate_generic_params(AnonType generic_type, [AnonType*] actual_params): //## BAD: SHOULD BE USING A REPLACE EXPRESSION HERE...
+  AnonType instantiate_generic_params(AnonType generic_type, [AnonType] actual_params): //## BAD: SHOULD BE USING A REPLACE EXPRESSION HERE...
     LeafType          = generic_type,
     SelfPretype       = generic_type,
     type_var(n)       = actual_params[n],
