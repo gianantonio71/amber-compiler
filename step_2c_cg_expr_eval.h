@@ -180,40 +180,40 @@ using
   [Instr] gen_eval_code(BuiltIn name, [AtomicExpr] params, ObjVar res_var)
   {
     return match (name)
-             :obj     = [set_var(res_var, get_inner_obj(params[0])), add_ref(res_var)],
-             :has_key = { bvar := bvar(next_bool_var_id);
+             obj      = [set_var(res_var, get_inner_obj(params[0])), add_ref(res_var)],
+             has_key  = { bvar := bvar(next_bool_var_id);
                           return [lookup(bvar, res_var, params[0], params[1]), set_var(res_var, to_obj(bvar))];
                         },
-             :lookup  = [lookup(res_var, params[0], params[1]), add_ref(res_var)],
+             lookup   = [lookup(res_var, params[0], params[1]), add_ref(res_var)],
              _        = [gen_eval_instr(name, params, res_var)];
            ;
 
     Instr gen_eval_instr(BuiltIn name, [AtomicExpr] ps, ObjVar res_var):
-      :slice        = get_seq_slice(res_var, ps[0], get_int_val(ps[1]), get_int_val(ps[2])),
-      :cat          = join_seqs(res_var, ps[0], ps[1]),
-      :rev          = rev_seq(res_var, ps[0]),
-      :set          = seq_to_set(res_var, ps[0]),
-      :at           = get_at(res_var, ps[0], get_int_val(ps[1])),
-      :mset         = seq_to_mset(res_var, ps[0]),
-      :isort        = internal_sort(res_var, ps[0]),
-      :union        = merge_sets(res_var, ps[0]),
-      :merge        = merge_maps(res_var, ps[0]),
-      :list_to_seq  = list_to_seq(res_var, ps[0]),
+      slice         = get_seq_slice(res_var, ps[0], get_int_val(ps[1]), get_int_val(ps[2])),
+      cat           = join_seqs(res_var, ps[0], ps[1]),
+      rev           = rev_seq(res_var, ps[0]),
+      set           = seq_to_set(res_var, ps[0]),
+      at            = get_at(res_var, ps[0], get_int_val(ps[1])),
+      mset          = seq_to_mset(res_var, ps[0]),
+      isort         = internal_sort(res_var, ps[0]),
+      union         = merge_sets(res_var, ps[0]),
+      merge         = merge_maps(res_var, ps[0]),
+      list_to_seq   = list_to_seq(res_var, ps[0]),
       _             = set_var(res_var, gen_eval_expr(name, ps));
     
     ObjExpr gen_eval_expr(BuiltIn name, [AtomicExpr] ps):
-      :str        = to_str(ps[0]),
-      :symb       = to_symb(ps[0]),
-      :neg        = to_obj(minus(get_int_val(ps[0]))),
-      :add        = to_obj(add(get_int_val(ps[0]), get_int_val(ps[1]))),
-      :mult       = to_obj(mult(get_int_val(ps[0]), get_int_val(ps[1]))),
-      :counter    = to_obj(unique_int),
-      :len        = to_obj(get_seq_len(ps[0])),
-      :tag        = get_tag(ps[0]),
-      :in         = to_obj(has_elem(ps[1], ps[0]));
-      // :rand_nat   =
-      // :rand_elem  =
-      // :counter    =
+      str         = to_str(ps[0]),
+      symb        = to_symb(ps[0]),
+      neg         = to_obj(minus(get_int_val(ps[0]))),
+      add         = to_obj(add(get_int_val(ps[0]), get_int_val(ps[1]))),
+      mult        = to_obj(mult(get_int_val(ps[0]), get_int_val(ps[1]))),
+      counter     = to_obj(unique_int),
+      len         = to_obj(get_seq_len(ps[0])),
+      tag         = get_tag(ps[0]),
+      in          = to_obj(has_elem(ps[1], ps[0]));
+      // rand_nat   =
+      // rand_elem  =
+      // counter    =
   }
   
   
@@ -223,7 +223,7 @@ using
 
     Var             = [set_var(res_var, expr), add_ref(res_var)],
 
-    do_expr(ss)     = [execute_block(gen_code(ss, res_var))],
+    do_expr(ss?)    = [execute_block(gen_code(ss, res_var))],
 
     select_expr()   = gen_eval_code(simplify(expr), res_var), //## BAD
     replace_expr()  = gen_eval_code(simplify(expr), res_var), //## BAD
@@ -248,10 +248,10 @@ using
                       ],
     
                       //## BAD BAD BAD
-    not_expr(e)     = gen_eval_code(e, res_var) & [set_var(res_var, obj_neg(res_var))],
+    not_expr(e?)    = gen_eval_code(e, res_var) & [set_var(res_var, obj_neg(res_var))],
 
     
-    set_expr(es) =
+    set_expr(es?) =
     {
       return [set_var(res_var, empty_set)] if es == {};
       info := gen_vector_eval_info(sort_exprs_first(es));
@@ -288,7 +288,7 @@ using
     },
 
 
-    map_expr(es) =
+    map_expr(es?) =
     {
       return [set_var(res_var, empty_map)] if es == {};
 
@@ -623,7 +623,7 @@ using
       return info.eval_code & [var_scope(var, info.expr, body)] & info.cleanup_code;
 
     else
-      //name     := :fn_symbol(untag(var));
+      //name     := :fn_symbol(_obj_(var));
       arity    := length(expr.params);
       loc_vs   := set([v : v <- expr.params, v /= nil] & [:fn_par(i) : i <- indexes(expr.params)]); //## BAD
       ext_vs   := rand_sort(extern_vars(expr.expr) - loc_vs);
@@ -679,22 +679,22 @@ using
   
   [Instr^] gen_code(Statement stmt, ObjVar res_var, ObjVar* all_rel_vars, ObjVar* break_vars):
 
-    :break_stmt     = [release(v) : v <- rand_sort(break_vars)] & [break_loop],
+    break_stmt      = [release(v) : v <- rand_sort(break_vars)] & [break_loop],
 
-    :fail_stmt      = [terminate],
+    fail_stmt       = [terminate],
 
-    loop_stmt(ss)   = [repeat(gen_code(ss, res_var, all_rel_vars, {}, {}))],
+    loop_stmt(ss?)  = [repeat(gen_code(ss, res_var, all_rel_vars, {}, {}))],
 
-    assert_stmt(e)  = { info := gen_eval_info(e);
+    assert_stmt(e?) = { info := gen_eval_info(e);
                         return info.eval_code & [runtime_check(info.expr)];
                       },
-    // assert_stmt(e)  = [no_op],
+    // assert_stmt(e?) = [no_op],
 
-    print_stmt(e)   = { info := gen_eval_info(e);
+    print_stmt(e?)  = { info := gen_eval_info(e);
                         return info.eval_code & [print_obj(info.expr)] & info.cleanup_code;
                       },
 
-    return_stmt(e)  = { assert not in(res_var, all_rel_vars);
+    return_stmt(e?) = { assert not in(res_var, all_rel_vars);
                         
                         return gen_eval_code(e, res_var)               &
                                [release(v) : v <- rand_sort(all_rel_vars)] &

@@ -117,9 +117,9 @@ if (not res and halt_on_failure_to_typecheck)
 
   Bool typechecks_impl(Expr expr, AnonType exp_type):
     SymbObj               = is_subset(symb_type(expr), exp_type),
-    object(Int n)         = is_subset(int_range(min: n, size: 1), exp_type),
+    object(Int n?)        = is_subset(int_range(min: n, size: 1), exp_type),
 
-    set_expr(ses)         = {
+    set_expr(ses?)        = {
       return contains_empty_set(exp_type) if ses == {};
       elem_type := set_elem_type(exp_type);
       return false if elem_type == void_type;
@@ -143,7 +143,7 @@ if (not res and halt_on_failure_to_typecheck)
     },
 
     //## TRY TO REWRITE THIS IN PROLOG-LIKE PSEUDOCODE
-    map_expr(ses) = {
+    map_expr(ses?) = {
       // If it's the empty map, we just check that the empty map is included in the expected type
       return contains_empty_map(exp_type) if ses == {};
       // Inclusion conditions, if they exist, must typecheck as booleans
@@ -161,7 +161,7 @@ if (not res and halt_on_failure_to_typecheck)
       exp_tuple_type := tuple_type(exp_type);
       // If there is no tuple type we are done, the expression does not typecheck
       return false if exp_tuple_type == void_type;
-      fields := untag(exp_tuple_type);
+      fields := _obj_(exp_tuple_type);
       exp_labels := keys(fields);
       // Making sure that the resulting tuple will always have all the required fields
       return false if not subset({l : l => f <- fields ; not f.optional}, {se.key : se <- ses ; not se.cond?});
@@ -190,7 +190,7 @@ if (not res and halt_on_failure_to_typecheck)
 
     and_expr()            = is_subset(type_bool, exp_type) and is_typechecking_bool_expr(expr.left) and is_typechecking_bool_expr(expr.right),
     or_expr()             = is_subset(type_bool, exp_type) and is_typechecking_bool_expr(expr.left) and is_typechecking_bool_expr(expr.right),
-    not_expr(e)           = is_subset(type_bool, exp_type) and is_typechecking_bool_expr(e),
+    not_expr(e?)          = is_subset(type_bool, exp_type) and is_typechecking_bool_expr(e),
 
     //## HERE I COULD ALSO CHECK THAT THE TYPES OF THE TWO EXPRESSIONS ARE NOT DISJOINT
     eq()                  = is_subset(type_bool, exp_type) and typechecks(expr.left) and typechecks(expr.right),
@@ -250,7 +250,7 @@ if (not res and halt_on_failure_to_typecheck)
       return true;
     },
 
-    do_expr(ss)           = typecheck(ss, exp_type),
+    do_expr(ss?)          = typecheck(ss, exp_type),
 
     ex_qual()             = {
       return false if not typechecks(expr.source);
@@ -361,15 +361,15 @@ if (not res and halt_on_failure_to_typecheck)
 
 
   Bool may_match(Pattern ptrn, AnonType type):
-    :ptrn_any         = true,
-    obj_ptrn(obj)     = type_contains_obj(type, obj),
-    type_ptrn(pt)     = intersection_superset(user_type_to_anon_type(pt), type) /= {},
-    ext_var_ptrn(v)   = intersection_superset(environment[v], type) /= {},
+    ptrn_any          = true,
+    obj_ptrn(obj?)    = type_contains_obj(type, obj),
+    type_ptrn(pt?)    = intersection_superset(user_type_to_anon_type(pt), type) /= {},
+    ext_var_ptrn(v?)  = intersection_superset(environment[v], type) /= {},
     var_ptrn()        = not ptrn.ptrn? or may_match(ptrn.ptrn, type), //## REMEMBER TO UPDATE THIS WHEN MAKING THE ptrn FIELD NON-OPTIONAL
     tag_ptrn()        = {
       // tag := ptrn.tag;
       // if (tag :: <obj_ptrn(SymbObj)>)
-      //   obj_type := tagged_obj_obj_type(type, untag(tag));
+      //   obj_type := tagged_obj_obj_type(type, _obj_(tag));
       //   return obj_type /= void_type and may_match(ptrn.obj, obj_type);
       // else
       //   tag_obj_types := tagged_obj_types(type);
@@ -399,12 +399,12 @@ if (not res and halt_on_failure_to_typecheck)
   }
 
   (Var => AnonType) generated_environment_impl(Pattern ptrn, AnonType type):
-    :ptrn_any       = (),
-    obj_ptrn(obj)   = (),
-    type_ptrn()     = (),
-    ext_var_ptrn(v) = (),
-    var_ptrn()      = (ptrn.name => pattern_type_intersection(ptrn.ptrn, type)),
-    tag_ptrn()      = {
+    ptrn_any          = (),
+    obj_ptrn(obj?)    = (),
+    type_ptrn()       = (),
+    ext_var_ptrn(v?)  = (),
+    var_ptrn()        = (ptrn.name => pattern_type_intersection(ptrn.ptrn, type)),
+    tag_ptrn()        = {
       if (type :: TagObjType[AnonType])
         if (ptrn.tag :: <obj_ptrn(SymbObj)>)
           return () if not may_match(ptrn.tag, type.tag_type);
@@ -453,13 +453,13 @@ if (not res and halt_on_failure_to_typecheck)
 
   Bool typechecks_impl(Statement stmt, AnonType exp_type):
     assignment_stmt()   = typechecks(stmt.value),
-    return_stmt(e)      = typechecks(e, exp_type),
+    return_stmt(e?)     = typechecks(e, exp_type),
     if_stmt()           = {
       return false if not is_typechecking_bool_expr(stmt.cond);
       envs := refine_environment(stmt.cond);
       return typecheck(stmt.body, exp_type; environment=envs.if_true) and typecheck(stmt.else, exp_type; environment=envs.if_false);
     },
-    loop_stmt(ss)       = {
+    loop_stmt(ss?)      = {
       return false if not typecheck(ss, exp_type);
       env_1 := update_environment(ss);
       return false if not typecheck(ss, exp_type; environment=env_1);
@@ -489,10 +489,10 @@ if (not res and halt_on_failure_to_typecheck)
       new_env := update(environment, env_delta);
       return typecheck(stmt.body, exp_type; environment=new_env); //## BUG BUG BUG
     },
-    :break_stmt         = true,
-    :fail_stmt          = true,
-    assert_stmt(e)      = is_typechecking_bool_expr(e),
-    print_stmt(e)       = typechecks(e);
+    break_stmt          = true,
+    fail_stmt           = true,
+    assert_stmt(e?)     = is_typechecking_bool_expr(e),
+    print_stmt(e?)      = typechecks(e);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -502,9 +502,9 @@ if (not res and halt_on_failure_to_typecheck)
   // I assume that the expression typechecks
   AnonType expr_type(Expr expr):
     SymbObj               = symb_type(expr),
-    object(Int n)         = int_range(min: n, size: 1),
+    object(Int n?)        = int_range(min: n, size: 1),
 
-    set_expr(ses)         = {
+    set_expr(ses?)        = {
       return empty_set_type if ses == {};
       type := ne_set_type(union_superset({expr_type(se) : se <- ses}));
       type := union_type({type, empty_set_type}) if (? se <- ses : se :: CondExpr);
@@ -527,7 +527,7 @@ if (not res and halt_on_failure_to_typecheck)
       return if may_be_empty then type_seq(elem_type) else ne_seq_type(elem_type) end;
     },
 
-    map_expr(ses) = {
+    map_expr(ses?) = {
       return empty_map_type if ses == {};
       if (not (? se <- ses : not se.key :: SymbObj))
         return tuple_type((se.key => (type: expr_type(se.value), optional: se.cond?) : se <- ses));
@@ -552,8 +552,8 @@ if (not res and halt_on_failure_to_typecheck)
     cls_call()            = cls_call_type(closures[expr.name], [expr_type(p) : p <- expr.params]),
 
     builtin_call()        = match (expr.name)
-                              :obj  = union_superset({t.obj_type : t <- tagged_obj_types(expr_type(expr.params[0]))}),
-                              :tag  = { tag_types := {t.tag_type : t <- tagged_obj_types(expr_type(expr.params[0]))};
+                              obj   = union_superset({t.obj_type : t <- tagged_obj_types(expr_type(expr.params[0]))}),
+                              tag   = { tag_types := {t.tag_type : t <- tagged_obj_types(expr_type(expr.params[0]))};
                                         assert tag_types == {atom_type} or tag_types :: <SymbType+>;
                                         return union_type(tag_types); //## SHOULD I USE union_superset HERE?
                                       },
@@ -562,7 +562,7 @@ if (not res and halt_on_failure_to_typecheck)
 
     and_expr()            = type_bool,
     or_expr()             = type_bool,
-    not(e)                = type_bool,
+    not(e?)               = type_bool,
 
     eq()                  = type_bool,
 
@@ -575,7 +575,7 @@ if (not res and halt_on_failure_to_typecheck)
       types := for (t <- split_type(expr_type(expr.expr))) {
                  match (t)
                    tuple_type()    = t,
-                   tag_obj_type()  = match (t.obj_type) tuple_type() ot = ot;
+                   tag_obj_type()  = match (t.obj_type) tuple_type() ot? = ot;
                  ;
                };
       assert types :: <TupleType[AnonType]+>;
@@ -605,7 +605,7 @@ if (not res and halt_on_failure_to_typecheck)
       return union_superset(res_types);
     },
 
-    do_expr(ss)           = return_type(ss),
+    do_expr(ss?)          = return_type(ss),
 
     ex_qual()             = type_bool,
 
@@ -651,14 +651,14 @@ if (not res and halt_on_failure_to_typecheck)
 
   ClosedType return_type(Statement stmt): //## IS THIS AT ALL USED?
     assignment_stmt()   = void_type,
-    return_stmt(e)      = expr_type(e),
+    return_stmt(e?)     = expr_type(e),
     if_stmt() = {
       envs := refine_environment(stmt.cond);
       true_ret_type := return_type(stmt.body; environment=envs.if_true);
       false_ret_type := return_type(stmt.body; environment=envs.if_false);
       return union_superset(true_ret_type, false_ret_type);
     },
-    loop_stmt(ss) = {
+    loop_stmt(ss?) = {
       env_0 := environment;
       env_1 := update_environment(ss; environment=env_0);
       ret_type_0 := return_type(ss; environment=env_0);
@@ -687,8 +687,8 @@ if (not res and halt_on_failure_to_typecheck)
       new_env := update(environment, env_delta);
       return return_type(stmt.body; environment=new_env);
     },
-    :break_stmt         = void_type,
-    :fail_stmt          = void_type,
+    break_stmt          = void_type,
+    fail_stmt           = void_type,
     assert_stmt()       = void_type,
     print_stmt()        = void_type;
 
@@ -715,7 +715,7 @@ if (not res and halt_on_failure_to_typecheck)
     (Var => AnonType) update_environment(Statement stmt):
       assignment_stmt()   = update(environment, (stmt.var => expr_type(stmt.value))),
 
-      return_stmt(e)      = (),
+      return_stmt(e?)     = (),
 
       if_stmt() = {
         start_envs := refine_environment(stmt.cond);
@@ -737,7 +737,7 @@ if (not res and halt_on_failure_to_typecheck)
         ;
       },
 
-      loop_stmt(ss) = {
+      loop_stmt(ss?) = {
         //## IS THIS CHECK NECESSARY? IF IT RETURNS OR FAILS (IT CANNOT BREAK) THEN THE RESULT IS MEANINGLESS
         //## ON THE OTHER HAND, RETURNING THE EMPTY MAP MAY BE MORE EFFECTIVE IN DETECTING ERRORS IN
         //## THE COMPILER CODE THAN RETURNING RANDOM GARBAGE...
@@ -771,15 +771,15 @@ if (not res and halt_on_failure_to_typecheck)
         return update_environment(stmt.body; environment=new_env);
       },
 
-      :break_stmt         = (),
+      break_stmt          = (),
 
-      :fail_stmt          = (),
+      fail_stmt           = (),
 
       //## THIS IS AN INTERESTING CASE: IF I DECIDE TO MAKE ASSERTIONS REMOVABLE ONLY
       //## WHEN THEY ARE NOT NECESSARY TO MAKE THE CODE STATICALLY TYPE CHECKABLE,
       //## HOW CAN I DO IT? I WOULD NEED TO SOMEHOW STORE THE FACT THAT THE ASSERTION
       //## IS REMOVABLE OR NOT DURING STATIC TYPE CHECKING...
-      assert_stmt(e)      = environment, // refine_environment(e).if_true, //## SHOULD I RELY ON THIS? WHAT HAPPENS IF THE ASSERTIONS ARE REMOVED? MAYBE I NEED A NON-REMOVABLE ASSERTION TYPE
+      assert_stmt(e?)     = environment, // refine_environment(e).if_true, //## SHOULD I RELY ON THIS? WHAT HAPPENS IF THE ASSERTIONS ARE REMOVED? MAYBE I NEED A NON-REMOVABLE ASSERTION TYPE
 
       print_stmt()        = environment;
 
@@ -817,25 +817,25 @@ if (not res and halt_on_failure_to_typecheck)
 ////////////////////////////////////////////////////////////////////////////////
 
   FnType builtin_signature(BuiltIn):
-    :neg            = fn_type([integer],                                            integer),
-    :add            = fn_type([integer, integer],                                   integer),
-    :str            = fn_type([atom_type],                                          type_string),
-    :symb           = fn_type([type_string],                                        atom_type),
-    :at             = fn_type([type_seq(type_var(:t)), integer],                    type_var(:t)),
-    :len            = fn_type([type_seq],                                           high_ints(0)),
-    :slice          = fn_type([type_seq(type_var(:t)), integer, integer],           type_seq(type_var(:t))),
-    :cat            = fn_type([type_seq(type_var(:t)), type_seq(type_var(:t))],     type_seq(type_var(:t))),
-    :rev            = fn_type([type_seq(type_var(:t))],                             type_seq(type_var(:t))),
-    :set            = fn_type([type_seq(type_var(:t))],                             type_set(type_var(:t))),
-    :mset           = fn_type([type_seq(type_var(:t))],                             type_mset(type_var(:t))),
-    :isort          = fn_type([type_set(type_var(:t))],                             type_seq(type_var(:t))),
-    // :list_to_seq    = fn_type([type_list(type_var(:t))],                            type_seq(type_var(:t))),
-    :list_to_seq    = fn_type([type_any],                                           type_seq), //## BAD: IMPLEMENT ABOVE VERSION
-    :tag            = fn_type([type_tagged_obj],                                    atom_type), // The return type is too loose, and it is ignore in the code
-    :obj            = fn_type([type_tagged_obj],                                    type_any),  // Ditto
-    :rand_nat       = fn_type([type_nat],                                           type_nat),
-    :rand_elem      = fn_type([type_set(type_var(:t))],                             type_var(:t)),
-    :counter        = fn_type([type_any],                                           integer);
+    neg             = fn_type([integer],                                            integer),
+    add             = fn_type([integer, integer],                                   integer),
+    str             = fn_type([atom_type],                                          type_string),
+    symb            = fn_type([type_string],                                        atom_type),
+    at              = fn_type([type_seq(type_var(:t)), integer],                    type_var(:t)),
+    len             = fn_type([type_seq],                                           high_ints(0)),
+    slice           = fn_type([type_seq(type_var(:t)), integer, integer],           type_seq(type_var(:t))),
+    cat             = fn_type([type_seq(type_var(:t)), type_seq(type_var(:t))],     type_seq(type_var(:t))),
+    rev             = fn_type([type_seq(type_var(:t))],                             type_seq(type_var(:t))),
+    set             = fn_type([type_seq(type_var(:t))],                             type_set(type_var(:t))),
+    mset            = fn_type([type_seq(type_var(:t))],                             type_mset(type_var(:t))),
+    isort           = fn_type([type_set(type_var(:t))],                             type_seq(type_var(:t))),
+    // list_to_seq    = fn_type([type_list(type_var(:t))],                            type_seq(type_var(:t))),
+    list_to_seq     = fn_type([type_any],                                           type_seq), //## BAD: IMPLEMENT ABOVE VERSION
+    tag             = fn_type([type_tagged_obj],                                    atom_type), // The return type is too loose, and it is ignore in the code
+    obj             = fn_type([type_tagged_obj],                                    type_any),  // Ditto
+    rand_nat        = fn_type([type_nat],                                           type_nat),
+    rand_elem       = fn_type([type_set(type_var(:t))],                             type_var(:t)),
+    counter         = fn_type([type_any],                                           integer);
 
 
   //## THIS IS ALL A TEMPORARY HACK TO WORK AROUND AN UNFINISHED FEATURE IN CODE GENERATION

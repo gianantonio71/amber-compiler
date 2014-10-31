@@ -159,12 +159,12 @@ TypeSymbol* ref_type_symbols(type) = {_obj_(r) : r <- select TypeRef in type end
 AnonType normalize_type_unions(AnonType type):
   LeafType          = type,
   SelfPretype       = type,
-  type_var(n)       = type,
+  type_var(n?)      = type,
   ne_seq_type()     = ne_seq_type(normalize_type_unions(type.elem_type)),
   ne_set_type()     = ne_set_type(normalize_type_unions(type.elem_type)),
   ne_map_type()     = ne_map_type(normalize_type_unions(type.key_type), normalize_type_unions(type.value_type)),
-  tuple_type(fs)    = tuple_type((l => (type: normalize_type_unions(f.type), optional: f.optional) : l => f <- fs)),
+  tuple_type(fs?)   = tuple_type((l => (type: normalize_type_unions(f.type), optional: f.optional) : l => f <- fs)),
   tag_obj_type()    = tag_obj_type(normalize_type_unions(type.tag_type), normalize_type_unions(type.obj_type)),
-  union_type(ts)    = union_type({normalize_type_unions(t) : t <- ts}),
-  self_rec_type(t)  = self_rec_type(normalize_type_unions(t)),
+  union_type(ts?)   = union_type({normalize_type_unions(t) : t <- ts}),
+  self_rec_type(t?) = self_rec_type(normalize_type_unions(t)),
   mut_rec_type()    = mut_rec_type(index: type.index, types: [normalize_type_unions(t) : t <- type.types]);

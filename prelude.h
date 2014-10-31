@@ -5,7 +5,7 @@ type Nat            = [0..*];
 type Int            = [*..*];
 type NzNat          = [1..*];
 //type NzInt          = [1..*], [*..-1];
-type NegInt         = [*..-1] ;
+type NegInt         = [*..-1];
 
 type Rat            = Int, rat(num: Int, den: [2..*]);
 
@@ -33,18 +33,65 @@ type String         = string([Nat]);
 
 type Maybe[T]       = nil, just(T);
 
+type Result[TS, TF] = success(TS), failure(TF);
+
+type List[T]        = nil, list(head: T, tail: List[T]);
+
+type Stack[T]       = nil, stack(top: T, rest: Stack[T]);
+
+////////////////////////////////////////////////////////////////////////////////
+
+Stack[T] push(Stack[T] stack, T item) = stack(top: item, rest: stack);
+
+Stack[T] pop(Stack[T] stack):
+  stack()   = stack.rest,
+  _         = {fail;};
+
+T peek(Stack[T] stack):
+  stack()   = stack.top,
+  _         = {fail;};
+
+Stack[T] replace_top(Stack[T] stack, T new_top):
+  stack()   = push(stack.rest, new_top),
+  _         = {fail;};
+
 ////////////////////////////////////////////////////////////////////////////////
 
 // Replace this with === or ~=
 Bool is_eq(T x, Maybe[T] maybe) = maybe == :just(x);
 
-T just(T x) = :just(x);
+Maybe[T] just(T x) = :just(x);
+
+T value(Maybe[T]):
+  just(x?)  = x,
+  _         = {fail;};
+
+////////////////////////////////////////////////////////////////////////////////
+
+<success(T)> success(T r) = :success(r);
+<failure(T)> failure(T e) = :failure(e);
+
+Bool is_success(Result[TS, TF]):
+  success()   = true,
+  failure()   = false;
+
+Bool is_failure(Result[TS, TF]):
+  success()   = false,
+  failure()   = true;
+
+TS get_result(Result[TS, TF]):
+  success(r?) = r,
+  _           = {fail;};
+
+TF get_error(Result[TS, TF]):
+  failure(e?) = e,
+  _           = {fail;};
 
 ////////////////////////////////////////////////////////////////////////////////
 
 // Still not ideal, both of them. No need to always evaluate all arguments.
-Bool some(Bool+ bs) = (? :true <- bs);
-Bool all(Bool+ bs)  = not (? :false <- bs);
+Bool some(Bool+ bs) = (? b <- bs : b);
+Bool all(Bool+ bs)  = not (? b <- bs : not b);
 
 // No element is false
 Bool all([Bool] s)   = not in(false, s);
@@ -63,12 +110,12 @@ Bool not_all([Bool^] s) = in(true, s);
 Int op_-(Int n)         = _neg_(n);
 Int op_+(Int a, Int b)  = _add_(a, b);
 
-Int op_-(Int a, Int b) = a + -b;
+Int op_-(Int a, Int b)  = a + -b;
 
-Int op_*(Int a, Int b) = if a == 0      then 0,
+Int op_*(Int a, Int b)  = if a == 0     then 0,
                             a :: [1..*] then (a-1) * b + b
-                                        else -(-a * b);
-                         ;
+                                        else -(-a * b)
+                          end;
 
 Bool op_<(Int a, Int b) = (b - a) :: [1..*];
 
@@ -151,6 +198,8 @@ T head([T^] s) = _at_(s, 0);
 T tail([T^] s) = _slice_(s, 1, _len_(s)-1);
 T last([T^] s) = _at_(s, _len_(s)-1);
 
+Bool is_valid_idx(Seq seq, Int idx) = idx >= 0 and idx < length(seq);
+
 op_&(Seq s1, Seq s2) = _cat_(s1, s2);
 
 Bool in(Any e, Seq s)
@@ -190,6 +239,40 @@ reverse(Seq seq) = _rev_(seq);
 [T] subseq([T] s, Nat l, Nat m, <nil>) = subseq(s, l, m);
 
 
+[[T]] split([T] seq, T sep)
+{
+  len := length(seq);
+  subseqs := [];
+  start := 0;
+  for (x, i : seq)
+    if (x == sep)
+      subseqs := subseqs & [subseq(seq, start, i-start)];
+      start := i + 1;
+    ;
+  ;
+  subseqs := subseqs & [subseq(seq, start, len-start)] if start < len;
+  return subseqs;
+}
+
+
+Maybe[Nat] left_search(Seq seq, Seq subseq)
+{
+  last_idx := length(seq) - length(subseq);
+  for (i : inc_seq(max(0, last_idx+1)))
+    return just(i) if subseq_matches(seq, subseq, i);
+  ;
+  return nil;
+
+  Bool subseq_matches(Seq seq, Seq subseq, Nat offset)
+  {
+    for (i : indexes(subseq))
+      return false if seq[offset+i] /= subseq[i];
+    ;
+    return true;
+  }
+}
+
+
 [T] op_*(Nat count, [T] seq)
 {
   res := [];
@@ -212,17 +295,19 @@ reverse(Seq seq) = _rev_(seq);
   return s;
 }
 
-[Nat] inc_seq(Nat n) = inc_seq(0, n);
+[Nat] inc_seq(Nat n) = inc_seq(0, n, 1);
 
-[Nat] inc_seq(Nat m, Nat n)
+[Nat] inc_seq(Nat m, Nat n) = inc_seq(m, n, 1);
+
+[Nat] inc_seq(Nat m, Nat n, NzNat s)
 {
-  i := n - 1;
-  s := [];
-  while(i >= m)
-    s := [i | s];
-    i := i - 1;
+  r := [];
+  i := m;
+  while (i < n)
+    r := r & [i];
+    i := i + s;
   ;
-  return s;
+  return r;
 }
 
 [Nat] dec_seq(Nat n) = reverse(inc_seq(n));
@@ -492,8 +577,6 @@ T an_elem(T+ s) = {ses := rand_sort(s); return ses[0];};
 
 T2* values((T1 => T2) map) = {v : _ => v <- map};
 
-untag(x): tag @ obj = obj;
-
 //## THERE'S A BUG HERE, PROBABLY WHEN ONE OF THE SET OF TARGETS IS EMPTY
 (T => T*) transitive_closure((T => T*) map)
 {
@@ -596,7 +679,7 @@ String to_str(Int n)
       m     := m - d;
       count := count + 1;
     ;
-    str := str & string([48 + count]); //## UGLY UGLY
+    str := str & string([ascii_0 + count]);
   ;
 
   return if neg then "-" & str else str end;
@@ -611,12 +694,12 @@ Int to_int(String str)
   res := 0;
   neg := false;
 
-  for (ch, i : untag(str))
+  for (ch, i : _obj_(str))
     if (ch == ascii_minus and i == 0)
       neg := true;
       assert length(str) > 1;
     else
-      code := ch - 48;
+      code := ch - ascii_0;
       assert code >= 0 and code <= 9;
       res := 10 * res + code;
     ;
@@ -661,13 +744,13 @@ String to_text(Any obj)
 String quote(String str)
 {
   qr_str := [];
-  for (ch : untag(str))
-    if (ch == 10)   // '\n'
-      qr_str := [110, 92 | qr_str];
-    elif (ch == 92) // '\\'
-      qr_str := [92, 92 | qr_str];
-    elif (ch == 34) // '\"'
-      qr_str := [34, 92 | qr_str];
+  for (ch : _obj_(str))
+    if (ch == ascii_newline)
+      qr_str := [ascii_lower_n, ascii_backslash | qr_str];
+    elif (ch == ascii_backslash)
+      qr_str := [ascii_backslash, ascii_backslash | qr_str];
+    elif (ch == ascii_double_quotes)
+      qr_str := [ascii_double_quotes, ascii_backslash | qr_str];
     else
       qr_str := [ch | qr_str];
     ;
@@ -744,7 +827,12 @@ String to_text(Any obj, Nat line_len, Nat indent_level)
     return [left_del] & indented_lines_with_commas & [right_del];
   }
 
-  [String^] append_to_last([String^] lines, String str) = [if i /= last_idx then l else l & str end : l, i <- lines] let last_idx := length(lines) - 1;;
+  // [String^] append_to_last([String^] lines, String str) = [if i /= last_idx then l else l & str end : l, i <- lines] let last_idx := length(lines) - 1;;
+  [String^] append_to_last([String^] lines, String str)
+  {
+    last_idx := length(lines) - 1;
+    return [if i /= last_idx then l else l & str end : l, i <- lines];
+  }
   
 
   [String^] to_txt_map(Map map, Nat line_len)
@@ -788,16 +876,16 @@ String to_text(Any obj, Nat line_len, Nat indent_level)
 
 String string([Int] raw)   = :string(raw); //## SHOULDN't IT BE string([Nat] raw) ?
 
-Nat length(String s)        = length(untag(s));
-Nat op_[](String s, Nat n)  = op_[](untag(s), n);
+Nat length(String s)        = length(_obj_(s));
+Nat op_[](String s, Nat n)  = op_[](_obj_(s), n);
 
-String op_&(String s1, String s2)     = string(untag(s1) & untag(s2));
-String append([String] ss)           = string(join([untag(s) : s <- ss]));
-String reverse(String s)              = string(reverse(untag(s)));
-String substr(String s, Nat n, Nat m) = string(subseq(untag(s), n, m));
+String op_&(String s1, String s2)     = string(_obj_(s1) & _obj_(s2));
+String append([String] ss)            = string(join([_obj_(s) : s <- ss]));
+String reverse(String s)              = string(reverse(_obj_(s)));
+String substr(String s, Nat n, Nat m) = string(subseq(_obj_(s), n, m));
 
 String rep_str(Nat len, Nat ch)       = string(rep_seq(len, ch));
-<Nat, nil> at(String str, Nat idx)    = at(untag(str), idx, nil);
+<Nat, nil> at(String str, Nat idx)    = at(_obj_(str), idx, nil);
 
 Bool op_<(String str1, String str2)
 {
@@ -820,13 +908,142 @@ Bool op_<(String str1, String str2)
   return len1 < len2;
 }
 
-Bool is_digit(Nat ch) = ch >= 48 and ch <= 57;
-Bool is_lower(Nat ch) = ch >= 97 and ch <= 122;
-Bool is_upper(Nat ch) = ch >= 65 and ch <= 90;
+Bool is_digit(Nat ch) = ch >= ascii_0 and ch <= ascii_9;
+Bool is_lower(Nat ch) = ch >= ascii_lower_a and ch <= ascii_lower_z;
+Bool is_upper(Nat ch) = ch >= ascii_upper_a and ch <= ascii_upper_z;
 
+Bool is_space(Int ch) = ch == ascii_space or ch == ascii_tab or ch == ascii_newline or ch == ascii_carriage_return;
+
+Bool is_ascii_symbol(Nat ch) = (ch >= ascii_exclamation_mark and ch <= ascii_slash)     or
+                               (ch >= ascii_colon            and ch <= ascii_at)        or
+                               (ch >= ascii_left_bracket     and ch <= ascii_backquote) or
+                               (ch >= ascii_left_brace       and ch <= ascii_tilde);
+
+Bool is_ascii_printable(Nat ch) = ch >= ascii_space and ch <= ascii_tilde;
+
+Bool is_lower_or_digit(Nat ch) = is_lower(ch) or is_digit(ch);
+
+Nat lower(Nat ch) = if is_upper(ch) then ch + 32 else ch end;
 Nat upper(Nat ch) = if is_lower(ch) then ch - 32 else ch end;
 
-String upper(String str) = :string([upper(ch) : ch <- untag(str)]);
+String lower(String str) = :string([lower(ch) : ch <- _obj_(str)]);
+String upper(String str) = :string([upper(ch) : ch <- _obj_(str)]);
+
+///////////////////////////////////////////////////////////////////////////////
+
+Nat ascii_null              = 0;
+Nat ascii_tab               = 9;
+Nat ascii_newline           = 10;
+Nat ascii_carriage_return   = 13;
+
+Nat ascii_space             = 32;
+Nat ascii_exclamation_mark  = 33;
+Nat ascii_double_quotes     = 34; // quotation marks, quote, double quote
+Nat ascii_hash              = 35;
+Nat ascii_dollar            = 36;
+Nat ascii_percent           = 37; // percent sign
+Nat ascii_ampersand         = 38;
+Nat ascii_single_quote      = 39;
+Nat ascii_left_parenthesis  = 40;
+Nat ascii_right_parenthesis = 41;
+Nat ascii_asterisk          = 42;
+Nat ascii_plus              = 43;
+Nat ascii_comma             = 44;
+Nat ascii_minus             = 45; // dash, hyphen
+Nat ascii_dot               = 46; // period, point, decimal point
+Nat ascii_slash             = 47;
+Nat ascii_0                 = 48;
+Nat ascii_1                 = 49;
+Nat ascii_2                 = 50;
+Nat ascii_3                 = 51;
+Nat ascii_4                 = 52;
+Nat ascii_5                 = 53;
+Nat ascii_6                 = 54;
+Nat ascii_7                 = 55;
+Nat ascii_8                 = 56;
+Nat ascii_9                 = 57;
+Nat ascii_colon             = 58;
+Nat ascii_semicolon         = 59;
+Nat ascii_lower             = 60; // less than, bra
+Nat ascii_equals            = 61;
+Nat ascii_greater           = 62; // greater than, ket
+Nat ascii_question_mark     = 63;
+Nat ascii_at                = 64;
+Nat ascii_upper_a           = 65;
+Nat ascii_upper_b           = 66;
+Nat ascii_upper_c           = 67;
+Nat ascii_upper_d           = 68;
+Nat ascii_upper_e           = 69;
+Nat ascii_upper_f           = 70;
+Nat ascii_upper_g           = 71;
+Nat ascii_upper_h           = 72;
+Nat ascii_upper_i           = 73;
+Nat ascii_upper_j           = 74;
+Nat ascii_upper_k           = 75;
+Nat ascii_upper_l           = 76;
+Nat ascii_upper_m           = 77;
+Nat ascii_upper_n           = 78;
+Nat ascii_upper_o           = 79;
+Nat ascii_upper_p           = 80;
+Nat ascii_upper_q           = 81;
+Nat ascii_upper_r           = 82;
+Nat ascii_upper_s           = 83;
+Nat ascii_upper_t           = 84;
+Nat ascii_upper_u           = 85;
+Nat ascii_upper_v           = 86;
+Nat ascii_upper_w           = 87;
+Nat ascii_upper_x           = 88;
+Nat ascii_upper_y           = 89;
+Nat ascii_upper_z           = 90;
+Nat ascii_left_bracket      = 91;
+Nat ascii_backslash         = 92;
+Nat ascii_right_bracket     = 93;
+Nat ascii_circumflex        = 94;
+Nat ascii_underscore        = 95;
+Nat ascii_backquote         = 96;
+Nat ascii_lower_a           = 97;
+Nat ascii_lower_b           = 98;
+Nat ascii_lower_c           = 99;
+Nat ascii_lower_d           = 100;
+Nat ascii_lower_e           = 101;
+Nat ascii_lower_f           = 102;
+Nat ascii_lower_g           = 103;
+Nat ascii_lower_h           = 104;
+Nat ascii_lower_i           = 105;
+Nat ascii_lower_j           = 106;
+Nat ascii_lower_k           = 107;
+Nat ascii_lower_l           = 108;
+Nat ascii_lower_m           = 109;
+Nat ascii_lower_n           = 110;
+Nat ascii_lower_o           = 111;
+Nat ascii_lower_p           = 112;
+Nat ascii_lower_q           = 113;
+Nat ascii_lower_r           = 114;
+Nat ascii_lower_s           = 115;
+Nat ascii_lower_t           = 116;
+Nat ascii_lower_u           = 117;
+Nat ascii_lower_v           = 118;
+Nat ascii_lower_w           = 119;
+Nat ascii_lower_x           = 120;
+Nat ascii_lower_y           = 121;
+Nat ascii_lower_z           = 122;
+Nat ascii_left_brace        = 123;
+Nat ascii_bar               = 124; // vertical bar, pipe
+Nat ascii_right_brace       = 125;
+Nat ascii_tilde             = 126;
+
+///////////////////////////////////////////////////////////////////////////////
+
+[[Nat]] split_lines([Nat] chs)
+{
+  return [rem_trail_cr(l) : l <- split(chs, ascii_newline)];
+
+  [Nat] rem_trail_cr([Nat] line)
+  {
+    has_cr := line /= [] and rev_at(line, 0) == ascii_carriage_return;
+    return if has_cr then subseq(line, 0, length(line)-1) else line end;
+  }
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -842,37 +1059,25 @@ type Token          = symbol(Atom), label(Atom), Int, String, Char, PunctSymb;
 
 ///////////////////////////////////////////////////////////////////////////////
 
-PunctSymb left_parenthesis  = :left(:parenthesis);
-PunctSymb right_parenthesis = :right(:parenthesis);
+ParType parenthesis = :parenthesis;
+ParType bracket     = :bracket;
+ParType brace       = :brace;
 
-PunctSymb left_bracket      = :left(:bracket);
-PunctSymb right_bracket     = :right(:bracket);
+PunctSymb left(ParType p)   = :left(p);
+PunctSymb right(ParType p)  = :right(p);
 
-PunctSymb left_brace        = :left(:brace);
-PunctSymb right_brace       = :right(:brace);
+PunctSymb left_parenthesis  = left(parenthesis);
+PunctSymb right_parenthesis = right(parenthesis);
+
+PunctSymb left_bracket      = left(bracket);
+PunctSymb right_bracket     = right(bracket);
+
+PunctSymb left_brace        = left(brace);
+PunctSymb right_brace       = right(brace);
 
 ///////////////////////////////////////////////////////////////////////////////
 
-Bool is_space(Int ch) = ch == ascii_space or ch == ascii_newline;
-
 Bool is_symbol(Int ch) = in(ch, {40, 41, 91, 93, 123, 125, 44});
-
-Int ascii_space         = 32;
-Int ascii_newline       = 10;
-Int ascii_minus         = 45;
-Int ascii_underscore    = 95;
-Int ascii_column        = 58;
-Int ascii_double_quotes = 34;
-Int ascii_backslash     = 92;
-
-Int ascii_comma         = 44;
-
-Int ascii_left_parenthesis  = 40;
-Int ascii_right_parenthesis = 41;
-Int ascii_left_bracket      = 91;
-Int ascii_right_bracket     = 93;
-Int ascii_left_brace        = 123;
-Int ascii_right_brace       = 125;
 
 Token symbol_to_token(Int ch):
   40    = left_parenthesis,
@@ -887,6 +1092,8 @@ Token symbol_to_token(Int ch):
 
 
 type LexerError   = lexer_error(line: NzNat, col: NzNat);
+
+LexerError lexer_error(NzNat line, NzNat col) = lexer_error(line: line, col: col);
 
 //## REMOVE REMOVE REMOVE
 symbol(Atom a) = :symbol(a);
@@ -916,7 +1123,7 @@ label(Atom a)  = :label(a);
         token := token & [ch];
         i     := i + 1;
       ;
-      if (i < len and bytes[i] == ascii_column)
+      if (i < len and bytes[i] == ascii_colon)
         tokens := [label(_symb_(string(token))) | tokens];
         i      := i + 1;
       else
@@ -945,7 +1152,7 @@ label(Atom a)  = :label(a);
           return error(line, i-line_start) if not (i < len);
           ch := bytes[i];
           i  := i + 1;
-          if (ch == 110) // 'n'
+          if (ch == ascii_lower_n)
             rev_str := [ascii_newline | rev_str];
           elif (ch == ascii_backslash or ch == ascii_double_quotes)
             rev_str := [ch | rev_str];
@@ -1003,7 +1210,7 @@ label(Atom a)  = :label(a);
         token := token & [ch];
         i     := i + 1;
       ;
-      if (i < len and bytes[i] == ascii_column)
+      if (i < len and bytes[i] == ascii_colon)
         tokens := [label(_symb_(string(token))), tokens];
         i      := i + 1;
       else
@@ -1098,12 +1305,12 @@ ParseResult parse_obj([Token] tokens)
     res := match (tokens[offset])
              symbol()                 = parse_tagged_obj_or_symbol(tokens, offset),
              // <Int, String, Char> obj  = (obj: obj, offset: offset+1),
-             Int obj                  = (obj: obj, offset: offset+1), //## SHOULD USE A PATTERN UNION HERE ONCE IT IS IMPLEMENTED
-             Char obj                 = (obj: obj, offset: offset+1),
-             string() obj             = (obj: obj, offset: offset+1),
-             left(:brace)             = parse_set(tokens, offset),
-             left(:parenthesis)       = parse_map_or_tuple(tokens, offset),
-             left(:bracket)           = parse_seq(tokens, offset),
+             Int obj?                 = (obj: obj, offset: offset+1), //## SHOULD USE A PATTERN UNION HERE ONCE IT IS IMPLEMENTED
+             Char obj?                = (obj: obj, offset: offset+1),
+             string() obj?            = (obj: obj, offset: offset+1),
+             left(brace)              = parse_set(tokens, offset),
+             left(parenthesis)        = parse_map_or_tuple(tokens, offset),
+             left(bracket)            = parse_seq(tokens, offset),
              _                        = error(offset);
            ;
     
@@ -1116,7 +1323,7 @@ ParseResult parse_obj([Token] tokens)
     assert offset < length(tokens) and tokens[offset] :: <symbol(Atom)>;
 
     if (at(tokens, offset+1, nil) /= left_parenthesis)
-      return (obj: untag(tokens[offset]), offset: offset+1);
+      return (obj: _obj_(tokens[offset]), offset: offset+1);
     ;
 
     res := parse_map_or_tuple(tokens, offset+1);
@@ -1127,7 +1334,7 @@ ParseResult parse_obj([Token] tokens)
       return error(res.offset) if at(tokens, res.offset, nil) /= right_parenthesis;
     ;
     
-    obj := untag(tokens[offset]) @ res.obj;
+    obj := _obj_(tokens[offset]) @ res.obj;
     return (obj: obj, offset: res.offset + if is_tuple then 0 else 1 end);
   }
 
@@ -1174,7 +1381,7 @@ ParseResult parse_obj([Token] tokens)
       
       if (is_tuple)
         return error(os) if not head :: <label(Atom)>;
-        key    := untag(head);
+        key    := _obj_(head);
         val_os := os + 1;
 
       else

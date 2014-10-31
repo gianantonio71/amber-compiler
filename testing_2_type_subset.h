@@ -75,7 +75,7 @@ Set gen_objs(NzNat max_depth, Atom* term_symbols, Atom* func_symbols)
 
 // Bool contains(AnonType type, Any object, Maybe[AnonType] self_type):
 //   symb_type(object(a)),       _           = object == a,
-//   :self,                      _           = contains(untag(self_type), object, self_type),
+//   :self,                      _           = contains(_obj_(self_type), object, self_type),
 //   tag_obj_type(),             tag @ obj   = contains(type.tag_type, tag, self_type) and contains(type.obj_type, obj, self_type),
 //   union_type(ts),             _           = (? t <- ts : contains(t, object, self_type)),
 //   self_rec_type(t),           _           = contains(t, object, just(type)),
@@ -258,7 +258,7 @@ AnonType* gen_rand_types(NzNat max_depth, NzNat count, Atom* term_symbs, Atom* f
     //   // print t;
     //   // print t :: UnionType[AnonType];
     //   // if (t :: UnionType[AnonType])
-    //   //   for (st : rand_sort(untag(t)))
+    //   //   for (st : rand_sort(_obj_(t)))
     //   //     if (not anon_type_is_wf(st, {}))
     //   //       print st;
     //   //     ;

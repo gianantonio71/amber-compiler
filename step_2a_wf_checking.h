@@ -22,8 +22,8 @@ True prg_is_wf(Program prg)
 
   // Local functions
   TypeSymbol* top_level_refs(UserType type):
-    type_ref(s)     = {s},
-    union_type(ts)  = union({top_level_refs(t) : t <- ts}),
+    type_ref(s?)    = {s},
+    union_type(ts?) = union({top_level_refs(t) : t <- ts}),
     _               = {};
 }
 

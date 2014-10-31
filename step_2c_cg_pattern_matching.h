@@ -30,7 +30,7 @@ using
       return [execute_block(code)];
     },
 
-    ptrn_union(ps)  = {
+    ptrn_union(ps?) = {
       code := [];
       for (p : rand_sort(ps))
         code := code & gen_ptrn_matching_code(p, obj, res_var, loc_bound_vars) & [exit_block_if(res_var)];
@@ -44,22 +44,22 @@ using
 
 
 BoolExpr gen_ptrn_matching_expr(Pattern ptrn, AtomicExpr obj):
-  :ptrn_symbol                = is_symb(obj),
-  :ptrn_integer               = is_int(obj),
-  :ptrn_empty_set             = is_eq(obj, empty_set),
-  :ptrn_ne_set                = is_ne_set(obj),
-  :ptrn_empty_seq             = is_eq(obj, empty_seq),
-  :ptrn_ne_seq                = is_ne_seq(obj),
-  :ptrn_empty_map             = is_eq(obj, empty_map),
-  :ptrn_ne_map                = is_ne_map(obj),
-  :ptrn_tag_obj               = is_tagged_obj(obj),
-  :ptrn_any                   = true,
-  ptrn_symbol(s)              = is_eq(obj, s),
-  ptrn_integer(:integer)      = is_int(obj),
-  ptrn_integer(low_ints() t)  = and_then(is_int(obj), is_le(get_int_val(obj), t.max)),
-  ptrn_integer(high_ints() t) = and_then(is_int(obj), is_ge(get_int_val(obj), t.min)),
-  ptrn_integer(int_range() t) = and_then(is_int(obj), is_ge(get_int_val(obj), t.min), is_le(get_int_val(obj), max(t))),
-  _                           = {fail;};
+  ptrn_symbol                   = is_symb(obj),
+  ptrn_integer                  = is_int(obj),
+  ptrn_empty_set                = is_eq(obj, empty_set),
+  ptrn_ne_set                   = is_ne_set(obj),
+  ptrn_empty_seq                = is_eq(obj, empty_seq),
+  ptrn_ne_seq                   = is_ne_seq(obj),
+  ptrn_empty_map                = is_eq(obj, empty_map),
+  ptrn_ne_map                   = is_ne_map(obj),
+  ptrn_tag_obj                  = is_tagged_obj(obj),
+  ptrn_any                      = true,
+  ptrn_symbol(s?)               = is_eq(obj, s),
+  ptrn_integer(integer)         = is_int(obj),
+  ptrn_integer(low_ints() t?)   = and_then(is_int(obj), is_le(get_int_val(obj), t.max)),
+  ptrn_integer(high_ints() t?)  = and_then(is_int(obj), is_ge(get_int_val(obj), t.min)),
+  ptrn_integer(int_range() t?)  = and_then(is_int(obj), is_ge(get_int_val(obj), t.min), is_le(get_int_val(obj), max(t))),
+  _                             = {fail;};
 
 
 
@@ -71,9 +71,9 @@ BoolExpr gen_ptrn_matching_expr(Pattern ptrn, AtomicExpr obj):
 
     // obj_ptrn(LeafObj x) = [set_bvar(res_var, is_eq(obj, x))],
 
-    // type_ptrn(t)        = gen_type_checking_code(t, obj, res_var),
+    // type_ptrn(t?)       = gen_type_checking_code(t, obj, res_var),
 
-    // ext_var_ptrn(v)     = [set_bvar(res_var, is_eq(obj, v))],
+    // ext_var_ptrn(v?)    = [set_bvar(res_var, is_eq(obj, v))],
 
     // //## THIS WORKS ONLY IF THE PATTERNS THAT REFERENCE A LOCALLY BOUND VAR
     // //## ARE TURNED INTO ext_var_ptrn() OBJECTS

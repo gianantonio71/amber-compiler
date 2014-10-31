@@ -10,7 +10,7 @@ Bool includes_empty_map(AnonType type) = is_subset(empty_map_type, type);
 
 SymbType* symb_types(AnonType type) = {t : symb_type() t <- expand_type(type)};
 
-<IntType, void_type> int_type(AnonType type) = only_element_or_def_if_empty({t : IntType t <- expand_type(type)}, void_type);
+<IntType, void_type> int_type(AnonType type) = only_element_or_def_if_empty({t : t <- expand_type(type) ; t :: IntType}, void_type);
 
 
 ClosedType seq_elem_type(AnonType type)
@@ -43,7 +43,7 @@ TagObjType[AnonType]* tagged_obj_types(AnonType type) = {t : tag_obj_type() t <-
 <SelfRecType[AnonType], MutRecType[AnonType]>* rec_types(AnonType type):
   self_rec_type()     = {type},
   mut_rec_type()      = {type},
-  union_type(ts)      = union({rec_types(t) : t <- ts}),
+  union_type(ts?)     = union({rec_types(t) : t <- ts}),
   _                   = {};
 
 //////////////////////////////////////////////////////////////////////////////
@@ -77,8 +77,8 @@ Bool is_type_var(AnonType type)
 // }
 
 AnonType+ expand_type(AnonType type):
-  union_type(ts)    = union({expand_type(t) : t <- ts}),
-  self_rec_type(t)  = expand_type(replace_rec_refs(t, (self => type))),
+  union_type(ts?)   = union({expand_type(t) : t <- ts}),
+  self_rec_type(t?) = expand_type(replace_rec_refs(t, (self => type))),
   mut_rec_type()    = expand_type(replace_rec_refs(type.types[type.index], (self(i) => mut_rec_type(i, type.types) : i <- indexes(type.types)))),
   _                 = {type};
 
@@ -96,7 +96,7 @@ AnonType replace_rec_refs(AnonType type, (SelfPretype => AnonType) rec_map):
   ne_seq_type()   = ne_seq_type(replace_rec_refs(type.elem_type, rec_map)),
   ne_set_type()   = ne_set_type(replace_rec_refs(type.elem_type, rec_map)),
   ne_map_type()   = ne_map_type(replace_rec_refs(type.key_type, rec_map), replace_rec_refs(type.value_type, rec_map)),
-  tuple_type(fs)  = tuple_type((l => (type: replace_rec_refs(f.type, rec_map), optional: f.optional) : l => f <- fs)),
+  tuple_type(fs?) = tuple_type((l => (type: replace_rec_refs(f.type, rec_map), optional: f.optional) : l => f <- fs)),
   tag_obj_type()  = tag_obj_type(type.tag_type, replace_rec_refs(type.obj_type, rec_map)),
-  union_type(ts)  = union_type({replace_rec_refs(t, rec_map) : t <- ts}),
+  union_type(ts?) = union_type({replace_rec_refs(t, rec_map) : t <- ts}),
   _               = type;

@@ -93,7 +93,7 @@ using
     },
 
 
-    // fixed_seq_type(ts) =
+    // fixed_seq_type(ts?) =
     // {
     //   len_var  := ivar(next_int_var_id);
     //   elem_var := lvar(next_obj_var_id);
@@ -158,7 +158,7 @@ using
     },
 
 
-    tuple_type(fs) =
+    tuple_type(fs?) =
     {
       size_var := ivar(next_int_var_id);
       obj_var  := lvar(next_obj_var_id);
@@ -229,7 +229,7 @@ using
     },
 
 
-    union_type(ts) =
+    union_type(ts?) =
     {
       //## PERFORMANCE COULD BE IMPROVED HERE USING A SWITCH/CASE
       code := [];
@@ -245,15 +245,15 @@ using
 
 
 BoolExpr gen_type_checking_expr(UserType type, AtomicExpr obj):
-  :atom_type      = is_symb(obj),
-  symb_type(s)    = is_eq(s, obj),
-  :integer        = is_int(obj),
+  atom_type       = is_symb(obj),
+  symb_type(s?)   = is_eq(s, obj),
+  integer         = is_int(obj),
   low_ints()      = and_then(is_int(obj), is_le(get_int_val(obj), type.max)),
   high_ints()     = and_then(is_int(obj), is_ge(get_int_val(obj), type.min)),
   int_range()     = and_then(is_int(obj), is_ge(get_int_val(obj), type.min), is_le(get_int_val(obj), max(type))),
-  type_ref(ts)    = eval_bool_fn(:memb_test(ts), [obj]),
+  type_ref(ts?)   = eval_bool_fn(:memb_test(ts), [obj]),
   type_var()      = true, //## BUG BUG BUG THIS IS TEMPORARY...
-  :empty_seq_type = is_eq(obj, empty_seq),
-  :empty_set_type = is_eq(obj, empty_set),
-  :empty_map_type = is_eq(obj, empty_map);
+  empty_seq_type  = is_eq(obj, empty_seq),
+  empty_set_type  = is_eq(obj, empty_set),
+  empty_map_type  = is_eq(obj, empty_map);
 

@@ -54,7 +54,7 @@ Var* scalar_vars(FnDef fn_def) = {p.var : p <- set(fn_def.params) ; p.var? and (
                                         (v => length(t.in_types) : v => t <- fn_def.named_params ; t :: UserClsType);
 
 
-Bool op_< (SymbObj s1, SymbObj s2) = lower_than(untag(s1), untag(s2));
+Bool op_< (SymbObj s1, SymbObj s2) = lower_than(_obj_(s1), _obj_(s2));
 
 Bool lower_than(Atom a1, Atom a2)
 {
@@ -67,7 +67,7 @@ Bool lower_than(Atom a1, Atom a2)
   //return len1 < len2 if len1 /= len2;
   return (len2 - len1) :: NzNat if len1 /= len2; //## BAD BAD BAD UGLY HACK TO WORK AROUND A BUG IN THE INTERPRETER
   
-  for (ch1, i : untag(str1))
+  for (ch1, i : _obj_(str1))
     ch2 := str2[i];
     //return ch1 < ch2 if ch1 /= ch2;
     return (ch2 - ch1) :: NzNat if ch1 /= ch2; //## BAD BAD BAD UGLY HACK TO WORK AROUND A BUG IN THE INTERPRETER

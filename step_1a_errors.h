@@ -2,7 +2,7 @@
 type UserErr      = dup_tdef(BasicTypeSymbol),
                     dup_par_tdef(name: BasicTypeSymbol, arity: NzNat),
                     incomp_fndefs(name: FnSymbol, arity: Nat, params: [PseudoType]+),
-                    tdef_err(type: TypeSymbol, errs: TDefUserErr*),
+                    tdef_err(type: SynTypeSymbol, errs: TDefUserErr*),
                     fndef_err(name: FnSymbol, params: [<SynType, nil>], errs: SynObjErr*),
                     ublock_err(errs: UBlockErr*);
 
@@ -77,7 +77,7 @@ type SynObjErr    = TDefUserErr,
 
 UserErr* wf_errors(SynPrg prg)
 {
-  decls       := set(untag(prg));
+  decls       := set(_obj_(prg));
   
   tdefs         := {d : typedef()       d <- decls};
   par_tdefs     := {d : par_typedef()   d <- decls};
@@ -100,7 +100,7 @@ UserErr* wf_errors(SynPrg prg)
 
   dup_par_tdef_errs := for (td1 <- tdefs, td2 <- tdefs)
                          if (td1 /= td2 and td1.name == td2.name and length(td1.params) == length(td2.params)) {
-                           :dupl_par_tdef(name: td1.name, arity: length(td1.params))
+                           dupl_par_tdef(name: td1.name, arity: length(td1.params))
                          };
 
   all_fndefs  := fndefs & union({set(ub.fn_defs) : ub <- ublocks});
@@ -112,7 +112,7 @@ UserErr* wf_errors(SynPrg prg)
   //## BAD BAD BAD, INEFFICIENT
   incomp_fn_sgns := for (s => fns <- fn_groups, fd1 <- fns, fd2 <- fns)
                       if (fd1 /= fd2, not syn_fns_are_compatible(fd1, fd2; typedefs = inst_tdefs)) {
-                        :incomp_fndefs(
+                        incomp_fndefs(
                           name:   s.name,
                           arity:  s.arity,
                           params: {par_parts(fd; typedefs = inst_tdefs) : fd <- {fd1, fd2}}
@@ -144,7 +144,7 @@ UserErr* wf_errors(SynPrg prg)
 }
 
 
-using (TypeSymbol => SynType) typedefs
+using (SynTypeSymbol => SynType) typedefs
 {
   //## THIS IS ALL WRONG. IT SHOULD BE DONE BEFORE CREATING THE TYPE MAP
   UserErr* undef_type_symbol_errs(SynFnDef* fndefs, SynUsingBlock* ublocks)
@@ -153,18 +153,18 @@ using (TypeSymbol => SynType) typedefs
     def_type_symbs  := keys(typedefs);
     
     missing_type_symbs := used_type_symbs - def_type_symbs;
-    
+
     //## USING THE WRONG ERROR TYPE HERE.
     //## TO FIX THIS PROBLEM I SHOULD DO THE ERROR CHECKING SOMEWHERE ELSE
     return {tdef_err(type: ts, errs: {make_err_obj(ts)}) : ts <- missing_type_symbs};
     
-    TDefUserErr make_err_obj(TypeSymbol ts):
+    TDefUserErr make_err_obj(SynTypeSymbol ts):
       type_symbol()     = :undef_type_name(ts),
-      par_type_symbol() = undef_par_type_name(name: ts.name, arity: length(ts.params));
+      par_type_symbol() = undef_par_type_name(name: ts.symbol, arity: length(ts.params));
     
-    TypeSymbol* all_type_symbols(Any obj)
+    SynTypeSymbol* all_type_symbols(Any obj)
     {
-      type_symbs := select TypeSymbol in obj end;
+      type_symbs := select SynTypeSymbol in obj end;
       
       loop
         new_type_symbs := union({all_type_symbols(ts.params) : par_type_symbol() ts <- type_symbs});
@@ -202,12 +202,12 @@ using (TypeSymbol => SynType) typedefs
 
 
 
-using (TypeSymbol => SynType) typedefs, (symbol: BasicTypeSymbol, arity: NzNat)* all_par_type_symbols
+using (SynTypeSymbol => SynType) typedefs, (symbol: BasicTypeSymbol, arity: NzNat)* all_par_type_symbols
 {
   UserErr* tdef_errs(SynTypedef* tdefs) =
     for (td <- tdefs, es = type_wf_errors(td.type; type_vars_in_scope = {}))
       if (es /= {}) {
-        :tdef_err(
+        tdef_err(
           type: td.name,
           errs: es
         )
@@ -217,16 +217,16 @@ using (TypeSymbol => SynType) typedefs, (symbol: BasicTypeSymbol, arity: NzNat)*
   UserErr* par_tdef_errs(SynParTypedef* par_tdefs) =
     for (td <- par_tdefs, es = type_wf_errors(td.type; type_vars_in_scope = set(td.params)))
       if (es /= {}) {
-        :tdef_err(
+        tdef_err(
           type: td.name,
           errs: es
         )
       };
 
-  UserErr* inst_tdef_errs((TypeSymbol => SynType) inst_tdefs) =
+  UserErr* inst_tdef_errs((SynTypeSymbol => SynType) inst_tdefs) =
     for (s => t <- inst_tdefs, es = type_wf_errors(t; type_vars_in_scope = select TypeVar in s end))
       if (es /= {}) {
-        :tdef_err(
+        tdef_err(
           type: s,
           errs: es
         )
@@ -235,7 +235,7 @@ using (TypeSymbol => SynType) typedefs, (symbol: BasicTypeSymbol, arity: NzNat)*
   UserErr* fn_def_errs(SynFnDef* fndefs, UntypedSgn* global_fns, BasicUntypedSgn* impl_pars) =
     for (fd <- fndefs, es = fndef_wf_errors(fd, global_fns, impl_pars))
     if (es /= {}) {
-      :fndef_err(
+      fndef_err(
         name: fd.name,
         params:  [if p.type? then p.type else :nil end : p <- fd.params],
         errs:    es
@@ -250,7 +250,7 @@ using (TypeSymbol => SynType) typedefs, (symbol: BasicTypeSymbol, arity: NzNat)*
   {
     //## UGLY UGLY
     block_errs := seq_union([sgn_wf_errors(s) : s <- ublock.signatures]);
-    err        := if block_errs == {} then {} else {:ublock_err(errs: block_errs)} end;
+    err        := if block_errs == {} then {} else {ublock_err(errs: block_errs)} end;
     req_fns    := {untyped_sgn(s) : s <- set(ublock.signatures)};
     all_fns    := merge_and_override(global_fns, {untyped_sgn(s) : s <- set(ublock.signatures)});
     return err & fn_def_errs(set(ublock.fn_defs), all_fns, req_fns);

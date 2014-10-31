@@ -3,7 +3,7 @@ Program rem_syntax(SynPrg prg)
 {
   norm_prg := replace SynType t in prg with syn_type_to_user_type(t) end;
 
-  decls    := set(untag(norm_prg));
+  decls    := set(_obj_(norm_prg));
   
   tdefs         := {d : typedef()       d <- decls};
   par_tdefs     := {d : par_typedef()   d <- decls};
@@ -54,7 +54,7 @@ FnDef* syn_fndef_to_fndefs(SynFnDef fndef, SynSgn* named_params, (TypeName => An
       expr:         desugar_expr(
                       fndef.expr,
                       {p.var : p <- set(fndef.params) ; p.var?};
-                      named_params  = {:named_par(untag(np.name)) : np <- named_params}, //## BAD BAD BAD
+                      named_params  = {:named_par(_obj_(np.name)) : np <- named_params}, //## BAD BAD BAD
                       local_fns     = lfns,
                       curr_outer_fn = outer_fn,
                       typedefs      = typedefs
@@ -64,7 +64,7 @@ FnDef* syn_fndef_to_fndefs(SynFnDef fndef, SynSgn* named_params, (TypeName => An
   (<named_par(Atom)> => UserExtType) syn_sgns_to_named_params(SynSgn* syn_sgns) =
     //## THIS FAILS IF THERE ARE TWO IMPLICIT PARAMS WITH THE SAME NAME BUT DIFFERENT ARITIES.
     //## MAKE SURE THIS IS CHECKED IN THE WELL-FORMEDNESS CHECKING PHASE
-    (:named_par(untag(ss.name)) => if ss.params == []
+    (:named_par(_obj_(ss.name)) => if ss.params == []
                                      then ss.res_type //##syn_type_to_user_type(ss.res_type)
                                      else user_cls_type(in_types: ss.params, out_type: ss.res_type)
                                      //## else user_cls_type(in_types: [syn_type_to_user_type(p) : p <- ss.params], out_type: syn_type_to_user_type(ss.res_type))

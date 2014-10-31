@@ -36,7 +36,7 @@ using Bool inst_type_vars
     untested_supertypes := {t2};
 
     loop
-      new_hypotheses := all_conds({is_subset_if(untag(t1), t) : t <- untested_supertypes});
+      new_hypotheses := all_conds({is_subset_if(_obj_(t1), t) : t <- untested_supertypes});
       return not_a_subset if new_hypotheses == not_a_subset;
       assert not (? h <- new_hypotheses : h.subset /= self);
       tested_supertypes := tested_supertypes & untested_supertypes;
@@ -71,48 +71,48 @@ using Bool inst_type_vars
     SelfPretype,          _                   = subset_if(t1, t2), //## BUG: HERE WE ALSO NEED TO KNOW WHAT THE self/self() TERMS EXPAND TO
     _,                    SelfPretype         = {fail;},
 
-    self_rec_type(pt1),   _                   = is_self_rec_subset_if(t1, t2),
+    self_rec_type(pt1?),  _                   = is_self_rec_subset_if(t1, t2),
     _,                    self_rec_type()     = is_subset_if(t1, unfold(t2)),
 
     mut_rec_type(),       _                   = {fail;},
     _,                    mut_rec_type()      = is_subset_if(t1, unfold(t2)),
 
     // Type unions now
-    union_type(ts1),      _                   = all_conds({is_subset_if(t, t2) : t <- ts1}),
-    _,                    union_type(ts2)     = at_least_one_cond({is_subset_if(t1, t) : t <- ts2}),   //## INEFFICIENT
+    union_type(ts1?),     _                   = all_conds({is_subset_if(t, t2) : t <- ts1}),
+    _,                    union_type(ts2?)    = at_least_one_cond({is_subset_if(t1, t) : t <- ts2}),   //## INEFFICIENT
 
     // Leaf types
     symb_type(),          _                   = if t1 == t2 or t2 == atom_type then {} else not_a_subset end,
-    :atom_type,           _                   = if t1 == t2 then {} else not_a_subset end,
+    atom_type,            _                   = if t1 == t2 then {} else not_a_subset end,
     IntType,              IntType             = if is_integer_subset(t1, t2) then {} else not_a_subset end,
     IntType,              _                   = not_a_subset,
 
     // Sequence types
-    :empty_seq_type,      :empty_seq_type     = {},
-    :empty_seq_type,      _                   = not_a_subset,
+    empty_seq_type,       empty_seq_type      = {},
+    empty_seq_type,       _                   = not_a_subset,
 
     ne_seq_type(),        ne_seq_type()       = is_subset_if(t1.elem_type, t2.elem_type),
     ne_seq_type(),        _                   = not_a_subset,
 
     // Set types
-    :empty_set_type,      :empty_set_type     = {},
-    :empty_set_type,      _                   = not_a_subset,
+    empty_set_type,       empty_set_type      = {},
+    empty_set_type,       _                   = not_a_subset,
 
     ne_set_type(),        ne_set_type()       = is_subset_if(t1.elem_type, t2.elem_type),
     ne_set_type(),           _                = not_a_subset,
 
     // Map types
-    :empty_map_type,      :empty_map_type     = {},
-    :empty_map_type,      tuple_type(fs)      = if not (? l => f <- fs : not f.optional) then {} else not_a_subset end,
-    :empty_map_type,      _                   = not_a_subset,
+    empty_map_type,       empty_map_type      = {},
+    empty_map_type,       tuple_type(fs?)     = if not (? l => f <- fs : not f.optional) then {} else not_a_subset end,
+    empty_map_type,       _                   = not_a_subset,
 
     ne_map_type(),        ne_map_type()       = all_conds({is_subset_if(t1.key_type, t2.key_type), is_subset_if(t1.value_type, t2.value_type)}),
-    ne_map_type(),        tuple_type(fs)      = is_ne_map_tuple_subset_if(t1.key_type, t1.value_type, fs),
+    ne_map_type(),        tuple_type(fs?)     = is_ne_map_tuple_subset_if(t1.key_type, t1.value_type, fs),
     ne_map_type(),        _                   = not_a_subset,
 
     // Tuple types
-    tuple_type(fs1),      tuple_type(fs2)     = is_tuple_subset_if(fs1, fs2),
-    tuple_type(fs),       ne_map_type()       = is_tuple_map_subset_if(fs, t2),
+    tuple_type(fs1?),     tuple_type(fs2?)    = is_tuple_subset_if(fs1, fs2),
+    tuple_type(fs?),      ne_map_type()       = is_tuple_map_subset_if(fs, t2),
     tuple_type(),         _                   = not_a_subset,
 
     // Tagged types
@@ -164,7 +164,7 @@ using Bool inst_type_vars
     return not_a_subset if not is_subset(key_type, union_type({symb_type(l) : l => _ <- tuple_fields}));
 
     if (key_type :: SymbType)
-      only_key_obj := untag(key_type);
+      only_key_obj := _obj_(key_type);
       return not_a_subset if (? l => f <- tuple_fields : l /= only_key_obj, not f.optional);
     else
       return not_a_subset if (? _ => f <- tuple_fields : not f.optional);
@@ -178,8 +178,8 @@ using Bool inst_type_vars
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 Bool is_integer_subset(IntType t1, IntType t2):
-  _,            :integer    = true,
-  :integer,     _           = false,
+  _,            integer     = true,
+  integer,      _           = false,
 
   high_ints(),  high_ints() = t1.min >= t2.min,
   high_ints(),  _           = false,
@@ -202,15 +202,15 @@ AnonType unfold(AnonType type, (SelfPretype => AnonType) sub_map):
   ne_seq_type()   = ne_seq_type(unfold(type.elem_type, sub_map)),
   ne_set_type()   = ne_set_type(unfold(type.elem_type, sub_map)),
   ne_map_type()   = ne_map_type(unfold(type.key_type, sub_map), unfold(type.value_type, sub_map)),
-  tuple_type(fs)  = tuple_type((l => (type: unfold(f.type, sub_map), optional: f.optional) : l => f <- fs)),
+  tuple_type(fs?) = tuple_type((l => (type: unfold(f.type, sub_map), optional: f.optional) : l => f <- fs)),
   tag_obj_type()  = tag_obj_type(type.tag_type, unfold(type.obj_type, sub_map)),
-  union_type(ts)  = union_type({unfold(t, sub_map) : t <- ts}),
+  union_type(ts?) = union_type({unfold(t, sub_map) : t <- ts}),
   self_rec_type() = type,
   mut_rec_type()  = type;
 
 
 AnonType unfold(AnonType type):
-  self_rec_type(t)  = unfold(t, (self => type)),
+  self_rec_type(t?) = unfold(t, (self => type)),
   mut_rec_type()    = unfold(type.types[type.index], (self(i) => mut_rec_type(i, type.types) : i <- index_set(type.types))),
   _                 = type;
 

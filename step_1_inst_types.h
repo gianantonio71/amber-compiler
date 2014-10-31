@@ -2,18 +2,18 @@
 //## ARE THEY REALLY NEEDEED? AND WOULD IT BE ANY USEFUL TO CREATE THE
 //## SAME INSTANTIATIONS BUT WITH THE TYPE VARIABLES REPLACED BY ANY?
 
-(TypeSymbol => SynType) create_type_map(SynPrg prg)
+(SynTypeSymbol => SynType) create_type_map(SynPrg prg)
 {
-  tdef_map     := (td.name => td.type : typedef() td <- set(untag(prg)));
+  tdef_map     := (td.name => td.type : typedef() td <- set(_obj_(prg)));
   par_tdef_map := inst_req_par_types(prg);
   
   return tdef_map & par_tdef_map;
 }
 
 
-(ParTypeSymbol => SynType) inst_req_par_types(SynPrg prg)
+(SynParTypeSymbol => SynType) inst_req_par_types(SynPrg prg)
 {
-  decls     := set(untag(prg));
+  decls     := set(_obj_(prg));
   par_tdefs := {d : par_typedef() d <- decls};
 
   symbs_to_inst     := get_type_symbols_to_instantiate(decls) & {par_type_symbol(ptd.name, ptd.params) : ptd <- par_tdefs};
@@ -34,13 +34,13 @@
 }
 
 
-ParTypeSymbol* get_type_symbols_to_instantiate(Any obj)
+SynParTypeSymbol* get_type_symbols_to_instantiate(Any obj)
 {
   src        := obj;
   type_symbs := {};
 
   loop
-    new_type_symbs := select ParTypeSymbol in obj end - type_symbs;
+    new_type_symbs := select SynParTypeSymbol in obj end - type_symbs;
     return type_symbs if new_type_symbs == {};
     type_symbs := type_symbs & new_type_symbs;
     src := {ts.params : ts <- new_type_symbs};
@@ -48,7 +48,7 @@ ParTypeSymbol* get_type_symbols_to_instantiate(Any obj)
 } 
 
 
-SynType inst_par_type(ParTypeSymbol symb, SynParTypedef* par_tdefs)
+SynType inst_par_type(SynParTypeSymbol symb, SynParTypedef* par_tdefs)
 {
   arity := length(symb.params);
   //## BUG BUG: CAN THIS POSSIBLY FAIL?

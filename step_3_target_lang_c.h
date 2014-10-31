@@ -25,7 +25,7 @@ CCodeOutput compile_to_c(ProcDef* prg)
   c_code := symb_decls;
   
   if (symbs /= [])
-    symb_strs  := ["  \"" & _str_(untag(s)) & "\"," : s <- symbs];
+    symb_strs  := ["  \"" & _str_(_obj_(s)) & "\"," : s <- symbs];
     c_code     := c_code & ["const char *map_symb_to_str[EMB_SYMB_COUNT] = {"] & symb_strs & ["};"] & rep_seq(4, "");
     symb_decls := symb_decls & ["extern const char *map_symb_to_str[EMB_SYMB_COUNT];"] & rep_seq(4, "");
   ;
@@ -48,7 +48,7 @@ CCodeOutput compile_to_c(ProcDef* prg)
     var   := na.var;
     arity := na.arity;
     
-    name := _str_(untag(var));
+    name := _str_(_obj_(var));
     
     if (arity > 0)
       ls := [ "  Obj (*n" & to_str(arity) & "_" & name & ")(" & append(["Obj p" & to_str(j) & ", " : j <- inc_seq(na.arity)]) & "const Obj *C, Env &env);",
@@ -122,7 +122,7 @@ CCodeOutput compile_to_c(ProcDef* prg)
 
 
   String typesymb2str(ts, par_types):
-    type_symbol(a)      = upper(_str_(a)),
+    type_symbol(a?)     = upper(_str_(a)),
     par_type_symbol()   = typesymb2str(ts.symbol, par_types) & "__" & to_str(index_first(ts, par_types));
 }
 
@@ -213,7 +213,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
     vars_to_decl := vars_to_declare(body);
     
-    vector_vars := {v : VecVar v <- vars_to_decl};
+    vector_vars := {v : v <- vars_to_decl ; v :: VecVar};
     scalar_vars := vars_to_decl - vector_vars;
     
     vec_var_ids  := {v.id : v <- vector_vars};
@@ -294,7 +294,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
   [String] compile_to_c(Instr instr, <Nat, nil> block_id):
 
-    init_stream(v)        = mk_call("init", [v]),
+    init_stream(v?)       = mk_call("init", [v]),
     append()              = mk_call("append", [instr.stream, instr.obj]),
 
     mk_set_from_stream()  = mk_call(instr.var, "make_set", [instr.stream]),
@@ -343,35 +343,35 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     get_seq_iter()        = mk_call("get_seq_iter", [instr.var, instr.src]),
     get_map_iter()        = mk_call("get_map_iter", [instr.var, instr.src]),
     
-    move_forward(v)       = mk_call("move_forward", [v]),
+    move_forward(v?)      = mk_call("move_forward", [v]),
     
     set_var()             = mk_assignment(instr.var, instr.value),
     set_bvar()            = mk_assignment(instr.var, instr.value), //## BAD
     set_ivar()            = mk_assignment(instr.var, instr.value), //## BAD
 
-    :terminate            = ["fail();"],
+    terminate             = ["fail();"],
 
-    add_ref(v)            = mk_call("add_ref", [v]),
-    release(v)            = mk_call("release", [v]),
+    add_ref(v?)           = mk_call("add_ref", [v]),
+    release(v?)           = mk_call("release", [v]),
     
     print_obj()           = mk_call("print", [instr.obj]),
     
-    ret_val(e)            = ["return " & to_c_expr(e) & ";"],
+    ret_val(e?)           = ["return " & to_c_expr(e) & ";"],
     
-    :no_op                = [],
+    no_op                 = [],
 
-    repeat(body)          = ["for ( ; ; )", "{"] & indent(compile_to_c(body, block_id)) & ["}"],
+    repeat(body?)         = ["for ( ; ; )", "{"] & indent(compile_to_c(body, block_id)) & ["}"],
 
-    :break_loop           = ["break;"],
+    break_loop            = ["break;"],
 
 
-    execute_block(body)   = { new_block_id := _counter_(nil);
+    execute_block(body?)  = { new_block_id := _counter_(nil);
                               body_code := compile_to_c(body, new_block_id);
                               label := ["block_" & to_str(new_block_id) & "_end:;"];
                               return body_code & label;
                             },
 
-    :exit_block           = { assert block_id /= nil; //## BAD
+    exit_block            = { assert block_id /= nil; //## BAD
                               return ["goto block_" & to_str(block_id) & "_end;"];
                             },
 
@@ -383,7 +383,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
     push_call_info()      = [mk_gen_call("push_call_info_wrapper", [quote(fn_name_to_str(instr.fn_name))], instr.params, [])],
 
-    :pop_call_info        = mk_call("pop_call_info", []),
+    pop_call_info         = mk_call("pop_call_info", []),
 
     runtime_check()       = mk_call("runtime_check", [instr.cond]),
 
@@ -416,7 +416,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     {
       code := ["switch (" & to_c_expr(instr.val) & ")", "{"];
       for (c : rand_sort(instr.cases))
-        case_code := ["case S_" & _str_(untag(s)) & ":" : s <- rand_sort(c.vals)] & //## BAD
+        case_code := ["case S_" & _str_(_obj_(s)) & ":" : s <- rand_sort(c.vals)] & //## BAD
                      indent(compile_to_c(c.instrs, block_id) & ["break;"]);
         code := code & indent(case_code);
       ;
@@ -436,7 +436,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
       var := instr.var;
       val := instr.new_value;
       
-      //var_str := _str_(untag(var));  //## BAD, DUPLICATED LOGIC
+      //var_str := _str_(_obj_(var));  //## BAD, DUPLICATED LOGIC
       val_str := to_c_expr(val);
       
       env_var := to_c_var_name(var); //"env.n_" & var_str;  //## BAD, DUPLICATED LOGIC
@@ -475,7 +475,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
       env   := instr.env;
       env_size := length(env);
       
-      var_str := _str_(untag(var)); //## BAD, DUPLICATED LOGIC
+      var_str := _str_(_obj_(var)); //## BAD, DUPLICATED LOGIC
       arity_str := to_str(arity);
       env_size_str := to_str(env_size);
        
@@ -543,7 +543,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
   [String] mk_cls_call(ObjVar var, Var cls_var, [ObjExpr] params)
   {
-    name         := to_str(length(params)) & "_" & _str_(untag(cls_var));
+    name         := to_str(length(params)) & "_" & _str_(_obj_(cls_var));
     return [mk_gen_call(var, "env.n" & name, [], params, ["env.C" & name, "env"])];
   }
 }
@@ -554,21 +554,21 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 using String typesymb2name(TypeSymbol)
 {
   String to_c_expr(ObjExpr expr):
-    object(Atom a)      = "S_" & _str_(a),
-    object(Int n)       = "to_obj(" & to_str(n) & ")",
-    :empty_set          = "empty_set",
-    :empty_seq          = "empty_seq",
-    :empty_map          = "empty_map",
+    object(Atom a?)     = "S_" & _str_(a),
+    object(Int n?)      = "to_obj(" & to_str(n) & ")",
+    empty_set           = "empty_set",
+    empty_seq           = "empty_seq",
+    empty_map           = "empty_map",
     ObjVar              = to_c_var_name(expr),
-    get_tag(e)          = "get_tag("        & to_c_expr(e)     & ")",
-    get_inner_obj(e)    = "get_inner_obj("  & to_c_expr(e)     & ")",
-    to_obj(e)           = "to_obj("         & to_c_expr(e)     & ")",
-    obj_neg(e)          = "obj_neg("        & to_c_expr(e)     & ")",
-    to_str(e)           = "to_str("         & to_c_expr(e)     & ")",
-    to_symb(e)          = "to_symb("        & to_c_expr(e)     & ")",
-    get_curr_obj(v)     = "get_curr_obj("   & to_c_var_name(v) & ")",
-    get_curr_key(v)     = "get_curr_key("   & to_c_var_name(v) & ")",
-    get_curr_value(v)   = "get_curr_value(" & to_c_var_name(v) & ")";
+    get_tag(e?)         = "get_tag("        & to_c_expr(e)     & ")",
+    get_inner_obj(e?)   = "get_inner_obj("  & to_c_expr(e)     & ")",
+    to_obj(e?)          = "to_obj("         & to_c_expr(e)     & ")",
+    obj_neg(e?)         = "obj_neg("        & to_c_expr(e)     & ")",
+    to_str(e?)          = "to_str("         & to_c_expr(e)     & ")",
+    to_symb(e?)         = "to_symb("        & to_c_expr(e)     & ")",
+    get_curr_obj(v?)    = "get_curr_obj("   & to_c_var_name(v) & ")",
+    get_curr_key(v?)    = "get_curr_key("   & to_c_var_name(v) & ")",
+    get_curr_value(v?)  = "get_curr_value(" & to_c_var_name(v) & ")";
 
   String to_c_expr(ObjExpr expr, Bool) = to_c_expr(expr);
 
@@ -576,15 +576,15 @@ using String typesymb2name(TypeSymbol)
   String to_c_expr(BoolExpr expr) = to_c_expr(expr, false);
 
   String to_c_expr(BoolExpr expr, Bool parentesised):
-    :true                 = "true",
-    :false                = "false",
+    true                  = "true",
+    false                 = "false",
     BoolVar               = to_c_var_name(expr),
-    is_symb(e)            = "is_symb("    & to_c_expr(e) & ")",
-    is_int(e)             = "is_int("     & to_c_expr(e) & ")",
-    is_ne_set(e)          = "is_ne_set("  & to_c_expr(e) & ")",
-    is_ne_seq(e)          = "is_ne_seq("  & to_c_expr(e) & ")",
-    is_ne_map(e)          = "is_ne_map("  & to_c_expr(e) & ")",
-    is_tagged_obj(e)      = "is_tag_obj(" & to_c_expr(e) & ")",
+    is_symb(e?)           = "is_symb("    & to_c_expr(e) & ")",
+    is_int(e?)            = "is_int("     & to_c_expr(e) & ")",
+    is_ne_set(e?)         = "is_ne_set("  & to_c_expr(e) & ")",
+    is_ne_seq(e?)         = "is_ne_seq("  & to_c_expr(e) & ")",
+    is_ne_map(e?)         = "is_ne_map("  & to_c_expr(e) & ")",
+    is_tagged_obj(e?)     = "is_tag_obj(" & to_c_expr(e) & ")",
 
     has_elem()            = "has_elem(" & to_c_expr(expr.set) & ", " & to_c_expr(expr.elem) & ")",
     
@@ -601,17 +601,17 @@ using String typesymb2name(TypeSymbol)
 
     inline_is_eq()        = "inline_eq(" & to_c_expr(expr.expr) & ", " & to_c_expr(expr.value) & ")",
 
-    is_out_of_range(v)    = "is_out_of_range(" & to_c_var_name(v) & ")",
+    is_out_of_range(v?)   = "is_out_of_range(" & to_c_var_name(v) & ")",
 
-    neg(e)                = { s := "!" & to_c_expr(e, true);
+    neg(e?)               = { s := "!" & to_c_expr(e, true);
                               s := "(" & s & ")" if parentesised;
                               return s;
                             },
     
-    and(es)               = to_nary_op(" & ",  es, parentesised),
-    or(es)                = to_nary_op(" | ",  es, parentesised),
-    and_then(es)          = to_nary_op(" && ", es, parentesised),
-    or_else(es)           = to_nary_op(" || ", es, parentesised),
+    and(es?)              = to_nary_op(" & ",  es, parentesised),
+    or(es?)               = to_nary_op(" | ",  es, parentesised),
+    and_then(es?)         = to_nary_op(" && ", es, parentesised),
+    or_else(es?)          = to_nary_op(" || ", es, parentesised),
     
     eval_bool_fn()        = to_c_fn_name(expr.name) & "(" & to_nary_op(", ", expr.params, false) & ")";
 
@@ -619,17 +619,17 @@ using String typesymb2name(TypeSymbol)
   String to_c_expr(IntExpr expr) = to_c_expr(expr, false);
 
   String to_c_expr(IntExpr expr, Bool parentesised):
-    Int             = to_str(expr),
-    IntVar          = to_c_var_name(expr),
-    get_int_val(e)  = "get_int_val("  & to_c_expr(e) & ")",
-    get_set_size(e) = "get_set_size(" & to_c_expr(e) & ")",
-    get_seq_len(e)  = "get_seq_len("  & to_c_expr(e) & ")",
-    get_map_size(e) = "get_map_size(" & to_c_expr(e) & ")",
-    minus(e)        = "-" & to_c_expr(e, true),
-    add()           = to_nary_op(" + ", [expr.val1, expr.val2], parentesised),
-    mult()          = to_nary_op(" * ", [expr.val1, expr.val2], parentesised),
-    idiv()          = to_nary_op(" / ", [expr.val1, expr.val2], parentesised),
-    :unique_int     = "unique_int()";
+    Int               = to_str(expr),
+    IntVar            = to_c_var_name(expr),
+    get_int_val(e?)   = "get_int_val("  & to_c_expr(e) & ")",
+    get_set_size(e?)  = "get_set_size(" & to_c_expr(e) & ")",
+    get_seq_len(e?)   = "get_seq_len("  & to_c_expr(e) & ")",
+    get_map_size(e?)  = "get_map_size(" & to_c_expr(e) & ")",
+    minus(e?)         = "-" & to_c_expr(e, true),
+    add()             = to_nary_op(" + ", [expr.val1, expr.val2], parentesised),
+    mult()            = to_nary_op(" * ", [expr.val1, expr.val2], parentesised),
+    idiv()            = to_nary_op(" / ", [expr.val1, expr.val2], parentesised),
+    unique_int        = "unique_int()";
 
 
   String to_c_expr(<VecVar, ItVar, StreamVar> var) = to_c_var_name(var);
@@ -643,22 +643,22 @@ using String typesymb2name(TypeSymbol)
   }
 
   String to_c_var_name(ObjVar v):
-    var(Atom a)         = "v_"  & _str_(a),
-    fn_par(Nat n)       = "p"   & to_str(n),
-    named_par(Atom a)   = "env.n_"  & _str_(a),
-    unique_var(Nat n)   = "u"   & to_str(n),
-    cls_ext_par(Nat n)  = "C["  & to_str(n) & "]",
-    lvar(Nat n)         = "l"   & to_str(n),
-    evar()              = "V" & to_str(v.id) & "[" & to_c_expr(v.idx) & "]";
+    var(Atom a?)          = "v_"  & _str_(a),
+    fn_par(Nat n?)        = "p"   & to_str(n),
+    named_par(Atom a?)    = "env.n_"  & _str_(a),
+    unique_var(Nat n?)    = "u"   & to_str(n),
+    cls_ext_par(Nat n?)   = "C["  & to_str(n) & "]",
+    lvar(Nat n?)          = "l"   & to_str(n),
+    evar()                = "V" & to_str(v.id) & "[" & to_c_expr(v.idx) & "]";
 
   //## USE AnyVar?
   String to_c_var_name(VecVar v)    = "V" & to_str(v.id);
-  String to_c_var_name(BoolVar v)   = "b" & to_str(untag(v));
-  String to_c_var_name(IntVar v)    = "i" & to_str(untag(v));
-  String to_c_var_name(SetItVar v)  = "s" & to_str(untag(v));
-  String to_c_var_name(SeqItVar v)  = "q" & to_str(untag(v));
-  String to_c_var_name(MapItVar v)  = "m" & to_str(untag(v));
-  String to_c_var_name(StreamVar v) = "t" & to_str(untag(v));
+  String to_c_var_name(BoolVar v)   = "b" & to_str(_obj_(v));
+  String to_c_var_name(IntVar v)    = "i" & to_str(_obj_(v));
+  String to_c_var_name(SetItVar v)  = "s" & to_str(_obj_(v));
+  String to_c_var_name(SeqItVar v)  = "q" & to_str(_obj_(v));
+  String to_c_var_name(MapItVar v)  = "m" & to_str(_obj_(v));
+  String to_c_var_name(StreamVar v) = "t" & to_str(_obj_(v));
 
   ///////////////////////////////////////////////////////////////////////////////
   ///////////////////////////////////////////////////////////////////////////////
@@ -676,20 +676,20 @@ using String typesymb2name(TypeSymbol)
   String to_c_fn_name(FnSymbol fn_symb, Nat arity, Nat id) = to_c_fn_name(fn_symb, arity) & "__" & to_str(id);
   String to_c_fn_name(FnSymbol fn_symb, Nat arity)         = to_c_fn_name(fn_symb) & "__" & to_str(arity);
 
-  //String to_c_fn_name(ObjFnName name) = to_c_fn_name(untag(name));
+  //String to_c_fn_name(ObjFnName name) = to_c_fn_name(_obj_(name));
   String to_c_fn_name(FnSymbol fn_symb):
-    fn_symbol(symb)     = capitalize(_str_(symb)),
-    op_symbol(op)       = _str_(op),
+    fn_symbol(symb?)    = capitalize(_str_(symb)),
+    op_symbol(op?)      = _str_(op),
     nested_fn_symbol()  = to_c_fn_name(fn_symb.outer) & "__" & to_c_fn_name(fn_symb.inner);
 
-  String to_c_fn_name(BoolFnName): memb_test(ts) = "is_" & typesymb2name(ts);
+  String to_c_fn_name(BoolFnName): memb_test(ts?) = "is_" & typesymb2name(ts);
 
   ///////////////////////////////////////////////////////////////////////////////
   ///////////////////////////////////////////////////////////////////////////////
 
   String fn_name_to_str(FnSymbol fn_symb):
-    fn_symbol(symb)     = _str_(symb),
-    op_symbol(op)       = _str_(op),
+    fn_symbol(symb?)    = _str_(symb),
+    op_symbol(op?)      = _str_(op),
     //## BUG: THIS DOESN'T SPECIFY WHICH OF THE OUTER FUNCTIONS
     //## WITH THE SAME NAME THE NESTED FUNCTION BELONGS TO
     nested_fn_symbol()  = fn_name_to_str(fn_symb.outer) & ":" & fn_name_to_str(fn_symb.inner);
@@ -706,7 +706,7 @@ String capitalize(String s)
 {
   first := true;
   res := [];
-  for (ch, i : untag(s))
+  for (ch, i : _obj_(s))
     if (ch == 95)
       first := true;
     else

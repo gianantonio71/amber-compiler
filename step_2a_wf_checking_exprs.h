@@ -28,7 +28,7 @@ using
       map_comp()       = clause_is_wf(expr.source, scalar_vars),
       seq_comp()       = (not expr.idx_var? or expr.var /= expr.idx_var) and disjoint(gen_vars(expr), scalar_vars),
       match_expr()     = all([case_is_wf(c, scalar_vars, length(expr.exprs)) : c <- expr.cases]),
-      do_expr(ss)      = stmts_are_wf(ss, scalar_vars),
+      do_expr(ss?)     = stmts_are_wf(ss, scalar_vars),
       select_expr()    = user_type_is_wf(expr.type, type_vars),
       replace_expr()   = user_type_is_wf(expr.type, type_vars) and not in(expr.var, scalar_vars),
       _                = true;
@@ -114,15 +114,15 @@ using
 
     assignment_stmt() = expr_is_wf(stmt.value, scalar_vars), // and (not stmt.type? or user_type_is_wf(stmt.type)),
     
-    return_stmt(e)    = expr_is_wf(e, scalar_vars),
+    return_stmt(e?)   = expr_is_wf(e, scalar_vars),
     
-    :break_stmt       = is_inside_loop,
+    break_stmt        = is_inside_loop,
     
-    :fail_stmt        = true,
+    fail_stmt         = true,
     
-    assert_stmt(e)    = expr_is_wf(e, scalar_vars),
+    assert_stmt(e?)   = expr_is_wf(e, scalar_vars),
     
-    print_stmt(e)     = expr_is_wf(e, scalar_vars),
+    print_stmt(e?)    = expr_is_wf(e, scalar_vars),
 
     if_stmt()         = expr_is_wf(stmt.cond, scalar_vars)                          and
                         stmts_are_wf(stmt.body, scalar_vars, is_inside_loop, false) and
@@ -139,7 +139,7 @@ using
                         ),
 
                         //## THERE MUST BE A WAY OUT, A BREAK OR A RETURN
-    loop_stmt(ss)     = stmts_are_wf(ss, scalar_vars, true, false),
+    loop_stmt(ss?)    = stmts_are_wf(ss, scalar_vars, true, false),
     
                         //## SHOULD THE LOOP VARIABLES BE READ-ONLY?
     foreach_stmt()    = { nvs := {stmt.var, stmt.idx_var if stmt.idx_var?};
@@ -186,7 +186,7 @@ True ptrn_is_wf(Pattern ptrn, Var* ext_vars, Var* loc_vars, Pattern bound_vars_p
                     not in(ptrn.var, ext_vars) and not in(ptrn.var, new_vars(ptrn.ptrn)) and
                     (not in(ptrn.var, loc_vars) or ptrn.ptrn == bound_vars_ptrn), //## THIS IS NOT CHECKED IN STAGE 1
 
-  ptrn_union(ps)  = not (? p <- ps : not ptrn_is_wf(p, ext_vars, loc_vars, bound_vars_ptrn)),
+  ptrn_union(ps?) = not (? p <- ps : not ptrn_is_wf(p, ext_vars, loc_vars, bound_vars_ptrn)),
 
   _               = true;
 }

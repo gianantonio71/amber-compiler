@@ -1,7 +1,7 @@
 
 using
 {
-  (TypeSymbol => SynType)                   typedefs,
+  (SynTypeSymbol => SynType)                typedefs,
   (symbol: BasicTypeSymbol, arity: NzNat)*  all_par_type_symbols;
 
 
@@ -48,7 +48,7 @@ using
 
 using
 {
-  (TypeSymbol => SynType)                   typedefs,
+  (SynTypeSymbol => SynType)                typedefs,
   (symbol: BasicTypeSymbol, arity: NzNat)*  all_par_type_symbols,
   TypeVar*                                  type_vars_in_scope,
   UntypedSgn*                               fns_in_scope,
@@ -63,20 +63,21 @@ using
                           if expr.tail? then expr_wf_errors(expr.tail, def_vars) else {} end,
 
     //set_expr(SynSubExpr*)
-    set_expr(es)        = union({expr_wf_errors(e, def_vars) : e <- es}),
+    set_expr(es?)       = union({expr_wf_errors(e, def_vars) : e <- es}),
     
     //map_expr((key: SynExpr, value: SynExpr, cond: SynExpr?)*)
-    map_expr(es)        = union({expr_wf_errors(se, def_vars) : e <- es, se <- {e.key, e.value, e.cond if e.cond?}}),
+    map_expr(es?)       = union({expr_wf_errors(se, def_vars) : e <- es, se <- {e.key, e.value, e.cond if e.cond?}}),
     
     //tag_obj_expr(tag: SynExpr, obj: SynExpr)
     tag_obj_expr()      = expr_wf_errors(expr.tag, def_vars) & expr_wf_errors(expr.obj, def_vars),
 
     Var                 = {:undef_var(expr) if not in(expr, def_vars)},
 
-    const_or_var(a)     = { return {} if in(:var(a), def_vars) or is_def(:fn_symbol(a), 0, fns_in_scope, impl_params);
+    const_or_var(a?)    = { return {} if in(:var(a), def_vars) or is_def(:fn_symbol(a), 0, fns_in_scope, impl_params);
                             return if is_almost_def(:fn_symbol(a), 0, fns_in_scope)
                                      then {:almost_def_const(a)}
-                                     else {:undef_var_or_const(a)};;
+                                     else {:undef_var_or_const(a)}
+                                   end;
                           },
 
     //where_expr(expr: SynExpr, fndefs: [SynFnDef^]),
@@ -108,12 +109,12 @@ using
 
                           //## BAD BAD THIS EXPRESSION IS TOO SIMILAR TO THE ONE ABOVE
     builtin_call()      = exprs_wf_errors(expr.params, def_vars) &
-                          {:wrong_num_of_params(name: expr.name, arity: length(expr.params))
+                          {wrong_num_of_params(name: expr.name, arity: length(expr.params))
                              if not arity_is_correct(expr.name, length(expr.params))},
 
     and()               = expr_wf_errors(expr.left, def_vars) & expr_wf_errors(expr.right, def_vars),
     or()                = expr_wf_errors(expr.left, def_vars) & expr_wf_errors(expr.right, def_vars), //## BAD
-    not(e)              = expr_wf_errors(e, def_vars),
+    not(e?)             = expr_wf_errors(e, def_vars),
     
     eq()                = expr_wf_errors(expr.left, def_vars) & expr_wf_errors(expr.right, def_vars), //## BAD
     neq()               = expr_wf_errors(expr.left, def_vars) & expr_wf_errors(expr.right, def_vars), //## BAD
@@ -155,7 +156,7 @@ using
 
     match_expr()        = exprs_wf_errors(expr.exprs, def_vars) & cases_wf_errors(expr.cases, def_vars),
 
-    do_expr(ss)         = stmts_wf_errors(ss, def_vars),
+    do_expr(ss?)        = stmts_wf_errors(ss, def_vars),
     
     select_expr()       = type_wf_errors(expr.type) & expr_wf_errors(expr.src_expr, def_vars),
     
@@ -248,60 +249,60 @@ using
 
   SynObjErr* stmt_wf_errors(SynStmt stmt, Var* all_def_vars, Var* readonly_vars, Bool inside_loop):
   
-    assignment_stmt() = expr_wf_errors(stmt.value, all_def_vars) &
-                        {:asgnm_readonly_var(stmt.var) if in(stmt.var, readonly_vars)},
+    assignment_stmt()   = expr_wf_errors(stmt.value, all_def_vars) &
+                          {:asgnm_readonly_var(stmt.var) if in(stmt.var, readonly_vars)},
 
-    return_stmt(e)    = expr_wf_errors(e, all_def_vars),
+    return_stmt(e?)     = expr_wf_errors(e, all_def_vars),
 
-    assert_stmt(e)    = expr_wf_errors(e, all_def_vars),
-    print_stmt(e)     = expr_wf_errors(e, all_def_vars),
+    assert_stmt(e?)     = expr_wf_errors(e, all_def_vars),
+    print_stmt(e?)      = expr_wf_errors(e, all_def_vars),
 
-    :fail_stmt        = {},
+    fail_stmt           = {},
 
-    :break_stmt       = {:break_outside_loop if not inside_loop},
+    break_stmt          = {:break_outside_loop if not inside_loop},
 
-    inf_loop_stmt(ss) = stmts_wf_errors(ss, all_def_vars, readonly_vars, true) &
-                        {:no_way_out_loop if not has_top_level_break(ss) and not has_return(ss)},
+    inf_loop_stmt(ss?)  = stmts_wf_errors(ss, all_def_vars, readonly_vars, true) &
+                          {:no_way_out_loop if not has_top_level_break(ss) and not has_return(ss)},
 
-    if_stmt()         = { errs_cond := [expr_wf_errors(b.cond, all_def_vars) : b <- stmt.branches];
-                          errs_body := [stmts_wf_errors(b.body, all_def_vars, readonly_vars, inside_loop) : b <- stmt.branches];
-                          errs_else := stmts_wf_errors(stmt.else, all_def_vars, readonly_vars, inside_loop);
-                          return seq_union(errs_cond) & seq_union(errs_body) & errs_else;
-                        },
+    if_stmt()           = { errs_cond := [expr_wf_errors(b.cond, all_def_vars) : b <- stmt.branches];
+                            errs_body := [stmts_wf_errors(b.body, all_def_vars, readonly_vars, inside_loop) : b <- stmt.branches];
+                            errs_else := stmts_wf_errors(stmt.else, all_def_vars, readonly_vars, inside_loop);
+                            return seq_union(errs_cond) & seq_union(errs_body) & errs_else;
+                          },
 
-    loop_stmt()       = { vs := all_def_vars;
-                          vs := vs & syn_new_vars(stmt.body) if stmt.skip_first;
-                          errs_cond := expr_wf_errors(stmt.cond, vs);
-                          errs_body := stmts_wf_errors(stmt.body, all_def_vars, readonly_vars, true);
-                          return errs_cond & errs_body;
-                        },
+    loop_stmt()         = { vs := all_def_vars;
+                            vs := vs & syn_new_vars(stmt.body) if stmt.skip_first;
+                            errs_cond := expr_wf_errors(stmt.cond, vs);
+                            errs_body := stmts_wf_errors(stmt.body, all_def_vars, readonly_vars, true);
+                            return errs_cond & errs_body;
+                          },
 
-    for_stmt()        = { vs   := all_def_vars;
-                          errs := {};
-                          for (it : stmt.loops)
-                            errs := errs & iter_wf_errors(it, vs);
-                            vs   := vs & syn_new_vars(it);
-                          ;
-                          return errs & stmts_wf_errors(stmt.body, vs, readonly_vars, true);
-                        },
+    for_stmt()          = { vs   := all_def_vars;
+                            errs := {};
+                            for (it : stmt.loops)
+                              errs := errs & iter_wf_errors(it, vs);
+                              vs   := vs & syn_new_vars(it);
+                            ;
+                            return errs & stmts_wf_errors(stmt.body, vs, readonly_vars, true);
+                          },
 
-    let_stmt()        = { asgnms_errs := fndefs_wf_errors(set(stmt.asgnms), all_def_vars);
-                          
-                          new_impl_params := impl_params & set([untyped_sgn(fd) : fd <- stmt.asgnms]);
-                          stmts_errs  := stmts_wf_errors(
-                                           stmt.body,
-                                           all_def_vars,
-                                           readonly_vars,
-                                           inside_loop;
-                                           impl_params = new_impl_params
-                                         );
-                                         
-                          //## I SHOULD ALSO CHECK THAT I'M NOT DEFINING NEW IMPLICIT PARAMS
-                          //## BUT ONLY REDEFINING EXISTING ONES. I'LL CATCH MOST ERRORS ANYWAY
-                          //## THOUGH AS I'M PASSING ONTO THE BODY STATEMENTS THE SAME IMPLICIT
-                          //## ENVIRONMENT THAT I GET AS INPUT
-                          return asgnms_errs & stmts_errs;
-                        };
+    let_stmt()          = { asgnms_errs := fndefs_wf_errors(set(stmt.asgnms), all_def_vars);
+
+                            new_impl_params := impl_params & set([untyped_sgn(fd) : fd <- stmt.asgnms]);
+                            stmts_errs  := stmts_wf_errors(
+                                             stmt.body,
+                                             all_def_vars,
+                                             readonly_vars,
+                                             inside_loop;
+                                             impl_params = new_impl_params
+                                           );
+
+                            //## I SHOULD ALSO CHECK THAT I'M NOT DEFINING NEW IMPLICIT PARAMS
+                            //## BUT ONLY REDEFINING EXISTING ONES. I'LL CATCH MOST ERRORS ANYWAY
+                            //## THOUGH AS I'M PASSING ONTO THE BODY STATEMENTS THE SAME IMPLICIT
+                            //## ENVIRONMENT THAT I GET AS INPUT
+                            return asgnms_errs & stmts_errs;
+                          };
 
 
   SynObjErr* iter_wf_errors(SynIter iter, Var* def_vars):
@@ -356,7 +357,7 @@ using
                           {:already_def_ptrn_var(clause.var) if in(clause.var, loc_vars & ext_vars)},
     
     //and_clause([SynClause^])
-    and_clause(cs)      = { vs   := loc_vars;
+    and_clause(cs?)     = { vs   := loc_vars;
                             errs := {};
                             for (c : cs)
                               errs := errs & clause_wf_errors(c, vs, ext_vars);
@@ -378,13 +379,13 @@ using
   //## loc_vars AND ext_vars SHOULD PROBABLY BE IMPLICIT VARS
 
   SynObjErr* ptrn_wf_errors(SynPtrn ptrn, Var* ext_vars):
-    :ptrn_symbol      = {},
-    :ptrn_integer     = {},
-    :ptrn_seq         = {},
-    :ptrn_set         = {},
-    :ptrn_map         = {},
-    :ptrn_tag_obj     = {},
-    :ptrn_any         = {},
+    ptrn_symbol       = {},
+    ptrn_integer      = {},
+    ptrn_seq          = {},
+    ptrn_set          = {},
+    ptrn_map          = {},
+    ptrn_tag_obj      = {},
+    ptrn_any          = {},
     ptrn_symbol()     = {},
     ptrn_integer()    = {},
     ptrn_tag_obj()    = {
@@ -402,24 +403,24 @@ using
 
       return var_errs & ptrn_errs;
     },
-    ptrn_type(type)   = type_wf_errors(type);
+    ptrn_type(type?)  = type_wf_errors(type);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
 Bool syn_is_last_for_sure(SynStmt stmt):
-  return_stmt()     = true,
-  :fail_stmt        = true,
-  if_stmt()         = all([at_least_one([syn_is_last_for_sure(s) : s <- b.body]) : b <- stmt.branches])
-                      and at_least_one([syn_is_last_for_sure(s) : s <- stmt.else]),
-  inf_loop_stmt(ss) = none([syn_can_break_loop(s) : s <- ss]),
-  //:break_stmt     = //## NOT SURE HERE
-  let_stmt()        = at_least_one([syn_is_last_for_sure(s) : s <- stmt.body]),
-  _                 = false;
+  return_stmt()       = true,
+  fail_stmt           = true,
+  if_stmt()           = all([at_least_one([syn_is_last_for_sure(s) : s <- b.body]) : b <- stmt.branches])
+                        and at_least_one([syn_is_last_for_sure(s) : s <- stmt.else]),
+  inf_loop_stmt(ss?)  = none([syn_can_break_loop(s) : s <- ss]),
+  //:break_stmt         = //## NOT SURE HERE
+  let_stmt()          = at_least_one([syn_is_last_for_sure(s) : s <- stmt.body]),
+  _                   = false;
 
 
 Bool syn_can_break_loop(SynStmt stmt):
-  :break_stmt = true,
+  break_stmt  = true,
   if_stmt()   = at_least_one([at_least_one([syn_can_break_loop(s) : s <- b.body]) : b <- stmt.branches])
                 or at_least_one([syn_can_break_loop(s) : s <- stmt.else]),
   _           = false;
@@ -447,24 +448,24 @@ Bool has_top_level_break([SynStmt] stmts)
 Bool has_return([SynStmt] stmts) = select <return_stmt(Any)> in stmts end /= {}; //## BAD BAD BAD
 
 Bool never_falls_through(SynStmt stmt):
-  return_stmt()     = true,
-  :fail_stmt        = true,
+  return_stmt()       = true,
+  fail_stmt           = true,
   
-  inf_loop_stmt(ss) = not has_top_level_break(ss),
+  inf_loop_stmt(ss?)  = not has_top_level_break(ss),
   
-  if_stmt()         = { for (b : stmt.branches) //## BAD BAD BAD A LOOP SHOULDN'T BE NEEDED
-                          return false if not never_falls_through(b.body);
-                        ;
-                        return never_falls_through(stmt.else);
-                      },
+  if_stmt()           = { for (b : stmt.branches) //## BAD BAD BAD A LOOP SHOULDN'T BE NEEDED
+                            return false if not never_falls_through(b.body);
+                          ;
+                          return never_falls_through(stmt.else);
+                        },
 
-  let_stmt()        = never_falls_through(stmt.body),
+  let_stmt()          = never_falls_through(stmt.body),
 
   //## WHY DID I DO THIS? IT MAKES NO SENSE...
   //loop_stmt()       = never_falls_through(stmt.body),
   //for_stmt()        = never_falls_through(stmt.body), //## BAD
   
-  _                 = false;
+  _                   = false;
   
 
 //## BAD BAD BAD A LOOP SHOULDN'T BE NEEDED

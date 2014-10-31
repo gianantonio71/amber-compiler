@@ -5,11 +5,11 @@ using (TypeName => AnonType) typedefs, (TypeSymbol => UserType) user_typedefs
     
     LeafType            = true,
     
-    type_ref(ts)        = has_key(typedefs, type_symb_to_name(ts)) and has_key(user_typedefs, ts),
+    type_ref(ts?)       = has_key(typedefs, type_symb_to_name(ts)) and has_key(user_typedefs, ts),
     
-    //type_var(a)         = in(type, type_vars),
+    //type_var(a?)        = in(type, type_vars),
     //## BUG FIX FIX FIX
-    type_var(a)         = { print "Missing type var: " & _str_(a) if not in(type, type_vars);
+    type_var(a?)        = { print "Missing type var: " & _str_(a) if not in(type, type_vars);
                             return true;
                           },
     
@@ -20,7 +20,7 @@ using (TypeName => AnonType) typedefs, (TypeSymbol => UserType) user_typedefs
     ne_map_type()       = user_type_is_wf(type.key_type, type_vars) and
                           user_type_is_wf(type.value_type, type_vars),
     
-    tuple_type(bs)      = not (? l => b <- bs : not user_type_is_wf(b.type, type_vars)),
+    tuple_type(bs?)     = not (? l => b <- bs : not user_type_is_wf(b.type, type_vars)),
     
     //## BUG BUG BUG THIS IS INCOMPLETE, THE TAG TYPE MUST BE A SUBSET OF atom_type
     tag_obj_type()      = user_type_is_wf(type.tag_type, type_vars) and
@@ -28,7 +28,7 @@ using (TypeName => AnonType) typedefs, (TypeSymbol => UserType) user_typedefs
     
                           //## I DON'T LIKE ALL THESE DOUBLE NEGATIONS.
                           //## IT WOULD BE GOOD TO HAVE UNIVERSAL QUALIFICATION
-    union_type(ts)      = size(ts) >= 2                                             and
+    union_type(ts?)     = size(ts) >= 2                                             and
                           //## BAD BAD BAD THIS SHOULD BE ENFORCED IN THE TYPE DEFINITION
                           not (? union_type() <- ts)                                and
                           not (? t <- ts : not user_type_is_wf(t, type_vars))            and
@@ -57,11 +57,11 @@ Bool anon_pretype_is_wf(AnonType type, (SelfPretype => PseudoType) self_parts, T
 Bool anon_pretype_is_wf_impl(AnonType type, (SelfPretype => PseudoType) self_parts, TypeVar* type_vars):
   LeafType              = true,
 
-  :self                 = has_key(self_parts, type),
+  self                  = has_key(self_parts, type),
 
   self()                = has_key(self_parts, type),
 
-  type_var(a)           = in(type, type_vars),
+  type_var(a?)          = in(type, type_vars),
 
   ne_seq_type()         = anon_pretype_is_wf(type.elem_type, self_parts, type_vars),
 
@@ -71,14 +71,14 @@ Bool anon_pretype_is_wf_impl(AnonType type, (SelfPretype => PseudoType) self_par
 
   tag_obj_type()        = anon_pretype_is_wf(type.tag_type, self_parts, type_vars) and anon_pretype_is_wf(type.obj_type, self_parts, type_vars),
 
-  tuple_type(fs)        = not (? l => f <- fs : not anon_pretype_is_wf(f.type, self_parts, type_vars)),
+  tuple_type(fs?)       = not (? l => f <- fs : not anon_pretype_is_wf(f.type, self_parts, type_vars)),
 
                           //## BAD: SEE ALL THE REASONS LISTED ABOVE
-  union_type(ts)        = size(ts) > 1 and not (? union_type() <- ts) and
+  union_type(ts?)       = size(ts) > 1 and not (? union_type() <- ts) and
                           not (? t <- ts : not anon_pretype_is_wf(t, self_parts, type_vars)) and
                           not (? t1 <- ts, t2 <- ts : t1 /= t2, not anon_types_are_compatible(t1, t2, self_parts)), //## BAD: EVERY CONDITION IS EVALUATED TWICE
 
-  self_rec_type(t)      = not has_top_level_self(t, self) and has_ground_branches(t) and has_rec_branches(t) and anon_pretype_is_wf(t, (self => pretype_pseudotype(t, ())), type_vars),
+  self_rec_type(t?)     = not has_top_level_self(t, self) and has_ground_branches(t) and has_rec_branches(t) and anon_pretype_is_wf(t, (self => pretype_pseudotype(t, ())), type_vars),
 
   mut_rec_type()        = {
     //## THIS COULD BE MADE STRICTER BY MAKING SURE THAT THE TYPES DO HAVE CROSS REFERENCES AMONG THEM
@@ -113,29 +113,29 @@ Bool has_ground_branches(AnonType type) = has_ground_branches(type, {});
 
 Bool has_ground_branches(AnonType type, SelfPretype* ground_refs):
   LeafType              = true,
-  :self                 = false,
+  self                  = false,
   self()                = in(type, ground_refs),
-  type_var(a)           = true,
+  type_var(a?)          = true,
   ne_seq_type()         = has_ground_branches(type.elem_type, ground_refs),
   ne_set_type()         = has_ground_branches(type.elem_type, ground_refs),
   ne_map_type()         = has_ground_branches(type.key_type, ground_refs) and has_ground_branches(type.value_type, ground_refs),
-  tuple_type(fs)        = (? l => f <- fs : has_ground_branches(f.type, ground_refs)), //## WHAT IF THAT PARTICULAR FIELD IS OPTIONAL?
+  tuple_type(fs?)       = (? l => f <- fs : has_ground_branches(f.type, ground_refs)), //## WHAT IF THAT PARTICULAR FIELD IS OPTIONAL?
   tag_obj_type()        = has_ground_branches(type.obj_type, ground_refs),
-  union_type(ts)        = (? t <- ts : has_ground_branches(t, ground_refs)),
-  self_rec_type(t)      = has_ground_branches(t, ground_refs), //## NOT SURE HERE...
+  union_type(ts?)       = (? t <- ts : has_ground_branches(t, ground_refs)),
+  self_rec_type(t?)     = has_ground_branches(t, ground_refs), //## NOT SURE HERE...
   mut_rec_type()        = {fail;}; //## IMPLEMENT
 
 
 Bool has_rec_branches(AnonType type):
   LeafType              = false,
-  :self                 = true,
+  self                  = true,
   self()                = true,
-  type_var(a)           = false,
+  type_var(a?)          = false,
   ne_seq_type()         = has_rec_branches(type.elem_type),
   ne_set_type()         = has_rec_branches(type.elem_type),
   ne_map_type()         = has_rec_branches(type.key_type) or has_rec_branches(type.value_type),
-  tuple_type(fs)        = (? l => f <- fs : has_rec_branches(f.type)), //## WHAT IF THAT PARTICULAR FIELD IS OPTIONAL?
+  tuple_type(fs?)       = (? l => f <- fs : has_rec_branches(f.type)), //## WHAT IF THAT PARTICULAR FIELD IS OPTIONAL?
   tag_obj_type()        = has_rec_branches(type.obj_type),
-  union_type(ts)        = (? t <- ts : has_rec_branches(t)),
-  self_rec_type(t)      = false, //## NOT SURE HERE...
+  union_type(ts?)       = (? t <- ts : has_rec_branches(t)),
+  self_rec_type(t?)     = false, //## NOT SURE HERE...
   mut_rec_type()        = false; //## DITTO

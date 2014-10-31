@@ -36,15 +36,15 @@ PseudoType pseudotype_tag_objs        = pseudotype({:tag_objs});
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 Bool includes(PseudoType pseudotype, AtomicPseudoType atomic_pseudotype):
-  pseudotype(pts),  symbol()    = in(atomic_pseudotype, pts) or in(:symbols, pts),
-  pseudotype(pts),  tag_obj()   = in(atomic_pseudotype, pts) or in(:tag_objs, pts),
-  pseudotype(pts),  _           = in(atomic_pseudotype, pts);
+  pseudotype(pts?),   symbol()    = in(atomic_pseudotype, pts) or in(:symbols, pts),
+  pseudotype(pts?),   tag_obj()   = in(atomic_pseudotype, pts) or in(:tag_objs, pts),
+  pseudotype(pts?),   _           = in(atomic_pseudotype, pts);
 
 
 Bool are_disjoint(PseudoType pseudotype, BasicPseudoType basic_pseudotype):
-  pseudotype(pts),  :symbols    = not (? :symbols <- pts \/ symbol() <- pts),
-  pseudotype(pts),  :tag_objs   = not (? :tag_objs <- pts \/ tag_obj() <- pts),
-  _,                _           = not includes(pseudotype, basic_pseudotype);
+  pseudotype(pts?),   symbols     = not (in(:symbols, pts) or (? symbol() <- pts)),
+  pseudotype(pts?),   tag_objs    = not (in(:tag_objs, pts) or (? tag_obj() <- pts)),
+  _,                  _           = not includes(pseudotype, basic_pseudotype);
 
 
 Bool are_disjoint(PseudoType pt1, PseudoType pt2) = not (? bpt1 <- _obj_(pt1) : not are_disjoint(pt2, bpt1));
@@ -57,33 +57,33 @@ PseudoType pseudotype_union(PseudoType* pseudotypes) = pseudotype(union({pts : p
 PseudoType pseudotype(Obj obj) = pseudotype({atomic_pseudotype(obj)});
 
 AtomicPseudoType atomic_pseudotype(Obj):
-  object(+ a)         = :symbol(a),
+  object(+ a?)        = :symbol(a),
   object(*)           = :integers,
-  object({...} s)     = if s == {} then :empty_set else :ne_sets end,
-  object([...] s)     = if s == [] then :empty_seq else :ne_seqs end,
-  object((...) m)     = if m == () then :empty_map else :ne_maps end,
+  object({...} s?)    = if s == {} then :empty_set else :ne_sets end,
+  object([...] s?)    = if s == [] then :empty_seq else :ne_seqs end,
+  object((...) m?)    = if m == () then :empty_map else :ne_maps end,
   object(tag @ obj)   = :tag_obj(tag); //## REPLACE THE obj VARIABLE WITH _ AS SOON AS THE PARSER ALLOWS IT
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 PseudoType pseudotype(Pattern ptrn):
-  :ptrn_symbol            = pseudotype_symbols,
-  :ptrn_integer           = pseudotype_integers,
-  :ptrn_empty_set         = pseudotype_empty_set,
-  :ptrn_ne_set            = pseudotype_ne_sets,
-  :ptrn_empty_seq         = pseudotype_empty_seq,
-  :ptrn_ne_seq            = pseudotype_ne_seqs,
-  :ptrn_empty_map         = pseudotype_empty_map,
-  :ptrn_ne_map            = pseudotype_ne_maps,
-  :ptrn_tag_obj           = pseudotype_tag_objs,
-  :ptrn_any               = pseudotype_any,
-  ptrn_symbol(object(a))  = pseudotype_symbol(a),
+  ptrn_symbol             = pseudotype_symbols,
+  ptrn_integer            = pseudotype_integers,
+  ptrn_empty_set          = pseudotype_empty_set,
+  ptrn_ne_set             = pseudotype_ne_sets,
+  ptrn_empty_seq          = pseudotype_empty_seq,
+  ptrn_ne_seq             = pseudotype_ne_seqs,
+  ptrn_empty_map          = pseudotype_empty_map,
+  ptrn_ne_map             = pseudotype_ne_maps,
+  ptrn_tag_obj            = pseudotype_tag_objs,
+  ptrn_any                = pseudotype_any,
+  ptrn_symbol(object(a?)) = pseudotype_symbol(a),
   ptrn_integer()          = pseudotype_integers,
   ptrn_var()              = pseudotype(ptrn.ptrn),
-  ptrn_union(ps)          = pseudotype_union({pseudotype(p) : p <- ps}),
+  ptrn_union(ps?)         = pseudotype_union({pseudotype(p) : p <- ps}),
   ptrn_tag_obj()          = match (ptrn.tag)
-                              :ptrn_symbol            = pseudotype_tag_objs,
-                              ptrn_symbol(object(a))  = pseudotype_tag_obj(a),
+                              ptrn_symbol             = pseudotype_tag_objs,
+                              ptrn_symbol(object(a?)) = pseudotype_tag_obj(a),
                               ptrn_var()              = pseudotype_tag_objs;
                             ;
 
@@ -92,43 +92,45 @@ PseudoType pseudotype(Pattern ptrn):
 Pattern pseudotype_pattern(PseudoType pseudotype) = ptrn_union({pseudotype_pattern(pt) : pt <- _obj_(pseudotype)});
 
 Pattern pseudotype_pattern(BasicPseudoType pseudotype):
-  symbol(a)   = ptrn_symbol(a),
-  :symbols    = ptrn_symbol,
-  :integers   = ptrn_integer,
-  :empty_set  = ptrn_empty_set,
-  :ne_sets    = ptrn_ne_set,
-  :empty_seq  = ptrn_empty_seq,
-  :ne_seqs    = ptrn_ne_seq,
-  :empty_map  = ptrn_empty_map,
-  :ne_maps    = ptrn_ne_map,
-  tag_obj(a)  = ptrn_tag_obj(ptrn_symbol(a), ptrn_any),
-  :tag_objs   = ptrn_tag_obj(ptrn_symbol, ptrn_any);
+  symbol(a?)  = ptrn_symbol(a),
+  symbols     = ptrn_symbol,
+  integers    = ptrn_integer,
+  empty_set   = ptrn_empty_set,
+  ne_sets     = ptrn_ne_set,
+  empty_seq   = ptrn_empty_seq,
+  ne_seqs     = ptrn_ne_seq,
+  empty_map   = ptrn_empty_map,
+  ne_maps     = ptrn_ne_map,
+  tag_obj(a?) = ptrn_tag_obj(ptrn_symbol(a), ptrn_any),
+  tag_objs    = ptrn_tag_obj(ptrn_symbol, ptrn_any);
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 PseudoType pseudotype(AnonType type) = pretype_pseudotype(type, ());
 
 PseudoType pretype_pseudotype(AnonType type, (SelfPretype => PseudoType) self_pseudotypes):
-  :self                 = self_pseudotypes[type],
+  self                  = self_pseudotypes[type],
   self()                = self_pseudotypes[type],
-  :atom_type            = pseudotype_symbols,
-  symb_type(object(a))  = pseudotype_symbol(a),
+  atom_type             = pseudotype_symbols,
+  symb_type(object(a?)) = pseudotype_symbol(a),
   IntType               = pseudotype_integers,
   TypeVar               = pseudotype_any,
-  :empty_set_type       = pseudotype_empty_set,
+  empty_set_type        = pseudotype_empty_set,
   ne_set_type()         = pseudotype_ne_sets,
-  :empty_seq_type       = pseudotype_empty_seq,
+  empty_seq_type        = pseudotype_empty_seq,
   ne_seq_type()         = pseudotype_ne_seqs,
-  :empty_map_type       = pseudotype_empty_map,
+  empty_map_type        = pseudotype_empty_map,
   ne_map_type()         = pseudotype_ne_maps,
-  tuple_type(fs)        = pseudotype_union({pseudotype_ne_maps, pseudotype_empty_map if (? l => f <- fs : not f.optional)}),
-  union_type(ts)        = pseudotype_union({pretype_pseudotype(t, self_pseudotypes) : t <- ts}),
+  tuple_type(fs?)       = pseudotype_union({pseudotype_ne_maps, pseudotype_empty_map if (? l => f <- fs : not f.optional)}),
+  union_type(ts?)       = pseudotype_union({pretype_pseudotype(t, self_pseudotypes) : t <- ts}),
   tag_obj_type()        = match (type.tag_type)
-                            symb_type(object(a))  = pseudotype_tag_obj(a),
-                            :atom_type            = pseudotype_tag_objs;
+                            symb_type(object(a?)) = pseudotype_tag_obj(a),
+                            atom_type             = pseudotype_tag_objs;
                           ,
-  self_rec_type(t)      = pretype_pseudotype(t, ()), //## NOT ENTIRELY SURE
-  mut_rec_type()        = pseudotypes[self(type.index)] let pseudotypes := mut_rec_type_pseudotype(type);;
+  self_rec_type(t?)     = pretype_pseudotype(t, ()), //## NOT ENTIRELY SURE
+  // mut_rec_type()        = pseudotypes[self(type.index)] let pseudotypes := mut_rec_type_pseudotype(type);;
+  // mut_rec_type()        = (mut_rec_type_pseudotype(type))[self(type.index)];
+  mut_rec_type()        = {pts := mut_rec_type_pseudotype(type); return pts[self(type.index)];};
 
 
 (SelfPretype => PseudoType) mut_rec_type_pseudotype(MutRecType[AnonType] type)
@@ -146,5 +148,5 @@ PseudoType pretype_pseudotype(AnonType type, (SelfPretype => PseudoType) self_ps
 
 SelfPretype* top_level_rec_refs(AnonType type): //## THIS IS NOT THE RIGHT PLACE FOR THIS FUNCTION
   SelfPretype     = {type},
-  union_type(ts)  = union({top_level_rec_refs(t) : t <- ts}),
+  union_type(ts?) = union({top_level_rec_refs(t) : t <- ts}),
   _               = {};

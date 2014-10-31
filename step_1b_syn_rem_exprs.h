@@ -17,9 +17,9 @@ using
                         tail: desugar_expr(expr.tail, def_vars) if expr.tail?
                       ),
     
-    set_expr(es)    = :set_expr({desugar_expr(e, def_vars) : e <- es}),
+    set_expr(es?)   = :set_expr({desugar_expr(e, def_vars) : e <- es}),
     
-    map_expr(es)    = :map_expr(
+    map_expr(es?)   = :map_expr(
                         for (e <- es) {(
                           key:   desugar_expr(e.key, def_vars),
                           value: desugar_expr(e.value, def_vars),
@@ -34,19 +34,19 @@ using
 
     Var             = expr,
     
-    const_or_var(a) = { return :var(a) if in(:var(a), def_vars);
-                        return :named_par(a) if in(:named_par(a), named_params);
-                        sgn := untyped_sgn(name: :fn_symbol(a), arity: 0);
-                        //## THIS IS A STRANGE LIMITATION
-                        //## IS IT HERE FOR A REASON, OR IS IT ONLY TEMPORARY?
-                        assert not in(sgn, local_fns);
-                        return fn_call(name: :fn_symbol(a), params: [], named_params: ());
-                        //if (in(sgn, named_params))
-                        //  return cls_call(name: fn, params: []);
-                        //else
-                        //  return fn_call(name: fn, params: [], named_params: ());
-                        //;
-                      },
+    const_or_var(a?)  = { return :var(a) if in(:var(a), def_vars);
+                          return :named_par(a) if in(:named_par(a), named_params);
+                          sgn := untyped_sgn(name: :fn_symbol(a), arity: 0);
+                          //## THIS IS A STRANGE LIMITATION
+                          //## IS IT HERE FOR A REASON, OR IS IT ONLY TEMPORARY?
+                          assert not in(sgn, local_fns);
+                          return fn_call(name: :fn_symbol(a), params: [], named_params: ());
+                          //if (in(sgn, named_params))
+                          //  return cls_call(name: fn, params: []);
+                          //else
+                          //  return fn_call(name: fn, params: [], named_params: ());
+                          //;
+                        },
 
 // fn_call(name: FnSymbol, params: [ExtSynExpr], named_params: [SynFnDef]), //## NEW
 // fn_call(name: FnSymbol, params: [ExtExpr], named_params: (<named_par(Atom)> => ExtExpr)), //## NEW BAD BAD
@@ -66,7 +66,7 @@ using
                         ;
                          
                         // Then named parameters
-                        np  := :named_par(untag(expr.name));
+                        np  := :named_par(_obj_(expr.name));
                         if (in(np, named_params))
                           assert nps == ();
                           return cls_call(name: np, params: ps);
@@ -91,7 +91,7 @@ using
                         right: desugar_expr(expr.right, def_vars)
                       ),
 
-    not(e)          = :not_expr(desugar_expr(e, def_vars)),
+    not(e?)         = :not_expr(desugar_expr(e, def_vars)),
     
     eq()            = eq(
                         left:  desugar_expr(expr.left, def_vars),
@@ -168,7 +168,7 @@ using
                         return match_expr(exprs: es, cases: cs);
                       },
 
-    do_expr(ss)     = :do_expr(desugar_stmts(ss, def_vars)), //##  IMPLEMENT
+    do_expr(ss?)    = :do_expr(desugar_stmts(ss, def_vars)), //##  IMPLEMENT
 
     select_expr()   = select_expr(type: expr.type, src_expr: desugar_expr(expr.src_expr, def_vars)),
     
@@ -252,7 +252,7 @@ using
                                    );
                           },
 
-    and_clause(cs)      = mk_and_clause(cs, def_vars),
+    and_clause(cs?)     = mk_and_clause(cs, def_vars),
     
     or_clause()         = or_clause(
                             left:  desugar_clause(clause.left, def_vars),
@@ -274,19 +274,19 @@ using
 
   Statement desugar_stmt(SynStmt stmt, Var* def_vars):
 
-    assignment_stmt() = assignment_stmt(var: stmt.var, value: desugar_expr(stmt.value, def_vars)),
+    assignment_stmt()   = assignment_stmt(var: stmt.var, value: desugar_expr(stmt.value, def_vars)),
     
-    return_stmt(e)    = :return_stmt(desugar_expr(e, def_vars)),
+    return_stmt(e?)     = :return_stmt(desugar_expr(e, def_vars)),
     
-    :break_stmt       = :break_stmt,
+    break_stmt          = :break_stmt,
     
-    :fail_stmt        = :fail_stmt,
+    fail_stmt           = :fail_stmt,
     
-    assert_stmt(e)    = :assert_stmt(desugar_expr(e, def_vars)),
+    assert_stmt(e?)     = :assert_stmt(desugar_expr(e, def_vars)),
     
-    print_stmt(e)     = :print_stmt(desugar_expr(e, def_vars)),
+    print_stmt(e?)      = :print_stmt(desugar_expr(e, def_vars)),
 
-    inf_loop_stmt(ss) = :loop_stmt(desugar_stmts(ss, def_vars)),
+    inf_loop_stmt(ss?)  = :loop_stmt(desugar_stmts(ss, def_vars)),
 
     if_stmt() =
     {
@@ -313,7 +313,7 @@ using
 
     let_stmt() =
     {
-      nps    := named_params & set([:named_par(untag(fd.name)) : fd <- stmt.asgnms]); //## BAD BAD BAD
+      nps    := named_params & set([:named_par(_obj_(fd.name)) : fd <- stmt.asgnms]); //## BAD BAD BAD
       body   := desugar_stmts(stmt.body, def_vars; named_params = nps);
       asgnms := syn_fn_defs_to_named_params(stmt.asgnms, def_vars);
       return let_stmt(asgnms: asgnms, body: body);
@@ -368,26 +368,26 @@ using
   ////////////////////////////////////////////////////////////////////////////////
 
   Pattern desugar_ptrn(SynPtrn ptrn):
-    :ptrn_seq             = ptrn_seq,
-    :ptrn_set             = ptrn_set,
-    :ptrn_map             = ptrn_map,
-    ptrn_integer(int_obj) = ptrn_integer(int_obj),
-    ptrn_tag_obj()        = ptrn_tag_obj(ptrn.tag, desugar_ptrn(ptrn.obj)),
-    ptrn_var()            = ptrn_var(ptrn.var, desugar_ptrn(ptrn.ptrn)),
-    ptrn_type(type)       = {
+    ptrn_seq                = ptrn_seq,
+    ptrn_set                = ptrn_set,
+    ptrn_map                = ptrn_map,
+    ptrn_integer(int_obj?)  = ptrn_integer(int_obj),
+    ptrn_tag_obj()          = ptrn_tag_obj(ptrn.tag, desugar_ptrn(ptrn.obj)),
+    ptrn_var()              = ptrn_var(ptrn.var, desugar_ptrn(ptrn.ptrn)),
+    ptrn_type(type?)        = {
       if (not user_type_can_be_converted_into_pattern(type, typedefs))
         // print type;
         assert type /= :type_ref(:type_symbol(:set)); //## WHY THIS?
       ;
       return user_type_to_pattern(type, typedefs);
     },
-    _                     = ptrn;
+    _                       = ptrn;
 
   ////////////////////////////////////////////////////////////////////////////////
 
   //## FIND BETTER NAME
   (<named_par(Atom)> => ExtExpr) syn_fn_defs_to_named_params([SynFnDef] fds, Var* def_vars) =
-    (:named_par(untag(fd.name)) => syn_fn_def_to_expr(fd, def_vars) : fd <- set(fds));
+    (:named_par(_obj_(fd.name)) => syn_fn_def_to_expr(fd, def_vars) : fd <- set(fds));
 
   ExtExpr syn_fn_def_to_expr(SynFnDef fd, Var* def_vars)
   {

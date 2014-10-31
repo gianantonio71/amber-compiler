@@ -3,7 +3,7 @@
 
 ClosedType mandatory_tuple_field_type(TupleType[AnonType] type, SymbObj label)
 {
-	mfs := {f : l => f <- untag(type) ; l == label};
+	mfs := {f : l => f <- _obj_(type) ; l == label};
 	assert size(mfs) >= 0;
 	return void_type if mfs == {};
 	mf := only_element(mfs);

@@ -1,21 +1,29 @@
-//## IT WOULD BE USEFUL TO HAVE SYNTACTIC PATTERNS, WITH TUPLE PATTERNS AS SEQUENCES RATHER THAN SETS
+// SynTypeSymbol must be a subset of TypeSymbol
 
-type SynType        = LeafType,
-                      TypeRef,
-                      TypeVar,
-                      NeSeqType[SynType],
-                      NeSetType[SynType],
-                      NeMapType[SynType],
-                      SynTupleType,
-                      SynTagObjType,
-                      UnionType[SynType];
+type SynParTypeSymbol = par_type_symbol(symbol: BasicTypeSymbol, params: [SynType^]);
+type SynTypeSymbol    = BasicTypeSymbol, SynParTypeSymbol;
 
-type SynTupleType   = tuple_type(<
-                        (label: SymbObj, type: SynType, optional: Bool)+,
-                        (SymbObj => (type: SynType, optional: Bool)) // This is here to make UserType a subtype of SynType  //## WOULD NEED A NON-EMPTY MAP TYPE HERE...
-                      >);
+/////////////////////////////////////////////////////////////////////////////////////
+
+// SynType must be a superset of UserType
+
+type SynType        = SynLeafType, SynTypeRef, TypeVar, SynNeSeqType, SynNeSetType,
+                      SynNeMapType, SynRecordType, SynTagObjType, SynUnionType;
+
+type SynLeafType    = LeafType, syn_int_range(min: Int, max: Int);
+type SynTypeRef     = type_ref(SynTypeSymbol);
+
+type SynNeSeqType   = ne_seq_type(elem_type: SynType);
+type SynNeSetType   = ne_set_type(elem_type: SynType);
+type SynNeMapType   = ne_map_type(key_type: SynType, value_type: SynType);
+
+type SynRecordType  = tuple_type(<[SynRecordField^], SynRecordMap>);
+type SynRecordField = (label: SymbObj, type: SynType, optional: Bool);
+type SynRecordMap   = (SymbObj => (type: UserType, optional: Bool));
 
 type SynTagObjType  = tag_obj_type(tag_type: SynType, obj_type: SynType);
+
+type SynUnionType   = union_type(SynType+), syn_union_type([SynType^]);
 
 /////////////////////////////////////////////////////////////////////////////////////
 
@@ -25,104 +33,123 @@ type SynParTypedef = par_typedef(name: BasicTypeSymbol, params: [TypeVar^], type
 
 /////////////////////////////////////////////////////////////////////////////////////
 
-type SynExpr = LeafObj,
+type SynExpr  = LeafObj, Var, ConstOrVar,
+                SynSeqExpr, SynSetExpr, SynMapExpr, SynTagObjExpr,
+                SynFnCall, SynBuiltInCall,
+                SynBoolExpr, SynCmpExpr,
+                SynMembExpr, SynCastExpr,
+                SynAccExpr, SynAccTestExpr,
+                SynExQualExpr, SynSCExpr, SynMCExpr, SynLCExpr,
+                SynIfExpr, SynTryExpr,
+                SynDoExpr,
+                SynSelExpr, SynReplExpr,
+                SynLetExpr;
 
-               seq_expr(head: [SynSubExpr], tail: SynExpr?),
-               set_expr(SynSubExpr*),
-               map_expr((key: SynExpr, value: SynExpr, cond: SynExpr?)*),
-               tag_obj_expr(tag: SynExpr, obj: SynExpr),
+type ConstOrVar       = const_or_var(Atom); //## NOT SURE ATOM IS THE RIGHT THING HERE
 
-               Var,
-
-               const_or_var(Atom), //## NOT SURE ATOM IS THE RIGHT THING HERE
-
-               fn_call(name: FnSymbol, params: [ExtSynExpr], named_params: [SynFnDef]), //## NEW
-               builtin_call(name: BuiltIn, params: [SynExpr^]),
-
-               and(left: SynExpr, right: SynExpr),
-               or(left: SynExpr, right: SynExpr),
-               not(SynExpr),
-
-               eq(left: SynExpr, right: SynExpr),
-               neq(left: SynExpr, right: SynExpr),
-
-               membership(obj: SynExpr, type: SynType),
-               cast_expr(expr: SynExpr, type: SynType),
-
-               accessor(expr: SynExpr, field: SymbObj),
-               accessor_test(expr: SynExpr, field: SymbObj),
-
-               ex_qual(source: [SynClause^], sel_exprs: [SynExpr]),
-               set_comp(expr: SynExpr, source: [SynClause^], sel_exprs: [SynExpr]),
-               map_comp(key_expr: SynExpr, value_expr: SynExpr, source: [SynClause^], sel_exprs: [SynExpr]),
-               seq_comp(expr: SynExpr, var: Var, idx_var: Var?, src_expr: SynExpr, sel_expr: SynExpr?),
-
-               if_expr(branches: [(cond: SynExpr, expr: SynExpr)^], else: SynExpr),
-               match_expr(exprs: [SynExpr^], cases: [SynCase^]),
-               do_expr([SynStmt^]),
-
-               select_expr(type: SynType, src_expr: SynExpr),
-               replace_expr(expr: SynExpr, src_expr: SynExpr, type: SynType, var: Var),
-
-               let_expr(expr: SynExpr, stmts: [SynStmt^]);
+type SynSeqExpr       = seq_expr(head: [SynSubExpr], tail: SynExpr?);
+type SynSetExpr       = set_expr(SynSubExpr*);
+type SynMapExpr       = map_expr(SynMapExprEntry*);
+type SynTagObjExpr    = tag_obj_expr(tag: SynExpr, obj: SynExpr);
 
 
-type SynClsExpr  = cls_expr(params: [<var(Atom)>^], expr: SynExpr); //## NEW
+type SynFnCall        = fn_call(name: FnSymbol, params: [ExtSynExpr], named_params: [SynFnDef]); //## BAD: NAMED PARAMS AS SynFnDef? REALLY?
+type SynBuiltInCall   = builtin_call(name: BuiltIn, params: [SynExpr^]);
 
-type ExtSynExpr  = SynExpr, SynClsExpr; //## NEW
+type SynBoolExpr      = and(left: SynExpr, right: SynExpr),
+                        or(left: SynExpr, right: SynExpr),
+                        not(SynExpr);
 
+type SynCmpExpr       = eq(left: SynExpr, right: SynExpr),
+                        neq(left: SynExpr, right: SynExpr);
 
-type SynCondExpr  = cond_expr(expr: SynExpr, cond: SynExpr);
+type SynMembExpr      = membership(obj: SynExpr, type: SynType);
+type SynCastExpr      = cast_expr(expr: SynExpr, type: SynType);
 
-type SynSubExpr   = SynExpr, SynCondExpr;
+type SynAccExpr       = accessor(expr: SynExpr, field: SymbObj);
+type SynAccTestExpr   = accessor_test(expr: SynExpr, field: SymbObj);
 
+type SynExQualExpr    = ex_qual(source: [SynClause^], sel_exprs: [SynExpr]);
+type SynSCExpr        = set_comp(expr: SynExpr, source: [SynClause^], sel_exprs: [SynExpr]);
+type SynMCExpr        = map_comp(key_expr: SynExpr, value_expr: SynExpr, source: [SynClause^], sel_exprs: [SynExpr]);
+type SynLCExpr        = seq_comp(expr: SynExpr, var: Var, idx_var: Var?, src_expr: SynExpr, sel_expr: SynExpr?);
 
-type SynPtrn      = ptrn_symbol,
-                    ptrn_integer,
-                    ptrn_seq,
-                    ptrn_set,
-                    ptrn_map,
-                    ptrn_tag_obj,
-                    ptrn_any,
-                    ptrn_symbol(SymbObj),
-                    ptrn_integer(IntObj),
-                    ptrn_tag_obj(tag: TagPtrn, obj: SynPtrn),
-                    ptrn_var(var: Var, ptrn: SynPtrn),
-                    ptrn_type(SynType);
+type SynIfExpr        = if_expr(branches: [(cond: SynExpr, expr: SynExpr)^], else: SynExpr);
+type SynTryExpr       = match_expr(exprs: [SynExpr^], cases: [SynCase^]);
 
+type SynDoExpr        = do_expr([SynStmt^]);
 
-type SynClause    = in_clause(ptrn: SynPtrn, src: SynExpr),
-                    map_in_clause(key_ptrn: SynPtrn, value_ptrn: SynPtrn, src: SynExpr),
-                    eq_clause(var: Var, expr: SynExpr),
-                    and_clause([SynClause^]),
-                    or_clause(left: SynClause, right: SynClause);
+type SynSelExpr       = select_expr(type: SynType, src_expr: SynExpr);
+type SynReplExpr      = replace_expr(expr: SynExpr, src_expr: SynExpr, type: SynType, var: Var);
 
-type SynCase      = case(patterns: [SynPtrn^], expr: SynExpr);  //## CHANGE
+type SynLetExpr       = let_expr(expr: SynExpr, stmts: [SynAsgnStmt^]);
 
-type SynStmt      = assignment_stmt(var: Var, value: SynExpr),
-                    return_stmt(SynExpr),
-                    if_stmt(branches: [(cond: SynExpr, body: [SynStmt^])^], else: [SynStmt]),
-                    loop_stmt(cond: SynExpr, skip_first: Bool, body: [SynStmt^]),
-                    inf_loop_stmt([SynStmt^]),
-                    for_stmt(loops: [SynIter^], body: [SynStmt^]),
-                    let_stmt(asgnms: [SynFnDef^], body: [SynStmt^]), //## NEW
-                    break_stmt,
-                    fail_stmt,
-                    assert_stmt(SynExpr),
-                    print_stmt(SynExpr);
+/////////////////////////////////////////////////////////////////////////////////////
 
-type SynIter      = seq_iter(var: Var, idx_var: Var?, values: SynExpr),
-                    range_iter(var: Var, start_val: SynExpr, end_val: SynExpr);
+type SynClsExpr       = cls_expr(params: [<var(Atom)>^], expr: SynExpr);
+type ExtSynExpr       = SynExpr, SynClsExpr;
+
+type SynCondExpr      = cond_expr(expr: SynExpr, cond: SynExpr);
+type SynSubExpr       = SynExpr, SynCondExpr;
+
+type SynMapExprEntry  = (key: SynExpr, value: SynExpr, cond: SynExpr?);
+
+/////////////////////////////////////////////////////////////////////////////////////
+
+type SynPtrn    = ptrn_symbol,
+                  ptrn_integer,
+                  ptrn_seq,
+                  ptrn_set,
+                  ptrn_map,
+                  ptrn_tag_obj,
+                  ptrn_any,
+                  ptrn_symbol(SymbObj),
+                  ptrn_integer(IntObj),
+                  ptrn_tag_obj(tag: TagPtrn, obj: SynPtrn),
+                  ptrn_var(var: Var, ptrn: SynPtrn),
+                  ptrn_type(SynType);
+
+type SynClause  = in_clause(ptrn: SynPtrn, src: SynExpr),
+                  map_in_clause(key_ptrn: SynPtrn, value_ptrn: SynPtrn, src: SynExpr),
+                  eq_clause(var: Var, expr: SynExpr),
+                  and_clause([SynClause^]),
+                  or_clause(left: SynClause, right: SynClause);
+
+type SynCase    = case(patterns: [SynPtrn^], expr: SynExpr);
+
+/////////////////////////////////////////////////////////////////////////////////////
+
+type SynStmt  = SynAsgnStmt, SynReturnStmt, SynIfStmt, SynLoopStmt, SynInfLoopStmt, SynForStmt,
+                SynLetStmt, SynBreakStmt, SynFailStmt, SynAssertStmt, SynPrintStmt, SynFnDefStmt;
+
+type SynAsgnStmt    = assignment_stmt(var: Var, value: SynExpr);
+type SynReturnStmt  = return_stmt(SynExpr);
+type SynIfStmt      = if_stmt(branches: [(cond: SynExpr, body: [SynStmt^])^], else: [SynStmt]);
+type SynLoopStmt    = loop_stmt(cond: SynExpr, skip_first: Bool, body: [SynStmt^]);
+type SynInfLoopStmt = inf_loop_stmt([SynStmt^]);
+type SynForStmt     = for_stmt(loops: [SynIter^], body: [SynStmt^]);
+type SynLetStmt     = let_stmt(asgnms: [SynFnDef^], body: [SynStmt^]); //## BAD: REPLACE THOSE SynFnDef WITH SOMETHING MORE APPROPRIATE
+type SynBreakStmt   = break_stmt; //## REPLACE WITH BreakStmt
+type SynFailStmt    = fail_stmt;  //## REPLACE WITH FailStmt
+type SynAssertStmt  = assert_stmt(SynExpr);
+type SynPrintStmt   = print_stmt(SynExpr);
+
+type SynFnDefStmt   = fn_def_stmt(SynFnDef);
+
+type SynIter  = seq_iter(var: Var, idx_var: Var?, values: SynExpr),
+                range_iter(var: Var, start_val: SynExpr, end_val: SynExpr);
 
 /////////////////////////////////////////////////////////////////////////////////////
 
 type SynFnDef       = syn_fn_def(
                         name:       FnSymbol,
-                        params:     [(type: SynType?, var: var(Atom)?)],
+                        params:     [SynFnArg],
                         res_type:   SynType?,
                         expr:       SynExpr,
                         local_fns:  [SynFnDef]
                       );
+
+type SynFnArg       = (type: SynType?, var: var(Atom)?);
 
 type SynSgn         = syn_sgn(
                         name:     FnSymbol,

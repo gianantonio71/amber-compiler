@@ -62,18 +62,18 @@ AnonType rec_type_union_superset(AnonType* types)
 
   //## THERE MUST BE A BETTER WAY EVEN WITHOUT A REPLACE INSTRUCTION...
   AnonType replace_preunions(Pretype pretype, (AnonType+ => SelfPretype) rec_map):
-    LeafType          = pretype,
-    TypeVar           = pretype,
-    SelfPretype       = pretype,
-    ne_seq_type()     = ne_seq_type(replace_preunions(pretype.elem_type, rec_map)),
-    ne_set_type()     = ne_set_type(replace_preunions(pretype.elem_type, rec_map)),
-    ne_map_type()     = ne_map_type(replace_preunions(pretype.key_type, rec_map), replace_preunions(pretype.value_type, rec_map)),
-    tuple_type(fs)    = tuple_type((l => (type: replace_preunions(f.type, rec_map), optional: f.optional) : l => f <- fs)),
-    tag_obj_type()    = tag_obj_type(pretype.tag_type, replace_preunions(pretype.obj_type, rec_map)),
-    union_type(ts)    = union_type({replace_preunions(t, rec_map) : t <- ts}),
-    union_pretype(ts) = rec_map[ts],
-    self_rec_type(t)  = self_rec_type(replace_preunions(t, rec_map)),
-    mut_rec_type()    = mut_rec_type(pretype.index, [replace_preunions(t, rec_map) : t <- pretype.types]);
+    LeafType            = pretype,
+    TypeVar             = pretype,
+    SelfPretype         = pretype,
+    ne_seq_type()       = ne_seq_type(replace_preunions(pretype.elem_type, rec_map)),
+    ne_set_type()       = ne_set_type(replace_preunions(pretype.elem_type, rec_map)),
+    ne_map_type()       = ne_map_type(replace_preunions(pretype.key_type, rec_map), replace_preunions(pretype.value_type, rec_map)),
+    tuple_type(fs?)     = tuple_type((l => (type: replace_preunions(f.type, rec_map), optional: f.optional) : l => f <- fs)),
+    tag_obj_type()      = tag_obj_type(pretype.tag_type, replace_preunions(pretype.obj_type, rec_map)),
+    union_type(ts?)     = union_type({replace_preunions(t, rec_map) : t <- ts}),
+    union_pretype(ts?)  = rec_map[ts],
+    self_rec_type(t?)   = self_rec_type(replace_preunions(t, rec_map)),
+    mut_rec_type()      = mut_rec_type(pretype.index, [replace_preunions(t, rec_map) : t <- pretype.types]);
 
   // Pretype replace_final_preunions(Pretype pretype, (AnonType+ => AnonType) final_unions) =
   //   replace union_pretype(ts) pt
@@ -82,18 +82,18 @@ AnonType rec_type_union_superset(AnonType* types)
 
   //## THERE MUST BE A BETTER WAY EVEN WITHOUT A REPLACE INSTRUCTION...
   Pretype replace_final_preunions(Pretype pretype, (AnonType+ => AnonType) final_unions):
-    LeafType          = pretype,
-    TypeVar           = pretype,
-    SelfPretype       = pretype,
-    ne_seq_type()     = ne_seq_type(replace_final_preunions(pretype.elem_type, final_unions)),
-    ne_set_type()     = ne_set_type(replace_final_preunions(pretype.elem_type, final_unions)),
-    ne_map_type()     = ne_map_type(replace_final_preunions(pretype.key_type, final_unions), replace_final_preunions(pretype.value_type, final_unions)),
-    tuple_type(fs)    = tuple_type((l => (type: replace_final_preunions(f.type, final_unions), optional: f.optional) : l => f <- fs)),
-    tag_obj_type()    = tag_obj_type(pretype.tag_type, replace_final_preunions(pretype.obj_type, final_unions)),
-    union_type(ts)    = union_type({replace_final_preunions(t, final_unions) : t <- ts}),
-    union_pretype(ts) = lookup(final_unions, ts, pretype), //## WHY DO WE HAVE TO PROVIDE A DEFAULT HERE? I CAN'T REMEMBER...
-    self_rec_type(t)  = self_rec_type(replace_final_preunions(t, final_unions)),
-    mut_rec_type()    = mut_rec_type(pretype.index, [replace_final_preunions(t, final_unions) : t <- pretype.types]);
+    LeafType            = pretype,
+    TypeVar             = pretype,
+    SelfPretype         = pretype,
+    ne_seq_type()       = ne_seq_type(replace_final_preunions(pretype.elem_type, final_unions)),
+    ne_set_type()       = ne_set_type(replace_final_preunions(pretype.elem_type, final_unions)),
+    ne_map_type()       = ne_map_type(replace_final_preunions(pretype.key_type, final_unions), replace_final_preunions(pretype.value_type, final_unions)),
+    tuple_type(fs?)     = tuple_type((l => (type: replace_final_preunions(f.type, final_unions), optional: f.optional) : l => f <- fs)),
+    tag_obj_type()      = tag_obj_type(pretype.tag_type, replace_final_preunions(pretype.obj_type, final_unions)),
+    union_type(ts?)     = union_type({replace_final_preunions(t, final_unions) : t <- ts}),
+    union_pretype(ts?)  = lookup(final_unions, ts, pretype), //## WHY DO WE HAVE TO PROVIDE A DEFAULT HERE? I CAN'T REMEMBER...
+    self_rec_type(t?)   = self_rec_type(replace_final_preunions(t, final_unions)),
+    mut_rec_type()      = mut_rec_type(pretype.index, [replace_final_preunions(t, final_unions) : t <- pretype.types]);
 
   AnonType+** clusters((AnonType+ => Pretype) pre_unions)
   {
@@ -117,7 +117,7 @@ using Bool allow_incompatible_groups
     //## TODO: DEAL WITH RECURSIVE TYPES, RECURSIVE REFERENCES AND TYPE VARIABLES HERE
     assert not (? union_type() <- exp_types);
 
-    return only_element(exp_types, type_any) if (? TypeVar <- exp_types);
+    return only_element(exp_types, type_any) if (? t <- exp_types : t :: TypeVar);
 
     rec_types := {t : self_rec_type() t <- exp_types};
     exp_types := exp_types - rec_types;
@@ -150,7 +150,7 @@ using Bool allow_incompatible_groups
       if (types_by_group.tuple?)
         res_tuple_type := tuple_types_union_superset(types_by_group.tuple);
         if (types_by_group.empty_map?)
-          res_tuple_type := tuple_type((l => (type: f.type, optional: true) : l => f <- untag(res_tuple_type)));
+          res_tuple_type := tuple_type((l => (type: f.type, optional: true) : l => f <- _obj_(res_tuple_type)));
         ;
         res_map_types := {res_tuple_type};
       else
@@ -178,17 +178,17 @@ using Bool allow_incompatible_groups
 
 
     AnonType+ expand_union_type(type):
-      union_type(ts) = union({expand_union_type(t) : t <- ts}),
-      _              = {type};
+      union_type(ts?) = union({expand_union_type(t) : t <- ts}),
+      _               = {type};
 
 
     type_group(AnonType type):
-      :atom_type        = :atom,
+      atom_type         = :atom,
       SymbType          = :symb,
       IntType           = :int,
-      :empty_seq_type   = :empty_seq,
-      :empty_set_type   = :empty_set,
-      :empty_map_type   = :empty_map,
+      empty_seq_type    = :empty_seq,
+      empty_set_type    = :empty_set,
+      empty_map_type    = :empty_map,
       ne_seq_type()     = :ne_seq,
       ne_set_type()     = :ne_set,
       ne_map_type()     = :ne_map,
@@ -206,7 +206,7 @@ using Bool allow_incompatible_groups
 
   IntType int_types_union_superset(IntType+ int_types)
   {
-    if ((? :integer <- int_types) or (? low_ints() <- int_types, high_ints() <- int_types)) //## NOT SURE ABOUT THIS ONE
+    if (in(:integer, int_types) or (? low_ints() <- int_types, high_ints() <- int_types)) //## NOT SURE ABOUT THIS ONE
       return :integer;
     elif ((? low_ints() <- int_types))
       max_val := max({max(t) : t <- int_types});
@@ -241,7 +241,7 @@ using Bool allow_incompatible_groups
 
   AnonType+ map_tuple_union_superset(MapType[AnonType] map_type, TupleType[AnonType] tuple_type, Bool includes_empty_map)
   {
-    fields := untag(tuple_type);
+    fields := _obj_(tuple_type);
     res_key_type := union_superset_impl({map_type.key_type, union_type({symb_type(l) : l => f <- fields})});
     res_value_type := union_superset_impl({map_type.value_type} & {f.type : l => f <- fields});
     res_map_type := ne_map_type(res_key_type, res_value_type);
@@ -282,7 +282,7 @@ using AnonType* already_expanded_rec_types
     return type1 if is_type_var(type1) or is_type_var(type2);
 
     nu_types_1 := match(type1)
-                    union_type(ts)  = ts,
+                    union_type(ts?) = ts,
                     _               = {type1};
                   ;
     rec_types_1 := {t : self_rec_type() t <- nu_types_1} & {t : mut_rec_type() t <- nu_types_1}; //## BAD: WE SHOULD USE A PATTERN UNION HERE, ONCE IT IS IMPLEMENTED
@@ -338,13 +338,13 @@ using AnonType* already_expanded_rec_types
         if (key_type_2 /= void_type and value_type_2 /= void_type)
           res := res & {ne_map_type_or_void(intersection_superset_implementation(key_type_1, key_type_2), intersection_superset_implementation(value_type_1, value_type_2))};
         else
-          res := res & {map_tuple_intersection_superset(key_type_1, value_type_1, untag(tuple_type_2))} if tuple_type_2 /= void_type;
+          res := res & {map_tuple_intersection_superset(key_type_1, value_type_1, _obj_(tuple_type_2))} if tuple_type_2 /= void_type;
         ;
       else
         if (key_type_2 /= void_type and value_type_2 /= void_type)
-          res := res & {map_tuple_intersection_superset(key_type_2, value_type_2, untag(tuple_type_1))} if tuple_type_1 /= void_type;
+          res := res & {map_tuple_intersection_superset(key_type_2, value_type_2, _obj_(tuple_type_1))} if tuple_type_1 /= void_type;
         else
-          res := {tuple_types_intersection(untag(tuple_type_1), untag(tuple_type_2))} if tuple_type_1 /= void_type and tuple_type_2 /= void_type;
+          res := {tuple_types_intersection(_obj_(tuple_type_1), _obj_(tuple_type_2))} if tuple_type_1 /= void_type and tuple_type_2 /= void_type;
         ;
       ;
 
@@ -395,11 +395,11 @@ using AnonType* already_expanded_rec_types
 
   Bool may_include_all_symbols(TagType+ types) //= in(atom_type, types) or (? TypeVar <- types); //## THIS IS THE VERSION WITHOUT ALL THE CHECKS
   {
-    assert not (in(atom_type, types) and (? TypeVar <- types));
+    assert not (in(atom_type, types) and (? t <- types : t :: TypeVar));
     if (in(atom_type, types))
       assert types == {atom_type};
       return true;
-    elif ((? TypeVar <- types))
+    elif ((? t <- types : t :: TypeVar))
       assert size(types) == 1 and only_element(types) :: TypeVar;
       return true;
     else
@@ -409,7 +409,7 @@ using AnonType* already_expanded_rec_types
   }
 
   <IntType, void_type> int_types_intersection(<IntType, void_type> int_type_1, <IntType, void_type> int_type_2):
-    :integer,     _             = int_type_2,
+    integer,      _             = int_type_2,
 
     low_ints(),   low_ints()    = low_ints(min(int_type_1.max, int_type_2.max)),
     low_ints(),   high_ints()   = maybe_int_range(int_type_2.min, int_type_1.max),
@@ -485,13 +485,13 @@ using AnonType* already_expanded_rec_types
 //## THIS IS TOTALLY UNTESTED. IT SHOULD BE TESTED WITH THE TYPE SUBSET TESTING CODE,
 //## AND MAYBE IT WOULD BE GOOD TO DO SOME MANUAL TESTING, ESPECIALLY FOR TUPLE TYPES
 Bool type_contains_obj(AnonType type, Any obj):
-  :atom_type,       +           = true,
-  :atom_type,       _           = false,
+  atom_type,        +           = true,
+  atom_type,        _           = false,
 
-  symb_type(s),     _           = obj == s,
+  symb_type(s?),    _           = obj == s,
 
-  :integer,         *           = true,
-  :integer,         _           = false,
+  integer,          *           = true,
+  integer,          _           = false,
 
   low_ints(),       *           = obj <= type.max,
   low_ints(),       _           = false,
@@ -504,9 +504,9 @@ Bool type_contains_obj(AnonType type, Any obj):
 
   type_var(),       _           = {fail;},
 
-  :empty_seq_type,  _           = obj == [],
-  :empty_set_type,  _           = obj == {},
-  :empty_map_type,  _           = obj == (),
+  empty_seq_type,   _           = obj == [],
+  empty_set_type,   _           = obj == {},
+  empty_map_type,   _           = obj == (),
 
   ne_seq_type(),    [...]       = obj /= [] and all([type_contains_obj(type.elem_type, e) : e <- obj]),
   ne_seq_type(),    _           = false,
@@ -517,14 +517,14 @@ Bool type_contains_obj(AnonType type, Any obj):
   ne_map_type(),    (...)       = obj /= () and not (? k => v <- obj : not type_contains_obj(type.key_type, k) or not type_contains_obj(type.value_type, v)),
   ne_map_type(),    _           = false,
 
-  tuple_type(fs),   (...)       = not (? k => v <- obj : not has_key(fs, k) or not type_contains_obj(fs[k].type, v)) and
+  tuple_type(fs?),  (...)       = not (? k => v <- obj : not has_key(fs, k) or not type_contains_obj(fs[k].type, v)) and
                                   subset({l : l => f <- fs ; not f.optional}, keys(obj)),
-  tuple_type(fs),   _           = false,
+  tuple_type(fs?),  _           = false,
 
   tag_obj_type(),   tag @ iobj  = type_contains_obj(type.tag_type, tag) and type_contains_obj(type.obj_type, iobj),
   tag_obj_type(),   _           = false,
 
-  union_type(ts),   _           = (? t <- ts : type_contains_obj(t, obj)),
+  union_type(ts?),  _           = (? t <- ts : type_contains_obj(t, obj)),
 
   self_rec_type(),  _           = type_contains_obj(unfold(type), obj),
   mut_rec_type(),   _           = type_contains_obj(unfold(type), obj);
@@ -538,12 +538,12 @@ using (TypeName => AnonType) typedefs
   //## RIGHT NOW THIS IS ACTUALLY A SUPERSET OF THE ACTUAL INTERSECTION, BUT AFTER
   //## THE COMING REFACTORING OF PATTERNS, IT SHOULD RETURN THE EXACT INTERSECTION
   ClosedType pattern_type_intersection(Pattern ptrn, AnonType type):
-    :ptrn_any           = type,
-    obj_ptrn(object(x)) = intersection_superset(if x :: Atom then symb_type(x) else int_range(x, x) end, type),
-    type_ptrn(t)        = intersection_superset(user_type_to_anon_type(t), type),
-    ext_var_ptrn()      = type, //## THIS IS GOING AWAY ANYWAY, NO NEED TO BOTHER
-    var_ptrn()          = pattern_type_intersection(ptrn.ptrn, type),
-    tag_ptrn()          = {
+    ptrn_any              = type,
+    obj_ptrn(object(x?))  = intersection_superset(if x :: Atom then symb_type(x) else int_range(x, x) end, type),
+    type_ptrn(t?)         = intersection_superset(user_type_to_anon_type(t), type),
+    ext_var_ptrn()        = type, //## THIS IS GOING AWAY ANYWAY, NO NEED TO BOTHER
+    var_ptrn()            = pattern_type_intersection(ptrn.ptrn, type),
+    tag_ptrn()            = {
         tag_obj_types := tagged_obj_types(type);
         sel_types := {
           tag_obj_type(tag_type_int, obj_type_int):
@@ -568,7 +568,7 @@ using (TypeName => AnonType) typedefs
   ne_map_type()   = {type},
   tuple_type()    = {type},
   tag_obj_type()  = {type},
-  union_type(ts)  = {unfold(t) : t <- ts},
+  union_type(ts?) = {unfold(t) : t <- ts},
   self_rec_type() = {unfold(type)},
   mut_rec_type()  = {unfold(type)};
 
@@ -583,10 +583,10 @@ AnonType replace_type_vars_with_type_any(AnonType type):
   ne_seq_type()     = ne_seq_type(replace_type_vars_with_type_any(type.elem_type)),
   ne_set_type()     = ne_set_type(replace_type_vars_with_type_any(type.elem_type)),
   ne_map_type()     = ne_map_type(replace_type_vars_with_type_any(type.key_type), replace_type_vars_with_type_any(type.value_type)),
-  tuple_type(fs)    = tuple_type((l => (type: replace_type_vars_with_type_any(f.type), optional: f.optional) : l => f <- fs)), //## BAD: WOULD BE GOOD TO HAVE A "DECLARATIVE" UPDATE OPERATION
+  tuple_type(fs?)   = tuple_type((l => (type: replace_type_vars_with_type_any(f.type), optional: f.optional) : l => f <- fs)), //## BAD: WOULD BE GOOD TO HAVE A "DECLARATIVE" UPDATE OPERATION
   tag_obj_type()    = tag_obj_type(type.tag_type, replace_type_vars_with_type_any(type.obj_type)),
-  union_type(ts)    = union_type({replace_type_vars_with_type_any(t) : t <- ts}),
-  self_rec_type(t)  = self_rec_type(replace_type_vars_with_type_any(t)),
+  union_type(ts?)   = union_type({replace_type_vars_with_type_any(t) : t <- ts}),
+  self_rec_type(t?) = self_rec_type(replace_type_vars_with_type_any(t)),
   mut_rec_type()    = mut_rec_type(index: type.index, types: [replace_type_vars_with_type_any(t) : t <- type.types]);
 
 
@@ -597,10 +597,10 @@ AnonType replace_type_vars(AnonType type, (TypeVar => AnonType) substitutions):
   ne_seq_type()     = ne_seq_type(replace_type_vars(type.elem_type, substitutions)),
   ne_set_type()     = ne_set_type(replace_type_vars(type.elem_type, substitutions)),
   ne_map_type()     = ne_map_type(replace_type_vars(type.key_type, substitutions), replace_type_vars(type.value_type, substitutions)),
-  tuple_type(fs)    = tuple_type((l => (type: replace_type_vars(f.type, substitutions), optional: f.optional) : l => f <- fs)), //## BAD: WOULD BE GOOD TO HAVE A "DECLARATIVE" UPDATE OPERATION
+  tuple_type(fs?)   = tuple_type((l => (type: replace_type_vars(f.type, substitutions), optional: f.optional) : l => f <- fs)), //## BAD: WOULD BE GOOD TO HAVE A "DECLARATIVE" UPDATE OPERATION
   tag_obj_type()    = tag_obj_type(type.tag_type, replace_type_vars(type.obj_type, substitutions)),
-  union_type(ts)    = union_type({replace_type_vars(t, substitutions) : t <- ts}),
-  self_rec_type(t)  = self_rec_type(replace_type_vars(t, substitutions)),
+  union_type(ts?)   = union_type({replace_type_vars(t, substitutions) : t <- ts}),
+  self_rec_type(t?) = self_rec_type(replace_type_vars(t, substitutions)),
   mut_rec_type()    = mut_rec_type(index: type.index, types: [replace_type_vars(t, substitutions) : t <- type.types]);
 
 

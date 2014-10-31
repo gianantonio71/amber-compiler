@@ -2,8 +2,8 @@
 Expr* ordinary_subexprs(Expr expr):
   object()        = {},
   seq_expr()      = union({subexprs(e) : e <- set(expr.head)}) & {expr.tail if expr.tail?},
-  set_expr(ses)   = union({subexprs(e) : e <- ses}),
-  map_expr(es)    = union({{e.key, e.value, e.cond if e.cond?} : e <- es}),
+  set_expr(ses?)  = union({subexprs(e) : e <- ses}),
+  map_expr(es?)   = union({{e.key, e.value, e.cond if e.cond?} : e <- es}),
   tag_obj_expr()  = {expr.tag, expr.obj},
   Var             = {},
   fn_call()       = set(expr.params),
@@ -11,7 +11,7 @@ Expr* ordinary_subexprs(Expr expr):
   builtin_call()  = set(expr.params), //## BAD
   and_expr()      = {expr.left, expr.right},
   or_expr()       = {expr.left, expr.right}, //## BAD
-  not_expr(e)     = {e},
+  not_expr(e?)    = {e},
   eq()            = {expr.left, expr.right}, //## BAD
   membership()    = {expr.obj},
   cast_expr()     = {expr.expr},
@@ -57,7 +57,7 @@ Var* gen_vars(Expr expr):
 Var* new_vars(Pattern ptrn):
   ptrn_var()      = new_vars(ptrn.ptrn) & {ptrn.var},
   ptrn_tag_obj()  = new_vars(ptrn.tag) & new_vars(ptrn.obj),
-  ptrn_union(ps)  = union({new_vars(p) : p <- ps}),
+  ptrn_union(ps?) = union({new_vars(p) : p <- ps}),
   _               = {};
 
 Var* new_vars(Clause clause):
@@ -90,7 +90,7 @@ Var* extern_vars(Expr expr)
       ex_qual()      = extern_vars(expr.source),
       set_comp()     = extern_vars(expr.source), //## BAD
       map_comp()     = extern_vars(expr.source), //## BAD
-      do_expr(ss)    = extern_vars(ss),
+      do_expr(ss?)   = extern_vars(ss),
       match_expr()   = { vs := {};
                          for (c : expr.cases)
                            pvs := seq_union([new_vars(p) : p <- c.ptrns]);
@@ -125,15 +125,15 @@ Var* extern_vars([Statement] stmts)
 
 Var* extern_vars(Statement s):
   assignment_stmt() = extern_vars(s.value),
-  return_stmt(e)    = extern_vars(e),
+  return_stmt(e?)   = extern_vars(e),
   if_stmt()         = extern_vars(s.cond) & extern_vars(s.body) & extern_vars(s.else),
-  loop_stmt(ss)     = extern_vars(ss),
+  loop_stmt(ss?)    = extern_vars(ss),
   foreach_stmt()    = extern_vars(s.values) & (extern_vars(s.body) - {s.var, s.idx_var if s.idx_var?}),
   for_stmt()        = extern_vars(s.start_val) & extern_vars(s.end_val) & (extern_vars(s.body) - {s.var}),
-  :break_stmt       = {},
-  :fail_stmt        = {},
-  assert_stmt(e)    = extern_vars(e),
-  print_stmt(e)     = extern_vars(e);
+  break_stmt        = {},
+  fail_stmt         = {},
+  assert_stmt(e?)   = extern_vars(e),
+  print_stmt(e?)    = extern_vars(e);
 
 Var* extern_vars(ClsExpr e) = extern_vars(e.expr) - (set(e.params) - {nil});
 
@@ -157,7 +157,7 @@ StmtOutcome+ outcomes(Statement stmt):
   assignment_stmt() = {:fails, :falls_through},
   return_stmt()     = {:fails, :returns},
   if_stmt()         = {:fails} & outcomes(stmt.body) & outcomes(stmt.else),
-  loop_stmt(body)   = {
+  loop_stmt(body?)  = {
     outcomes := outcomes(body);
     // Failures and returns in the body are transferred to the loop.
     // Fall throughs in the body are neutralized by the loop, but they
@@ -170,8 +170,8 @@ StmtOutcome+ outcomes(Statement stmt):
   foreach_stmt()    = {:fails, :falls_through} & outcomes(stmt.body) - {:breaks},
   for_stmt()        = {:fails, :falls_through} & outcomes(stmt.body) - {:breaks}, //## BAD: SAME AS ABOVE
   let_stmt()        = {:fails} & outcomes(stmt.body),
-  :break_stmt       = {:breaks},
-  :fail_stmt        = {:fails},
+  break_stmt        = {:breaks},
+  fail_stmt         = {:fails},
   assert_stmt()     = {:falls_through, :fails},
   print_stmt()      = {:falls_through, :fails};
 

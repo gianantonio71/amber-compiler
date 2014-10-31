@@ -61,7 +61,7 @@ T union_type(T+ types) //## BAD: HERE I SHOULD CONSTRAIN THE TYPE OF T SO THAT I
   // ;
 
   T* expand_union_types(T type):
-		union_type(ts) 	= union({expand_union_types(t) : t <- ts}),
+		union_type(ts?) = union({expand_union_types(t) : t <- ts}),
 		_								= {type};
 }
 
@@ -70,7 +70,7 @@ SelfPretype self(Nat n) = :self(n);
 
 SelfRecType[T] self_rec_type(T pretype)              = :self_rec_type(pretype);
 
-MutRecType[T] mut_rec_type(Nat index, [T^] pretypes) = :mut_rec_type(index: index, types: pretypes);
+MutRecType[T] mut_rec_type(Nat index, [T^] pretypes) = mut_rec_type(index: index, types: pretypes);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -108,10 +108,23 @@ Pattern ptrn_union(Pattern+ ps)                 = :ptrn_union(ps);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-FnSymbol fn_symbol(Atom a) = :fn_symbol(a);
+Statement break_stmt = :break_stmt;
+Statement fail_stmt  = :fail_stmt;
 
+////////////////////////////////////////////////////////////////////////////////
+
+FnSymbol fn_symbol(Atom a)                        = :fn_symbol(a);
+FnSymbol op_symbol(Operator op)                   = :op_symbol(op);
+FnSymbol nested_fn_symbol(FnSymbol o, FnSymbol i) = nested_fn_symbol(outer: o, inner: i);
+
+Var var(Atom a)       = :var(a);
 Var fn_par(Nat n)     = :fn_par(n);
 Var named_par(Atom a) = :named_par(a);
+
+Expr seq_expr([SubExpr] h)          = seq_expr(head: h);
+Expr seq_expr([SubExpr] h, Expr t)  = seq_expr(head: h, tail: t);
+
+Expr tag_obj_expr(Expr t, Expr o)   = tag_obj_expr(tag: t, obj: o);
 
 Expr fn_call(FnSymbol name, [ExtExpr] params, (<named_par(Atom)> => ExtExpr) named_params) = fn_call(name: name, params: params, named_params: named_params);
 Expr membership(Expr obj, UserType type) = membership(obj: obj, type: type);
