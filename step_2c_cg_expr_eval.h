@@ -191,6 +191,7 @@ using
     Instr gen_eval_instr(BuiltIn name, [AtomicExpr] ps, ObjVar res_var):
       slice         = get_seq_slice(res_var, ps[0], get_int_val(ps[1]), get_int_val(ps[2])),
       cat           = join_seqs(res_var, ps[0], ps[1]),
+      mcat          = join_mult_seqs(res_var, ps[0]),
       rev           = rev_seq(res_var, ps[0]),
       set           = seq_to_set(res_var, ps[0]),
       at            = get_at(res_var, ps[0], get_int_val(ps[1])),

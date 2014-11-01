@@ -194,6 +194,7 @@ Bool arity_is_correct(BuiltIn name, NzNat arity) = arity == builtin_arity_map[na
   len:         1,
   slice:       3,
   cat:         2,
+  mcat:        1,
   rev:         1,
   set:         1,
   mset:        1,

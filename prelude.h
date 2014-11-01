@@ -218,15 +218,7 @@ Nat index_first(Any e, Seq s)
   fail;
 }
 
-//[T] join([[T]] seqs)
-join(Seq seqs)
-{
-  res := [];
-  for (s : seqs)
-    res := _cat_(res, s);
-  ;
-  return res;
-}
+[T] join([[T]] seqs) = _mcat_(seqs);
 
 reverse(Seq seq) = _rev_(seq);
 
@@ -642,15 +634,7 @@ using Bool condition(Any), Any eval(Any)
 }
 
 
-[T] intermix([T] seq, T obj)
-{
-  res := [];  
-  for (x : reverse(seq))
-    res := [obj | res] if res /= [];
-    res := [x | res];
-  ;
-  return res;
-}
+[T] intermix([T] seq, T obj) = join([[obj if i /= 0, e] : e, i <- seq]);
 
 
 String to_str(Int n)

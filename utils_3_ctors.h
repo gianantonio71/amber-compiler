@@ -88,6 +88,7 @@ Instr mk_tagged_obj(ObjVar v, ObjExpr t, ObjExpr o) = mk_tagged_obj(var: v, tag:
 Instr mk_array(ObjVar v, IntExpr s, ObjExpr d)                 = mk_array(var: v, size: s, value: d);
 Instr get_seq_slice(ObjVar v, ObjExpr s, IntExpr f, IntExpr l) = get_seq_slice(var: v, seq: s, idx_first: f, len: l);
 Instr join_seqs(ObjVar v, ObjExpr l, ObjExpr r)                = join_seqs(var: v, left: l, right: r);
+Instr join_mult_seqs(ObjVar v, ObjExpr ss)                     = join_mult_seqs(var: v, seqs: ss);
 Instr rev_seq(ObjVar v, ObjExpr s)                             = rev_seq(var: v, seq: s);
 Instr get_at(ObjVar v, ObjExpr s, IntExpr i)                   = get_at(var: v, seq: s, idx: i);
 Instr set_at(ObjVar v, IntExpr i, ObjExpr x)                   = set_at(var: v, idx: i, value: x);
