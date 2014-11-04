@@ -10,18 +10,18 @@ Bool includes_empty_map(AnonType type) = is_subset(empty_map_type, type);
 
 SymbType* symb_types(AnonType type) = {t : symb_type() t <- expand_type(type)};
 
-<IntType, void_type> int_type(AnonType type) = only_element_or_def_if_empty({t : t <- expand_type(type) ; t :: IntType}, void_type);
+<IntType, void_type> int_type(AnonType type) = only_element_or_def_if_empty({t : t <- expand_type(type), t :: IntType}, void_type);
 
 
 ClosedType seq_elem_type(AnonType type)
 {
-  elem_types := {t.elem_type : ne_seq_type() t <- expand_type(type)};
+  elem_types = {t.elem_type : ne_seq_type() t <- expand_type(type)};
   return if elem_types == {} then void_type else union_type(elem_types) end;
 }
 
 ClosedType set_elem_type(AnonType type)
 {
-  elem_types := {t.elem_type : ne_set_type() t <- expand_type(type)};
+  elem_types = {t.elem_type : ne_set_type() t <- expand_type(type)};
   return if elem_types == {} then void_type else union_type(elem_types) end;
 }
 
@@ -33,7 +33,7 @@ ClosedType map_value_type(AnonType type)          = only_element_or_def_if_empty
 
 TagObjType[AnonType]* tagged_obj_types(AnonType type) = {t : tag_obj_type() t <- expand_type(type)};
 // {
-//   res := {t : tag_obj_type() t <- expand_type(type)};
+//   res = {t : tag_obj_type() t <- expand_type(type)};
 //   print "tagged_obj_types():";
 //   print type;
 //   print res;
@@ -54,9 +54,9 @@ Bool is_ne_set_type(AnonType type) = not (? t <- expand_type(type) : not t :: <n
 
 Bool is_type_var(AnonType type)
 {
-  types := expand_type(type);
-  type_vars := {t : type_var() t <- types}; //## SUPER UGLY
-  other_types := types - type_vars;
+  types = expand_type(type);
+  type_vars = {t : type_var() t <- types}; //## SUPER UGLY
+  other_types = types - type_vars;
   assert type_vars & other_types == types;
   assert size(type_vars) <= 1;
   return type_vars /= {} and other_types == {};
@@ -67,7 +67,7 @@ Bool is_type_var(AnonType type)
 
 // AnonType+ expand_type(AnonType type)
 // {
-//   res := expand_type_impl(type);
+//   res = expand_type_impl(type);
 
 //   print "expand_type():";
 //   print type;

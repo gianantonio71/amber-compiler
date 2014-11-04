@@ -8,8 +8,8 @@ FnType signature(FnDef fn_def, (TypeName => AnonType) typedefs) = fn_type(
 
 Bool typechecks(Program prg)
 {
-  typedefs := prg.anon_tdefs;
-  signatures := merge_values({(fd.name => signature(fd, typedefs)) : fd <- prg.fndefs});
+  typedefs = prg.anon_tdefs;
+  signatures = merge_values({(fd.name => signature(fd, typedefs)) : fd <- prg.fndefs});
   for (fd : rand_sort(prg.fndefs))
 // if (to_c_fn_name(fd.name) /= "To_Text__Match_Idxs")
 //## NON TYPECHECKING: Parse_Obj__Parse_Seq, Parse_Obj__Parse_Set, Parse_Obj__Parse_Map_Or_Tuple, Tokenize
@@ -44,18 +44,18 @@ Bool typechecks(FnDef fn_def, (TypeName => AnonType) typedefs, (FnSymbol => FnTy
   ;
 
   let (typedefs=typedefs, signatures=signatures, var_aliases=set([{fn_par(i), p.var} : p, i <- fn_def.params, p.var?]), halt_on_failure_to_typecheck=false)
-    scalar_vars := (p.var => user_type_to_anon_type(p.type) : p <- set(fn_def.params) ; p.var?, p.type :: UserType) &
-                   (fn_par(i) => user_type_to_anon_type(fn_def.params[i].type) : i <- index_set(fn_def.params) ; fn_def.params[i].type :: UserType) &
-                   (v => user_type_to_anon_type(t) : v => t <- fn_def.named_params ; t :: UserType);
+    scalar_vars = (p.var => user_type_to_anon_type(p.type) : p <- set(fn_def.params), p.var?, p.type :: UserType) &
+                   (fn_par(i) => user_type_to_anon_type(fn_def.params[i].type) : i <- index_set(fn_def.params), fn_def.params[i].type :: UserType) &
+                   (v => user_type_to_anon_type(t) : v => t <- fn_def.named_params, t :: UserType);
     assert scalar_vars :: (Var => AnonType);
 
-    cls_vars := (p.var => user_type_to_anon_type(p.type) : p <- set(fn_def.params) ; p.var?, p.type :: UserClsType) &
-                (v => user_type_to_anon_type(t) : v => t <- fn_def.named_params ; t :: UserClsType);
+    cls_vars = (p.var => user_type_to_anon_type(p.type) : p <- set(fn_def.params), p.var?, p.type :: UserClsType) &
+                (v => user_type_to_anon_type(t) : v => t <- fn_def.named_params, t :: UserClsType);
     assert cls_vars :: (Var => ClsType);
 
     // return typechecks(fn_def.expr, user_type_to_anon_type(fn_def.res_type); environment=scalar_vars, closures=cls_vars);
     //## THIS IS A TEMPORARY HACK TO WORK AROUND AN UNIMPLEMENTED FEATURE IN THE CODE GENERATION CODE
-    res := typechecks(fn_def.expr, user_type_to_anon_type(fn_def.res_type); environment=scalar_vars, closures=cls_vars);
+    res = typechecks(fn_def.expr, user_type_to_anon_type(fn_def.res_type); environment=scalar_vars, closures=cls_vars);
   ;
   return res;
 }
@@ -103,7 +103,7 @@ using
 
   Bool typechecks(Expr expr, AnonType exp_type)
   {
-    res := typechecks_impl(expr, exp_type);
+    res = typechecks_impl(expr, exp_type);
 if (not res and halt_on_failure_to_typecheck)
   print "=============================================================";
   print expr;
@@ -121,7 +121,7 @@ if (not res and halt_on_failure_to_typecheck)
 
     set_expr(ses?)        = {
       return contains_empty_set(exp_type) if ses == {};
-      elem_type := set_elem_type(exp_type);
+      elem_type = set_elem_type(exp_type);
       return false if elem_type == void_type;
       return not (? se <- ses : not typechecks(se, elem_type));
     },
@@ -130,7 +130,7 @@ if (not res and halt_on_failure_to_typecheck)
     seq_expr()            = {
       return contains_empty_seq(exp_type) if expr.head == [] and not expr.tail?;
       return false if expr.tail? and not is_typechecking_seq_expr(expr.tail);
-      elem_type := seq_elem_type(exp_type);
+      elem_type = seq_elem_type(exp_type);
       return false if elem_type == void_type;
       for (e : expr.head)
         return false if not typechecks(e, elem_type);
@@ -150,21 +150,21 @@ if (not res and halt_on_failure_to_typecheck)
       return false if (? se <- ses : se.cond? and not is_typechecking_bool_expr(se.cond));
       // The expected type could contain either a map or a tuple type (or none at all).
       // Here we check to see if there's a map type
-      exp_key_type := map_key_type(exp_type);
-      exp_value_type := map_value_type(exp_type);
+      exp_key_type = map_key_type(exp_type);
+      exp_value_type = map_value_type(exp_type);
       assert (exp_key_type == void_type) == (exp_value_type == void_type);
       if (exp_key_type /= void_type and exp_value_type /= void_type) // A DOUBLE CHECK SHOULD HELP THE TYPE CHECKER
         // If the expected type includes a map type, we go for that
         return not (? se <- ses : not typechecks(se.key, exp_key_type) or not typechecks(se.value, exp_value_type));
       ;
       // There wasn't a map type. Now we check to see if there is a tuple type
-      exp_tuple_type := tuple_type(exp_type);
+      exp_tuple_type = tuple_type(exp_type);
       // If there is no tuple type we are done, the expression does not typecheck
       return false if exp_tuple_type == void_type;
-      fields := _obj_(exp_tuple_type);
-      exp_labels := keys(fields);
+      fields = _obj_(exp_tuple_type);
+      exp_labels = keys(fields);
       // Making sure that the resulting tuple will always have all the required fields
-      return false if not subset({l : l => f <- fields ; not f.optional}, {se.key : se <- ses ; not se.cond?});
+      return false if not subset({l : l => f <- fields, not f.optional}, {se.key : se <- ses, not se.cond?});
       // Checking that the keys are symbols, that they are among the expected labels
       // and that the corresponding types all typecheck to the respective types.
       //## IN THEORY WE SHOULD CHECK THAT ALL EXPRESSIONS EVALUATE TO A SYMBOL, BUT WOULD THAT BE ANY USEFUL?
@@ -173,7 +173,7 @@ if (not res and halt_on_failure_to_typecheck)
 
     // tag_obj_expr(tag: Expr, obj: Expr),
     tag_obj_expr()        = {
-      tag_types := tagged_obj_types(exp_type);
+      tag_types = tagged_obj_types(exp_type);
       //## BUG: WHAT HAPPENS IF THE TAG EXPRESSION HAS TWO POSSIBLE VALUES
       //## AND THERE ARE TWO EXPECTED TYPES?
       return (? t <- tag_types : typechecks(expr.tag, t.tag_type), typechecks(expr.obj, t.obj_type));
@@ -201,16 +201,16 @@ if (not res and halt_on_failure_to_typecheck)
 
     accessor()            = {
       return false if not typechecks(expr.expr);
-      types := split_type(expr_type(expr.expr));
+      types = split_type(expr_type(expr.expr));
       for (t : rand_sort(types)) //## UGLY UGLY
         if (t :: TupleType[AnonType])
-          tuple_type := t;
+          tuple_type = t;
         elif (t :: TagObjType[AnonType] and t.obj_type :: TupleType[AnonType])
-          tuple_type := t.obj_type;
+          tuple_type = t.obj_type;
         else
           return false;
         ;
-        field_type := mandatory_tuple_field_type(tuple_type, expr.field);
+        field_type = mandatory_tuple_field_type(tuple_type, expr.field);
         return false if field_type == void_type or not is_subset(field_type, exp_type);
       ;
       return true;
@@ -218,7 +218,7 @@ if (not res and halt_on_failure_to_typecheck)
 
     accessor_test()       = {
       return false if not is_subset(type_bool, exp_type);
-      type := expr_type(expr);
+      type = expr_type(expr);
       return if type :: TupleType[AnonType] then tuple_has_field(type, expr.field),
                 type :: MapType[AnonType]   then is_subset(symb_type(expr.field), type.key_type)
                                             else false
@@ -227,7 +227,7 @@ if (not res and halt_on_failure_to_typecheck)
 
     if_expr()             = {
       return false if not is_typechecking_bool_expr(expr.cond);
-      new_envs := refine_environment(expr.cond);
+      new_envs = refine_environment(expr.cond);
       return typechecks(expr.then, exp_type; environment=new_envs.if_true) and
              typechecks(expr.else, exp_type; environment=new_envs.if_false);
     },
@@ -235,16 +235,16 @@ if (not res and halt_on_failure_to_typecheck)
     //## HERE I SHOULD ALSO CHECK THAT THE PATTERNS WILL EVENTUALLY COVER ALL THE POSSIBILITIES...
     match_expr()          = {
       return false if not all([typechecks(e) : e <- expr.exprs]);
-      ts := [expr_type(e) : e <- expr.exprs];
+      ts = [expr_type(e) : e <- expr.exprs];
       for (c : expr.cases)
-        ps := c.ptrns;
-        e  := c.expr;
+        ps = c.ptrns;
+        e  = c.expr;
         //## A ZIP FUNCTION WOULD BE NICE HERE (OR, EVEN BETTER, LIST COMPREHENSION AND FOR LOOP THAT CAN WORK ON MULTIPLE LISTS)
         assert length(ps) == length(ts);
         for (i : indexes(ts))
           return false if not may_match(ps[i], ts[i]);
         ;
-        new_env := update_environment(expr.exprs, ps);
+        new_env = update_environment(expr.exprs, ps);
         return false if not typechecks(e, exp_type; environment=new_env);
       ;
       return true;
@@ -254,25 +254,25 @@ if (not res and halt_on_failure_to_typecheck)
 
     ex_qual()             = {
       return false if not typechecks(expr.source);
-      new_env := update(environment, generated_environment(expr.source));
+      new_env = update(environment, generated_environment(expr.source));
       return not expr.sel_expr? or is_typechecking_bool_expr(expr.sel_expr; environment=new_env);
     },
 
     set_comp()            = {
       return false if not typechecks(expr.source);
-      new_env := refine_environment(expr.source);
+      new_env = refine_environment(expr.source);
       return false if expr.sel_expr? and not is_typechecking_bool_expr(expr.sel_expr; environment=new_env);
-      exp_elem_type := set_elem_type(exp_type);
+      exp_elem_type = set_elem_type(exp_type);
       return false if exp_elem_type == void_type;
       return typechecks(expr.expr, exp_elem_type; environment=new_env);
     },
 
     map_comp()            = {
       return false if not typechecks(expr.source);
-      new_env := refine_environment(expr.source);
+      new_env = refine_environment(expr.source);
       return false if expr.sel_expr? and not is_typechecking_bool_expr(expr.sel_expr; environment=new_env);
-      exp_key_type := map_key_type(exp_type);
-      exp_value_type := map_value_type(exp_type);
+      exp_key_type = map_key_type(exp_type);
+      exp_value_type = map_value_type(exp_type);
       return false if exp_key_type == void_type or exp_value_type == void_type;
       return typechecks(expr.key_expr, exp_key_type; environment=new_env) and
              typechecks(expr.value_expr, exp_value_type; environment=new_env);
@@ -280,13 +280,13 @@ if (not res and halt_on_failure_to_typecheck)
 
     seq_comp()            = {
       return false if not is_typechecking_seq_expr(expr.src_expr);
-      src_type := expr_type(expr.src_expr);
+      src_type = expr_type(expr.src_expr);
       return false if not is_seq_type(src_type);
-      elem_type := seq_elem_type(src_type);
+      elem_type = seq_elem_type(src_type);
       assert elem_type /= void_type;
-      // new_env := update(environment, (expr.var => elem_type, expr.idx_var => high_ints(min: 0) if expr.idx_var?));
-      new_env := update(environment, (expr.var => elem_type) & if expr.idx_var? then (expr.idx_var => high_ints(min: 0)) else () end); //## BAD: RESTORE THE VERSION
-      exp_elem_type := seq_elem_type(exp_type);
+      // new_env = update(environment, (expr.var => elem_type, expr.idx_var => high_ints(min: 0) if expr.idx_var?));
+      new_env = update(environment, (expr.var => elem_type) & if expr.idx_var? then (expr.idx_var => high_ints(min: 0)) else () end); //## BAD: RESTORE THE VERSION
+      exp_elem_type = seq_elem_type(exp_type);
       return false if exp_elem_type == void_type;
       return false if expr.sel_expr? and is_typechecking_bool_expr(expr.sel_expr; environment=new_env);
       return typechecks(expr.expr, exp_elem_type; environment=new_env);
@@ -294,9 +294,9 @@ if (not res and halt_on_failure_to_typecheck)
 
     select_expr()         = {
       return false if not typechecks(expr.src_expr);
-      new_env := update(environment, generated_environment(expr.ptrn));
+      new_env = update(environment, generated_environment(expr.ptrn));
       return false if expr.cond? and not is_typechecking_bool_expr(expr; environment=new_env);
-      exp_elem_type := set_elem_type(exp_type);
+      exp_elem_type = set_elem_type(exp_type);
       return false if exp_elem_type == void_type;
       return typechecks(expr.expr, exp_elem_type; environment=new_env);
     },
@@ -308,11 +308,11 @@ if (not res and halt_on_failure_to_typecheck)
   {
     assert length(expr.params) == length(exp_type.in_types);
 
-    idxs := set(indexes(expr.params));
-    ps := expr.params;
-    ts := exp_type.in_types;
-    env_override := (fn_par(i) => ts[i] : i <- idxs) & (p => ts[i] : i <- idxs, p = ps[i] ; p /= nil);
-    new_env := update(environment, env_override);
+    idxs = set(indexes(expr.params));
+    ps = expr.params;
+    ts = exp_type.in_types;
+    env_override = (fn_par(i) => ts[i] : i <- idxs) & (p => ts[i] : i <- idxs, p = ps[i], p /= nil);
+    new_env = update(environment, env_override);
 
     return typechecks(expr.expr, exp_type.out_type);
   }
@@ -323,8 +323,8 @@ if (not res and halt_on_failure_to_typecheck)
     assert length(params) == length(signature.in_types);
 
     for (i : indexes(params))
-      e := params[i];
-      t := signature.in_types[i];
+      e = params[i];
+      t = signature.in_types[i];
       return false if not typechecks(e, replace_type_vars_with_type_any(t));
     ;
 
@@ -335,7 +335,7 @@ if (not res and halt_on_failure_to_typecheck)
   Bool typechecks(Clause clause, Expr sel_expr)
   {
     return false if not typechecks(clause);
-    new_env := update(environment, generated_environment(clause));
+    new_env = update(environment, generated_environment(clause));
     return typechecks(sel_expr, type_bool);
   }
 
@@ -354,7 +354,7 @@ if (not res and halt_on_failure_to_typecheck)
     map_in_clause()       = generated_environment(clause.key_ptrn, map_key_type(expr_type(clause.src))) &
                             generated_environment(clause.value_ptrn, map_value_type(expr_type(clause.src))),
     and_clause()          = {
-      left_env := generated_environment(clause.left);
+      left_env = generated_environment(clause.left);
       return left_env & generated_environment(clause.right; environment=environment & left_env);
     },
     or_clause()           = merge_envs(generated_environment(clause.left), generated_environment(clause.right));
@@ -367,16 +367,16 @@ if (not res and halt_on_failure_to_typecheck)
     ext_var_ptrn(v?)  = intersection_superset(environment[v], type) /= {},
     var_ptrn()        = not ptrn.ptrn? or may_match(ptrn.ptrn, type), //## REMEMBER TO UPDATE THIS WHEN MAKING THE ptrn FIELD NON-OPTIONAL
     tag_ptrn()        = {
-      // tag := ptrn.tag;
+      // tag = ptrn.tag;
       // if (tag :: <obj_ptrn(SymbObj)>)
-      //   obj_type := tagged_obj_obj_type(type, _obj_(tag));
+      //   obj_type = tagged_obj_obj_type(type, _obj_(tag));
       //   return obj_type /= void_type and may_match(ptrn.obj, obj_type);
       // else
-      //   tag_obj_types := tagged_obj_types(type);
+      //   tag_obj_types = tagged_obj_types(type);
       //   return (? t <- tag_obj_types : may_match(ptrn.obj, t.obj_type));
       // ;
 
-      ts := tagged_obj_types(type);
+      ts = tagged_obj_types(type);
       if (ptrn.tag :: <obj_ptrn(SymbObj)>)
         return (? t <- ts : may_match(ptrn.tag, t.tag_type) and may_match(ptrn.obj, t.obj_type));
       else
@@ -390,7 +390,7 @@ if (not res and halt_on_failure_to_typecheck)
   //## WOULD BE GOOD TO ADD AN ASSERTION THAT CHECKS THAT THE PATTERN CAN ACTUALLY MATCH THE TYPE
   (Var => AnonType) generated_environment(Pattern ptrn, AnonType type)
   {
-    res := generated_environment_impl(ptrn, type);
+    res = generated_environment_impl(ptrn, type);
 // print "#####################";
 // print ptrn;
 // print res;
@@ -408,9 +408,9 @@ if (not res and halt_on_failure_to_typecheck)
       if (type :: TagObjType[AnonType])
         if (ptrn.tag :: <obj_ptrn(SymbObj)>)
           return () if not may_match(ptrn.tag, type.tag_type);
-          env := ();
+          env = ();
         else
-          env := (ptrn.tag.name => type.tag_type);
+          env = (ptrn.tag.name => type.tag_type);
         ;
         return env & generated_environment(ptrn.obj, type.obj_type);
       else
@@ -421,7 +421,7 @@ if (not res and halt_on_failure_to_typecheck)
 
   Bool typecheck([Statement] stmts, AnonType exp_type)
   {
-    res := typecheck_impl(stmts, exp_type);
+    res = typecheck_impl(stmts, exp_type);
 // if (not res and halt_on_failure_to_typecheck)
 //   print "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@";
 //   print stmts;
@@ -431,17 +431,17 @@ if (not res and halt_on_failure_to_typecheck)
 
   Bool typecheck_impl([Statement] stmts, AnonType exp_type)
   {
-    env := environment;
+    env = environment;
     for (s : stmts)
       return false if not typechecks(s, exp_type; environment=env);
-      env := update_environment(s; environment=env);
+      env = update_environment(s; environment=env);
     ;
     return true;
   }
 
   Bool typechecks(Statement stmt, AnonType exp_type)
   {
-    res := typechecks_impl(stmt, exp_type);
+    res = typechecks_impl(stmt, exp_type);
 
 if (not res and halt_on_failure_to_typecheck)
   print "******************************";
@@ -456,26 +456,26 @@ if (not res and halt_on_failure_to_typecheck)
     return_stmt(e?)     = typechecks(e, exp_type),
     if_stmt()           = {
       return false if not is_typechecking_bool_expr(stmt.cond);
-      envs := refine_environment(stmt.cond);
+      envs = refine_environment(stmt.cond);
       return typecheck(stmt.body, exp_type; environment=envs.if_true) and typecheck(stmt.else, exp_type; environment=envs.if_false);
     },
     loop_stmt(ss?)      = {
       return false if not typecheck(ss, exp_type);
-      env_1 := update_environment(ss);
+      env_1 = update_environment(ss);
       return false if not typecheck(ss, exp_type; environment=env_1);
-      env_2 := update_environment(ss; environment=env_1);
+      env_2 = update_environment(ss; environment=env_1);
       return env_1 == env_2;
     },
     foreach_stmt()      = {
       return false if not is_typechecking_seq_expr(stmt.values);
-      elem_type := seq_elem_type(expr_type(stmt.values));
+      elem_type = seq_elem_type(expr_type(stmt.values));
       return false if elem_type == void_type;
-      // env_0 := update(environment, (stmt.var => elem_type, stmt.idx_var => type_nat if stmt.idx_var));
-      env_0 := update(environment, (stmt.var => elem_type) & if stmt.idx_var? then (stmt.idx_var => type_nat) else () end); //## BAD: RESTORE THE ABOVE VERSION
+      // env_0 = update(environment, (stmt.var => elem_type, stmt.idx_var => type_nat if stmt.idx_var));
+      env_0 = update(environment, (stmt.var => elem_type) & if stmt.idx_var? then (stmt.idx_var => type_nat) else () end); //## BAD: RESTORE THE ABOVE VERSION
       return false if not typecheck(stmt.body, exp_type; environment=env_0);
-      env_1 := update_environment(stmt.body; environment=env_0);
+      env_1 = update_environment(stmt.body; environment=env_0);
       return false if not typecheck(stmt.body, exp_type; environment=env_1);
-      env_2 := update_environment(stmt.body; environment=env_1);
+      env_2 = update_environment(stmt.body; environment=env_1);
       return env_1 == env_2;
     },
     // for_stmt(var: Var, start_val: Expr, end_val: Expr, body: [Statement^]),
@@ -485,8 +485,8 @@ if (not res and halt_on_failure_to_typecheck)
                           typecheck(stmt.body, exp_type; environment=environment & (stmt.var => integer)),
     let_stmt()          = {
       return false if (? v => e <- stmt.asgnms : not typechecks(e));
-      env_delta := (v => expr_type(e) : v => e <- stmt.asgnms);
-      new_env := update(environment, env_delta);
+      env_delta = (v => expr_type(e) : v => e <- stmt.asgnms);
+      new_env = update(environment, env_delta);
       return typecheck(stmt.body, exp_type; environment=new_env); //## BUG BUG BUG
     },
     break_stmt          = true,
@@ -506,8 +506,8 @@ if (not res and halt_on_failure_to_typecheck)
 
     set_expr(ses?)        = {
       return empty_set_type if ses == {};
-      type := ne_set_type(union_superset({expr_type(se) : se <- ses}));
-      type := union_type({type, empty_set_type}) if (? se <- ses : se :: CondExpr);
+      type = ne_set_type(union_superset({expr_type(se) : se <- ses}));
+      type = union_type({type, empty_set_type}) if (? se <- ses : se :: CondExpr);
       return type;
     },
 
@@ -515,14 +515,14 @@ if (not res and halt_on_failure_to_typecheck)
       if (expr.head == [])
         return if expr.tail? then expr_type(expr.tail) else empty_seq_type end;
       ;
-      elem_type := union_superset({expr_type(se) : se <- set(expr.head)});
-      may_be_empty := not (? se <- set(expr.head) : not se :: CondExpr);
+      elem_type = union_superset({expr_type(se) : se <- set(expr.head)});
+      may_be_empty = not (? se <- set(expr.head) : not se :: CondExpr);
       if (expr.tail?)
-        tail_type := expr_type(expr.tail);
-        may_be_empty := may_be_empty and contains_empty_seq(tail_type);
-        tail_elem_type := seq_elem_type(tail_type);
+        tail_type = expr_type(expr.tail);
+        may_be_empty = may_be_empty and contains_empty_seq(tail_type);
+        tail_elem_type = seq_elem_type(tail_type);
         assert tail_type == empty_seq_type or tail_elem_type /= void_type;
-        elem_type := union_superset({elem_type, tail_elem_type}) if tail_elem_type /= void_type;
+        elem_type = union_superset({elem_type, tail_elem_type}) if tail_elem_type /= void_type;
       ;
       return if may_be_empty then type_seq(elem_type) else ne_seq_type(elem_type) end;
     },
@@ -532,28 +532,28 @@ if (not res and halt_on_failure_to_typecheck)
       if (not (? se <- ses : not se.key :: SymbObj))
         return tuple_type((se.key => (type: expr_type(se.value), optional: se.cond?) : se <- ses));
       else
-        key_type := union_superset({expr_type(se.key) : se <- ses});
-        value_type := union_superset({expr_type(se.value) : se <- ses});
-        may_be_empty := not (? se <- ses : not se.cond?);
+        key_type = union_superset({expr_type(se.key) : se <- ses});
+        value_type = union_superset({expr_type(se.value) : se <- ses});
+        may_be_empty = not (? se <- ses : not se.cond?);
         return map_type(key_type, value_type, may_be_empty);
       ;
     },
 
     tag_obj_expr()        = {
-      tag_type := expr_type(expr.tag);
-      obj_type := expr_type(expr.obj);
+      tag_type = expr_type(expr.tag);
+      obj_type = expr_type(expr.obj);
       return tag_obj_type(tag_type, obj_type);
     },
 
     Var                   = environment[expr],
 
-    fn_call()             = only_element({fn_call_type(s, expr.params, expr.named_params) : s <- signatures[expr.name] ; matches_signature(s, expr.params, expr.named_params)}),
+    fn_call()             = only_element({fn_call_type(s, expr.params, expr.named_params) : s <- signatures[expr.name], matches_signature(s, expr.params, expr.named_params)}),
 
     cls_call()            = cls_call_type(closures[expr.name], [expr_type(p) : p <- expr.params]),
 
     builtin_call()        = match (expr.name)
                               obj   = union_superset({t.obj_type : t <- tagged_obj_types(expr_type(expr.params[0]))}),
-                              tag   = { tag_types := {t.tag_type : t <- tagged_obj_types(expr_type(expr.params[0]))};
+                              tag   = { tag_types = {t.tag_type : t <- tagged_obj_types(expr_type(expr.params[0]))};
                                         assert tag_types == {atom_type} or tag_types :: <SymbType+>;
                                         return union_type(tag_types); //## SHOULD I USE union_superset HERE?
                                       },
@@ -572,14 +572,14 @@ if (not res and halt_on_failure_to_typecheck)
     cast_expr()           = user_type_to_anon_type(expr.type),
 
     accessor()            = {
-      types := for (t <- split_type(expr_type(expr.expr))) {
+      types = for (t <- split_type(expr_type(expr.expr))) {
                  match (t)
                    tuple_type()    = t,
                    tag_obj_type()  = match (t.obj_type) tuple_type() ot? = ot;
                  ;
                };
       assert types :: <TupleType[AnonType]+>;
-      field_types := {mandatory_tuple_field_type(t, expr.field) : t <- types};
+      field_types = {mandatory_tuple_field_type(t, expr.field) : t <- types};
       //## MAYBE union_superset() SHOULD ACCEPT ALSO SETS OF JUST ONE TYPE. WHAT ABOUT THE EMPTY SET?
       return if size(field_types) == 1 then only_element(field_types) else union_superset(field_types) end;
     },
@@ -587,20 +587,20 @@ if (not res and halt_on_failure_to_typecheck)
     accessor_test()       = type_bool,
 
     if_expr()             = {
-      new_envs := refine_environment(expr.cond);
+      new_envs = refine_environment(expr.cond);
       return union_superset(expr_type(expr.then; environment=new_envs.if_true), expr_type(expr.else; environment=new_envs.if_false));
     },
 
     match_expr()          = {
-      ts := [expr_type(e) : e <- expr.exprs];
-      res_types := {};
+      ts = [expr_type(e) : e <- expr.exprs];
+      res_types = {};
       for (c : expr.cases)
-        ps := c.ptrns;
-        e  := c.expr;
+        ps = c.ptrns;
+        e  = c.expr;
         //## A ZIP FUNCTION WOULD BE NICE HERE (OR, EVEN BETTER, LIST COMPREHENSION AND FOR LOOP THAT CAN WORK ON MULTIPLE LISTS)
         assert length(ps) == length(ts);
-        new_env := update_environment(expr.exprs, ps);
-        res_types := res_types & {expr_type(e; environment=new_env)};
+        new_env = update_environment(expr.exprs, ps);
+        res_types = res_types & {expr_type(e; environment=new_env)};
       ;
       return union_superset(res_types);
     },
@@ -612,23 +612,23 @@ if (not res and halt_on_failure_to_typecheck)
     set_comp()            = ne_set_type(expr_type(expr.expr; environment=refine_environment(expr.source))),
 
     map_comp()            = {
-      new_env := refine_environment(expr.source);
-      key_type := expr_type(expr.key_expr; environment=new_env);
-      value_type := expr_type(expr.value_expr; environment=new_env);
+      new_env = refine_environment(expr.source);
+      key_type = expr_type(expr.key_expr; environment=new_env);
+      value_type = expr_type(expr.value_expr; environment=new_env);
       return ne_map_type(key_type, value_type);
     },
 
     seq_comp()            = {
-      src_type := expr_type(expr.src_expr);
+      src_type = expr_type(expr.src_expr);
       assert is_subset(src_type, type_seq);
-      elem_type := seq_elem_type(src_type);
-      // new_env := update(environment, (expr.var => elem_type, expr.idx_var => high_ints(min: 0) if expr.idx_var?));
-      new_env := update(environment, (expr.var => elem_type) & if expr.idx_var? then (expr.idx_var => high_ints(min: 0)) else () end); //## BAD: RESTORE THE ABOVE VERSION
+      elem_type = seq_elem_type(src_type);
+      // new_env = update(environment, (expr.var => elem_type, expr.idx_var => high_ints(min: 0) if expr.idx_var?));
+      new_env = update(environment, (expr.var => elem_type) & if expr.idx_var? then (expr.idx_var => high_ints(min: 0)) else () end); //## BAD: RESTORE THE ABOVE VERSION
       return ne_seq_type(expr_type(expr.expr; environment=new_env));
     },
 
     select_expr()         = { //## THIS COULD BE REFINED, BUT IT ISN'T GOING TO BE EASY...
-      new_env := update(environment, generated_environment(expr.ptrn));
+      new_env = update(environment, generated_environment(expr.ptrn));
       return ne_set_type(expr_type(expr.expr; environment=new_env));
     },
 
@@ -638,12 +638,12 @@ if (not res and halt_on_failure_to_typecheck)
 
   ClosedType return_type([Statement^] stmts)
   {
-    env := environment;
-    ret_types := {};
+    env = environment;
+    ret_types = {};
     for (s : stmts)
-      ret_type := return_type(s; environment=env);
-      ret_types := ret_types & {ret_type};
-      env := update_environment(s; environment=env);
+      ret_type = return_type(s; environment=env);
+      ret_types = ret_types & {ret_type};
+      env = update_environment(s; environment=env);
     ;
     return union_superset(ret_types);
   }
@@ -653,38 +653,38 @@ if (not res and halt_on_failure_to_typecheck)
     assignment_stmt()   = void_type,
     return_stmt(e?)     = expr_type(e),
     if_stmt() = {
-      envs := refine_environment(stmt.cond);
-      true_ret_type := return_type(stmt.body; environment=envs.if_true);
-      false_ret_type := return_type(stmt.body; environment=envs.if_false);
+      envs = refine_environment(stmt.cond);
+      true_ret_type = return_type(stmt.body; environment=envs.if_true);
+      false_ret_type = return_type(stmt.body; environment=envs.if_false);
       return union_superset(true_ret_type, false_ret_type);
     },
     loop_stmt(ss?) = {
-      env_0 := environment;
-      env_1 := update_environment(ss; environment=env_0);
-      ret_type_0 := return_type(ss; environment=env_0);
-      ret_type_1 := return_type(ss; environment=env_1);
+      env_0 = environment;
+      env_1 = update_environment(ss; environment=env_0);
+      ret_type_0 = return_type(ss; environment=env_0);
+      ret_type_1 = return_type(ss; environment=env_1);
       return union_superset(ret_type_0, ret_type_1);
     },
     foreach_stmt() = {
-      elem_type := seq_elem_type(expr_type(stmt.values));
+      elem_type = seq_elem_type(expr_type(stmt.values));
       assert elem_type /= void_type;
-      // env_0 := update(environment, (stmt.var => elem_type, stmt.idx_var => type_nat if stmt.idx_var?));
-      env_0 := environment & (stmt.var => elem_type) & if stmt.idx_var? then (stmt.idx_var => type_nat) else () end; //## TODO: RESTORE ABOVE VERSION
-      env_1 := update_environment(stmt.body; environment=env_0);
-      ret_type_0 := return_type(stmt.body; environment=env_0);
-      ret_type_1 := return_type(stmt.body; environment=env_1);
+      // env_0 = update(environment, (stmt.var => elem_type, stmt.idx_var => type_nat if stmt.idx_var?));
+      env_0 = environment & (stmt.var => elem_type) & if stmt.idx_var? then (stmt.idx_var => type_nat) else () end; //## TODO: RESTORE ABOVE VERSION
+      env_1 = update_environment(stmt.body; environment=env_0);
+      ret_type_0 = return_type(stmt.body; environment=env_0);
+      ret_type_1 = return_type(stmt.body; environment=env_1);
       return union_superset(ret_type_0, ret_type_1);
     },
     for_stmt() = {
-      env_0 := environment & (stmt.var => integer);
-      env_1 := update_environment(stmt.body; environment=env_0);
-      ret_type_0 := return_type(stmt.body; environment=env_0);
-      ret_type_1 := return_type(stmt.body; environment=env_1);
+      env_0 = environment & (stmt.var => integer);
+      env_1 = update_environment(stmt.body; environment=env_0);
+      ret_type_0 = return_type(stmt.body; environment=env_0);
+      ret_type_1 = return_type(stmt.body; environment=env_1);
       return union_superset(ret_type_0, ret_type_1);
     },
     let_stmt() = {
-      env_delta := (v => expr_type(e) : v => e <- stmt.asgnms);
-      new_env := update(environment, env_delta);
+      env_delta = (v => expr_type(e) : v => e <- stmt.asgnms);
+      new_env = update(environment, env_delta);
       return return_type(stmt.body; environment=new_env);
     },
     break_stmt          = void_type,
@@ -695,9 +695,9 @@ if (not res and halt_on_failure_to_typecheck)
 
     (Var => AnonType) update_environment([Statement] stmts)
     {
-      env := environment;
+      env = environment;
       for (s : stmts)
-        env := update_environment(s; environment=env);
+        env = update_environment(s; environment=env);
       ;
       assert may_fall_through(stmts) or env == ();
       return env;
@@ -706,7 +706,7 @@ if (not res and halt_on_failure_to_typecheck)
 
     (Var => AnonType) merge_envs((Var => AnonType) env1, (Var => AnonType) env2)
     {
-      ks := intersection(keys(env1), keys(env2));
+      ks = intersection(keys(env1), keys(env2));
       return (k => union_superset({env1[k], env2[k]}) : k <- ks);
     }
 
@@ -718,9 +718,9 @@ if (not res and halt_on_failure_to_typecheck)
       return_stmt(e?)     = (),
 
       if_stmt() = {
-        start_envs := refine_environment(stmt.cond);
-        res_env_true := update_environment(stmt.body; environment=start_envs.if_true);
-        res_env_false := update_environment(stmt.else; environment=start_envs.if_false);
+        start_envs = refine_environment(stmt.cond);
+        res_env_true = update_environment(stmt.body; environment=start_envs.if_true);
+        res_env_false = update_environment(stmt.else; environment=start_envs.if_false);
 
         if (may_fall_through(stmt.body))
           if (may_fall_through(stmt.else))
@@ -742,32 +742,32 @@ if (not res and halt_on_failure_to_typecheck)
         //## ON THE OTHER HAND, RETURNING THE EMPTY MAP MAY BE MORE EFFECTIVE IN DETECTING ERRORS IN
         //## THE COMPILER CODE THAN RETURNING RANDOM GARBAGE...
         return () if not may_fall_through(ss);
-        env_0 := environment;
-        env_1 := update_environment(ss; environment=env_0);
+        env_0 = environment;
+        env_1 = update_environment(ss; environment=env_0);
         return merge_envs(env_0, env_1);
       },
 
       foreach_stmt() = {
-        elem_type := seq_elem_type(expr_type(stmt.values));
+        elem_type = seq_elem_type(expr_type(stmt.values));
         assert elem_type /= void_type;
-        loop_vars := {stmt.var, stmt.idx_var if stmt.idx_var?};
+        loop_vars = {stmt.var, stmt.idx_var if stmt.idx_var?};
         assert disjoint(keys(environment), loop_vars);
-        // env_0 := environment & (stmt.var => elem_type, stmt.idx_var => type_nat if stmt.idx_var?));
-        env_0 := environment & (stmt.var => elem_type) & if stmt.idx_var? then (stmt.idx_var => type_nat) else () end; //## TODO: RESTORE ABOVE VERSION
-        env_1 := update_environment(stmt.body; environment=env_0);
+        // env_0 = environment & (stmt.var => elem_type, stmt.idx_var => type_nat if stmt.idx_var?));
+        env_0 = environment & (stmt.var => elem_type) & if stmt.idx_var? then (stmt.idx_var => type_nat) else () end; //## TODO: RESTORE ABOVE VERSION
+        env_1 = update_environment(stmt.body; environment=env_0);
         return merge_envs(environment, remove_keys(env_1, loop_vars));
       },
 
       for_stmt() = {
-        loop_var := stmt.var;
-        env_0 := environment & (loop_var => integer);
-        env_1 := update_environment(stmt.body; environment=env_0);
+        loop_var = stmt.var;
+        env_0 = environment & (loop_var => integer);
+        env_1 = update_environment(stmt.body; environment=env_0);
         return merge_envs(environment, remove_keys(env_1, {loop_var}));      },
 
       let_stmt() = {
         return () if not may_fall_through(stmt.body); //## SEE COMMENT FOR loop_stmt() ABOVE
-        env_delta := (v => expr_type(e) : v => e <- stmt.asgnms);
-        new_env := update(environment, env_delta);
+        env_delta = (v => expr_type(e) : v => e <- stmt.asgnms);
+        new_env = update(environment, env_delta);
         return update_environment(stmt.body; environment=new_env);
       },
 
@@ -792,19 +792,19 @@ if (not res and halt_on_failure_to_typecheck)
   {
 // print "*--*--*--*--*--*--*--*--*--*--*--*--*--*--*--*--*--*--*";
     assert length(exprs) == length(ptrns);
-    new_env := environment;
+    new_env = environment;
 // print ptrns[0];
     for (i : indexes(exprs)) //## WOULD BE GOOD TO USE A ZIP FUNCTION HERE...
-      expr := exprs[i];
-      ptrn := ptrns[i];
-      type := expr_type(expr);
+      expr = exprs[i];
+      ptrn = ptrns[i];
+      type = expr_type(expr);
       if (expr :: Var)
-        refined_type := pattern_type_intersection(ptrn, type);
+        refined_type = pattern_type_intersection(ptrn, type);
         assert refined_type /= void_type;
-        var_group := only_element_or_def_if_empty({as : as <- var_aliases ; in(expr, as)}, {expr});
-        new_env := update(new_env, (v => refined_type : v <- var_group));
+        var_group = only_element_or_def_if_empty({as : as <- var_aliases, in(expr, as)}, {expr});
+        new_env = update(new_env, (v => refined_type : v <- var_group));
       ;
-      new_env := new_env & generated_environment(ptrn, type);
+      new_env = new_env & generated_environment(ptrn, type);
 // print new_env[:var(:res)];
     ;
     return new_env;
@@ -847,32 +847,32 @@ if (not res and halt_on_failure_to_typecheck)
     // let (halt_on_failure_to_typecheck=false)
       return false if length(params) /= length(signature.params);
       for (i : indexes(params)) //## WOULD BE GOOD TO USE A ZIP FUNCTION HERE
-        e := params[i];
-        t := signature.params[i];
+        e = params[i];
+        t = signature.params[i];
         return false if not typechecks(e, replace_type_vars_with_type_any(t));
       ;
 
       for (p : keys(signature.named_params)) //## WOULD BE GOOD TO USE A ZIP (BY KEY) FUNCION HERE
-        formal_type := signature.named_params[p];
+        formal_type = signature.named_params[p];
         if (formal_type :: AnonType)
-          formal_type := replace_type_vars_with_type_any(formal_type);
+          formal_type = replace_type_vars_with_type_any(formal_type);
           if (has_key(named_params, p))
-            expr := named_params[p];
+            expr = named_params[p];
             assert expr :: Expr;
             return false if not typechecks(expr, formal_type);
           else
-            actual_type := environment[p];
+            actual_type = environment[p];
             assert actual_type :: AnonType;
             return false if not is_subset(actual_type, formal_type);
           ;
         else
           assert formal_type :: ClsType;
           if (has_key(named_params, p))
-            cls_expr := named_params[p];
+            cls_expr = named_params[p];
             assert cls_expr :: ClsExpr;
             return false if not typechecks(cls_expr, formal_type);
           else
-            actual_type := closures[p];
+            actual_type = closures[p];
             assert actual_type :: ClsType;
             return false if not is_subset(actual_type, formal_type);
           ;
@@ -885,9 +885,9 @@ if (not res and halt_on_failure_to_typecheck)
 
   AnonType fn_call_type(FnType signature, [ExtExpr] params, (<named_par(Atom)> => ExtExpr) named_params) //## DO I NEED THE THIRD PARAMETER?
   {
-    cs  := [subset_conds(expr_type(params[i]), signature.params[i]) : i <- indexes(params)];
-    mcs := merge_value_sets(set(cs));
-    type_var_insts := (v => union_superset(ts) : v => ts <- mcs);
+    cs  = [subset_conds(expr_type(params[i]), signature.params[i]) : i <- indexes(params)];
+    mcs = merge_value_sets(set(cs));
+    type_var_insts = (v => union_superset(ts) : v => ts <- mcs);
     return replace_type_vars(signature.ret_type, type_var_insts);
   }
 }

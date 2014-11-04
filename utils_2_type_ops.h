@@ -16,25 +16,25 @@ UnionPretype union_pretype(AnonType+ types)
 
 AnonType rec_type_union_superset(AnonType* types)
 {
-  pre_unions := ();
-  type_sets_to_do := {types};
+  pre_unions = ();
+  type_sets_to_do = {types};
 
   while (type_sets_to_do /= {})
-    pre_unions := pre_unions & (ts => union_superset_impl({unfold(t) : t <- ts}; allow_incompatible_groups=true) : ts <- type_sets_to_do);
-    type_sets_to_do := union({illegal_unions(pu) : _ => pu <- pre_unions}) - keys(pre_unions);
+    pre_unions = pre_unions & (ts => union_superset_impl({unfold(t) : t <- ts}; allow_incompatible_groups=true) : ts <- type_sets_to_do);
+    type_sets_to_do = union({illegal_unions(pu) : _ => pu <- pre_unions}) - keys(pre_unions);
 
   ;
 
-  final_unions := ();
-  pre_unions_left := pre_unions;
-  types_left := keys(pre_unions);
+  final_unions = ();
+  pre_unions_left = pre_unions;
+  types_left = keys(pre_unions);
   while (types_left /= {})
-    cs := clusters(pre_unions_left);
-    ncs := {normalize(c, pre_unions_left) : c <- cs};
-    new_final_unions := merge(ncs);
-    final_unions := final_unions & new_final_unions;
-    types_left := types_left - keys(new_final_unions);
-    pre_unions_left := (ts => replace_final_preunions(pre_unions_left[ts], final_unions) : ts <- types_left);
+    cs = clusters(pre_unions_left);
+    ncs = {normalize(c, pre_unions_left) : c <- cs};
+    new_final_unions = merge(ncs);
+    final_unions = final_unions & new_final_unions;
+    types_left = types_left - keys(new_final_unions);
+    pre_unions_left = (ts => replace_final_preunions(pre_unions_left[ts], final_unions) : ts <- types_left);
   ;
 
   return final_unions[types];
@@ -43,15 +43,15 @@ AnonType rec_type_union_superset(AnonType* types)
   (AnonType+ => AnonType) normalize(AnonType++ cluster, (AnonType+ => Pretype) pre_unions)
   {
     if (size(cluster) == 1)
-      ts := only_element(cluster);
-      type := replace_preunions(pre_unions[ts], (ts => self));
-      type := self_rec_type(type) if has_rec_branches(type);
+      ts = only_element(cluster);
+      type = replace_preunions(pre_unions[ts], (ts => self));
+      type = self_rec_type(type) if has_rec_branches(type);
       return (ts => type);
     ;
 
-    sort_type_sets := rand_sort(cluster);
-    rec_map := (sort_type_sets[i] => self(i) : i <- index_set(sort_type_sets));
-    types := [replace_preunions(pre_unions[ts], rec_map) : ts <- sort_type_sets];
+    sort_type_sets = rand_sort(cluster);
+    rec_map = (sort_type_sets[i] => self(i) : i <- index_set(sort_type_sets));
+    types = [replace_preunions(pre_unions[ts], rec_map) : ts <- sort_type_sets];
     return (sort_type_sets[i] => mut_rec_type(i, types) : i <- index_set(sort_type_sets));
   }
 
@@ -97,10 +97,10 @@ AnonType rec_type_union_superset(AnonType* types)
 
   AnonType+** clusters((AnonType+ => Pretype) pre_unions)
   {
-    ref_map        := (ts => illegal_unions(pu) : ts => pu <- pre_unions);
-    deep_ref_map   := transitive_closure(ref_map);
-    conn_comps     := {{s} & ss : s => ss <- deep_ref_map};
-    min_conn_comps := {c1 : c1 <- conn_comps ; not (? c2 <- conn_comps : c1 /= c2, subset(c2, c1))};
+    ref_map        = (ts => illegal_unions(pu) : ts => pu <- pre_unions);
+    deep_ref_map   = transitive_closure(ref_map);
+    conn_comps     = {{s} & ss : s => ss <- deep_ref_map};
+    min_conn_comps = {c1 : c1 <- conn_comps, not (? c2 <- conn_comps : c1 /= c2, subset(c2, c1))};
     return min_conn_comps;
   }
 
@@ -112,22 +112,22 @@ using Bool allow_incompatible_groups
 {
   Pretype union_superset_impl(AnonType+ types)
   {
-    exp_types := union({expand_union_type(t) : t <- types});
+    exp_types = union({expand_union_type(t) : t <- types});
 
     //## TODO: DEAL WITH RECURSIVE TYPES, RECURSIVE REFERENCES AND TYPE VARIABLES HERE
     assert not (? union_type() <- exp_types);
 
     return only_element(exp_types, type_any) if (? t <- exp_types : t :: TypeVar);
 
-    rec_types := {t : self_rec_type() t <- exp_types};
-    exp_types := exp_types - rec_types;
+    rec_types = {t : self_rec_type() t <- exp_types};
+    exp_types = exp_types - rec_types;
 
 
     assert exp_types :: <<LeafType, CompType[AnonType]>+>;
 
-    types_by_group := merge_values({(type_group(t) => t) : t <- exp_types});
+    types_by_group = merge_values({(type_group(t) => t) : t <- exp_types});
 
-    res_types := union({
+    res_types = union({
       {atom_type}                                           if types_by_group.atom?,
       types_by_group.symb                                   if types_by_group.symb? and not types_by_group.atom?,
       {int_types_union_superset(types_by_group.int)}        if types_by_group.int?,
@@ -139,41 +139,41 @@ using Bool allow_incompatible_groups
     });
 
     if (types_by_group.ne_map?)
-      res_ne_map_type := map_types_union_superset(types_by_group.ne_map);
+      res_ne_map_type = map_types_union_superset(types_by_group.ne_map);
       if (types_by_group.tuple?)
-        res_tuple_type := tuple_types_union_superset(types_by_group.tuple);
-        res_map_types := map_tuple_union_superset(res_ne_map_type, res_tuple_type, types_by_group.empty_map?);
+        res_tuple_type = tuple_types_union_superset(types_by_group.tuple);
+        res_map_types = map_tuple_union_superset(res_ne_map_type, res_tuple_type, types_by_group.empty_map?);
       else
-        res_map_types := {res_ne_map_type, empty_map_type if types_by_group.empty_map?};
+        res_map_types = {res_ne_map_type, empty_map_type if types_by_group.empty_map?};
       ;
     else
       if (types_by_group.tuple?)
-        res_tuple_type := tuple_types_union_superset(types_by_group.tuple);
+        res_tuple_type = tuple_types_union_superset(types_by_group.tuple);
         if (types_by_group.empty_map?)
-          res_tuple_type := tuple_type((l => (type: f.type, optional: true) : l => f <- _obj_(res_tuple_type)));
+          res_tuple_type = tuple_type((l => (type: f.type, optional: true) : l => f <- _obj_(res_tuple_type)));
         ;
-        res_map_types := {res_tuple_type};
+        res_map_types = {res_tuple_type};
       else
-        res_map_types := {empty_map_type if types_by_group.empty_map?};
+        res_map_types = {empty_map_type if types_by_group.empty_map?};
       ;
     ;
 
-    res_types := res_types & res_map_types;
+    res_types = res_types & res_map_types;
 
     // assert not (? t <- res_types : not anon_type_is_wf(t));
     // assert not (? t1 <- res_types, t2 <- res_types : t1 /= t2 and not anon_types_are_compatible(t1, t2));
 
-    type_groups := group_types_by_incompatibility(res_types & rec_types);
+    type_groups = group_types_by_incompatibility(res_types & rec_types);
 
-    standalone_types := {only_element(g) : g <- type_groups ; size(g) == 1};  //## BAD: DOING MULTIPLE PASSES OVER THE SET IN ORDER TO PARTITION IT
-    incompatible_groups := {g : g <- type_groups ; size(g) > 1};              //## BAD: DITTO
+    standalone_types = {only_element(g) : g <- type_groups, size(g) == 1};  //## BAD: DOING MULTIPLE PASSES OVER THE SET IN ORDER TO PARTITION IT
+    incompatible_groups = {g : g <- type_groups, size(g) > 1};              //## BAD: DITTO
 
     if (allow_incompatible_groups)
-      illegal_unions := {union_pretype(g) : g <- incompatible_groups};
+      illegal_unions = {union_pretype(g) : g <- incompatible_groups};
       return union_type(standalone_types & illegal_unions);
     ;
 
-    reformed_unions := {rec_type_union_superset(g) : g <- incompatible_groups};
+    reformed_unions = {rec_type_union_superset(g) : g <- incompatible_groups};
     return union_type(standalone_types & reformed_unions);
 
 
@@ -198,7 +198,7 @@ using Bool allow_incompatible_groups
 
     AnonType** group_types_by_incompatibility(AnonType* types)
     {
-      inc_map := (t1 => {t2 : t2 <- types ; not anon_types_are_compatible(t1, t2)} : t1 <- types);
+      inc_map = (t1 => {t2 : t2 <- types, not anon_types_are_compatible(t1, t2)} : t1 <- types);
       return values(transitive_closure(inc_map));
     }
   }
@@ -209,14 +209,14 @@ using Bool allow_incompatible_groups
     if (in(:integer, int_types) or (? low_ints() <- int_types, high_ints() <- int_types)) //## NOT SURE ABOUT THIS ONE
       return :integer;
     elif ((? low_ints() <- int_types))
-      max_val := max({max(t) : t <- int_types});
+      max_val = max({max(t) : t <- int_types});
       return low_ints(max: max_val);
     elif ((? high_ints() <- int_types))
-      min_val := min({t.min : t <- int_types});
+      min_val = min({t.min : t <- int_types});
       return high_ints(min: min_val);
     else
-      max_val := max({max(t) : t <- int_types});  //## IMPLEMENT max(Int+)
-      min_val := min({t.min  : t <- int_types});  //## IMPLEMENT min(Int+)
+      max_val = max({max(t) : t <- int_types});  //## IMPLEMENT max(Int+)
+      min_val = min({t.min  : t <- int_types});  //## IMPLEMENT min(Int+)
       return int_range(min_val, max_val);
     ;
   }
@@ -231,8 +231,8 @@ using Bool allow_incompatible_groups
 
   TupleType[AnonType] tuple_types_union_superset(TupleType[AnonType]+ tuple_types)
   {
-    fields_by_label := merge_values({fm : tuple_type(fm) <- tuple_types});
-    res_fields := for (l => fs <- fields_by_label) (
+    fields_by_label = merge_values({fm : tuple_type(fm) <- tuple_types});
+    res_fields = for (l => fs <- fields_by_label) (
       l => (type: union_superset_impl({f.type : f <- fs}), optional: (? f <- fs : f.optional) or (? tuple_type(fm) <- tuple_types : not has_key(fm, l)))
     );
     return tuple_type(res_fields);
@@ -241,23 +241,23 @@ using Bool allow_incompatible_groups
 
   AnonType+ map_tuple_union_superset(MapType[AnonType] map_type, TupleType[AnonType] tuple_type, Bool includes_empty_map)
   {
-    fields := _obj_(tuple_type);
-    res_key_type := union_superset_impl({map_type.key_type, union_type({symb_type(l) : l => f <- fields})});
-    res_value_type := union_superset_impl({map_type.value_type} & {f.type : l => f <- fields});
-    res_map_type := ne_map_type(res_key_type, res_value_type);
-    needs_empty_map := includes_empty_map or not (? l => f <- fields : not f.optional);
+    fields = _obj_(tuple_type);
+    res_key_type = union_superset_impl({map_type.key_type, union_type({symb_type(l) : l => f <- fields})});
+    res_value_type = union_superset_impl({map_type.value_type} & {f.type : l => f <- fields});
+    res_map_type = ne_map_type(res_key_type, res_value_type);
+    needs_empty_map = includes_empty_map or not (? l => f <- fields : not f.optional);
     return if needs_empty_map then {empty_map_type, res_map_type} else {res_map_type} end;
   }
 
 
   TagObjType[AnonType]+ tag_obj_types_union_superset(TagObjType[AnonType]+ tagged_types)
   {
-    tag_types := {t.tag_type : t <- tagged_types};
+    tag_types = {t.tag_type : t <- tagged_types};
     if (in(atom_type, tag_types))
       return {tag_obj_type(atom_type, union_superset_impl({t.obj_type : t <- tagged_types}))};
     else
       assert tag_types :: <SymbType+>;
-      tag_to_obj_types := merge_values({(t.tag_type => t.obj_type) : t <- tagged_types});
+      tag_to_obj_types = merge_values({(t.tag_type => t.obj_type) : t <- tagged_types});
       return {tag_obj_type(tt, union_superset_impl(ots)) : tt => ots <- tag_to_obj_types};
     ;
   }
@@ -281,107 +281,107 @@ using AnonType* already_expanded_rec_types
     //## CAN WE IMPROVE ON THIS SOMEHOW?
     return type1 if is_type_var(type1) or is_type_var(type2);
 
-    nu_types_1 := match(type1)
+    nu_types_1 = match(type1)
                     union_type(ts?) = ts,
                     _               = {type1};
                   ;
-    rec_types_1 := {t : self_rec_type() t <- nu_types_1} & {t : mut_rec_type() t <- nu_types_1}; //## BAD: WE SHOULD USE A PATTERN UNION HERE, ONCE IT IS IMPLEMENTED
+    rec_types_1 = {t : self_rec_type() t <- nu_types_1} & {t : mut_rec_type() t <- nu_types_1}; //## BAD: WE SHOULD USE A PATTERN UNION HERE, ONCE IT IS IMPLEMENTED
     return type1 if not disjoint(rec_types_1, already_expanded_rec_types);
 
     let (already_expanded_rec_types = already_expanded_rec_types & rec_types_1)
-      res := {};
+      res = {};
 
       // Symbols
       if (includes_atom_type(type1))
         if (includes_atom_type(type2))
-          res := res & {atom_type};
+          res = res & {atom_type};
         else
-          res := res & symb_types(type2);
+          res = res & symb_types(type2);
         ;
       else
         if (includes_atom_type(type2))
-          res := res & symb_types(type1);
+          res = res & symb_types(type1);
         else
-          res := res & intersection(symb_types(type1), symb_types(type2));
+          res = res & intersection(symb_types(type1), symb_types(type2));
         ;
       ;
 
       // Integers
-      int_type_1 := int_type(type1);
-      int_type_2 := int_type(type2);
-      res := res & {int_types_intersection(int_type_1, int_type_2)} if int_type_1 /= void_type and int_type_2 /= void_type;
+      int_type_1 = int_type(type1);
+      int_type_2 = int_type(type2);
+      res = res & {int_types_intersection(int_type_1, int_type_2)} if int_type_1 /= void_type and int_type_2 /= void_type;
 
       // Sequences
-      res := res & {empty_seq_type} if includes_empty_seq(type1) and includes_empty_seq(type2);
+      res = res & {empty_seq_type} if includes_empty_seq(type1) and includes_empty_seq(type2);
 
-      seq_elem_type_1 := seq_elem_type(type1);
-      seq_elem_type_2 := seq_elem_type(type2);
-      res := res & {ne_seq_type_or_void(intersection_superset_implementation(seq_elem_type_1, seq_elem_type_2))} if seq_elem_type_1 /= void_type and seq_elem_type_2 /= void_type;
+      seq_elem_type_1 = seq_elem_type(type1);
+      seq_elem_type_2 = seq_elem_type(type2);
+      res = res & {ne_seq_type_or_void(intersection_superset_implementation(seq_elem_type_1, seq_elem_type_2))} if seq_elem_type_1 /= void_type and seq_elem_type_2 /= void_type;
 
       // Sets
-      res := res & {empty_set_type} if includes_empty_set(type1) and includes_empty_set(type2);
+      res = res & {empty_set_type} if includes_empty_set(type1) and includes_empty_set(type2);
 
-      set_elem_type_1 := set_elem_type(type1);
-      set_elem_type_2 := set_elem_type(type2);
-      res := res & {ne_set_type_or_void(intersection_superset_implementation(set_elem_type_1, set_elem_type_2))} if set_elem_type_1 /= void_type and set_elem_type_2 /= void_type;
+      set_elem_type_1 = set_elem_type(type1);
+      set_elem_type_2 = set_elem_type(type2);
+      res = res & {ne_set_type_or_void(intersection_superset_implementation(set_elem_type_1, set_elem_type_2))} if set_elem_type_1 /= void_type and set_elem_type_2 /= void_type;
 
       // Maps and tuples
-      res := res & {empty_map_type} if includes_empty_map(type1) and includes_empty_map(type2);
+      res = res & {empty_map_type} if includes_empty_map(type1) and includes_empty_map(type2);
 
-      key_type_1   := map_key_type(type1);
-      value_type_1 := map_value_type(type1);
-      tuple_type_1 := tuple_type(type1);
-      key_type_2   := map_key_type(type2);
-      value_type_2 := map_value_type(type2);
-      tuple_type_2 := tuple_type(type2);
+      key_type_1   = map_key_type(type1);
+      value_type_1 = map_value_type(type1);
+      tuple_type_1 = tuple_type(type1);
+      key_type_2   = map_key_type(type2);
+      value_type_2 = map_value_type(type2);
+      tuple_type_2 = tuple_type(type2);
       if (key_type_1 /= void_type and value_type_1 /= void_type)
         if (key_type_2 /= void_type and value_type_2 /= void_type)
-          res := res & {ne_map_type_or_void(intersection_superset_implementation(key_type_1, key_type_2), intersection_superset_implementation(value_type_1, value_type_2))};
+          res = res & {ne_map_type_or_void(intersection_superset_implementation(key_type_1, key_type_2), intersection_superset_implementation(value_type_1, value_type_2))};
         else
-          res := res & {map_tuple_intersection_superset(key_type_1, value_type_1, _obj_(tuple_type_2))} if tuple_type_2 /= void_type;
+          res = res & {map_tuple_intersection_superset(key_type_1, value_type_1, _obj_(tuple_type_2))} if tuple_type_2 /= void_type;
         ;
       else
         if (key_type_2 /= void_type and value_type_2 /= void_type)
-          res := res & {map_tuple_intersection_superset(key_type_2, value_type_2, _obj_(tuple_type_1))} if tuple_type_1 /= void_type;
+          res = res & {map_tuple_intersection_superset(key_type_2, value_type_2, _obj_(tuple_type_1))} if tuple_type_1 /= void_type;
         else
-          res := {tuple_types_intersection(_obj_(tuple_type_1), _obj_(tuple_type_2))} if tuple_type_1 /= void_type and tuple_type_2 /= void_type;
+          res = {tuple_types_intersection(_obj_(tuple_type_1), _obj_(tuple_type_2))} if tuple_type_1 /= void_type and tuple_type_2 /= void_type;
         ;
       ;
 
       // Tagged objects
-      tag_obj_types_1 := tagged_obj_types(type1);
-      tag_obj_types_2 := tagged_obj_types(type2);
+      tag_obj_types_1 = tagged_obj_types(type1);
+      tag_obj_types_2 = tagged_obj_types(type2);
 
       if (tag_obj_types_1 /= {} and tag_obj_types_2 /= {})
-        tag_types_1 := {t.tag_type : t <- tag_obj_types_1};
-        tag_types_2 := {t.tag_type : t <- tag_obj_types_2};
+        tag_types_1 = {t.tag_type : t <- tag_obj_types_1};
+        tag_types_2 = {t.tag_type : t <- tag_obj_types_2};
 
         // Type vars in the tag are treated just like the atom_type //## TYPE VARS ARE NOT ALLOWED IN THE TAG ANYMORE...
         if (may_include_all_symbols(tag_types_1))
-          obj_type_1 := only_element(tag_obj_types_1).obj_type;
+          obj_type_1 = only_element(tag_obj_types_1).obj_type;
           if (may_include_all_symbols(tag_types_2))
-            obj_type_2 := only_element(tag_obj_types_2).obj_type;
-            res := res & {tag_obj_type_or_void(atom_type, intersection_superset_implementation(obj_type_1, obj_type_2))};
+            obj_type_2 = only_element(tag_obj_types_2).obj_type;
+            res = res & {tag_obj_type_or_void(atom_type, intersection_superset_implementation(obj_type_1, obj_type_2))};
           else
-            tag_to_obj_2 := (t.tag_type => t.obj_type : t <- tag_obj_types_2);
-            res := res & {tag_obj_type_or_void(t, intersection_superset_implementation(obj_type_1, tag_to_obj_2[t])) : t <- tag_types_2};
+            tag_to_obj_2 = (t.tag_type => t.obj_type : t <- tag_obj_types_2);
+            res = res & {tag_obj_type_or_void(t, intersection_superset_implementation(obj_type_1, tag_to_obj_2[t])) : t <- tag_types_2};
           ;
         else
           assert tag_types_1 :: <SymbType+>;
-          tag_to_obj_1 := (t.tag_type => t.obj_type : t <- tag_obj_types_1);
+          tag_to_obj_1 = (t.tag_type => t.obj_type : t <- tag_obj_types_1);
           if (may_include_all_symbols(tag_types_2))
-            obj_type_2 := only_element(tag_obj_types_2).obj_type;
-            res := res & {tag_obj_type_or_void(t, intersection_superset_implementation(tag_to_obj_1[t], obj_type_2)) : t <- tag_types_1};
+            obj_type_2 = only_element(tag_obj_types_2).obj_type;
+            res = res & {tag_obj_type_or_void(t, intersection_superset_implementation(tag_to_obj_1[t], obj_type_2)) : t <- tag_types_1};
           else
-            tag_to_obj_2 := (t.tag_type => t.obj_type : t <- tag_obj_types_2);
-            common_tags :=  intersection(tag_types_1, tag_types_2);
-            res := res & {tag_obj_type_or_void(t, intersection_superset_implementation(tag_to_obj_1[t], tag_to_obj_2[t])) : t <- common_tags};
+            tag_to_obj_2 = (t.tag_type => t.obj_type : t <- tag_obj_types_2);
+            common_tags =  intersection(tag_types_1, tag_types_2);
+            res = res & {tag_obj_type_or_void(t, intersection_superset_implementation(tag_to_obj_1[t], tag_to_obj_2[t])) : t <- common_tags};
           ;
         ;
       ;
     ;
 
-    res := res - {void_type};
+    res = res - {void_type};
     return if res /= {} then union_type(res) else void_type end;
 
 
@@ -428,17 +428,17 @@ using AnonType* already_expanded_rec_types
 
   <TupleType[AnonType], void_type> map_tuple_intersection_superset(AnonType key_type, AnonType value_type, (SymbObj => (type: AnonType, optional: Bool)) tuple_fields)
   {
-    res_fs := ();
+    res_fs = ();
     for (l : rand_sort(keys(tuple_fields)))
-      f := tuple_fields[l];
-      intersection_type := intersection_superset_implementation(value_type, f.type);
+      f = tuple_fields[l];
+      intersection_type = intersection_superset_implementation(value_type, f.type);
       if (f.optional)
         if (includes_symbol(key_type, l) and intersection_type /= void_type)
-          res_fs := res_fs & (l => (type: intersection_type, optional: true));
+          res_fs = res_fs & (l => (type: intersection_type, optional: true));
         ;
       else
         return void_type if not includes_symbol(key_type, l) or intersection_type == void_type;
-        res_fs := res_fs & (l => (type: intersection_type, optional: false));
+        res_fs = res_fs & (l => (type: intersection_type, optional: false));
       ;
     ;
 
@@ -449,25 +449,25 @@ using AnonType* already_expanded_rec_types
 
   <TupleType[AnonType], empty_map_type, void_type> tuple_types_intersection((SymbObj => (type: AnonType, optional: Bool)) fields1, (SymbObj => (type: AnonType, optional: Bool)) fields2)
   {
-    labels1 := keys(fields1);
-    labels2 := keys(fields2);
+    labels1 = keys(fields1);
+    labels2 = keys(fields2);
 
-    common_labels := intersection(labels1, labels2);
-    exclusive_labels_1 := labels1 - common_labels;
-    exclusive_labels_2 := labels2 - common_labels;
+    common_labels = intersection(labels1, labels2);
+    exclusive_labels_1 = labels1 - common_labels;
+    exclusive_labels_2 = labels2 - common_labels;
 
     return void_type if (? l <- exclusive_labels_1 : not fields1[l].optional) or (? l <- exclusive_labels_2 : not fields2[l].optional);
 
-    res_fields := ();
+    res_fields = ();
     for (l : common_labels)
-      field1 := fields1[l];
-      field2 := fields2[l];
+      field1 = fields1[l];
+      field2 = fields2[l];
 
-      res_type := intersection_superset_implementation(field1.type, field2.type);
+      res_type = intersection_superset_implementation(field1.type, field2.type);
       if (res_type == void_type)
         return void_type if not field1.optional or not field2.optional;
       else
-        res_fields := res_fields & (l => (type: res_type, optional: field1.optional and field2.optional));
+        res_fields = res_fields & (l => (type: res_type, optional: field1.optional and field2.optional));
       ;
     ;
 
@@ -518,7 +518,7 @@ Bool type_contains_obj(AnonType type, Any obj):
   ne_map_type(),    _           = false,
 
   tuple_type(fs?),  (...)       = not (? k => v <- obj : not has_key(fs, k) or not type_contains_obj(fs[k].type, v)) and
-                                  subset({l : l => f <- fs ; not f.optional}, keys(obj)),
+                                  subset({l : l => f <- fs, not f.optional}, keys(obj)),
   tuple_type(fs?),  _           = false,
 
   tag_obj_type(),   tag @ iobj  = type_contains_obj(type.tag_type, tag) and type_contains_obj(type.obj_type, iobj),
@@ -544,12 +544,12 @@ using (TypeName => AnonType) typedefs
     ext_var_ptrn()        = type, //## THIS IS GOING AWAY ANYWAY, NO NEED TO BOTHER
     var_ptrn()            = pattern_type_intersection(ptrn.ptrn, type),
     tag_ptrn()            = {
-        tag_obj_types := tagged_obj_types(type);
-        sel_types := {
+        tag_obj_types = tagged_obj_types(type);
+        sel_types = {
           tag_obj_type(tag_type_int, obj_type_int):
           t <- tag_obj_types,
           tag_type_int = pattern_type_intersection(ptrn.tag, t.tag_type),
-          obj_type_int = pattern_type_intersection(ptrn.obj, t.obj_type);
+          obj_type_int = pattern_type_intersection(ptrn.obj, t.obj_type),
           tag_type_int /= void_type,
           obj_type_int /= void_type
         };
@@ -618,7 +618,7 @@ Bool is_subset(ClsType t1, ClsType t2)
 
 AnonType cls_call_type(ClsType signature, [AnonType^] actual_types) //## FIND BETTER NAME
 {
-  cs := merge_value_sets({subset_conds(actual_types[i], signature.in_types[i]) : i <- index_set(actual_types)});
-  type_var_insts := (v => union_superset(ts) : v => ts <- cs);
+  cs = merge_value_sets({subset_conds(actual_types[i], signature.in_types[i]) : i <- index_set(actual_types)});
+  type_var_insts = (v => union_superset(ts) : v => ts <- cs);
   return replace_type_vars(signature.out_type, type_var_insts);
 }

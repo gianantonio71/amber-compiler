@@ -138,29 +138,29 @@ Int max(Int a, Int b) = if a > b then a else b end;
 
 Int min(Int+ ns)
 {
-  ns_seq := rand_sort(ns);
-  min := ns_seq[0];
+  ns_seq = rand_sort(ns);
+  min = ns_seq[0];
   for (n : ns_seq)
-    min := n if n < min;
+    min = n if n < min;
   ;
   return min;
 }
 
 Int max(Int+ ns)
 {
-  ns_seq := rand_sort(ns);
-  max := ns_seq[0];
+  ns_seq = rand_sort(ns);
+  max = ns_seq[0];
   for (n : ns_seq)
-    max := n if n > max;
+    max = n if n > max;
   ;
   return max;
 }
 
 Int sum([Int] ns)
 {
-  res := 0;
+  res = 0;
   for (n : ns)
-    res := res + n;
+    res = res + n;
   ;
   return res;
 }
@@ -233,23 +233,23 @@ reverse(Seq seq) = _rev_(seq);
 
 [[T]] split([T] seq, T sep)
 {
-  len := length(seq);
-  subseqs := [];
-  start := 0;
+  len = length(seq);
+  subseqs = [];
+  start = 0;
   for (x, i : seq)
     if (x == sep)
-      subseqs := subseqs & [subseq(seq, start, i-start)];
-      start := i + 1;
+      subseqs = subseqs & [subseq(seq, start, i-start)];
+      start = i + 1;
     ;
   ;
-  subseqs := subseqs & [subseq(seq, start, len-start)] if start < len;
+  subseqs = subseqs & [subseq(seq, start, len-start)] if start < len;
   return subseqs;
 }
 
 
 Maybe[Nat] left_search(Seq seq, Seq subseq)
 {
-  last_idx := length(seq) - length(subseq);
+  last_idx = length(seq) - length(subseq);
   for (i : inc_seq(max(0, last_idx+1)))
     return just(i) if subseq_matches(seq, subseq, i);
   ;
@@ -267,10 +267,10 @@ Maybe[Nat] left_search(Seq seq, Seq subseq)
 
 [T] op_*(Nat count, [T] seq)
 {
-  res := [];
+  res = [];
   for (i : inc_seq(count))
     for (x : reverse(seq))
-      res := [x | res];
+      res = [x | res];
     ;
   ;
   return res;
@@ -278,11 +278,11 @@ Maybe[Nat] left_search(Seq seq, Seq subseq)
 
 [T] rep_seq(Nat size, T value)
 {
-  n := size;
-  s := [];
+  n = size;
+  s = [];
   while (n > 0)
-    s := [value | s];
-    n := n - 1;
+    s = [value | s];
+    n = n - 1;
   ;
   return s;
 }
@@ -293,11 +293,11 @@ Maybe[Nat] left_search(Seq seq, Seq subseq)
 
 [Nat] inc_seq(Nat m, Nat n, NzNat s)
 {
-  r := [];
-  i := m;
+  r = [];
+  i = m;
   while (i < n)
-    r := r & [i];
-    i := i + s;
+    r = r & [i];
+    i = i + s;
   ;
   return r;
 }
@@ -322,8 +322,8 @@ using Bool is_strictly_ordered(T, T) //## BAD BAD BAD
   //  []       = [],
   //  [e]      = [e],
   //  [p | r]  = do
-  //               head := [e : e <- r, e < p and (not no_dups or e /= p)];
-  //               tail := [e : e <- r, not(e < p) and (not no_dups or e /= p)];
+  //               head = [e : e <- r, e < p and (not no_dups or e /= p)];
+  //               tail = [e : e <- r, not(e < p) and (not no_dups or e /= p)];
 
   //               return quicksort(head, no_dups) & [p] & quicksort(tail, no_dups);
   //             ;
@@ -331,37 +331,37 @@ using Bool is_strictly_ordered(T, T) //## BAD BAD BAD
 
   [T] mergesort([T] seq)
   {
-    len := length(seq);
+    len = length(seq);
     return seq if len <= 1;
-    ss := [[x] : x <- seq];
+    ss = [[x] : x <- seq];
     while (len > 1)
-      nss := [];
-      idx := 0;
+      nss = [];
+      idx = 0;
       //## BAD BAD BAD DOESN'T WORK WELL WITH A ROPE
       while (len > idx+1)
-        nss := [merge(ss[idx], ss[idx+1]) | nss];
-        idx := idx + 2;
+        nss = [merge(ss[idx], ss[idx+1]) | nss];
+        idx = idx + 2;
       ;
       assert idx == length(ss) or idx == length(ss) - 1;
-      ss  := if len > idx then [ss[idx] | nss] else nss end;
-      len := length(ss); //## SHOULD BE len := (len + 1) / 2;
+      ss  = if len > idx then [ss[idx] | nss] else nss end;
+      len = length(ss); //## SHOULD BE len = (len + 1) / 2;
     ;
     return ss[0];
     
     [T] merge([T] seq1, [T] seq2)
     {
-      l1 := length(seq1);
-      l2 := length(seq2);
-      rs := [];
-      i1 := 0;
-      i2 := 0;
+      l1 = length(seq1);
+      l2 = length(seq2);
+      rs = [];
+      i1 = 0;
+      i2 = 0;
       while (i1 < l1 or i2 < l2)
         if (i1 == l1 or (i2 < l2 and is_strictly_ordered(seq2[i2], seq1[i1])))
-          rs := [seq2[i2] | rs];
-          i2 := i2 + 1;
+          rs = [seq2[i2] | rs];
+          i2 = i2 + 1;
         else
-          rs := [seq1[i1] | rs];
-          i1 := i1 + 1;
+          rs = [seq1[i1] | rs];
+          i1 = i1 + 1;
         ;
       ;
       assert i1 <= l1 and i2 <= l2;
@@ -382,7 +382,7 @@ Bool in(Any x, Set s) = _in_(x, s);
 // T* union(T* s1, T* s2)         = {e : e <- s1 \/ e <- s2};
 T* union(T* s1, T* s2)         = _union_({s1, s2});
 T* intersection(T* s1, T* s2)  = {e : e <- s1, e <- s2};
-T* difference(T* s1, T* s2)    = {e : e <- s1 ; not in(e, s2)};
+T* difference(T* s1, T* s2)    = {e : e <- s1, not in(e, s2)};
 
 T* op_&(T* s1, T* s2) = union(s1, s2);
 T* op_-(T* s1, T* s2) = difference(s1, s2);
@@ -394,10 +394,10 @@ T* union(T** sets) = _union_(sets);
 
 // T* union(T** sets)
 // {
-//   ss := rand_sort(sets);
-//   u  := {};
+//   ss = rand_sort(sets);
+//   u  = {};
 //   for (s : ss)
-//     u := union(u, s);
+//     u = union(u, s);
 //   ;
 //   return u;
 // }
@@ -405,10 +405,10 @@ T* union(T** sets) = _union_(sets);
 T* intersection(T** sets)
 {
   return {} if sets == {};
-  ss  := rand_sort(sets);
-  int := ss[0];
+  ss  = rand_sort(sets);
+  int = ss[0];
   for (i = 1..length(ss)-1)
-    int := intersection(int, ss[i]);
+    int = intersection(int, ss[i]);
   ;
   return int;
 }
@@ -419,21 +419,21 @@ Bool is_singleton(Any* s) = size(s) == 1;
 
 T only_element(T* set)
 {
-  seq := rand_sort(set);
+  seq = rand_sort(set);
   return seq[0] if length(seq) == 1;
   fail;
 }
 
 T only_element(T* set, T default)
 {
-  seq := rand_sort(set);
+  seq = rand_sort(set);
   return if length(seq) == 1 then seq[0] else default end;
 }
 
 T only_element_or_def_if_empty(T* set, T default)
 {
-  seq := rand_sort(set);
-  len := length(seq);
+  seq = rand_sort(set);
+  len = length(seq);
   
   fail if len > 1;
  
@@ -442,11 +442,11 @@ T only_element_or_def_if_empty(T* set, T default)
 
 // Int max(Int+ set)
 // {
-//   seq := rand_sort(set);
+//   seq = rand_sort(set);
   
-//   max := seq[0];
+//   max = seq[0];
 //   for (x : seq)
-//     max := x if x > max;
+//     max = x if x > max;
 //   ;
   
 //   return max;
@@ -478,8 +478,8 @@ Bool has_key((T1 => T2) map, T1 key) = _has_key_(map, key); // = (? k => _ <- ma
 // (T1 => T2) op_&((T1 => T2) map1, (T1 => T2) map2)
 // {
 //   assert {
-//     ks1 := keys(map1);
-//     ks2 := keys(map2);
+//     ks1 = keys(map1);
+//     ks2 = keys(map2);
     
 //     for (k : rand_sort(intersection(ks1, ks2)))
 //       return false if map1[k] /= map2[k];
@@ -487,7 +487,7 @@ Bool has_key((T1 => T2) map, T1 key) = _has_key_(map, key); // = (? k => _ <- ma
 
 //     return true;
 
-//     //disj  := disjoint(ks1, ks2);
+//     //disj  = disjoint(ks1, ks2);
 //     //
 //     //if (not disj)
 //     //  print intersection(ks1, ks2);;
@@ -500,8 +500,8 @@ Bool has_key((T1 => T2) map, T1 key) = _has_key_(map, key); // = (? k => _ <- ma
 
 (K => V+) merge_values((K => V)* maps)
 {
-  all_keys := union({keys(m) : m <- maps});
-  return (k => {m[k] : m <- maps ; has_key(m, k)} : k <- all_keys);
+  all_keys = union({keys(m) : m <- maps});
+  return (k => {m[k] : m <- maps, has_key(m, k)} : k <- all_keys);
 }
 
 (K => V+) merge_value_sets((K => V+)* maps) = (k => union(vss) : k => vss <- merge_values(maps));
@@ -521,7 +521,7 @@ Bool has_key((T1 => T2) map, T1 key) = _has_key_(map, key); // = (? k => _ <- ma
 //#### [T2 -> {T1+}] reverse([T1 -> {T2+}] map)
 //#### {
 //####   // HOW TO MAKE THIS EFFICIENT?
-//####   vs := union({v : [k, v] <- map});
+//####   vs = union({v : [k, v] <- map});
 //####   return [v -> {k : [k, s] <- map ; in(v, s)} : v <- vs];
 //#### }
 
@@ -537,9 +537,9 @@ T* set([T] seq) = _set_(seq);
 //## THIS IS DIFFICULT TO IMPLEMENT EFFICIENTLY WITHOUT ACCESS TO THE INTERNAL COMPARISON OPERATOR  
 T* dupl_elems([T] s)
 {
-  r := {};
+  r = {};
   for (e1, i1 : s ; e2, i2 : s)
-    r := r & {e1, e2} if (e1 == e2 and i1 /= i2);
+    r = r & {e1, e2} if (e1 == e2 and i1 /= i2);
   ;
   return r;
 }
@@ -552,7 +552,7 @@ Bool has_duplicates([Any] s) = dupl_elems(s) /= {};
 rand_sort_pairs((TK => TV) map) = rand_sort({[k, v] : k => v <- map});
 
 
-T an_elem(T+ s) = {ses := rand_sort(s); return ses[0];};
+T an_elem(T+ s) = {ses = rand_sort(s); return ses[0];};
 
 (T => NzNat) set_to_mset(T* s) = (e => 1 : e <- s);
 
@@ -573,10 +573,10 @@ T2* values((T1 => T2) map) = {v : _ => v <- map};
 (T => T*) transitive_closure((T => T*) map)
 {
   assert {
-    all_starts := keys(map);
-    all_refs   := union(values(map));
+    all_starts = keys(map);
+    all_refs   = union(values(map));
     
-    missing := all_refs - all_starts;
+    missing = all_refs - all_starts;
     
     return true if missing == {};
     print "------------------------------------------------------------------------------";
@@ -585,12 +585,12 @@ T2* values((T1 => T2) map) = {v : _ => v <- map};
     return false;
   };
   
-  closure := map;
+  closure = map;
 
   loop
-    new_closure := (n => next_step(rs, closure) : n => rs <- closure);
+    new_closure = (n => next_step(rs, closure) : n => rs <- closure);
     return closure if (new_closure == closure);
-    closure := new_closure;
+    closure = new_closure;
   ;
 
   next_step(rs, map) = rs & union({map[r] : r <- rs});
@@ -639,31 +639,31 @@ using Bool condition(Any), Any eval(Any)
 
 String to_str(Int n)
 {
-  m   := n;
-  neg := false;
+  m   = n;
+  neg = false;
   if (m < 0)
-    m   := -m;
-    neg := true;
+    m   = -m;
+    neg = true;
   ;
   
   assert m >= 0;
   
-  div  := 10;
-  divs := [1];
+  div  = 10;
+  divs = [1];
   while (div <= m)
-    divs := [div | divs];
-    div  := 10 * div;
+    divs = [div | divs];
+    div  = 10 * div;
   ;
   
-  str := "";
+  str = "";
 
   for (d : divs)
-    count := 0;
+    count = 0;
     while (m >= d)
-      m     := m - d;
-      count := count + 1;
+      m     = m - d;
+      count = count + 1;
     ;
-    str := str & string([ascii_0 + count]);
+    str = str & string([ascii_0 + count]);
   ;
 
   return if neg then "-" & str else str end;
@@ -675,17 +675,17 @@ Int to_int(String str)
 {
   assert length(str) > 0;
   
-  res := 0;
-  neg := false;
+  res = 0;
+  neg = false;
 
   for (ch, i : _obj_(str))
     if (ch == ascii_minus and i == 0)
-      neg := true;
+      neg = true;
       assert length(str) > 1;
     else
-      code := ch - ascii_0;
+      code = ch - ascii_0;
       assert code >= 0 and code <= 9;
-      res := 10 * res + code;
+      res = 10 * res + code;
     ;
   ;
 
@@ -711,15 +711,15 @@ String to_text(Any obj)
 
   String to_txt_tag_obj(Atom tag, Any obj)
   {
-    str := to_txt(obj);
-    str := "(" & str & ")" if not obj :: Tuple;
+    str = to_txt(obj);
+    str = "(" & str & ")" if not obj :: Tuple;
     return _str_(tag) & str;
   }
     
   String to_txt(Map map, String key_val_sep)
   {
-    es   := rand_sort({(key: k, value: v) : k => v <- map});
-    strs := [to_txt(e.key) & key_val_sep & to_txt(e.value) : e <- es];
+    es   = rand_sort({(key: k, value: v) : k => v <- map});
+    strs = [to_txt(e.key) & key_val_sep & to_txt(e.value) : e <- es];
     return "(" & append(intermix(strs, ", ")) & ")";
   }
 }
@@ -727,16 +727,16 @@ String to_text(Any obj)
 
 String quote(String str)
 {
-  qr_str := [];
+  qr_str = [];
   for (ch : _obj_(str))
     if (ch == ascii_newline)
-      qr_str := [ascii_lower_n, ascii_backslash | qr_str];
+      qr_str = [ascii_lower_n, ascii_backslash | qr_str];
     elif (ch == ascii_backslash)
-      qr_str := [ascii_backslash, ascii_backslash | qr_str];
+      qr_str = [ascii_backslash, ascii_backslash | qr_str];
     elif (ch == ascii_double_quotes)
-      qr_str := [ascii_double_quotes, ascii_backslash | qr_str];
+      qr_str = [ascii_double_quotes, ascii_backslash | qr_str];
     else
-      qr_str := [ch | qr_str];
+      qr_str = [ch | qr_str];
     ;
   ;
   return "\"" & string(reverse(qr_str)) & "\"";
@@ -745,7 +745,7 @@ String quote(String str)
 
 String to_text(Any obj, Nat line_len, Nat indent_level)
 {
-  ind_str := rep_str(2 * indent_level, ascii_space);
+  ind_str = rep_str(2 * indent_level, ascii_space);
   return append(intermix([ind_str & l : l <- to_text(obj, line_len)], "\n"));
 }
 
@@ -765,14 +765,14 @@ String to_text(Any obj, Nat line_len, Nat indent_level)
 
   [String^] to_txt_tag_obj(Atom tag, Any obj, Nat line_len)
   {
-    obj_is_tuple := match (obj)
+    obj_is_tuple = match (obj)
                       (...)   = keys(obj) :: <Atom*>,
                       _       = false;
                     ;
-    tag_str      := _str_(tag);
-    obj_lines    := to_txt(obj, line_len);
-    line_count   := length(obj_lines);
-    first_line   := obj_lines[0];
+    tag_str      = _str_(tag);
+    obj_lines    = to_txt(obj, line_len);
+    line_count   = length(obj_lines);
+    first_line   = obj_lines[0];
 
     if (line_count == 1)
       if (obj_is_tuple or length(first_line) + length(tag_str) + 2 <= line_len)
@@ -781,16 +781,16 @@ String to_text(Any obj, Nat line_len, Nat indent_level)
         return [tag_str & "(", "  " & first_line, ")"];
       ;
     else
-      middle_lines := subseq(obj_lines, 1, line_count-2);
-      last_line    := rev_at(obj_lines, 0);
+      middle_lines = subseq(obj_lines, 1, line_count-2);
+      last_line    = rev_at(obj_lines, 0);
       if (length(first_line) == 1)
-        indent := "";
-        head   := [tag_str & if obj_is_tuple then "" else "(" end & first_line];
-        tail   := [last_line & if obj_is_tuple then "" else ")" end];
+        indent = "";
+        head   = [tag_str & if obj_is_tuple then "" else "(" end & first_line];
+        tail   = [last_line & if obj_is_tuple then "" else ")" end];
       else
-        indent := "  ";
-        head := [tag_str & "(", "  " & first_line];
-        tail := ["  " & last_line, ")"];
+        indent = "  ";
+        head = [tag_str & "(", "  " & first_line];
+        tail = ["  " & last_line, ")"];
       ;
     ;
 
@@ -799,52 +799,52 @@ String to_text(Any obj, Nat line_len, Nat indent_level)
 
   [String^] to_txt_collection(Seq seq, Nat line_len, String left_del, String right_del)
   {
-    lines_seq := [to_txt(obj, line_len) : obj <- seq];
+    lines_seq = [to_txt(obj, line_len) : obj <- seq];
     if (all([length(ls) == 1 : ls <- lines_seq]))
-      len_sum := sum([length(ls[0]) : ls <- lines_seq]);
+      len_sum = sum([length(ls[0]) : ls <- lines_seq]);
       if (len_sum + 2 * length(seq) + 2 < line_len)
         return [left_del & append(intermix([ls[0] : ls <- lines_seq], ", ")) & right_del];
       ;
     ;
-    last_idx := length(lines_seq) - 1;
-    indented_lines_with_commas := join([["  " & l : l <- if i /= last_idx then append_to_last(ls, ",") else ls end] : ls, i <- lines_seq]);
+    last_idx = length(lines_seq) - 1;
+    indented_lines_with_commas = join([["  " & l : l <- if i /= last_idx then append_to_last(ls, ",") else ls end] : ls, i <- lines_seq]);
     return [left_del] & indented_lines_with_commas & [right_del];
   }
 
-  // [String^] append_to_last([String^] lines, String str) = [if i /= last_idx then l else l & str end : l, i <- lines] let last_idx := length(lines) - 1;;
+  // [String^] append_to_last([String^] lines, String str) = [if i /= last_idx then l else l & str end : l, i <- lines] let last_idx = length(lines) - 1;;
   [String^] append_to_last([String^] lines, String str)
   {
-    last_idx := length(lines) - 1;
+    last_idx = length(lines) - 1;
     return [if i /= last_idx then l else l & str end : l, i <- lines];
   }
   
 
   [String^] to_txt_map(Map map, Nat line_len)
   {
-    is_tuple    := keys(map) :: <Atom*>;
-    key_val_sep := if is_tuple then ": " else " => " end;
-    size        := size(map);
-    es          := rand_sort({(key: k, value: v) : k => v <- map});
-    lines       := [];
-    single_line := "";
-    is_single_line_so_far := true;
+    is_tuple    = keys(map) :: <Atom*>;
+    key_val_sep = if is_tuple then ": " else " => " end;
+    size        = size(map);
+    es          = rand_sort({(key: k, value: v) : k => v <- map});
+    lines       = [];
+    single_line = "";
+    is_single_line_so_far = true;
     for (e, i : es)
-      key_ls := to_txt(e.key, line_len);
-      value_ls := to_txt(e.value, line_len);
+      key_ls = to_txt(e.key, line_len);
+      value_ls = to_txt(e.value, line_len);
       // The pair goes in a single line if both key and value must be on a single line and
       // either it's a tuple or the entire pair (including the separator) fits in a single line
       if (length(key_ls) == 1 and length(value_ls) == 1 and (is_tuple or length(key_ls[0]) + length(value_ls[0]) + 2 < line_len))
-        ls := [key_ls[0] & key_val_sep & value_ls[0]];
+        ls = [key_ls[0] & key_val_sep & value_ls[0]];
       else
-        ls := append_to_last(key_ls, key_val_sep) & value_ls;
+        ls = append_to_last(key_ls, key_val_sep) & value_ls;
       ;
-      ls := append_to_last(ls, ",") if i < size - 1;
-      lines := lines & ls;
+      ls = append_to_last(ls, ",") if i < size - 1;
+      lines = lines & ls;
       if (is_single_line_so_far)
         if (length(ls) == 1 and length(single_line) + length(ls[0]) < line_len)
-          single_line := single_line & if single_line == "" then "" else " " end & ls[0];
+          single_line = single_line & if single_line == "" then "" else " " end & ls[0];
         else
-          is_single_line_so_far := false;
+          is_single_line_so_far = false;
         ;
       ;
     ;
@@ -873,20 +873,20 @@ String rep_str(Nat len, Nat ch)       = string(rep_seq(len, ch));
 
 Bool op_<(String str1, String str2)
 {
-  len1 := length(str1);
-  len2 := length(str2);
+  len1 = length(str1);
+  len2 = length(str2);
   
-  min_len := min(len1, len2);
+  min_len = min(len1, len2);
   
-  i := 0;
+  i = 0;
   while (i < min_len)
-    ch1 := str1[i];
-    ch2 := str2[i];
+    ch1 = str1[i];
+    ch2 = str2[i];
     
     return true if ch1 < ch2;
     return false if ch1 > ch2;
     
-    i := i + 1;
+    i = i + 1;
   ;
   
   return len1 < len2;
@@ -1024,7 +1024,7 @@ Nat ascii_tilde             = 126;
 
   [Nat] rem_trail_cr([Nat] line)
   {
-    has_cr := line /= [] and rev_at(line, 0) == ascii_carriage_return;
+    has_cr = line /= [] and rev_at(line, 0) == ascii_carriage_return;
     return if has_cr then subseq(line, 0, length(line)-1) else line end;
   }
 }
@@ -1089,57 +1089,57 @@ label(Atom a)  = :label(a);
 <[Token], LexerError> tokenize([Int] bytes)
 //tokenize(bytes)
 {
-  len        := length(bytes);
-  tokens     := [];
-  line       := 1;
-  line_start := 0;
+  len        = length(bytes);
+  tokens     = [];
+  line       = 1;
+  line_start = 0;
   
-  i := 0;
+  i = 0;
   while (i < len)
-    ch := bytes[i];
-    i  := i + 1;
+    ch = bytes[i];
+    i  = i + 1;
     
     if (is_lower(ch))
-      token := [ch];
+      token = [ch];
       while (i < len)
-        ch := bytes[i];
+        ch = bytes[i];
         break if not (is_lower(ch) or is_digit(ch) or ch == ascii_underscore);
-        token := token & [ch];
-        i     := i + 1;
+        token = token & [ch];
+        i     = i + 1;
       ;
       if (i < len and bytes[i] == ascii_colon)
-        tokens := [label(_symb_(string(token))) | tokens];
-        i      := i + 1;
+        tokens = [label(_symb_(string(token))) | tokens];
+        i      = i + 1;
       else
-        tokens := [symbol(_symb_(string(token))) | tokens];
+        tokens = [symbol(_symb_(string(token))) | tokens];
       ;
     
     elif (ch == ascii_minus or is_digit(ch))
-      token := [ch];
+      token = [ch];
       return error(line, i-line_start) if ch == ascii_minus and not (i < len and is_digit(bytes[i]));
       while (i < len and is_digit(bytes[i]))
-        token := token & [bytes[i]];
-        i     := i + 1;
+        token = token & [bytes[i]];
+        i     = i + 1;
       ;
-      tokens := [to_int(string(token)) | tokens];
+      tokens = [to_int(string(token)) | tokens];
     
     elif (ch == ascii_double_quotes)
-      rev_str := [];
+      rev_str = [];
       while (i < len)
-        ch := bytes[i];
-        i  := i + 1;
+        ch = bytes[i];
+        i  = i + 1;
 
         if (ch == ascii_double_quotes)
           break;
 
         elif (ch == ascii_backslash)
           return error(line, i-line_start) if not (i < len);
-          ch := bytes[i];
-          i  := i + 1;
+          ch = bytes[i];
+          i  = i + 1;
           if (ch == ascii_lower_n)
-            rev_str := [ascii_newline | rev_str];
+            rev_str = [ascii_newline | rev_str];
           elif (ch == ascii_backslash or ch == ascii_double_quotes)
-            rev_str := [ch | rev_str];
+            rev_str = [ch | rev_str];
           else
             return error(line, i-line_start);
           ;
@@ -1148,20 +1148,20 @@ label(Atom a)  = :label(a);
           return error(line, i-line_start);
         
         else
-          rev_str := [ch | rev_str];
+          rev_str = [ch | rev_str];
         ;
       ;
       
-      tokens := [string(reverse(rev_str)) | tokens];
+      tokens = [string(reverse(rev_str)) | tokens];
     
     elif (is_symbol(ch))
-      tokens := [symbol_to_token(ch) | tokens];
+      tokens = [symbol_to_token(ch) | tokens];
     
     else
       return error(line, i-line_start) if not is_space(ch);
       if (ch == ascii_newline)
-        line       := line + 1;
-        line_start := i;
+        line       = line + 1;
+        line_start = i;
       ;      
     ;
   ;
@@ -1176,57 +1176,57 @@ label(Atom a)  = :label(a);
 
 <[Token], LexerError> fast_tokenize([Int] bytes)
 {
-  len        := length(bytes);
-  tokens     := [];
-  line       := 1;
-  line_start := 0;
+  len        = length(bytes);
+  tokens     = [];
+  line       = 1;
+  line_start = 0;
   
-  i := 0;
+  i = 0;
   while (i < len)
-    ch := bytes[i];
-    i  := i + 1;
+    ch = bytes[i];
+    i  = i + 1;
     
     if (is_lower(ch))
-      token := [ch];
+      token = [ch];
       while (i < len)
-        ch := bytes[i];
+        ch = bytes[i];
         break if not (is_lower(ch) or is_digit(ch) or ch == ascii_underscore);
-        token := token & [ch];
-        i     := i + 1;
+        token = token & [ch];
+        i     = i + 1;
       ;
       if (i < len and bytes[i] == ascii_colon)
-        tokens := [label(_symb_(string(token))), tokens];
-        i      := i + 1;
+        tokens = [label(_symb_(string(token))), tokens];
+        i      = i + 1;
       else
-        tokens := [symbol(_symb_(string(token))), tokens];
+        tokens = [symbol(_symb_(string(token))), tokens];
       ;
     
     elif (ch == ascii_minus or is_digit(ch))
-      token := [ch];
+      token = [ch];
       return error(line, i-line_start) if ch == ascii_minus and not (i < len and is_digit(bytes[i]));
       while (i < len and is_digit(bytes[i]))
-        token := token & [bytes[i]];
-        i     := i + 1;
+        token = token & [bytes[i]];
+        i     = i + 1;
       ;
-      tokens := [to_int(string(token)), tokens];
+      tokens = [to_int(string(token)), tokens];
     
     elif (ch == ascii_double_quotes)
-      rev_str := [];
+      rev_str = [];
       while (i < len)
-        ch := bytes[i];
-        i  := i + 1;
+        ch = bytes[i];
+        i  = i + 1;
 
         if (ch == ascii_double_quotes)
           break;
 
         elif (ch == ascii_backslash)
           return error(line, i-line_start) if not (i < len);
-          ch := bytes[i];
-          i  := i + 1;
+          ch = bytes[i];
+          i  = i + 1;
           if (ch == 110) // 'n'
-            rev_str := [ascii_newline | rev_str];
+            rev_str = [ascii_newline | rev_str];
           elif (ch == ascii_backslash or ch == ascii_double_quotes)
-            rev_str := [ch | rev_str];
+            rev_str = [ch | rev_str];
           else
             return error(line, i-line_start);
           ;
@@ -1235,20 +1235,20 @@ label(Atom a)  = :label(a);
           return error(line, i-line_start);
         
         else
-          rev_str := [ch | rev_str];
+          rev_str = [ch | rev_str];
         ;
       ;
       
-      tokens := [string(reverse(rev_str)), tokens];
+      tokens = [string(reverse(rev_str)), tokens];
     
     elif (is_symbol(ch))
-      tokens := [symbol_to_token(ch), tokens];
+      tokens = [symbol_to_token(ch), tokens];
     
     else
       return error(line, i-line_start) if not is_space(ch);
       if (ch == ascii_newline)
-        line       := line + 1;
-        line_start := i;
+        line       = line + 1;
+        line_start = i;
       ;      
     ;
   ;
@@ -1274,7 +1274,7 @@ type ParseIntermMultRes = (objs: [Any], offset: Nat);//, ParseError;
 ParseResult parse_obj([Token] tokens)
 {
   return error(0) if tokens == [];
-  res := parse_obj(tokens, 0);
+  res = parse_obj(tokens, 0);
   return res if res :: ParseError;
   return error(res.offset) if res.offset /= length(tokens);
   return :obj(res.obj);
@@ -1286,7 +1286,7 @@ ParseResult parse_obj([Token] tokens)
   {
     assert offset < length(tokens);
 
-    res := match (tokens[offset])
+    res = match (tokens[offset])
              symbol()                 = parse_tagged_obj_or_symbol(tokens, offset),
              // <Int, String, Char> obj  = (obj: obj, offset: offset+1),
              Int obj?                 = (obj: obj, offset: offset+1), //## SHOULD USE A PATTERN UNION HERE ONCE IT IS IMPLEMENTED
@@ -1310,15 +1310,15 @@ ParseResult parse_obj([Token] tokens)
       return (obj: _obj_(tokens[offset]), offset: offset+1);
     ;
 
-    res := parse_map_or_tuple(tokens, offset+1);
-    is_tuple := not res :: ParseError;
+    res = parse_map_or_tuple(tokens, offset+1);
+    is_tuple = not res :: ParseError;
     if (not is_tuple)
-      res := parse_obj(tokens, offset+2);
+      res = parse_obj(tokens, offset+2);
       return res if res :: ParseError;
       return error(res.offset) if at(tokens, res.offset, nil) /= right_parenthesis;
     ;
     
-    obj := _obj_(tokens[offset]) @ res.obj;
+    obj = _obj_(tokens[offset]) @ res.obj;
     return (obj: obj, offset: res.offset + if is_tuple then 0 else 1 end);
   }
 
@@ -1327,7 +1327,7 @@ ParseResult parse_obj([Token] tokens)
   {
     assert offset < length(tokens) and tokens[offset] == left_brace;
 
-    res := parse_objs(tokens, offset+1, right_brace);
+    res = parse_objs(tokens, offset+1, right_brace);
     return res if res :: ParseError;
 
     return (obj: set(res.objs), offset: res.offset);
@@ -1339,7 +1339,7 @@ ParseResult parse_obj([Token] tokens)
     assert offset < length(tokens);
     assert tokens[offset] == left_bracket;
 
-    res := parse_objs(tokens, offset+1, right_bracket);
+    res = parse_objs(tokens, offset+1, right_bracket);
     return res if res :: ParseError;
 
     return (obj: res.objs, offset: res.offset);
@@ -1350,51 +1350,51 @@ ParseResult parse_obj([Token] tokens)
   {
     assert offset < length(tokens) and tokens[offset] == left_parenthesis;
     
-    len := length(tokens);
-    os  := offset + 1;
+    len = length(tokens);
+    os  = offset + 1;
     
-    is_tuple := at(tokens, os, nil) :: <label(Atom)>;
+    is_tuple = at(tokens, os, nil) :: <label(Atom)>;
     
-    keys   := [];
-    values := [];
+    keys   = [];
+    values = [];
 
     loop
       return error(os) if os >= len;
-      head := tokens[os];
+      head = tokens[os];
       break if head == right_parenthesis;
       
       if (is_tuple)
         return error(os) if not head :: <label(Atom)>;
-        key    := _obj_(head);
-        val_os := os + 1;
+        key    = _obj_(head);
+        val_os = os + 1;
 
       else
-        res := parse_obj(tokens, os);
+        res = parse_obj(tokens, os);
         return res if res :: ParseError;
         return error(res.offset) if at(tokens, res.offset, nil) /= :right_arrow;
-        key    := res.obj;
-        val_os := res.offset + 1;
+        key    = res.obj;
+        val_os = res.offset + 1;
       ;
 
       return error(os) if in(key, keys);
 
-      res := parse_obj(tokens, val_os);
+      res = parse_obj(tokens, val_os);
       return res if res :: ParseError;
       
-      keys   := [key | keys];
-      values := [res.obj | values];
+      keys   = [key | keys];
+      values = [res.obj | values];
       
-      os   := res.offset;
-      head := at(tokens, os, nil);
+      os   = res.offset;
+      head = at(tokens, os, nil);
       
       if (head == :comma)
-        os := os + 1;
+        os = os + 1;
       elif (head /= right_parenthesis)
         return error(os);
       ;
     ;
 
-    obj := (k => values[index_first(k, keys)] : k <- set(keys)); //## BAD
+    obj = (k => values[index_first(k, keys)] : k <- set(keys)); //## BAD
 
     return (obj: obj, offset: os+1);
   }
@@ -1402,22 +1402,22 @@ ParseResult parse_obj([Token] tokens)
   //ParseIntermMultRes parse_objs([Token^] tokens, Nat offset, Token eof)
   parse_objs(tokens, offset, eof)
   {
-    len  := length(tokens);
-    os   := offset;
-    objs := [];
+    len  = length(tokens);
+    os   = offset;
+    objs = [];
     
     loop
       break if at(tokens, os, nil) == eof; //## NOT SURE, WHAT IF Token WHERE MADE TO INCLUDE nil?
       
-      res := parse_obj(tokens, os);
+      res = parse_obj(tokens, os);
       return res if res :: ParseError;
       
-      objs := objs & [res.obj];
-      os   := res.offset;
-      head := at(tokens, os, nil);
+      objs = objs & [res.obj];
+      os   = res.offset;
+      head = at(tokens, os, nil);
       
       if (head == :comma)
-        os := os + 1;
+        os = os + 1;
       else
         return error(os) if head /= eof;
       ;

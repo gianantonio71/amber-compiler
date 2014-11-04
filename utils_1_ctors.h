@@ -12,15 +12,15 @@ SynType       syn_union([SynType^] types)                           = if length(
 
 SynType syn_set_type(SynType elem_type, Bool non_empty)
 {
-  res_type := ne_set_type(elem_type: elem_type);
-  res_type := syn_union([empty_set_type, res_type]) if not non_empty;
+  res_type = ne_set_type(elem_type: elem_type);
+  res_type = syn_union([empty_set_type, res_type]) if not non_empty;
   return res_type;
 }
 
 SynType syn_seq_type(SynType elem_type, Bool non_empty)
 {
-  res_type := ne_seq_type(elem_type: elem_type);
-  res_type := syn_union([empty_seq_type, res_type]) if not non_empty;
+  res_type = ne_seq_type(elem_type: elem_type);
+  res_type = syn_union([empty_seq_type, res_type]) if not non_empty;
   return res_type;
 }
 

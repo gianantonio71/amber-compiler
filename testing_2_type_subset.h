@@ -4,8 +4,8 @@ Nat bit(Bool b) = if b then 1 else 0 end;
 T*+ powerset(T* s)
 {
   return {{}} if s == {};
-  rand_elem := rand_elem(s);
-  rec_ps := powerset(s - {rand_elem});
+  rand_elem = rand_elem(s);
+  rec_ps = powerset(s - {rand_elem});
   return rec_ps & {ss & {rand_elem} : ss <- rec_ps};
 }
 
@@ -18,36 +18,36 @@ T** ne_powerset(T* s) = powerset(s, 1) - {{}};
 T*+ set_cart_prod(T++ s)
 {
   if (size(s) == 1)
-    ss := only_element(s);
+    ss = only_element(s);
     return {{e} : e <- ss};
   ;
 
-  rand_set := rand_elem(s);
-  rec_cp := set_cart_prod(s - {rand_set});
+  rand_set = rand_elem(s);
+  rec_cp = set_cart_prod(s - {rand_set});
   return {cpe & {re} : cpe <- rec_cp, re <- rand_set};
 }
 
 
 AnonType* gen_self_rec_pretypes(NzNat max_depth, Atom* term_symbols, Atom* func_symbols)
 {
-  singl_types := {symb_type(s) : s <- term_symbols};
+  singl_types = {symb_type(s) : s <- term_symbols};
   if (max_depth == 1)
     // print "************ max_depth = " & to_str(max_depth);
-    res := {union_type(ts) : ts <- powerset(singl_types & {self}) - {{}}};
+    res = {union_type(ts) : ts <- powerset(singl_types & {self}) - {{}}};
     return res;
   ;
 
-  pretypes := gen_self_rec_pretypes(max_depth-1, term_symbols, func_symbols);
+  pretypes = gen_self_rec_pretypes(max_depth-1, term_symbols, func_symbols);
 
   // print "************ max_depth = " & to_str(max_depth);
 
-  pretypes := {{st} : st <- singl_types} & {{self}} & {{tag_obj_type(symb_type(f), pt) : pt <- pretypes} : f <- func_symbols};
-  pretypes := set_cart_prod(pretypes);
-  pretypes := union({powerset(pt) : pt <- pretypes});
+  pretypes = {{st} : st <- singl_types} & {{self}} & {{tag_obj_type(symb_type(f), pt) : pt <- pretypes} : f <- func_symbols};
+  pretypes = set_cart_prod(pretypes);
+  pretypes = union({powerset(pt) : pt <- pretypes});
 
-  pretypes := {union_type(ts) : ts <- pretypes - {{}}};
-  self_rec_types := {t : pt <- pretypes, t = self_rec_type(pt) ; anon_type_is_wf(t, {})};
-  self_rec_types_bad := {t : pt <- pretypes, t = self_rec_type(pt) ; not anon_type_is_wf(t, {})};
+  pretypes = {union_type(ts) : ts <- pretypes - {{}}};
+  self_rec_types = {t : pt <- pretypes, t = self_rec_type(pt) ; anon_type_is_wf(t, {})};
+  self_rec_types_bad = {t : pt <- pretypes, t = self_rec_type(pt) ; not anon_type_is_wf(t, {})};
 
   return pretypes & self_rec_types;
 }
@@ -55,7 +55,7 @@ AnonType* gen_self_rec_pretypes(NzNat max_depth, Atom* term_symbols, Atom* func_
 
 AnonType* gen_types(NzNat max_depth, Atom* term_symbols, Atom* func_symbols)
 {
-  pts := gen_self_rec_pretypes(max_depth, term_symbols, func_symbols);
+  pts = gen_self_rec_pretypes(max_depth, term_symbols, func_symbols);
   print "***";
   print size(pts);
   return {pt : pt <- pts ; anon_type_is_wf(pt, {})};
@@ -65,8 +65,8 @@ AnonType* gen_types(NzNat max_depth, Atom* term_symbols, Atom* func_symbols)
 Set gen_objs(NzNat max_depth, Atom* term_symbols, Atom* func_symbols)
 {
   return term_symbols if max_depth == 1;
-  low_objs := gen_objs(max_depth-1, term_symbols, func_symbols);
-  top_objs := {f @ o : o <- low_objs, f <- func_symbols};
+  low_objs = gen_objs(max_depth-1, term_symbols, func_symbols);
+  top_objs = {f @ o : o <- low_objs, f <- func_symbols};
   return low_objs & top_objs;
 }
 
@@ -87,26 +87,26 @@ Bool ref_is_subset([Nat] incl_map_1, [Nat] incl_map_2)
   // assert length(incl_map_1) == length(incl_map_2);
 
   // for (i : indexes(incl_map_1))
-  //   incl_1 := incl_map_1[i];
-  //   incl_2 := incl_map_2[i];
+  //   incl_1 = incl_map_1[i];
+  //   incl_2 = incl_map_2[i];
   //   return false if incl_1 and not incl_2;
   // ;
 
-  len1 := length(incl_map_1);
-  len2 := length(incl_map_2);
+  len1 = length(incl_map_1);
+  len2 = length(incl_map_2);
 
-  i1 := 0;
-  i2 := 0;
+  i1 = 0;
+  i2 = 0;
   while (i1 < len1 and i2 < len2)
-    incl_1 := incl_map_1[i1];
-    incl_2 := incl_map_2[i2];
+    incl_1 = incl_map_1[i1];
+    incl_2 = incl_map_2[i2];
 
     if (incl_1 == incl_2)
-      i1 := i1 + 1;
-      i2 := i2 + 1;
+      i1 = i1 + 1;
+      i2 = i2 + 1;
 
     elif (incl_1 > incl_2)
-      i2 := i2 + 1;
+      i2 = i2 + 1;
 
     else
       return false;
@@ -140,18 +140,18 @@ String** typess_to_string(AnonType** typess)   = {{type_to_str(t) : t <- ts} : t
 
 Bool test_type_subset_checking([AnonType] types, [Any] objs)
 {
-  incl_matrix := [[i : o, i <- objs, type_contains_obj(t, o)] : t <- types];
-  ok := true;
-  count := 0;
+  incl_matrix = [[i : o, i <- objs, type_contains_obj(t, o)] : t <- types];
+  ok = true;
+  count = 0;
   for (i1 : indexes(types))
-    t1 := types[i1];
-    loc_count := 0;
+    t1 = types[i1];
+    loc_count = 0;
     for (i2 : indexes(types))
-      t2 := types[i2];
-      res := is_subset(t1, t2);
-      ref_res := ref_is_subset(incl_matrix[i1], incl_matrix[i2]);
+      t2 = types[i2];
+      res = is_subset(t1, t2);
+      ref_res = ref_is_subset(incl_matrix[i1], incl_matrix[i2]);
       if (res /= ref_res)
-        ok := false;
+        ok = false;
         print "********** ERROR! ERROR! ERROR! **********";
         print res;
         print ref_res;
@@ -161,9 +161,9 @@ Bool test_type_subset_checking([AnonType] types, [Any] objs)
         print t2;
         // fail;
       ;
-      loc_count := loc_count + 1 if res and i1 /= i2;
+      loc_count = loc_count + 1 if res and i1 /= i2;
     ;
-    count := count + loc_count;
+    count = count + loc_count;
     print [i1, loc_count, type_to_str(t1)];
   ;
   print ["Number of subset relations found", count];
@@ -173,22 +173,22 @@ Bool test_type_subset_checking([AnonType] types, [Any] objs)
 
 Bool check_intersection(ClosedType inters, [Any] objs, [Nat] ns1, [Nat] ns2)
 {
-  l1 := length(ns1);
-  l2 := length(ns2);
-  i1 := 0;
-  i2 := 0;
+  l1 = length(ns1);
+  l2 = length(ns2);
+  i1 = 0;
+  i2 = 0;
   while (i1 < l1 and i2 < l2)
-    n1 := ns1[i1];
-    n2 := ns2[i2];
+    n1 = ns1[i1];
+    n2 = ns2[i2];
     if (n1 == n2)
-      obj := objs[n1];
+      obj = objs[n1];
       return false if inters == void_type or not type_contains_obj(inters, obj);
-      i1 := i1 + 1;
-      i2 := i2 + 1;
+      i1 = i1 + 1;
+      i2 = i2 + 1;
     elif (n1 < n2)
-      i1 := i1 + 1;
+      i1 = i1 + 1;
     else
-      i2 := i2 + 1;
+      i2 = i2 + 1;
     ;
   ;
   return true;
@@ -197,11 +197,11 @@ Bool check_intersection(ClosedType inters, [Any] objs, [Nat] ns1, [Nat] ns2)
 
 test_type_intersection_checking([AnonType] types, [Any] objs)
 {
-  incl_matrix := [[i : o, i <- objs, type_contains_obj(t, o)] : t <- types];
-  low_counter := 0;
-  high_counter := 0;
+  incl_matrix = [[i : o, i <- objs, type_contains_obj(t, o)] : t <- types];
+  low_counter = 0;
+  high_counter = 0;
   for (t1, i1 : types; t2, i2 : types)
-    inters := intersection_superset(t1, t2);
+    inters = intersection_superset(t1, t2);
     if (not check_intersection(inters, objs, incl_matrix[i1], incl_matrix[i2]))
       print "ERROR ERROR ERROR ERROR:";
       print t1;
@@ -209,10 +209,10 @@ test_type_intersection_checking([AnonType] types, [Any] objs)
       print inters;
       fail;
     ;
-    low_counter := low_counter + 1;
+    low_counter = low_counter + 1;
     if (low_counter == 100)
-      high_counter := high_counter + 1;
-      low_counter := 0;
+      high_counter = high_counter + 1;
+      low_counter = 0;
       print high_counter;
     ;
   ;
@@ -231,7 +231,7 @@ T rand_elem(T+ set)   = _rand_elem_(set);
 
 T* rand_subset(T* set, Nat min_size)
 {
-  valid_subsets := {ss : ss <- powerset(set) ; size(ss) >= min_size};
+  valid_subsets = {ss : ss <- powerset(set) ; size(ss) >= min_size};
   assert size(valid_subsets) > 0;
   return rand_elem(valid_subsets);
 }
@@ -241,7 +241,7 @@ T* rand_subset(T* set, Nat min_size)
 // {
 //   T* rand_constr_subset(T* set, Nat min_size)
 //   {
-//     valid_subsets := {ss : ss <- powerset(set) ; size(ss) >= min_size, not (? x1 <- ss, x2 <- ss : x1 /= x2, not compatible(x1, x2))};
+//     valid_subsets = {ss : ss <- powerset(set) ; size(ss) >= min_size, not (? x1 <- ss, x2 <- ss : x1 /= x2, not compatible(x1, x2))};
 //     assert size(valid_subsets) > 0;
 //     return rand_elem(valid_subsets);
 //   }
@@ -251,8 +251,8 @@ T* rand_subset(T* set, Nat min_size)
 AnonType* gen_rand_types(NzNat max_depth, NzNat count, Atom* term_symbs, Atom* func_symbs)
 {
   let (term_symbs=term_symbs, func_symbs=func_symbs, rec_is_allowed=false, rec_is_req=false, ground_is_req=true, self_term_symbs={}, self_fn_symbs={})
-    ts := {gen_rand_type(rand_nat(1, max_depth), i) : i <- set(inc_seq(count))}; //## UGLY UGLY
-    // bad_types := {t : t <- ts ; not anon_type_is_wf(t, {})};
+    ts = {gen_rand_type(rand_nat(1, max_depth), i) : i <- set(inc_seq(count))}; //## UGLY UGLY
+    // bad_types = {t : t <- ts ; not anon_type_is_wf(t, {})};
     // for (t : bad_types)
     //   print type_to_str(t);
     //   // print t;
@@ -272,7 +272,7 @@ AnonType* gen_rand_types(NzNat max_depth, NzNat count, Atom* term_symbs, Atom* f
   AnonType gen_rand_type(NzNat depth, Nat idx)
   {
     // print idx;
-    res := gen_rand_type(depth);
+    res = gen_rand_type(depth);
     // print type_to_str(res);
     if (not anon_type_is_wf(res, {}))
       print idx;
@@ -300,38 +300,38 @@ using
     assert depth > 1;
     assert term_symbs /= {} and func_symbs /= {};
 
-    self_comp_term_symbs := term_symbs - self_term_symbs;
-    self_comp_fn_symbs   := func_symbs - self_fn_symbs;
+    self_comp_term_symbs = term_symbs - self_term_symbs;
+    self_comp_fn_symbs   = func_symbs - self_fn_symbs;
 
-    self_comp_symbs_available := self_comp_term_symbs /= {} or self_comp_fn_symbs /= {};
+    self_comp_symbs_available = self_comp_term_symbs /= {} or self_comp_fn_symbs /= {};
 
     if (rec_is_req)
-      self_in_fn_type := func_symbs /= {} and once_in(2);
-      self_here := not self_in_fn_type or (size(self_comp_fn_symbs) > 1 and once_in(4));
+      self_in_fn_type = func_symbs /= {} and once_in(2);
+      self_here = not self_in_fn_type or (size(self_comp_fn_symbs) > 1 and once_in(4));
     else
-      self_in_fn_type := false;
-      self_here := rec_is_allowed and once_in(4);
+      self_in_fn_type = false;
+      self_here = rec_is_allowed and once_in(4);
     ;
 
     if (self_here)
-      types := {self};
-      rem_term_symbs := self_comp_term_symbs;
-      rem_fn_symbs := self_comp_fn_symbs;
+      types = {self};
+      rem_term_symbs = self_comp_term_symbs;
+      rem_fn_symbs = self_comp_fn_symbs;
     else
-      types := {};
-      rem_term_symbs := term_symbs;
-      rem_fn_symbs   := func_symbs;
+      types = {};
+      rem_term_symbs = term_symbs;
+      rem_fn_symbs   = func_symbs;
     ;
 
     if (self_in_fn_type)
-      self_fn_symb := rand_elem(rem_fn_symbs);
-      rem_fn_symbs := rem_fn_symbs - {self_fn_symb};
-      type := gen_rand_tag_obj_type(depth, self_fn_symb);
-      types := types & {type};
+      self_fn_symb = rand_elem(rem_fn_symbs);
+      rem_fn_symbs = rem_fn_symbs - {self_fn_symb};
+      type = gen_rand_tag_obj_type(depth, self_fn_symb);
+      types = types & {type};
     ;
 
     if (rem_term_symbs /= {} or rem_fn_symbs /= {})
-      types := types & gen_rand_non_union_types(depth, rem_term_symbs, rem_fn_symbs ; rec_is_req=false);
+      types = types & gen_rand_non_union_types(depth, rem_term_symbs, rem_fn_symbs ; rec_is_req=false);
     ;
 
     assert not (rec_is_req and not (? t <- types : has_rec_branches(t)));
@@ -345,35 +345,35 @@ using
     // We assume that all self references (both required ones and allowed ones) are dealt with somewhere else.
     assert not rec_is_req;
 
-    rem_term_symbs := valid_term_symbs;
-    rem_fn_symbs   := valid_fn_symbs;
+    rem_term_symbs = valid_term_symbs;
+    rem_fn_symbs   = valid_fn_symbs;
 
-    rec_types := {};
+    rec_types = {};
     // Let's decide whether we want another recursive type here
     while (rem_fn_symbs /= {} and max_depth >= 3 and once_in(3))
-      sel_term_symbs := rand_subset(rem_term_symbs, 0);
-      sel_fn_symbs := rand_subset(rem_fn_symbs, 1);
-      type := gen_rand_self_rec_type(max_depth, sel_term_symbs, sel_fn_symbs);
-      rec_types := rec_types & {type};
-      rem_term_symbs := rem_term_symbs - sel_term_symbs;
-      rem_fn_symbs := rem_fn_symbs - sel_fn_symbs;
+      sel_term_symbs = rand_subset(rem_term_symbs, 0);
+      sel_fn_symbs = rand_subset(rem_fn_symbs, 1);
+      type = gen_rand_self_rec_type(max_depth, sel_term_symbs, sel_fn_symbs);
+      rec_types = rec_types & {type};
+      rem_term_symbs = rem_term_symbs - sel_term_symbs;
+      rem_fn_symbs = rem_fn_symbs - sel_fn_symbs;
     ;
 
     return rec_types if rem_term_symbs == {} and rem_fn_symbs == {};
 
-    at_least_one_term := rem_term_symbs /= {} and (rem_fn_symbs == {} or once_in(2));
-    used_term_symbs := rand_subset(rem_term_symbs, bit(at_least_one_term));
-    used_fn_symbs := rand_subset(rem_fn_symbs, bit(not at_least_one_term));
+    at_least_one_term = rem_term_symbs /= {} and (rem_fn_symbs == {} or once_in(2));
+    used_term_symbs = rand_subset(rem_term_symbs, bit(at_least_one_term));
+    used_fn_symbs = rand_subset(rem_fn_symbs, bit(not at_least_one_term));
 
     assert used_term_symbs /= {} or used_fn_symbs /= {};
 
-    term_types := {symb_type(s) : s <- used_term_symbs};
+    term_types = {symb_type(s) : s <- used_term_symbs};
 
     if (ground_is_req and rec_types == {} and term_types == {})
-      ground_fn_symb := rand_elem(used_fn_symbs);
-      fn_types := {gen_rand_tag_obj_type(max_depth, s; ground_is_req = s == ground_fn_symb) : s <- used_fn_symbs};
+      ground_fn_symb = rand_elem(used_fn_symbs);
+      fn_types = {gen_rand_tag_obj_type(max_depth, s; ground_is_req = s == ground_fn_symb) : s <- used_fn_symbs};
     else
-      fn_types := {gen_rand_tag_obj_type(max_depth, s; ground_is_req=false) : s <- used_fn_symbs};
+      fn_types = {gen_rand_tag_obj_type(max_depth, s; ground_is_req=false) : s <- used_fn_symbs};
     ;
 
     return rec_types & term_types & fn_types;
@@ -395,10 +395,10 @@ using
 
   AnonType* gen_rand_term_types =
   {
-    ground_types := powerset({symb_type(s) : s <- term_symbs}, 1);
-    self_types   := {s & {self} : s <- powerset({symb_type(s) : s <- term_symbs - self_term_symbs}, bit(ground_is_req))};
-    all_types    := ground_types & self_types;
-    sel_types    := if rec_is_req      then self_types,
+    ground_types = powerset({symb_type(s) : s <- term_symbs}, 1);
+    self_types   = {s & {self} : s <- powerset({symb_type(s) : s <- term_symbs - self_term_symbs}, bit(ground_is_req))};
+    all_types    = ground_types & self_types;
+    sel_types    = if rec_is_req      then self_types,
                        rec_is_allowed  then all_types
                                        else ground_types;
                     ;
@@ -411,9 +411,9 @@ using
   TagObjType[AnonType] gen_rand_tag_obj_type(NzNat depth, Atom fn_symb)
   {
     loop
-      tag_type := symb_type(fn_symb);
-      obj_type := gen_rand_type(depth-1);
-      tag_obj_type := tag_obj_type(tag_type, obj_type);
+      tag_type = symb_type(fn_symb);
+      obj_type = gen_rand_type(depth-1);
+      tag_obj_type = tag_obj_type(tag_type, obj_type);
       assert not (rec_is_req and not has_rec_branches(tag_obj_type));
       assert not (ground_is_req and not has_ground_branches(tag_obj_type));
       return tag_obj_type;
@@ -426,18 +426,18 @@ using
   SelfRecType[AnonType] gen_rand_self_rec_type(NzNat depth, Atom* sel_term_symbs, Atom+ sel_fn_symbs)
   {
     assert depth >= 3;
-    symb_types         := {symb_type(s) : s <- sel_term_symbs};
-    sel_rec_fn_symb    := rand_elem(sel_fn_symbs);
-    sel_ground_fn_symb := rand_elem(sel_fn_symbs);
+    symb_types         = {symb_type(s) : s <- sel_term_symbs};
+    sel_rec_fn_symb    = rand_elem(sel_fn_symbs);
+    sel_ground_fn_symb = rand_elem(sel_fn_symbs);
     let (incl_self=true, self_term_symbs=sel_term_symbs, self_fn_symbs=sel_fn_symbs)
-      tag_obj_types := for (s <- sel_fn_symbs) {{
-                         rec_is_req := s == sel_rec_fn_symb;
-                         ground_is_req := sel_term_symbs == {} and s == sel_ground_fn_symb;
+      tag_obj_types = for (s <- sel_fn_symbs) {{
+                         rec_is_req = s == sel_rec_fn_symb;
+                         ground_is_req = sel_term_symbs == {} and s == sel_ground_fn_symb;
                          return gen_rand_tag_obj_type(depth-1, s; rec_is_req=rec_is_req, ground_is_req=ground_is_req);
                        }};
     ;
-    inner_type := union_type(symb_types & tag_obj_types);
-    rec_type   := self_rec_type(inner_type);
+    inner_type = union_type(symb_types & tag_obj_types);
+    rec_type   = self_rec_type(inner_type);
     assert anon_type_is_wf(rec_type, {});
     return rec_type;
   }
@@ -465,11 +465,11 @@ Bool are_compatible(TypeGroup g1, TypeGroup g2)
 
 AnonType+ gen_rand_non_rec_types(NzNat max_depth, NzNat count, Atom* term_symbs, Atom* func_symbs) 
 {
-  leaf_type_groups := {:any_symb, :int, :empty_seq, :empty_set, :empty_map} & {:symb(s) : s <- term_symbs};
-  comp_type_groups := {:ne_seq, :ne_set, :ne_map, :tuple, :tag_obj_any_tag} & {:tag_obj(s) : s <- func_symbs};
+  leaf_type_groups = {:any_symb, :int, :empty_seq, :empty_set, :empty_map} & {:symb(s) : s <- term_symbs};
+  comp_type_groups = {:ne_seq, :ne_set, :ne_map, :tuple, :tag_obj_any_tag} & {:tag_obj(s) : s <- func_symbs};
 
-  valid_sets_of_leaf_type_groups := {ss : ss <- powerset(leaf_type_groups) ; is_valid_subset(ss)};
-  valid_sets_of_type_groups := {ss : ss <- powerset(leaf_type_groups & comp_type_groups) ; is_valid_subset(ss, comp_type_groups)};
+  valid_sets_of_leaf_type_groups = {ss : ss <- powerset(leaf_type_groups) ; is_valid_subset(ss)};
+  valid_sets_of_type_groups = {ss : ss <- powerset(leaf_type_groups & comp_type_groups) ; is_valid_subset(ss, comp_type_groups)};
 
   print size(valid_sets_of_leaf_type_groups);
   print size(valid_sets_of_type_groups);
@@ -484,7 +484,7 @@ AnonType+ gen_rand_non_rec_types(NzNat max_depth, NzNat count, Atom* term_symbs,
   AnonType generate_checked_rand_non_rec_type(NzNat max_depth, Atom* term_symbs, Atom* func_symbs, TypeGroup+ leaf_type_groups, TypeGroup+ comp_type_groups, TypeGroup++ valid_sets_of_leaf_type_groups, TypeGroup++ valid_sets_of_type_groups)
   {
     let (term_symbs=term_symbs, func_symbs=func_symbs, leaf_type_groups=leaf_type_groups, comp_type_groups=comp_type_groups, valid_sets_of_leaf_type_groups=valid_sets_of_leaf_type_groups, valid_sets_of_type_groups=valid_sets_of_type_groups)
-      type := gen_rand_non_rec_type(rand_nat(1, max_depth));
+      type = gen_rand_non_rec_type(rand_nat(1, max_depth));
     ;
     if (not anon_type_is_wf(type, {}))
       print "ERROR ERROR ERROR!";
@@ -511,7 +511,7 @@ using
   {
     return gen_rand_non_rec_union_type(max_depth) if once_in(3);
 
-    type_groups := if max_depth == 1 then leaf_type_groups else comp_type_groups end;
+    type_groups = if max_depth == 1 then leaf_type_groups else comp_type_groups end;
 
     return gen_rand_non_rec_type_of_group(rand_elem(type_groups), max_depth);
   }
@@ -520,10 +520,10 @@ using
   {
     return union_type({gen_rand_non_rec_type_of_group(g, 1) : g <- rand_elem(valid_sets_of_leaf_type_groups)}) if max_depth == 1;
 
-    groups := rand_elem(valid_sets_of_type_groups);
-    max_depth_group := rand_elem(intersection(groups, comp_type_groups));
-    max_depth_type := gen_rand_non_rec_type_of_group(max_depth_group, max_depth);
-    types := {max_depth_type} & {gen_rand_non_rec_type_of_group(g, if in(g, comp_type_groups) then rand_nat(2, max_depth) else 1 end) : g <- groups ; g /= max_depth_group};
+    groups = rand_elem(valid_sets_of_type_groups);
+    max_depth_group = rand_elem(intersection(groups, comp_type_groups));
+    max_depth_type = gen_rand_non_rec_type_of_group(max_depth_group, max_depth);
+    types = {max_depth_type} & {gen_rand_non_rec_type_of_group(g, if in(g, comp_type_groups) then rand_nat(2, max_depth) else 1 end) : g <- groups ; g /= max_depth_group};
     return union_type(types);
   }    
 
@@ -560,35 +560,35 @@ using
 
 test_main =
 {
-  // o := _obj_("obj.txt");
+  // o = _obj_("obj.txt");
   // print o;
   // print anon_type_is_wf(o);
   // return nil;
 
-  // o := _obj_("obj.txt");
+  // o = _obj_("obj.txt");
   // print o;
-  // t1 := o[0];
-  // t2 := o[1];
+  // t1 = o[0];
+  // t2 = o[1];
   // print anon_type_is_wf(t1);
   // print anon_type_is_wf(t2);
-  // tu := union_superset({t1, t2});
+  // tu = union_superset({t1, t2});
   // print anon_type_is_wf(tu);
   // return nil;
 
-  types := gen_rand_types(5, 400, {:a, :b}, {:f, :g});
-  // types := gen_rand_non_rec_types(5, 400, {:a, :b}, {:f, :g});
-  type_pairs := {[t1, t2] : t1 <- types, t2 <- types};
+  types = gen_rand_types(5, 400, {:a, :b}, {:f, :g});
+  // types = gen_rand_non_rec_types(5, 400, {:a, :b}, {:f, :g});
+  type_pairs = {[t1, t2] : t1 <- types, t2 <- types};
 
   print size(types);
 
-  inters_semi_errors_count := 0;
+  inters_semi_errors_count = 0;
 
   for (ts, i : rand_sort(type_pairs))
     print i;
-    t0 := ts[0];
-    t1 := ts[1];
-    tu := union_superset(set(ts));
-    ti := intersection_superset(t0, t1);
+    t0 = ts[0];
+    t1 = ts[1];
+    tu = union_superset(set(ts));
+    ti = intersection_superset(t0, t1);
 
     if (not anon_type_is_wf(tu))
       print "ERROR ERROR ERROR ERROR!";
@@ -609,15 +609,15 @@ test_main =
     ;
 
 // print "#1";
-    is_01 := is_subset(t0, t1);
+    is_01 = is_subset(t0, t1);
 // print "#2";
-    is_0u := is_subset(t0, tu);
+    is_0u = is_subset(t0, tu);
 // print "#3";
-    is_1u := is_subset(t1, tu);
+    is_1u = is_subset(t1, tu);
 // print "#4";
-    is_i0 := ti == void_type or is_subset(ti, t0);
+    is_i0 = ti == void_type or is_subset(ti, t0);
 // print "#5";
-    is_i1 := ti == void_type or is_subset(ti, t1);
+    is_i1 = ti == void_type or is_subset(ti, t1);
 // print "#6";
 
     if (not is_0u or not is_1u)
@@ -631,7 +631,7 @@ test_main =
     ;
 
     if (not is_i0 or not is_i1)
-      inters_semi_errors_count := inters_semi_errors_count + 1;
+      inters_semi_errors_count = inters_semi_errors_count + 1;
     ;
   ;
 
@@ -641,28 +641,28 @@ test_main =
 
   // AnonType* gen_rand_types(NzNat max_depth, NzNat count, Atom* term_symbs, Atom* func_symbs)
   // for (i : inc_seq(10000))
-  //   types := gen_rand_types(5, 1000, {:a, :b}, {:f, :g});
+  //   types = gen_rand_types(5, 1000, {:a, :b}, {:f, :g});
   //   print i + 1;
   // ;
   // return nil;
 
-  types := gen_rand_types(5, 400, {:a, :b}, {:f, :g});
-  // types := set(middle_subseq(rand_sort(types), 200, 0));
+  types = gen_rand_types(5, 400, {:a, :b}, {:f, :g});
+  // types = set(middle_subseq(rand_sort(types), 200, 0));
   print types_to_str(types);
   print size(types);
 
   // return nil;
 
-  // types := gen_types(2, {:a}, {:f, :g});
-  // // types := gen_self_rec_pretypes(3, {:a}, {:f, :g});
+  // types = gen_types(2, {:a}, {:f, :g});
+  // // types = gen_self_rec_pretypes(3, {:a}, {:f, :g});
   // print size(types);
 
-  objs := gen_objs(8, {:a, :b}, {:f, :g});
+  objs = gen_objs(8, {:a, :b}, {:f, :g});
   print size(objs);
   // print objs;
   
-  types := rand_sort(types);
-  objs  := rand_sort(objs);
+  types = rand_sort(types);
+  objs  = rand_sort(objs);
 
   print "- - - - - - - - - - - - - - - - - - - - - -";
   for (c : [0, 1, 2, 3])
@@ -676,9 +676,9 @@ test_main =
   // for (i1 : indexes(types))
   //   for (i2 : indexes(types))
   //     print [i1, i2];
-  //     t1 := types[i1];
-  //     t2 := types[i2];
-  //     t12 := intersection_superset(t1, t2);
+  //     t1 = types[i1];
+  //     t2 = types[i2];
+  //     t12 = intersection_superset(t1, t2);
   //   ;
   // ;
 
@@ -694,9 +694,9 @@ test_main =
 
   // print types_to_str(types);
 
-  // ok := test_type_subset_checking(types, objs);
+  // ok = test_type_subset_checking(types, objs);
 
-  ok := test_type_intersection_checking(types, objs);
+  ok = test_type_intersection_checking(types, objs);
 
   print "We are at the end and all is well!";
 
@@ -704,4 +704,4 @@ test_main =
 };
 
 
-testcases r := test_main; end
+testcases r = test_main; end

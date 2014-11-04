@@ -12,7 +12,7 @@ using
   True expr_is_wf(Expr expr, Var* scalar_vars)
   {
     return false if (? e <- ordinary_subexprs(expr) : not expr_is_wf(e, scalar_vars));
-    gvs := scalar_vars & gen_vars(expr);
+    gvs = scalar_vars & gen_vars(expr);
     return false if (? e <- special_subexprs(expr) : not expr_is_wf(e, gvs));
     return rest_is_wf(expr, scalar_vars);
     
@@ -45,8 +45,8 @@ using
       return false if length(fn_call.params) /= arity(fndef);
       
       for (i : indexes(fn_call.params))
-        actual_par := fn_call.params[i];
-        formal_par := fndef.params[i];
+        actual_par = fn_call.params[i];
+        formal_par = fndef.params[i];
         if (formal_par.type?)
           return false if arity(actual_par) /= arity(formal_par.type);
         else
@@ -55,7 +55,7 @@ using
       ;
       
       for (v : keys(fndef.named_params))
-        par_arity := arity(fndef.named_params[v]);
+        par_arity = arity(fndef.named_params[v]);
         if (has_key(fn_call.named_params, v))
           return false if arity(fn_call.named_params[v]) /= par_arity;
         elif (has_key(cls_vars, v))
@@ -76,16 +76,16 @@ using
   {
     return false if length(case.ptrns) /= arg_count;
     
-    vs := scalar_vars;
+    vs = scalar_vars;
     
     for (p : case.ptrns)
-      pvs := new_vars(p);
+      pvs = new_vars(p);
       //## BUG: HERE WE ARE ONLY CHECKING SCALAR VARIABLES. WHAT ABOUT CLOSURES?
       //## AND WHAT ABOUT NAMED PARAMETERS? THEY HAVE A DIFFERENT REPRESENTATION,
       //## EVEN THOUGH THEY LOOK THE SAME TO THE USER. IS THAT A PROBLEM?
       return false if not disjoint(pvs, vs);
       return false if p :: <var_ptrn(name: Var)>;  //## BAD BAD BAD
-      vs  := vs & pvs;
+      vs  = vs & pvs;
     ;
 
     return expr_is_wf(case.expr, vs);  
@@ -97,13 +97,13 @@ using
 
   True stmts_are_wf([Statement^] stmts, Var* scalar_vars, Bool is_inside_loop, Bool needs_return)
   {
-    vs        := scalar_vars;
-    reachable := true;
+    vs        = scalar_vars;
+    reachable = true;
 
     for (s, i : stmts)
       return false if not reachable or not stmt_is_wf(s, vs, is_inside_loop);
-      vs        := vs & new_vars(s);
-      reachable := reachable and may_fall_through(s);
+      vs        = vs & new_vars(s);
+      reachable = reachable and may_fall_through(s);
     ;
 
     return not needs_return or not reachable;
@@ -142,7 +142,7 @@ using
     loop_stmt(ss?)    = stmts_are_wf(ss, scalar_vars, true, false),
     
                         //## SHOULD THE LOOP VARIABLES BE READ-ONLY?
-    foreach_stmt()    = { nvs := {stmt.var, stmt.idx_var if stmt.idx_var?};
+    foreach_stmt()    = { nvs = {stmt.var, stmt.idx_var if stmt.idx_var?};
                           return disjoint(nvs, scalar_vars)           and
                                  expr_is_wf(stmt.values, scalar_vars) and
                                  stmts_are_wf(stmt.body, scalar_vars & nvs, true, false);

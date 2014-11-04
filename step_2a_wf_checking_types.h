@@ -46,7 +46,7 @@ Bool anon_type_is_wf(AnonType type, TypeVar* type_vars) = not has_rec_branches(t
 
 Bool anon_pretype_is_wf(AnonType type, (SelfPretype => PseudoType) self_parts, TypeVar* type_vars)
 {
-  res := anon_pretype_is_wf_impl(type, self_parts, type_vars);
+  res = anon_pretype_is_wf_impl(type, self_parts, type_vars);
 // if (not res)
 //   print "--------------";
 //   print type;
@@ -93,13 +93,13 @@ Bool anon_pretype_is_wf_impl(AnonType type, (SelfPretype => PseudoType) self_par
       return false if has_top_level_self(t, self(i));
     ;
 
-    ground_branch_idxs := {};
+    ground_branch_idxs = {};
     while (not in(type.index, ground_branch_idxs))
-      ground_refs := {self(i) : i <- ground_branch_idxs};
-      new_ground_branch_idxs := {i : i <- index_set(type.types) ; in(i, ground_branch_idxs) or has_ground_branches(type.types[i], ground_refs)};
+      ground_refs = {self(i) : i <- ground_branch_idxs};
+      new_ground_branch_idxs = {i : i <- index_set(type.types), in(i, ground_branch_idxs) or has_ground_branches(type.types[i], ground_refs)};
       return false if new_ground_branch_idxs == ground_branch_idxs;
       assert subset(ground_branch_idxs, new_ground_branch_idxs);
-      ground_branch_idxs := new_ground_branch_idxs;
+      ground_branch_idxs = new_ground_branch_idxs;
     ;
 
     return not (? t <- set(type.types) : not anon_pretype_is_wf(t, mut_rec_type_pseudotype(type), type_vars));

@@ -64,7 +64,7 @@ Nat arity(SynSgn s) = length(s.params);
 
 UntypedSgn* merge_and_override(UntypedSgn* low_priority_sgns, UntypedSgn* high_priority_sgns)
 {
-  sgns := {s : s <- low_priority_sgns ; not (? os <- high_priority_sgns : s.name == os.name, s.arity == os.arity)};
+  sgns = {s : s <- low_priority_sgns, not (? os <- high_priority_sgns : s.name == os.name, s.arity == os.arity)};
   return sgns & high_priority_sgns;
 }
 
@@ -79,7 +79,7 @@ Bool is_def(FnSymbol name, Nat arity, UntypedSgn* env, BasicUntypedSgn* actual_n
     return false if sgn.name /= name or sgn.arity /= arity;
     //## IGNORING THE DIFFERENCE BETWEEN SCALARS AND CLOSURES FOR POSITIONAL PARAMETERS
     //## NOT SURE ABOUT NAMED PARAMETERS, I SEEM TO REMEMBERS THE ORIGINAL VERSION OF THIS FUNCTION (THE ONE THAT GOT DELETED) WAS DIFFERENT
-    formal_named_params := if sgn.named_params? then sgn.named_params else {} end;
+    formal_named_params = if sgn.named_params? then sgn.named_params else {} end;
     return subset(formal_named_params, actual_named_params);
   }
 }
@@ -99,8 +99,8 @@ Var* syn_new_vars(SynPtrn ptrn):
 Var* syn_new_vars(SynStmt stmt):
   assignment_stmt() = {stmt.var},
   if_stmt()         = {
-    bodies := {b.body : b <- set(stmt.branches)} & {stmt.else};
-    return intersection({syn_new_vars(ss) : ss <- bodies ; not never_falls_through(ss)});
+    bodies = {b.body : b <- set(stmt.branches)} & {stmt.else};
+    return intersection({syn_new_vars(ss) : ss <- bodies, not never_falls_through(ss)});
   },
   let_stmt()        = syn_new_vars(stmt.body),                      
   _                 = {};

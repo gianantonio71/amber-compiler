@@ -26,9 +26,9 @@ Bool anon_types_are_compatible(AnonType t1, AnonType t2, (SelfPretype => PseudoT
 
 Var first_unused_int_var(Var *vars)
 {
-  i := 0;
+  i = 0;
   while (in(:unique_var(i), vars))
-    i := i + 1;;
+    i = i + 1;;
   return :unique_var(i);
 }
 
@@ -44,31 +44,31 @@ NzNat arity(ClsExpr e) = length(e.params);
 Nat arity(Expr)        = 0;
 
 
-Var* scalar_vars(FnDef fn_def) = {p.var : p <- set(fn_def.params) ; p.var? and (not p.type? or p.type :: UserType)} &
+Var* scalar_vars(FnDef fn_def) = {p.var : p <- set(fn_def.params), p.var? and (not p.type? or p.type :: UserType)} &
                                  set([:fn_par(i) : p, i <- fn_def.params, not p.type? or p.type :: UserType])       &
-                                 {v : v => t <- fn_def.named_params ; t :: UserType};
+                                 {v : v => t <- fn_def.named_params, t :: UserType};
 
 //## FOR THE TIME BEING, THE fn_par(Nat) VARIABLES ARE DEFINED ONLY FOR SCALAR PARAMETERS, NOT CLOSURES
 // THIS FUNCTION FAILS IF THERE ARE DUPLICATE PARAMETER NAMES. THIS IS CHECHED BEFORE THE FUNCTION IS INVOKED THOUGH
-(Var => NzNat) cls_vars(FnDef fn_def) = (p.var => length(p.type.in_types) : p <- set(fn_def.params) ; p.var? and (p.type? and p.type :: UserClsType)) &
-                                        (v => length(t.in_types) : v => t <- fn_def.named_params ; t :: UserClsType);
+(Var => NzNat) cls_vars(FnDef fn_def) = (p.var => length(p.type.in_types) : p <- set(fn_def.params), p.var? and (p.type? and p.type :: UserClsType)) &
+                                        (v => length(t.in_types) : v => t <- fn_def.named_params, t :: UserClsType);
 
 
 Bool op_< (SymbObj s1, SymbObj s2) = lower_than(_obj_(s1), _obj_(s2));
 
 Bool lower_than(Atom a1, Atom a2)
 {
-  str1 := _str_(a1);
-  str2 := _str_(a2);
+  str1 = _str_(a1);
+  str2 = _str_(a2);
   
-  len1 := length(str1);
-  len2 := length(str2);
+  len1 = length(str1);
+  len2 = length(str2);
   
   //return len1 < len2 if len1 /= len2;
   return (len2 - len1) :: NzNat if len1 /= len2; //## BAD BAD BAD UGLY HACK TO WORK AROUND A BUG IN THE INTERPRETER
   
   for (ch1, i : _obj_(str1))
-    ch2 := str2[i];
+    ch2 = str2[i];
     //return ch1 < ch2 if ch1 /= ch2;
     return (ch2 - ch1) :: NzNat if ch1 /= ch2; //## BAD BAD BAD UGLY HACK TO WORK AROUND A BUG IN THE INTERPRETER
   ;

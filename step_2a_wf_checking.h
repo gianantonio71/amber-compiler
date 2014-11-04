@@ -10,8 +10,8 @@ True prg_is_wf(Program prg)
 
   //## COULD THE FOLLOWING BE PART OF A MORE GENERAL AND ELEGANT CONSTRAINT?
   // No top-level reference cycles
-  tl_ref_map      := (s => top_level_refs(t) : s => t <- prg.tdefs);
-  tl_ref_deep_map := transitive_closure(tl_ref_map);
+  tl_ref_map      = (s => top_level_refs(t) : s => t <- prg.tdefs);
+  tl_ref_deep_map = transitive_closure(tl_ref_map);
   return false if (? s => es <- tl_ref_deep_map : in(s, es));
 
   // Every Type must be well formed
@@ -32,8 +32,8 @@ using (TypeName => AnonType) typedefs, (TypeSymbol => UserType) user_typedefs
 {
   True fndefs_are_wf(FnDef* fndefs)
   {
-    sgns := {(name: fd.name, arity: arity(fd)) : fd <- fndefs};
-    grouped_fns := {{fd : fd <- fndefs ; fd.name == s.name and arity(fd) == s.arity} : s <- sgns};  //## BAD BAD BAD INEFFICIENT
+    sgns = {(name: fd.name, arity: arity(fd)) : fd <- fndefs};
+    grouped_fns = {{fd : fd <- fndefs, fd.name == s.name and arity(fd) == s.arity} : s <- sgns};  //## BAD BAD BAD INEFFICIENT
     return false if (? g <- grouped_fns : not are_compatible(g));
     return not (? fd <- fndefs : not fndef_is_wf(fd, fndefs));
   }
@@ -48,7 +48,7 @@ using (TypeName => AnonType) typedefs, (TypeSymbol => UserType) user_typedefs
       assert arity(fd1) == arity(fd2);
       
       for (p1, i : fd1.params)
-        p2 := fd2.params[i];
+        p2 = fd2.params[i];
         return true if p1.type? and p2.type? and are_compatible(p1.type, p2.type, typedefs);
       ;
       
@@ -59,7 +59,7 @@ using (TypeName => AnonType) typedefs, (TypeSymbol => UserType) user_typedefs
   True fndef_is_wf(FnDef fndef, FnDef* fndefs)
   {
     //## BAD BAD BAD THIS IS CHEATING...
-    tvars := select TypeVar in fndef.params end & select TypeVar in fndef.named_params end;
+    tvars = select TypeVar in fndef.params end & select TypeVar in fndef.named_params end;
     for (p : fndef.params)
       return false if p.type? and not user_type_is_wf(p.type, tvars);
     ;
@@ -79,7 +79,7 @@ using (TypeName => AnonType) typedefs, (TypeSymbol => UserType) user_typedefs
   
   //True sgn_is_wf(Signature sgn)
   //{
-  //  tvars := select TypeVar in sgn.params end; //## BAD BAD BAD CHEATING
+  //  tvars = select TypeVar in sgn.params end; //## BAD BAD BAD CHEATING
   //  return false if not all([type_is_wf(t, typedefs, tvars) : t <- sgn.params]);
   //  return type_is_wf(sgn.res_type, typedefs, tvars);
   //}

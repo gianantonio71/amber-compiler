@@ -69,16 +69,16 @@ Bool matches(TokenMatchingRule rule, PlainToken token):
 
 ParserResult parse_all(ParsingRule rule, PreAst pre_ast, (Atom => ParsingRule) rec_rules)
 {
-  res := parse(rule, pre_ast, 0, rec_rules);
+  res = parse(rule, pre_ast, 0, rec_rules);
   return res if is_failure(res);
-  mtc := get_result(res);
-  nodes_consumed := mtc.nodes_consumed;
+  mtc = get_result(res);
+  nodes_consumed = mtc.nodes_consumed;
   assert nodes_consumed <= length(pre_ast);
   return res if nodes_consumed == length(pre_ast);
   if (mtc.failure?)
-    err := mtc.failure;
+    err = mtc.failure;
   else
-    err := unexpected_token(first_token(pre_ast[nodes_consumed]));
+    err = unexpected_token(first_token(pre_ast[nodes_consumed]));
   ;
   return failure(err);
 }
@@ -88,82 +88,82 @@ ParserResult parse(ParsingRule rule, PreAst pre_ast, Nat offset, (Atom => Parsin
 
   atomic_rule(r?)   = {
     return failure(unexpected_end_of_file(rule)) if not is_valid_idx(pre_ast, offset);
-    node := pre_ast[offset];
+    node = pre_ast[offset];
     return failure(unexpected_token(node[0], r)) if not node :: AnnotatedToken;
     return failure(unexpected_token(node, r)) if not matches(r, node.token);
     return success(parser_match(atomic_rule_match(node), 1));
   },
 
   optional_rule(r?) = {
-    res := parse(r, pre_ast, offset, rec_rules);
+    res = parse(r, pre_ast, offset, rec_rules);
     return if is_success(res) then res else success(parser_match(null_match, 0)) end;
   },
 
   rule_seq(rs?)     = {
-    matches := [];
-    delta := 0;
+    matches = [];
+    delta = 0;
     for (r : rs)
-      res := parse(r, pre_ast, offset+delta, rec_rules);
+      res = parse(r, pre_ast, offset+delta, rec_rules);
       return res if is_failure(res);
-      res := get_result(res);
-      matches := matches & [res.rule_match];
-      delta := delta + res.nodes_consumed;
+      res = get_result(res);
+      matches = matches & [res.rule_match];
+      delta = delta + res.nodes_consumed;
     ;
     return success(parser_match(rule_seq_match(matches), delta));
   },
 
   rep_rule()        = {
-    matches := [];
-    delta := 0;
-    res := nil; //## BUG: THIS IS HERE ONLY BECAUSE THE COMPILER WOULD OTHERWISE COMPLAIN ABOUT THE VARIABLE res BEING UNDEFINED IN THE LAST LINE
+    matches = [];
+    delta = 0;
+    res = nil; //## BUG: THIS IS HERE ONLY BECAUSE THE COMPILER WOULD OTHERWISE COMPLAIN ABOUT THE VARIABLE res BEING UNDEFINED IN THE LAST LINE
     loop
       // Matching the separator, if this is not the first match
-      sep_nodes := 0;
+      sep_nodes = 0;
       if (matches /= [])
-        res := parse(rule.separator, pre_ast, offset+delta, rec_rules);
+        res = parse(rule.separator, pre_ast, offset+delta, rec_rules);
         break if is_failure(res);
-        res := get_result(res);
-        matches := matches & [res.rule_match] if rule.save_sep;
-        sep_nodes := res.nodes_consumed;
+        res = get_result(res);
+        matches = matches & [res.rule_match] if rule.save_sep;
+        sep_nodes = res.nodes_consumed;
       ;
       // Matching the main rule
-      res := parse(rule.rule, pre_ast, offset+delta+sep_nodes, rec_rules);
+      res = parse(rule.rule, pre_ast, offset+delta+sep_nodes, rec_rules);
       if (is_failure(res))
         return res if rule.at_least_one and matches == [];
         break;
       ;
-      res := get_result(res);
-      matches := matches & [res.rule_match];
-      delta := delta + sep_nodes + res.nodes_consumed;
+      res = get_result(res);
+      matches = matches & [res.rule_match];
+      delta = delta + sep_nodes + res.nodes_consumed;
     ;
     assert not (rule.at_least_one and matches == []);
     return success(parser_match(rep_rule_match(matches), delta, get_error(res)));
   },
 
   rule_choice(cs?)  = {
-    errs := [];
+    errs = [];
     for (c : cs)
-      res := parse(c.rule, pre_ast, offset, rec_rules);
+      res = parse(c.rule, pre_ast, offset, rec_rules);
       if (is_success(res))
-        res := get_result(res);
-        mtc := if c.name? then rule_choice_match(c.name, res.rule_match) else res.rule_match end;
+        res = get_result(res);
+        mtc = if c.name? then rule_choice_match(c.name, res.rule_match) else res.rule_match end;
         return success(parser_match(mtc, res.nodes_consumed));
       else
-        errs := errs & [get_error(res)];
+        errs = errs & [get_error(res)];
       ;
     ;
     //## BAD: I WOULD NEED A max_by(xs, p) FUNCTION HERE
-    idx := 0;
+    idx = 0;
     for (e, i : errs)
-      idx := i if index_of_last_matched_token(e, pre_ast) > index_of_last_matched_token(errs[idx], pre_ast);
+      idx = i if index_of_last_matched_token(e, pre_ast) > index_of_last_matched_token(errs[idx], pre_ast);
     ;
     //## BAD: LOSES ERROR INFORMATION HERE
-    res_err := if cs[idx].name? then all_choices_failed(cs[idx].name, errs[idx]) else errs[idx] end;
+    res_err = if cs[idx].name? then all_choices_failed(cs[idx].name, errs[idx]) else errs[idx] end;
     return failure(res_err);
   },
 
   rule_neg(r?)      = {
-    res := parse(r, pre_ast, offset, rec_rules);
+    res = parse(r, pre_ast, offset, rec_rules);
     if (is_failure(res))
       return success(parser_match(null_match, 0));
     else
@@ -172,14 +172,14 @@ ParserResult parse(ParsingRule rule, PreAst pre_ast, Nat offset, (Atom => Parsin
   },
 
   block_rule()      = {
-    par_token := left(rule.par_type);
+    par_token = left(rule.par_type);
     return failure(unexpected_end_of_file(atomic_rule(par_token))) if not is_valid_idx(pre_ast, offset);
-    node := pre_ast[offset];
+    node = pre_ast[offset];
     return failure(unexpected_token(node, par_token)) if node :: AnnotatedToken;
-    open_par := node[0];
+    open_par = node[0];
     return failure(unexpected_token(open_par, par_token)) if open_par.token /= par_token;
-    inner_pre_ast := subseq(node, 1, nil, 1);
-    res := parse_all(rule.rule, inner_pre_ast, rec_rules);
+    inner_pre_ast = subseq(node, 1, nil, 1);
+    res = parse_all(rule.rule, inner_pre_ast, rec_rules);
     if (is_failure(res))
       return match (get_error(res))
         // unexpected_end_of_file(r?)  = failure(unexpected_token(last(node), r)),

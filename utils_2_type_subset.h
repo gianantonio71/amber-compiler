@@ -2,7 +2,7 @@ Bool is_subset(AnonType t1, AnonType t2) = is_subset_if(t1, t2; inst_type_vars=f
 
 (TypeVar => AnonType*) subset_conds(AnonType t1, AnonType t2)
 {
-  cs := is_subset_if(t1, t2; inst_type_vars=true);
+  cs = is_subset_if(t1, t2; inst_type_vars=true);
   assert cs :: <<subset_when(type_var: TypeVar, inst_type: AnonType)>*>;
   return merge_values({(c.type_var => c.inst_type) : c <- cs});
 }
@@ -20,7 +20,7 @@ IsSubset all_conds(IsSubset* iss) = if in(not_a_subset, iss) then not_a_subset e
 
 IsSubset at_least_one_cond(IsSubset *iss)
 {
-  red_iss := iss - {not_a_subset};
+  red_iss = iss - {not_a_subset};
   assert size(red_iss) <= 1;
   return if red_iss == {} then not_a_subset else only_element(red_iss) end;
 }
@@ -32,15 +32,15 @@ using Bool inst_type_vars
 {
   IsSubset is_self_rec_subset_if(SelfRecType[AnonType] t1, AnonType t2)
   {
-    tested_supertypes   := {};
-    untested_supertypes := {t2};
+    tested_supertypes   = {};
+    untested_supertypes = {t2};
 
     loop
-      new_hypotheses := all_conds({is_subset_if(_obj_(t1), t) : t <- untested_supertypes});
+      new_hypotheses = all_conds({is_subset_if(_obj_(t1), t) : t <- untested_supertypes});
       return not_a_subset if new_hypotheses == not_a_subset;
       assert not (? h <- new_hypotheses : h.subset /= self);
-      tested_supertypes := tested_supertypes & untested_supertypes;
-      untested_supertypes := {h.superset : h <- new_hypotheses} - tested_supertypes;
+      tested_supertypes = tested_supertypes & untested_supertypes;
+      untested_supertypes = {h.superset : h <- new_hypotheses} - tested_supertypes;
       return {} if untested_supertypes == {};
     ;
   }
@@ -48,14 +48,14 @@ using Bool inst_type_vars
 
   IsSubset is_mut_rec_subset_if(MutRecType[AnonType] t1, AnonType t2)
   {
-    tested_hypotheses   := {};
-    untested_hypotheses := {(subtype: t1, supertype: t2)};
+    tested_hypotheses   = {};
+    untested_hypotheses = {(subtype: t1, supertype: t2)};
 
     loop
-      new_hypotheses := all_conds({is_subset_if(h.subtype.types[h.subtype.index], h.type) : h <- untested_hypotheses});
+      new_hypotheses = all_conds({is_subset_if(h.subtype.types[h.subtype.index], h.type) : h <- untested_hypotheses});
       return not_a_subset if new_hypotheses == not_a_subset;
-      tested_hypotheses := tested_hypotheses & untested_hypotheses;
-      // untested_hypotheses := {(subtype: )}
+      tested_hypotheses = tested_hypotheses & untested_hypotheses;
+      // untested_hypotheses = {(subtype: )}
       return {} if untested_hypotheses == {};
     ;
   }
@@ -122,12 +122,12 @@ using Bool inst_type_vars
 
   IsSubset is_tuple_subset_if((SymbObj => (type: AnonType, optional: Bool)) fs1, (SymbObj => (type: AnonType, optional: Bool)) fs2)
   {
-    labels_1 := keys(fs1);
-    labels_2 := keys(fs2);
-    mandatory_labels_1 := {l : l => f <- fs1 ; not f.optional};
-    mandatory_labels_2 := {l : l => f <- fs2 ; not f.optional};
-    optional_labels_1  := labels_1 - mandatory_labels_1;
-    optional_labels_2  := labels_2 - mandatory_labels_2;
+    labels_1 = keys(fs1);
+    labels_2 = keys(fs2);
+    mandatory_labels_1 = {l : l => f <- fs1, not f.optional};
+    mandatory_labels_2 = {l : l => f <- fs2, not f.optional};
+    optional_labels_1  = labels_1 - mandatory_labels_1;
+    optional_labels_2  = labels_2 - mandatory_labels_2;
 
     // Mandatory labels in the subtype must be present in the supertype (can be either mandatory or optional)
     return not_a_subset if not subset(mandatory_labels_1, mandatory_labels_2 & optional_labels_2);
@@ -140,8 +140,8 @@ using Bool inst_type_vars
 
     // No particular requirement for optional labels in the supertype
 
-    label_type_map_1 := (l => f.type : l => f <- fs1);
-    label_type_map_2 := (l => f.type : l => f <- fs2);
+    label_type_map_1 = (l => f.type : l => f <- fs1);
+    label_type_map_2 = (l => f.type : l => f <- fs2);
 
     return all_conds({is_subset_if(label_type_map_1[l], label_type_map_2[l]) : l <- labels_1});
   }
@@ -164,13 +164,13 @@ using Bool inst_type_vars
     return not_a_subset if not is_subset(key_type, union_type({symb_type(l) : l => _ <- tuple_fields}));
 
     if (key_type :: SymbType)
-      only_key_obj := _obj_(key_type);
+      only_key_obj = _obj_(key_type);
       return not_a_subset if (? l => f <- tuple_fields : l /= only_key_obj, not f.optional);
     else
       return not_a_subset if (? _ => f <- tuple_fields : not f.optional);
     ;
 
-    return all_conds({is_subset_if(key_type, f.type) : l => f <- tuple_fields ; includes_symbol(key_type, l)});
+    return all_conds({is_subset_if(key_type, f.type) : l => f <- tuple_fields, includes_symbol(key_type, l)});
   }
 }
 

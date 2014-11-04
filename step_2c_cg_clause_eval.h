@@ -53,9 +53,9 @@ using
     match_action() = gen_iter_code(action.clause, loc_bound_vars, action.action),
 
     cond_match_action() = {
-      cond_var    := lvar(next_obj_var_id);
-      cond_info   := gen_eval_info(action.cond, cond_var; next_obj_var_id = next_obj_var_id + 1);
-      action_code := gen_code(action.action, loc_bound_vars);
+      cond_var    = lvar(next_obj_var_id);
+      cond_info   = gen_eval_info(action.cond, cond_var; next_obj_var_id = next_obj_var_id + 1);
+      action_code = gen_code(action.action, loc_bound_vars);
       
       return cond_info.eval_code &
              [ check(is_bool(cond_info.expr)),
@@ -66,16 +66,16 @@ using
     set_found_var_and_leave() = [set_var(action.var, obj_true), exit_block],
 
     eval_expr_and_add_to_set() = {
-      tmp_var := lvar(next_obj_var_id);
-      info    := gen_eval_info(action.expr, tmp_var; next_obj_var_id = next_obj_var_id + 1);
+      tmp_var = lvar(next_obj_var_id);
+      info    = gen_eval_info(action.expr, tmp_var; next_obj_var_id = next_obj_var_id + 1);
       return info.add_ref_eval_code & [append(action.stream_var, info.expr)];     
     },
     
     eval_exprs_and_add_to_map() = {
-      tmp_var    := lvar(next_obj_var_id);
+      tmp_var    = lvar(next_obj_var_id);
       
-      key_info   := gen_eval_info(action.key_expr, tmp_var; next_obj_var_id = next_obj_var_id + 1);
-      value_info := gen_eval_info(action.value_expr, tmp_var; next_obj_var_id = next_obj_var_id + 1);
+      key_info   = gen_eval_info(action.key_expr, tmp_var; next_obj_var_id = next_obj_var_id + 1);
+      value_info = gen_eval_info(action.value_expr, tmp_var; next_obj_var_id = next_obj_var_id + 1);
     
       return key_info.add_ref_eval_code   & [append(action.key_stream_var, key_info.expr)] &
              value_info.add_ref_eval_code & [append(action.value_stream_var, value_info.expr)];
@@ -85,27 +85,27 @@ using
   [Instr^] gen_iter_code(Clause clause, Var* loc_bound_vars, MatchAction action):
 
     in_clause() = {
-      src_var  := lvar(next_obj_var_id);
-      tmp_var  := lvar(next_obj_var_id + 1);
-      res_var  := bvar(next_bool_var_id);
-      it_var   := set_it_var(next_set_it_var_id);
+      src_var  = lvar(next_obj_var_id);
+      tmp_var  = lvar(next_obj_var_id + 1);
+      res_var  = bvar(next_bool_var_id);
+      it_var   = set_it_var(next_set_it_var_id);
 
       let (next_obj_var_id = next_obj_var_id + 1)
         // Variables to avoid: src_var
-        src_info := gen_eval_info(clause.src, src_var);
+        src_info = gen_eval_info(clause.src, src_var);
 
         let (next_set_it_var_id = next_set_it_var_id + 1)
           // Variables to avoid: src_var, it_var
-          next_step_code := gen_code(action, loc_bound_vars & new_vars(clause));
+          next_step_code = gen_code(action, loc_bound_vars & new_vars(clause));
 
           let (next_obj_var_id = next_obj_var_id + 1, next_bool_var_id = next_bool_var_id + 1)
             // Variables to avoid: src_var, it_var, res_var, tmp_var
-            match_code := gen_ptrn_matching_code(clause.ptrn, tmp_var, res_var, loc_bound_vars);
+            match_code = gen_ptrn_matching_code(clause.ptrn, tmp_var, res_var, loc_bound_vars);
           ;
         ;
       ;
 
-      loop_code := [
+      loop_code = [
         get_iter(it_var, src_info.expr),
         repeat(
           [ break_if(is_out_of_range(it_var)),
@@ -122,30 +122,30 @@ using
     },
 
     map_in_clause() = {
-      src_var  := lvar(next_obj_var_id);
-      tmp_var  := lvar(next_obj_var_id + 1);
-      res_var  := bvar(next_bool_var_id);
-      it_var   := map_it_var(next_map_it_var_id);
+      src_var  = lvar(next_obj_var_id);
+      tmp_var  = lvar(next_obj_var_id + 1);
+      res_var  = bvar(next_bool_var_id);
+      it_var   = map_it_var(next_map_it_var_id);
       
       let (next_obj_var_id = next_obj_var_id + 1)
         // Variables to avoid: src_var      
-        src_info := gen_eval_info(clause.src, src_var);
+        src_info = gen_eval_info(clause.src, src_var);
 
         let (next_map_it_var_id = next_map_it_var_id + 1)
           // Variables to avoid: src_var, it_var
-          next_step_code := gen_code(action, loc_bound_vars & new_vars(clause));
+          next_step_code = gen_code(action, loc_bound_vars & new_vars(clause));
 
           let (next_obj_var_id = next_obj_var_id + 1, next_bool_var_id = next_bool_var_id + 1)
             // Variables to avoid: src_var, it_var, tmp_var, res_var      
-            key_ptrn_code := gen_ptrn_matching_code(clause.key_ptrn, tmp_var, res_var, loc_bound_vars);
+            key_ptrn_code = gen_ptrn_matching_code(clause.key_ptrn, tmp_var, res_var, loc_bound_vars);
             
             // Variables to avoid: src_var, it_var, tmp_var, res_var      
-            value_ptrn_code := gen_ptrn_matching_code(clause.value_ptrn, tmp_var, res_var, loc_bound_vars);
+            value_ptrn_code = gen_ptrn_matching_code(clause.value_ptrn, tmp_var, res_var, loc_bound_vars);
           ;
         ;
       ;
             
-      loop_code := [
+      loop_code = [
         get_iter(it_var, src_info.expr),
         repeat(
           [ break_if(is_out_of_range(it_var)),

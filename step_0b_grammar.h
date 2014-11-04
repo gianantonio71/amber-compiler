@@ -285,7 +285,7 @@ ParsingRule rule_asgnm_stmt =
   rule_seq([
     optional_rule(rule_type),
     comma_sep_seq(rule_id),
-    atomic_rule(assign),
+    atomic_rule(equals),
     rule_ref_expr,
     optional_rule(rule_seq([keyword_if, rule_ref_expr])),
     atomic_rule(semicolon)
@@ -421,8 +421,8 @@ ParsingRule rule_subscript_op           = bracket_rule(rule_ref_expr);
 
 ParsingRule rule_dot_access(Bool test)
 {
-  lr := atomic_rule(question_mark);
-  lr := rule_neg(lr) if not test;
+  lr = atomic_rule(question_mark);
+  lr = rule_neg(lr) if not test;
   return rule_seq([atomic_rule(dot), atomic_rule(lowercase_id), lr]);
 }
 
@@ -553,7 +553,7 @@ ParsingRule rule_set_cp_expr =
       comma_sep_seq(rule_clause),
       optional_rule(
         rule_seq([
-          atomic_rule(semicolon),
+          atomic_rule(comma),
           comma_sep_seq(rule_ref_expr)
         ])
       )
@@ -568,7 +568,7 @@ ParsingRule rule_map_cp_expr =
       rule_ref_expr,
       atomic_rule(colon),
       comma_sep_seq(rule_clause),
-      optional_rule(rule_seq([atomic_rule(semicolon), comma_sep_seq(rule_ref_expr)]))
+      optional_rule(rule_seq([atomic_rule(comma), comma_sep_seq(rule_ref_expr)]))
     ])
   );
 

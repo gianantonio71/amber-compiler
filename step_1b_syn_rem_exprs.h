@@ -36,7 +36,7 @@ using
     
     const_or_var(a?)  = { return :var(a) if in(:var(a), def_vars);
                           return :named_par(a) if in(:named_par(a), named_params);
-                          sgn := untyped_sgn(name: :fn_symbol(a), arity: 0);
+                          sgn = untyped_sgn(name: :fn_symbol(a), arity: 0);
                           //## THIS IS A STRANGE LIMITATION
                           //## IS IT HERE FOR A REASON, OR IS IT ONLY TEMPORARY?
                           assert not in(sgn, local_fns);
@@ -53,20 +53,20 @@ using
 
     fn_call()       = { assert length(expr.params) > 0;
     
-                        ps  := [desugar_expr(e, def_vars) : e <- expr.params];
+                        ps  = [desugar_expr(e, def_vars) : e <- expr.params];
     
-                        sgn := untyped_sgn(name: expr.name, arity: length(expr.params));
+                        sgn = untyped_sgn(name: expr.name, arity: length(expr.params));
 
-                        nps := syn_fn_defs_to_named_params(expr.named_params, def_vars);
+                        nps = syn_fn_defs_to_named_params(expr.named_params, def_vars);
 
                         // Local functions first
                         if (in(sgn, local_fns))
-                          fs := nested_fn_symbol(outer: curr_outer_fn, inner: expr.name);
+                          fs = nested_fn_symbol(outer: curr_outer_fn, inner: expr.name);
                           return fn_call(name: fs, params: ps, named_params: nps);
                         ;
                          
                         // Then named parameters
-                        np  := :named_par(_obj_(expr.name));
+                        np  = :named_par(_obj_(expr.name));
                         if (in(np, named_params))
                           assert nps == ();
                           return cls_call(name: np, params: ps);
@@ -111,16 +111,16 @@ using
     accessor()      = accessor(expr: desugar_expr(expr.expr, def_vars), field: expr.field),
     accessor_test() = accessor_test(expr: desugar_expr(expr.expr, def_vars), field: expr.field),
 
-    ex_qual()       = { vs := def_vars & syn_new_vars(expr.source);
-                        se := [desugar_expr(e, vs) : e <- expr.sel_exprs];
+    ex_qual()       = { vs = def_vars & syn_new_vars(expr.source);
+                        se = [desugar_expr(e, vs) : e <- expr.sel_exprs];
                         return ex_qual(
                                  source:   mk_and_clause(expr.source, def_vars),  //## TODO
                                  sel_expr: mk_and_expr(se) if se /= []
                                );
                       },
 
-    set_comp()      = { vs := def_vars & syn_new_vars(expr.source);
-                        se := [desugar_expr(e, vs) : e <- expr.sel_exprs];
+    set_comp()      = { vs = def_vars & syn_new_vars(expr.source);
+                        se = [desugar_expr(e, vs) : e <- expr.sel_exprs];
                         return set_comp(
                                  expr:     desugar_expr(expr.expr, vs),
                                  source:   mk_and_clause(expr.source, def_vars),
@@ -128,8 +128,8 @@ using
                                );
                       },
 
-    map_comp()      = { vs := def_vars & syn_new_vars(expr.source);
-                        se := [desugar_expr(e, vs) : e <- expr.sel_exprs];
+    map_comp()      = { vs = def_vars & syn_new_vars(expr.source);
+                        se = [desugar_expr(e, vs) : e <- expr.sel_exprs];
                         return map_comp(
                                  key_expr:   desugar_expr(expr.key_expr, vs),
                                  value_expr: desugar_expr(expr.value_expr, vs),
@@ -138,7 +138,7 @@ using
                                );
                       },
 
-    seq_comp()      = { vs := def_vars & {expr.var, expr.idx_var if expr.idx_var?};
+    seq_comp()      = { vs = def_vars & {expr.var, expr.idx_var if expr.idx_var?};
                         return seq_comp(
                                  expr:     desugar_expr(expr.expr, vs),
                                  var:      expr.var,
@@ -148,9 +148,9 @@ using
                                );
                       },
 
-    if_expr()       = { res := desugar_expr(expr.else, def_vars);
+    if_expr()       = { res = desugar_expr(expr.else, def_vars);
                         for (b : reverse(expr.branches))
-                          res := if_expr(
+                          res = if_expr(
                                    cond: desugar_expr(b.cond, def_vars),
                                    then: desugar_expr(b.expr, def_vars),
                                    else: res
@@ -159,10 +159,10 @@ using
                         return res;
                       },
 
-    match_expr()    = { n  := length(expr.cases[0].patterns);
-                        es := [desugar_expr(e, def_vars) : e <- subseq(expr.exprs, 0, n)];
-                        cs := [{ ps := [desugar_ptrn(p) : p <- c.patterns];
-                                 vs := def_vars & seq_union([new_vars(p) : p <- ps]);
+    match_expr()    = { n  = length(expr.cases[0].patterns);
+                        es = [desugar_expr(e, def_vars) : e <- subseq(expr.exprs, 0, n)];
+                        cs = [{ ps = [desugar_ptrn(p) : p <- c.patterns];
+                                 vs = def_vars & seq_union([new_vars(p) : p <- ps]);
                                  return (ptrns: ps, expr: desugar_expr(c.expr, vs));
                                } : c <- expr.cases];
                         return match_expr(exprs: es, cases: cs);
@@ -192,11 +192,11 @@ using
   
   Expr mk_and_expr([Expr^] exprs)  // REMOVE DUPLICATES?
   {
-    len       := length(exprs);
-    rev_exprs := reverse(exprs);
-    expr      := rev_exprs[0];
+    len       = length(exprs);
+    rev_exprs = reverse(exprs);
+    expr      = rev_exprs[0];
     for (i = 1..len-1)
-      expr := and_expr(left: rev_exprs[i], right: expr);
+      expr = and_expr(left: rev_exprs[i], right: expr);
     ;
     return expr;  
   }
@@ -205,17 +205,17 @@ using
 
   Clause mk_and_clause([SynClause^] clauses, Var* def_vars)
   {
-    vs := def_vars;
-    cs := [];
+    vs = def_vars;
+    cs = [];
     for (c : clauses)
-      cs := cs & [desugar_clause(c, vs)];
-      vs := vs & syn_new_vars(c);
+      cs = cs & [desugar_clause(c, vs)];
+      vs = vs & syn_new_vars(c);
     ;
 
-    rev_cs := reverse(cs);
-    clause := rev_cs[0];
+    rev_cs = reverse(cs);
+    clause = rev_cs[0];
     for (i = 1..length(clauses)-1)
-      clause := and_clause(left: rev_cs[i], right: clause);
+      clause = and_clause(left: rev_cs[i], right: clause);
     ;
 
     return clause;
@@ -263,11 +263,11 @@ using
 
   [Statement] desugar_stmts([SynStmt] stmts, Var* def_vars)
   {
-    vs := def_vars;
-    ss := [];
+    vs = def_vars;
+    ss = [];
     for (s : stmts)
-      ss := ss & [desugar_stmt(s, vs)];
-      vs := vs & syn_new_vars(s);
+      ss = ss & [desugar_stmt(s, vs)];
+      vs = vs & syn_new_vars(s);
     ;
     return ss;
   }
@@ -290,11 +290,11 @@ using
 
     if_stmt() =
     {
-      res := desugar_stmts(stmt.else, def_vars);
+      res = desugar_stmts(stmt.else, def_vars);
       for (b : reverse(stmt.branches))
-        cond := desugar_expr(b.cond, def_vars);
-        body := desugar_stmts(b.body, def_vars);
-        res  := [if_stmt(cond: cond, body: body, else: res)];
+        cond = desugar_expr(b.cond, def_vars);
+        body = desugar_stmts(b.body, def_vars);
+        res  = [if_stmt(cond: cond, body: body, else: res)];
       ;
       assert res :: Seq and length(res) == 1;
       return res[0]; //## BAD BAD BAD
@@ -313,21 +313,21 @@ using
 
     let_stmt() =
     {
-      nps    := named_params & set([:named_par(_obj_(fd.name)) : fd <- stmt.asgnms]); //## BAD BAD BAD
-      body   := desugar_stmts(stmt.body, def_vars; named_params = nps);
-      asgnms := syn_fn_defs_to_named_params(stmt.asgnms, def_vars);
+      nps    = named_params & set([:named_par(_obj_(fd.name)) : fd <- stmt.asgnms]); //## BAD BAD BAD
+      body   = desugar_stmts(stmt.body, def_vars; named_params = nps);
+      asgnms = syn_fn_defs_to_named_params(stmt.asgnms, def_vars);
       return let_stmt(asgnms: asgnms, body: body);
     },
     
     loop_stmt() =
     {
-      cond      := desugar_expr(stmt.cond, def_vars);
-      exit_stmt := if_stmt(cond: :not_expr(cond), body: [:break_stmt], else: []);
-      body      := desugar_stmts(stmt.body, def_vars);
+      cond      = desugar_expr(stmt.cond, def_vars);
+      exit_stmt = if_stmt(cond: :not_expr(cond), body: [:break_stmt], else: []);
+      body      = desugar_stmts(stmt.body, def_vars);
       if (stmt.skip_first)
-        body := body & [exit_stmt];
+        body = body & [exit_stmt];
       else
-        body := [exit_stmt] & body;
+        body = [exit_stmt] & body;
       ;
       return :loop_stmt(body);
     },
@@ -335,19 +335,19 @@ using
     for_stmt() =
     {
       //## ALSO MAKE SURE SYNTAX CHECK GETS IT RIGHT
-      iters  := stmt.loops;
-      vs     := def_vars;
-      for_vs := [];
+      iters  = stmt.loops;
+      vs     = def_vars;
+      for_vs = [];
       for (it : iters)
-        vs     := vs & {it.var, it.idx_var if it.idx_var?};
-        for_vs := for_vs & [vs];
+        vs     = vs & {it.var, it.idx_var if it.idx_var?};
+        for_vs = for_vs & [vs];
       ;
-      res := desugar_stmts(stmt.body, vs);
+      res = desugar_stmts(stmt.body, vs);
       for (it, i : reverse(iters))
-        vs := rev_at(for_vs, i);
+        vs = rev_at(for_vs, i);
         if (it :: <seq_iter(Any)>) //## BAD BAD BAD
-          vals := desugar_expr(it.values, vs);
-          res  := [ foreach_stmt(
+          vals = desugar_expr(it.values, vs);
+          res  = [ foreach_stmt(
                       var:     it.var,
                       idx_var: it.idx_var if it.idx_var?,
                       values:  vals,
@@ -356,9 +356,9 @@ using
                   ];
         else
           assert it :: <range_iter(Any)>; //## BAD BAD BAD
-          start_val := desugar_expr(it.start_val, vs);
-          end_val   := desugar_expr(it.end_val, vs);
-          res := [for_stmt(var: it.var, start_val: start_val, end_val: end_val, body: res)];
+          start_val = desugar_expr(it.start_val, vs);
+          end_val   = desugar_expr(it.end_val, vs);
+          res = [for_stmt(var: it.var, start_val: start_val, end_val: end_val, body: res)];
         ;
       ;
       assert res :: Seq and length(res) == 1;
@@ -391,9 +391,9 @@ using
 
   ExtExpr syn_fn_def_to_expr(SynFnDef fd, Var* def_vars)
   {
-    ps := [p.var : p <- fd.params];
-    expr := desugar_expr(fd.expr, def_vars & set(ps));
-    expr := cls_expr(params: ps, expr: expr) if fd.params /= [];
+    ps = [p.var : p <- fd.params];
+    expr = desugar_expr(fd.expr, def_vars & set(ps));
+    expr = cls_expr(params: ps, expr: expr) if fd.params /= [];
     return expr;
   }
 }

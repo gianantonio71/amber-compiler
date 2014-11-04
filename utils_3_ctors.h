@@ -201,7 +201,7 @@ ObjExpr obj_nil   = :object(nil);
 
 Instr cls_scope(<named_par(Atom)> var, Int arity, [Var] env, [Instr^] cls_body, [Instr^] body)
 {
-  cls := cls_def(arity: arity, body: cls_body);
+  cls = cls_def(arity: arity, body: cls_body);
   return cls_scope(var, env, cls, body);
 }
 
@@ -431,7 +431,7 @@ Instr block_failure_if_not(BoolExpr c, BoolVar res_var) = block_failure_if(neg(c
 //
 //Instr cls_scope(FnSymbol name, [Var] params, [Var] env, [Instr^] cls_body, [Instr^] body)
 //{
-//  cls := cls_def(
+//  cls = cls_def(
 //           name:   name,
 //           arity:  length(params),
 //           env:    env,

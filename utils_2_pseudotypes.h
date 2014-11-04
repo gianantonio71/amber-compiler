@@ -10,8 +10,8 @@ type PseudoType       = pseudotype(BasicPseudoType*); //## BAD: THIS ALLOWS FOR 
 
 PseudoType pseudotype(BasicPseudoType* pts)
 {
-  red_symb_pts    := if in(:symbols, pts)  then {pt : symbol() pt <- pts} else {} end;
-  red_tag_obj_pts := if in(:tag_objs, pts) then {pt : tag_obj() pt <- pts} else {} end;
+  red_symb_pts    = if in(:symbols, pts)  then {pt : symbol() pt <- pts} else {} end;
+  red_tag_obj_pts = if in(:tag_objs, pts) then {pt : tag_obj() pt <- pts} else {} end;
   return :pseudotype(pts - (red_symb_pts & red_tag_obj_pts));
 }
 
@@ -128,20 +128,20 @@ PseudoType pretype_pseudotype(AnonType type, (SelfPretype => PseudoType) self_ps
                             atom_type             = pseudotype_tag_objs;
                           ,
   self_rec_type(t?)     = pretype_pseudotype(t, ()), //## NOT ENTIRELY SURE
-  // mut_rec_type()        = pseudotypes[self(type.index)] let pseudotypes := mut_rec_type_pseudotype(type);;
+  // mut_rec_type()        = pseudotypes[self(type.index)] let pseudotypes = mut_rec_type_pseudotype(type);;
   // mut_rec_type()        = (mut_rec_type_pseudotype(type))[self(type.index)];
-  mut_rec_type()        = {pts := mut_rec_type_pseudotype(type); return pts[self(type.index)];};
+  mut_rec_type()        = {pts = mut_rec_type_pseudotype(type); return pts[self(type.index)];};
 
 
 (SelfPretype => PseudoType) mut_rec_type_pseudotype(MutRecType[AnonType] type)
 {
-  refs := [{s : s <- top_level_rec_refs(t)} : t <- type.types];
-  pseudotypes := ();
+  refs = [{s : s <- top_level_rec_refs(t)} : t <- type.types];
+  pseudotypes = ();
   loop
-    next_type_idxs := {i : i <- index_set(type.types) ; not has_key(pseudotypes, self(i)) and subset(refs[i], keys(pseudotypes))};
+    next_type_idxs = {i : i <- index_set(type.types), not has_key(pseudotypes, self(i)) and subset(refs[i], keys(pseudotypes))};
     assert next_type_idxs /= {} or keys(pseudotypes) == {self(i) : i <- index_set(type.types)};
     return pseudotypes if next_type_idxs == {};
-    pseudotypes := pseudotypes & (self(i) => pretype_pseudotype(type.types[i], pseudotypes) : i <- next_type_idxs);
+    pseudotypes = pseudotypes & (self(i) => pretype_pseudotype(type.types[i], pseudotypes) : i <- next_type_idxs);
   ;
 }
 

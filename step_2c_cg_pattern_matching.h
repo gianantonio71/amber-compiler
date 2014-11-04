@@ -14,10 +14,10 @@ using
                       end,
 
     ptrn_tag_obj()  = {
-      var  := lvar(next_obj_var_id);
+      var  = lvar(next_obj_var_id);
       
       let (next_obj_var_id = next_obj_var_id + 1)
-        code := [ block_failure_if_not(is_tagged_obj(obj), res_var),
+        code = [ block_failure_if_not(is_tagged_obj(obj), res_var),
                   set_var(var, get_tag(obj))
                 ] &
                 gen_ptrn_matching_code(ptrn.tag, var, res_var, loc_bound_vars) &
@@ -31,11 +31,11 @@ using
     },
 
     ptrn_union(ps?) = {
-      code := [];
+      code = [];
       for (p : rand_sort(ps))
-        code := code & gen_ptrn_matching_code(p, obj, res_var, loc_bound_vars) & [exit_block_if(res_var)];
+        code = code & gen_ptrn_matching_code(p, obj, res_var, loc_bound_vars) & [exit_block_if(res_var)];
       ;
-      code := code & [set_bvar(res_var, false)];
+      code = code & [set_bvar(res_var, false)];
       return [execute_block(code)];
     },
 
@@ -80,10 +80,10 @@ BoolExpr gen_ptrn_matching_expr(Pattern ptrn, AtomicExpr obj):
     // var_ptrn()          = gen_ptrn_matching_code(ptrn.ptrn, obj, res_var) & [do_if(res_var, set_var(ptrn.name, obj))],
 
     // tag_ptrn() = {
-    //   var  := lvar(next_obj_var_id);
+    //   var  = lvar(next_obj_var_id);
 
     //   let (next_obj_var_id = next_obj_var_id + 1)
-    //     code := [ block_failure_if_not(is_tagged_obj(obj), res_var),
+    //     code = [ block_failure_if_not(is_tagged_obj(obj), res_var),
     //               set_var(var, get_tag(obj))
     //             ] &
     //             gen_ptrn_matching_code(ptrn.tag, var, res_var) &

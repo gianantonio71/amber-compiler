@@ -1,25 +1,25 @@
 
 Program rem_syntax(SynPrg prg)
 {
-  norm_prg := replace SynType t in prg with syn_type_to_user_type(t) end;
+  norm_prg = replace SynType t in prg with syn_type_to_user_type(t) end;
 
-  decls    := set(_obj_(norm_prg));
+  decls    = set(_obj_(norm_prg));
   
-  tdefs         := {d : typedef()       d <- decls};
-  par_tdefs     := {d : par_typedef()   d <- decls};
-  fndefs        := {d : syn_fn_def()    d <- decls};
-  ublocks       := {d : using_block()   d <- decls};
-  subtype_decls := {d : subtype_decl()  d <- decls};
+  tdefs         = {d : typedef()       d <- decls};
+  par_tdefs     = {d : par_typedef()   d <- decls};
+  fndefs        = {d : syn_fn_def()    d <- decls};
+  ublocks       = {d : using_block()   d <- decls};
+  subtype_decls = {d : subtype_decl()  d <- decls};
 
   assert tdefs & par_tdefs & fndefs & ublocks & subtype_decls == decls;
 
-  inst_tdefs := create_type_map(norm_prg);
+  inst_tdefs = create_type_map(norm_prg);
 
-  anon_tdefs := normalize_and_anonymize_types(inst_tdefs);
+  anon_tdefs = normalize_and_anonymize_types(inst_tdefs);
 
-  desugared_fndefs := union({syn_fndef_to_fndefs(fd, {}, anon_tdefs) : fd <- fndefs});
+  desugared_fndefs = union({syn_fndef_to_fndefs(fd, {}, anon_tdefs) : fd <- fndefs});
   
-  desugared_block_fndefs := union(
+  desugared_block_fndefs = union(
                               for (ub <- ublocks, fd <- set(ub.fn_defs), sgns = set(ub.signatures)) {
                                 syn_fndef_to_fndefs(fd, sgns, anon_tdefs)
                               }
@@ -31,13 +31,13 @@ Program rem_syntax(SynPrg prg)
 
 FnDef* syn_fndef_to_fndefs(SynFnDef fndef, SynSgn* named_params, (TypeName => AnonType) typedefs)
 {
-  //named_params := {if arity(np) == 0 then :named_par(np.name) else np end : np <- named_params}; //## BAD BAD BAD
+  //named_params = {if arity(np) == 0 then :named_par(np.name) else np end : np <- named_params}; //## BAD BAD BAD
   
-  lfns := {untyped_sgn(lfd) : lfd <- set(fndef.local_fns)};
+  lfns = {untyped_sgn(lfd) : lfd <- set(fndef.local_fns)};
 
-  main_fn := mk_fndef(fndef, fndef.name, fndef.name, named_params, lfns, typedefs);
+  main_fn = mk_fndef(fndef, fndef.name, fndef.name, named_params, lfns, typedefs);
   
-  loc_fns := for (fd <- set(fndef.local_fns)) {
+  loc_fns = for (fd <- set(fndef.local_fns)) {
                mk_fndef(fd, nested_fn_symbol(outer: fndef.name, inner: fd.name), fndef.name, named_params, lfns, typedefs)
              };
   
@@ -53,7 +53,7 @@ FnDef* syn_fndef_to_fndefs(SynFnDef fndef, SynSgn* named_params, (TypeName => An
                     // No need to include fn_par(i) among the variables
       expr:         desugar_expr(
                       fndef.expr,
-                      {p.var : p <- set(fndef.params) ; p.var?};
+                      {p.var : p <- set(fndef.params), p.var?};
                       named_params  = {:named_par(_obj_(np.name)) : np <- named_params}, //## BAD BAD BAD
                       local_fns     = lfns,
                       curr_outer_fn = outer_fn,

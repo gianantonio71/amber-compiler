@@ -12,33 +12,33 @@ using
   //## OR IT COULD BE DEFINED INSIDE A USING BLOCK
   SynObjErr* fndef_wf_errors(SynFnDef fn_def, UntypedSgn* global_fns, TypeVar* type_vars, BasicUntypedSgn* impl_pars)
   {
-    vs := set([:fn_par(i) : i <- indexes(fn_def.params)]); //## BAD BAD BAD
+    vs = set([:fn_par(i) : i <- indexes(fn_def.params)]); //## BAD BAD BAD
 
     //## WHAT IF THE LOCAL FUNCTIONS ARE INSIDE A USING BLOCK? IT SHOULD NOT MATTER, BUT I'M NOT QUITE SURE
-    all_fns := merge_and_override(global_fns, {untyped_sgn(lfd) : lfd <- set(fn_def.local_fns)});
-    ts      := type_vars & select TypeVar in fn_def.params end;
+    all_fns = merge_and_override(global_fns, {untyped_sgn(lfd) : lfd <- set(fn_def.local_fns)});
+    ts      = type_vars & select TypeVar in fn_def.params end;
 
-    sgn_errs  := {};
+    sgn_errs  = {};
 
     for (p : fn_def.params)
       if (p.type?)
-        sgn_errs := sgn_errs & type_wf_errors(p.type; type_vars_in_scope = ts);
+        sgn_errs = sgn_errs & type_wf_errors(p.type; type_vars_in_scope = ts);
       ;
 
       if (p.var?)
-        sgn_errs := sgn_errs & {:var_redef(p.var)} if in(p.var, vs);
-        vs       := vs & {p.var};
+        sgn_errs = sgn_errs & {:var_redef(p.var)} if in(p.var, vs);
+        vs       = vs & {p.var};
       ;
     ;
 
-    ret_type_errs := if fn_def.res_type?
+    ret_type_errs = if fn_def.res_type?
                        then type_wf_errors(fn_def.res_type; type_vars_in_scope = ts)
                        else {}
                      end;
 
-    loc_fns_errs  := seq_union([fndef_wf_errors(fn, all_fns, ts, impl_pars) : fn <- fn_def.local_fns]);
+    loc_fns_errs  = seq_union([fndef_wf_errors(fn, all_fns, ts, impl_pars) : fn <- fn_def.local_fns]);
     
-    expr_errs     := expr_wf_errors(fn_def.expr, vs; fns_in_scope = all_fns, type_vars_in_scope = ts, impl_params = impl_pars);
+    expr_errs     = expr_wf_errors(fn_def.expr, vs; fns_in_scope = all_fns, type_vars_in_scope = ts, impl_params = impl_pars);
 
     return sgn_errs & ret_type_errs & loc_fns_errs & expr_errs;
   }
@@ -82,26 +82,26 @@ using
 
     //where_expr(expr: SynExpr, fndefs: [SynFnDef^]),
     
-    //where_expr()        = { ips := impl_params & {untyped_sgn(fd) : fd <- set(expr.fndefs)};
-    //                        expr_errs  := expr_wf_errors(expr.expr, def_vars; impl_params = ips);
-    //                        fndef_errs := fndefs_wf_errors(set(expr.fndefs), def_vars);
+    //where_expr()        = { ips = impl_params & {untyped_sgn(fd) : fd <- set(expr.fndefs)};
+    //                        expr_errs  = expr_wf_errors(expr.expr, def_vars; impl_params = ips);
+    //                        fndef_errs = fndefs_wf_errors(set(expr.fndefs), def_vars);
     //                        return expr_errs & fndef_errs;
     //                      },
 
     // fn_call(name: FnSymbol, params: [ExtSynExpr], named_params: [SynFnDef]), //## NEW
 
-    fn_call()           = { ips := impl_params & {untyped_sgn(fd) : fd <- set(expr.named_params)};
+    fn_call()           = { ips = impl_params & {untyped_sgn(fd) : fd <- set(expr.named_params)};
     
-                            errs := exprs_wf_errors(expr.params, def_vars);
+                            errs = exprs_wf_errors(expr.params, def_vars);
 
                             //## I DON'T UNDERSTAND WHAT I HAVE DONE HERE
                             if (not is_def(expr.name, length(expr.params), fns_in_scope, ips))
-                              err_info := (name: expr.name, arity: length(expr.params));
-                              almost_def := is_almost_def(expr.name, length(expr.params), fns_in_scope);
-                              errs := errs & {if almost_def then :almost_def_fn(err_info) else :undef_fn(err_info) end};
+                              err_info = (name: expr.name, arity: length(expr.params));
+                              almost_def = is_almost_def(expr.name, length(expr.params), fns_in_scope);
+                              errs = errs & {if almost_def then :almost_def_fn(err_info) else :undef_fn(err_info) end};
                             ;
                             
-                            np_errs := fndefs_wf_errors(set(expr.named_params), def_vars);
+                            np_errs = fndefs_wf_errors(set(expr.named_params), def_vars);
                             //## I SHOULD ALSO CHECK THAT THE NAMED PARAMS THAT I SUPPLY
                             //## ARE ONLY THE ONES THAT ARE REQUIRED BY THE FUNCTION I CALL
                             return errs & np_errs;
@@ -128,23 +128,23 @@ using
     ex_qual()           = clauses_wf_errors(expr.source, def_vars) &
                           exprs_wf_errors(expr.sel_exprs, def_vars & syn_new_vars(expr.source)),
 
-    set_comp()          = { vs := def_vars & syn_new_vars(expr.source);  //## BAD, A LET EXPRESSION WOULD BE NICER 
+    set_comp()          = { vs = def_vars & syn_new_vars(expr.source);  //## BAD, A LET EXPRESSION WOULD BE NICER 
                             return clauses_wf_errors(expr.source, def_vars) &
                                    exprs_wf_errors(expr.sel_exprs, vs) &
                                    expr_wf_errors(expr.expr, vs);
                           },
 
                           //## BAD BAD BAD THIS EXPRESSION IS TOO SIMILAR TO THE ONES ABOVE
-    map_comp()          = { vs := def_vars & syn_new_vars(expr.source);
+    map_comp()          = { vs = def_vars & syn_new_vars(expr.source);
                             return clauses_wf_errors(expr.source, def_vars) &
                                    exprs_wf_errors(expr.sel_exprs, vs) &
                                    expr_wf_errors(expr.key_expr, vs) &
                                    expr_wf_errors(expr.value_expr, vs);
                           },
 
-    seq_comp()          = { vs   := def_vars & {expr.var, expr.idx_var if expr.idx_var?};
-                            errs := expr_wf_errors(expr.src_expr, def_vars) & expr_wf_errors(expr.expr, vs);
-                            errs := errs & expr_wf_errors(expr.sel_expr, vs) if expr.sel_expr?;
+    seq_comp()          = { vs   = def_vars & {expr.var, expr.idx_var if expr.idx_var?};
+                            errs = expr_wf_errors(expr.src_expr, def_vars) & expr_wf_errors(expr.expr, vs);
+                            errs = errs & expr_wf_errors(expr.sel_expr, vs) if expr.sel_expr?;
                             return errs;
                           },
 
@@ -160,11 +160,11 @@ using
     
     select_expr()       = type_wf_errors(expr.type) & expr_wf_errors(expr.src_expr, def_vars),
     
-    // retrieve_expr()     = { vs   := def_vars & syn_new_vars(expr.ptrn);
-    //                         errs := ptrn_wf_errors(expr.ptrn, def_vars);
-    //                         errs := errs & expr_wf_errors(expr.src_expr, def_vars);
-    //                         errs := errs & expr_wf_errors(expr.expr, vs);
-    //                         errs := errs & expr_wf_errors(expr.cond, vs) if expr.cond?;
+    // retrieve_expr()     = { vs   = def_vars & syn_new_vars(expr.ptrn);
+    //                         errs = ptrn_wf_errors(expr.ptrn, def_vars);
+    //                         errs = errs & expr_wf_errors(expr.src_expr, def_vars);
+    //                         errs = errs & expr_wf_errors(expr.expr, vs);
+    //                         errs = errs & expr_wf_errors(expr.cond, vs) if expr.cond?;
     //                         return errs;
     //                       },
     
@@ -176,9 +176,9 @@ using
     is_expr()           = type_wf_errors(expr.type) & expr_wf_errors(expr.expr, def_vars),
     
                           //## A LET EXPRESSION WOULD BE NICER HERE
-    where_expr()        = { ips := impl_params & {untyped_sgn(fd) : fd <- set(expr.fndefs)};
-                            expr_errs  := expr_wf_errors(expr.expr, def_vars; impl_params = ips);
-                            fndef_errs := fndefs_wf_errors(set(expr.fndefs), def_vars);
+    where_expr()        = { ips = impl_params & {untyped_sgn(fd) : fd <- set(expr.fndefs)};
+                            expr_errs  = expr_wf_errors(expr.expr, def_vars; impl_params = ips);
+                            fndef_errs = fndefs_wf_errors(set(expr.fndefs), def_vars);
                             return expr_errs & fndef_errs;
                           },
     
@@ -189,7 +189,7 @@ using
 
   SynObjErr* fndefs_wf_errors(SynFnDef* fndefs, Var* def_vars)
   {
-    dup_errs := for (fd1 <- fndefs, fd2 <- fndefs)
+    dup_errs = for (fd1 <- fndefs, fd2 <- fndefs)
                   if (fd1 /= fd2, untyped_sgn(fd1) == untyped_sgn(fd2)) {
                     :dup_closure_def(untyped_sgn(fd1))
                   };
@@ -199,15 +199,15 @@ using
 
   SynObjErr* fndef_wf_errors(SynFnDef fndef, Var* def_vars)
   {
-    vs       := def_vars;
-    sgn_errs := {};
+    vs       = def_vars;
+    sgn_errs = {};
     
     for (p : fndef.params)
       assert not p.type?;
 
       if (p.var?)
-        sgn_errs := sgn_errs & {:var_redef(p.var)} if in(p.var, vs);
-        vs       := vs & {p.var};
+        sgn_errs = sgn_errs & {:var_redef(p.var)} if in(p.var, vs);
+        vs       = vs & {p.var};
       ;
     ;
     
@@ -225,22 +225,22 @@ using
   
   SynObjErr* stmts_wf_errors([SynStmt^] stmts, Var* def_vars)
   {
-    errs := stmts_wf_errors(stmts, def_vars, def_vars, false);
-    errs := errs & {:no_ret_stmt} if not never_falls_through(stmts);
+    errs = stmts_wf_errors(stmts, def_vars, def_vars, false);
+    errs = errs & {:no_ret_stmt} if not never_falls_through(stmts);
     return errs;
   }
 
 
   SynObjErr* stmts_wf_errors([SynStmt] stmts, Var* all_def_vars, Var* readonly_vars, Bool inside_loop)
   {
-    vs        := all_def_vars;
-    reachable := true;
-    errs      := {};
+    vs        = all_def_vars;
+    reachable = true;
+    errs      = {};
     for (s : stmts)
-      errs      := errs & {:unreachable_code} if not reachable;
-      errs      := errs & stmt_wf_errors(s, vs, readonly_vars, inside_loop);
-      vs        := vs & syn_new_vars(s);
-      reachable := reachable and not syn_is_last_for_sure(s);
+      errs      = errs & {:unreachable_code} if not reachable;
+      errs      = errs & stmt_wf_errors(s, vs, readonly_vars, inside_loop);
+      vs        = vs & syn_new_vars(s);
+      reachable = reachable and not syn_is_last_for_sure(s);
     ;
 
     return errs;
@@ -264,32 +264,32 @@ using
     inf_loop_stmt(ss?)  = stmts_wf_errors(ss, all_def_vars, readonly_vars, true) &
                           {:no_way_out_loop if not has_top_level_break(ss) and not has_return(ss)},
 
-    if_stmt()           = { errs_cond := [expr_wf_errors(b.cond, all_def_vars) : b <- stmt.branches];
-                            errs_body := [stmts_wf_errors(b.body, all_def_vars, readonly_vars, inside_loop) : b <- stmt.branches];
-                            errs_else := stmts_wf_errors(stmt.else, all_def_vars, readonly_vars, inside_loop);
+    if_stmt()           = { errs_cond = [expr_wf_errors(b.cond, all_def_vars) : b <- stmt.branches];
+                            errs_body = [stmts_wf_errors(b.body, all_def_vars, readonly_vars, inside_loop) : b <- stmt.branches];
+                            errs_else = stmts_wf_errors(stmt.else, all_def_vars, readonly_vars, inside_loop);
                             return seq_union(errs_cond) & seq_union(errs_body) & errs_else;
                           },
 
-    loop_stmt()         = { vs := all_def_vars;
-                            vs := vs & syn_new_vars(stmt.body) if stmt.skip_first;
-                            errs_cond := expr_wf_errors(stmt.cond, vs);
-                            errs_body := stmts_wf_errors(stmt.body, all_def_vars, readonly_vars, true);
+    loop_stmt()         = { vs = all_def_vars;
+                            vs = vs & syn_new_vars(stmt.body) if stmt.skip_first;
+                            errs_cond = expr_wf_errors(stmt.cond, vs);
+                            errs_body = stmts_wf_errors(stmt.body, all_def_vars, readonly_vars, true);
                             return errs_cond & errs_body;
                           },
 
-    for_stmt()          = { vs   := all_def_vars;
-                            errs := {};
+    for_stmt()          = { vs   = all_def_vars;
+                            errs = {};
                             for (it : stmt.loops)
-                              errs := errs & iter_wf_errors(it, vs);
-                              vs   := vs & syn_new_vars(it);
+                              errs = errs & iter_wf_errors(it, vs);
+                              vs   = vs & syn_new_vars(it);
                             ;
                             return errs & stmts_wf_errors(stmt.body, vs, readonly_vars, true);
                           },
 
-    let_stmt()          = { asgnms_errs := fndefs_wf_errors(set(stmt.asgnms), all_def_vars);
+    let_stmt()          = { asgnms_errs = fndefs_wf_errors(set(stmt.asgnms), all_def_vars);
 
-                            new_impl_params := impl_params & set([untyped_sgn(fd) : fd <- stmt.asgnms]);
-                            stmts_errs  := stmts_wf_errors(
+                            new_impl_params = impl_params & set([untyped_sgn(fd) : fd <- stmt.asgnms]);
+                            stmts_errs  = stmts_wf_errors(
                                              stmt.body,
                                              all_def_vars,
                                              readonly_vars,
@@ -322,14 +322,14 @@ using
   {
     //## ALSO CHECK THAT THERE ARE NO SHARED VARIABLE AMONG PATTERNS
     //## AND ALSO THAT THEY DON'T HAVE BOUND VARIABLES
-    vs   := def_vars;
-    errs := {};
+    vs   = def_vars;
+    errs = {};
     for (p : syn_case.patterns)
-      pvs  := syn_new_vars(p);
-      errs := errs & {:already_def_ptrn_var(v) : v <- intersection(pvs, vs)};
-      // errs := errs & {:free_var_in_try_expr(p.name)} if p :: <ptrn_var(name: Var)>; //## BAD BAD
-      errs := errs & ptrn_wf_errors(p, {}); //## BAD BAD THIS WOULD GENERATE A WEIRD ERROR MESSAGE...
-      vs   := vs & pvs;
+      pvs  = syn_new_vars(p);
+      errs = errs & {:already_def_ptrn_var(v) : v <- intersection(pvs, vs)};
+      // errs = errs & {:free_var_in_try_expr(p.name)} if p :: <ptrn_var(name: Var)>; //## BAD BAD
+      errs = errs & ptrn_wf_errors(p, {}); //## BAD BAD THIS WOULD GENERATE A WEIRD ERROR MESSAGE...
+      vs   = vs & pvs;
     ;
     
     return errs & expr_wf_errors(syn_case.expr, vs);
@@ -357,11 +357,11 @@ using
                           {:already_def_ptrn_var(clause.var) if in(clause.var, loc_vars & ext_vars)},
     
     //and_clause([SynClause^])
-    and_clause(cs?)     = { vs   := loc_vars;
-                            errs := {};
+    and_clause(cs?)     = { vs   = loc_vars;
+                            errs = {};
                             for (c : cs)
-                              errs := errs & clause_wf_errors(c, vs, ext_vars);
-                              vs   := vs & syn_new_vars(c);
+                              errs = errs & clause_wf_errors(c, vs, ext_vars);
+                              vs   = vs & syn_new_vars(c);
                             ;
                             return errs;
                           },
@@ -389,17 +389,17 @@ using
     ptrn_symbol()     = {},
     ptrn_integer()    = {},
     ptrn_tag_obj()    = {
-      errs := ptrn_wf_errors(ptrn.tag, ext_vars) & ptrn_wf_errors(ptrn.obj, ext_vars);
-      tag_vars := syn_new_vars(ptrn.tag);
-      obj_vars := syn_new_vars(ptrn.obj);
-      common_vars := intersection(tag_vars, obj_vars);
-      errs := errs & {:dupl_ptrn_vars(common_vars)} if common_vars /= {};
+      errs = ptrn_wf_errors(ptrn.tag, ext_vars) & ptrn_wf_errors(ptrn.obj, ext_vars);
+      tag_vars = syn_new_vars(ptrn.tag);
+      obj_vars = syn_new_vars(ptrn.obj);
+      common_vars = intersection(tag_vars, obj_vars);
+      errs = errs & {:dupl_ptrn_vars(common_vars)} if common_vars /= {};
       return errs;
     },
     ptrn_var()        = {
-      vs := syn_new_vars(ptrn.ptrn);
-      var_errs  := {:dupl_ptrn_vars({ptrn.name}) if in(ptrn.var, vs), :var_redef({ptrn.var}) if in(ptrn.var, ext_vars)};
-      ptrn_errs := ptrn_wf_errors(ptrn.ptrn, ext_vars);
+      vs = syn_new_vars(ptrn.ptrn);
+      var_errs  = {:dupl_ptrn_vars({ptrn.name}) if in(ptrn.var, vs), :var_redef({ptrn.var}) if in(ptrn.var, ext_vars)};
+      ptrn_errs = ptrn_wf_errors(ptrn.ptrn, ext_vars);
 
       return var_errs & ptrn_errs;
     },

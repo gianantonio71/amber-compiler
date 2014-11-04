@@ -78,9 +78,9 @@ Var* new_vars([Statement] stmts) = seq_union([new_vars(s) : s <- stmts]);
 
 Var* extern_vars(Expr expr)
 {
-  ord_expr_evs  := union({extern_vars(e) : e <- ordinary_subexprs(expr)});
-  spec_expr_evs := union({extern_vars(e) : e <- special_subexprs(expr)}) - gen_vars(expr);
-  spec_case_evs := special_cases(expr);
+  ord_expr_evs  = union({extern_vars(e) : e <- ordinary_subexprs(expr)});
+  spec_expr_evs = union({extern_vars(e) : e <- special_subexprs(expr)}) - gen_vars(expr);
+  spec_case_evs = special_cases(expr);
 
   return ord_expr_evs & spec_expr_evs & spec_case_evs;
 
@@ -91,10 +91,10 @@ Var* extern_vars(Expr expr)
       set_comp()     = extern_vars(expr.source), //## BAD
       map_comp()     = extern_vars(expr.source), //## BAD
       do_expr(ss?)   = extern_vars(ss),
-      match_expr()   = { vs := {};
+      match_expr()   = { vs = {};
                          for (c : expr.cases)
-                           pvs := seq_union([new_vars(p) : p <- c.ptrns]);
-                           vs  := vs & (extern_vars(c.expr) - pvs);
+                           pvs = seq_union([new_vars(p) : p <- c.ptrns]);
+                           vs  = vs & (extern_vars(c.expr) - pvs);
                          ;
                          return vs;
                        },
@@ -114,11 +114,11 @@ Var* extern_vars([Statement] stmts)
 {
   //## BUG BUG WHY IS THIS FUNCTION NEVER CALLED?
   
-  def_vs := {};
-  ext_vs := {};
+  def_vs = {};
+  ext_vs = {};
   for (s : stmts)
-    ext_vs := ext_vs & (extern_vars(s) - def_vs);
-    def_vs := def_vs & new_vars(s);                            
+    ext_vs = ext_vs & (extern_vars(s) - def_vs);
+    def_vs = def_vs & new_vars(s);                            
   ;
   return ext_vs;
 }
@@ -144,9 +144,9 @@ type StmtOutcome = fails, returns, breaks, falls_through;
 
 StmtOutcome+ outcomes([Statement] stmts)
 {
-  outcomes := {:falls_through};
+  outcomes = {:falls_through};
   for (s : stmts)
-    outcomes := (outcomes - {:falls_through}) & outcomes(s);
+    outcomes = (outcomes - {:falls_through}) & outcomes(s);
     break if not in(:falls_through, outcomes);
   ;
   return outcomes;
@@ -158,13 +158,13 @@ StmtOutcome+ outcomes(Statement stmt):
   return_stmt()     = {:fails, :returns},
   if_stmt()         = {:fails} & outcomes(stmt.body) & outcomes(stmt.else),
   loop_stmt(body?)  = {
-    outcomes := outcomes(body);
+    outcomes = outcomes(body);
     // Failures and returns in the body are transferred to the loop.
     // Fall throughs in the body are neutralized by the loop, but they
     // create the possibility of an infinite loop, which counts as failure.
-    outcomes := (outcomes - {:falls_through}) & {:fails} if in(:falls_through, outcomes);
+    outcomes = (outcomes - {:falls_through}) & {:fails} if in(:falls_through, outcomes);
     // A break in the body becomes a fall through for the loop itself
-    outcomes := (outcomes - {:breaks}) & {:falls_through} if in(:breaks, outcomes);
+    outcomes = (outcomes - {:breaks}) & {:falls_through} if in(:breaks, outcomes);
     return outcomes;
   },
   foreach_stmt()    = {:fails, :falls_through} & outcomes(stmt.body) - {:breaks},

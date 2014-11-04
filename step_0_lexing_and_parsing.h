@@ -1,13 +1,13 @@
 
 Result[[PrgDecl], <LexerError, PreParseError, ParserError>] lex_and_parse_src_file([Nat] chars)
 {
-  lex_res := lex_src_file(chars);
+  lex_res = lex_src_file(chars);
   return lex_res if is_failure(lex_res);
-  tokens := get_result(lex_res);
+  tokens = get_result(lex_res);
 
   return success([]) if tokens == [];
 
-  rec_rules := (
+  rec_rules = (
     type:         rule_type,
     pretype:      rule_pretype,
     expr:         rule_expr,
@@ -18,15 +18,15 @@ Result[[PrgDecl], <LexerError, PreParseError, ParserError>] lex_and_parse_src_fi
     fndef_switch: rule_switch_fndef
   );
 
-  pre_parse_res := pre_parse_file(tokens);
+  pre_parse_res = pre_parse_file(tokens);
   return pre_parse_res if is_failure(pre_parse_res);
-  pre_ast := get_result(pre_parse_res);
+  pre_ast = get_result(pre_parse_res);
 
-  parser_res := parse_all(rule_amber_file, pre_ast, rec_rules);
+  parser_res = parse_all(rule_amber_file, pre_ast, rec_rules);
   return parser_res if is_failure(parser_res);
-  parser_match := get_result(parser_res);
+  parser_match = get_result(parser_res);
 
-  post_parser_res := [reshuffle_local_fndefs(d) : d <- build_amber_file_ast(parser_match.rule_match)];
+  post_parser_res = [reshuffle_local_fndefs(d) : d <- build_amber_file_ast(parser_match.rule_match)];
 
   return success(post_parser_res);
 }
@@ -55,13 +55,13 @@ PrgDecl reshuffle_local_fndefs(PrgDecl decl)
 
   SynFnDef reshuffle(SynFnDef fd, [SynStmt^] stmts)
   {
-    lfds := [];
-    rem_stmts := [];
+    lfds = [];
+    rem_stmts = [];
     for (s : stmts)
       if (is_fn_def(s))
-        lfds := lfds & [_obj_(s)];
+        lfds = lfds & [_obj_(s)];
       else
-        rem_stmts := rem_stmts & [s];
+        rem_stmts = rem_stmts & [s];
       ;
     ;
     return syn_fn_def(
@@ -96,24 +96,24 @@ PreParseError mismatched_parenthesis(AnnotatedToken l, AnnotatedToken r)  = mism
 
 PreParseResult pre_parse_file([AnnotatedToken] tokens)
 {
-  par_stack := nil;
-  pre_ast_stack := push(nil, []);
+  par_stack = nil;
+  pre_ast_stack = push(nil, []);
   for (at : tokens)
-    t := at.token;
-    new_node := at;
+    t = at.token;
+    new_node = at;
     if (t == left_parenthesis or t == left_bracket or t == left_brace)
-      par_stack := push(par_stack, at);
-      pre_ast_stack := push(pre_ast_stack, []);
+      par_stack = push(par_stack, at);
+      pre_ast_stack = push(pre_ast_stack, []);
     elif (t == right_parenthesis or t == right_bracket or t == right_brace)
       return failure(parenthesis_not_opened(at)) if par_stack == nil;
-      last_par := peek(par_stack);
+      last_par = peek(par_stack);
       //## SHOULD FIND A WAY TO MAKE THIS SYNTACTLY PALATABLE
       return failure(mismatched_parenthesis(last_par, at)) if match (last_par.token, t) left(pt1?), right(pt2?) = pt1 /= pt2;;
-      par_stack := pop(par_stack);
-      new_node := peek(pre_ast_stack) & [at];
-      pre_ast_stack := pop(pre_ast_stack);
+      par_stack = pop(par_stack);
+      new_node = peek(pre_ast_stack) & [at];
+      pre_ast_stack = pop(pre_ast_stack);
     ;
-    pre_ast_stack := replace_top(pre_ast_stack, peek(pre_ast_stack) & [new_node]);
+    pre_ast_stack = replace_top(pre_ast_stack, peek(pre_ast_stack) & [new_node]);
   ;
   return parenthesis_not_closed(peek(par_stack)) if par_stack /= nil;
   assert pop(pre_ast_stack) == nil;

@@ -44,17 +44,17 @@ TagObjType[T] tag_obj_type(TagType tag_type, T obj_type) = tag_obj_type(tag_type
 
 AnonType map_type(T key_type, T value_type, Bool may_be_empty)
 {
-  type := ne_map_type(key_type, value_type);
+  type = ne_map_type(key_type, value_type);
   return if may_be_empty then union_type({type, empty_map_type}) else type end;
 }
 
 T union_type(T+ types) //## BAD: HERE I SHOULD CONSTRAIN THE TYPE OF T SO THAT IT IS A SUBTYPE OF Type, SelfRecPretype or MutRecPretype
 {
-  norm_types := union({expand_union_types(t) : t <- types});
+  norm_types = union({expand_union_types(t) : t <- types});
   assert not (? union_type() <- norm_types);
   return if size(norm_types) > 1 then :union_type(norm_types) else only_element(norm_types) end;
 
-  // res := if size(norm_types) > 1 then :union_type(norm_types) else only_element(norm_types) end;
+  // res = if size(norm_types) > 1 then :union_type(norm_types) else only_element(norm_types) end;
   // if (not anon_type_is_wf(res))
   //   print "* * * * * * * * * * * * *";
   //   print res;

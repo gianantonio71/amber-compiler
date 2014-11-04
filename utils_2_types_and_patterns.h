@@ -20,8 +20,8 @@ using (TypeName => AnonType) typedefs
 
   AnonType dereference_type_symbol(TypeSymbol type_symbol)
   {
-    generic_type := typedefs[type_symb_to_name(type_symbol)];
-    actual_params := [user_type_to_anon_type(tp) : tp <- params(type_symbol)];
+    generic_type = typedefs[type_symb_to_name(type_symbol)];
+    actual_params = [user_type_to_anon_type(tp) : tp <- params(type_symbol)];
     return instantiate_generic_params(generic_type, actual_params);
   }
 
