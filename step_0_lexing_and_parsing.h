@@ -115,7 +115,7 @@ PreParseResult pre_parse_file([AnnotatedToken] tokens)
     ;
     pre_ast_stack = replace_top(pre_ast_stack, peek(pre_ast_stack) & [new_node]);
   ;
-  return parenthesis_not_closed(peek(par_stack)) if par_stack /= nil;
+  return failure(parenthesis_not_closed(peek(par_stack))) if par_stack /= nil;
   assert pop(pre_ast_stack) == nil;
   return success(peek(pre_ast_stack));
 }
