@@ -1,3 +1,5 @@
+type ParType    = parenthesis, bracket, brace;
+
 type AmberSymb  = left(ParType),
                   right(ParType),
                   comma,

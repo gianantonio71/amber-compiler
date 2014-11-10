@@ -112,6 +112,7 @@ UserErr* wf_errors(SynPrg prg)
                   (n => {fd : fd <- all_fndefs, untyped_sgn(fd) == n});
 
   //## BAD BAD BAD, INEFFICIENT
+  //## BUG THIS STATEMENT WILL FAIL IF A FUNCTION SIGNATURE USES A TYPE THAT IS NOT DEFINED
   incomp_fn_sgns = for (s => fns <- fn_groups, fd1 <- fns, fd2 <- fns)
                       if (fd1 /= fd2, not syn_fns_are_compatible(fd1, fd2; typedefs = inst_tdefs)) {
                         incomp_fndefs(
@@ -135,7 +136,7 @@ UserErr* wf_errors(SynPrg prg)
        typedefs             = inst_tdefs,
        all_par_type_symbols = {(symbol: p.name, arity: length(p.params)) : p <- par_tdefs})
 
-    decl_errs = tdef_errs(tdefs)                     &
+    decl_errs = tdef_errs(tdefs)                      &
                  par_tdef_errs(par_tdefs)             &
                  inst_tdef_errs(inst_tdefs)           &
                  fn_def_errs(fndefs, all_def_fns, {}) &

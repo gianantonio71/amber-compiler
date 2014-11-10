@@ -1,3 +1,16 @@
+ParType parenthesis           = :parenthesis;
+ParType bracket               = :bracket;
+ParType brace                 = :brace;
+
+AmberSymb left(ParType p)     = :left(p);
+AmberSymb right(ParType p)    = :right(p);
+
+AmberSymb left_parenthesis    = left(parenthesis);
+AmberSymb right_parenthesis   = right(parenthesis);
+AmberSymb left_bracket        = left(bracket);
+AmberSymb right_bracket       = right(bracket);
+AmberSymb left_brace          = left(brace);
+AmberSymb right_brace         = right(brace);
 AmberSymb comma               = :comma;
 AmberSymb semicolon           = :semicolon;
 AmberSymb question_mark       = :question_mark;
@@ -37,7 +50,7 @@ PlainToken lowercase_id(Atom s)     = :lowercase_id(s);
 PlainToken mixedcase_id(Atom s)     = :mixedcase_id(s);
 PlainToken uppercase_id(Atom s)     = :uppercase_id(s);
 PlainToken qualified_symbol(Atom s) = :qualified_symbol(s);
-// PlainToken label(Atom s)            = :label(s); //## THERE'S ANOTHER ONE IN THE PRELUDE
+PlainToken label(Atom s)            = :label(s);
 PlainToken operator(Operator op)    = :operator(op);
 PlainToken builtin(BuiltIn b)       = :builtin(b);
 

@@ -1,7 +1,7 @@
 
 type TokenLineInfo  = token_line_info(token: PlainToken, offset: Nat, length: NzNat);
 
-// type LexerError = lexer_error(line: NzNat, col: NzNat); //## BAD: ALREADY DEFINED IN THE PRELUDE
+type LexerError = lexer_error(line: NzNat, col: NzNat);
 
 type LexerResult      = Result[[AnnotatedToken], LexerError];
 type ParseLineResult  = Result[[TokenLineInfo], Nat];
@@ -12,6 +12,8 @@ type ParseTokenResult = Result[TokenLineInfo, Nat];
 TokenLineInfo token_line_info(PlainToken token, Nat offset, NzNat length) = token_line_info(token: token, offset: offset, length: length);
 
 AnnotatedToken annotated_token(TokenLineInfo token_info, NzNat line, Nat idx) = annotated_token(token_info.token, line, token_info.offset+1, idx);
+
+LexerError lexer_error(NzNat line, NzNat col) = lexer_error(line: line, col: col);
 
 ////////////////////////////////////////////////////////////////////////////////
 
