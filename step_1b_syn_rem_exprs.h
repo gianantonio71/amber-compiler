@@ -314,7 +314,7 @@ using
     let_stmt() =
     {
       nps    = named_params & set([:named_par(_obj_(fd.name)) : fd <- stmt.asgnms]); //## BAD BAD BAD
-      body   = desugar_stmts(stmt.body, def_vars; named_params = nps);
+      body   = desugar_stmts(stmt.body, def_vars ,named_params = nps);
       asgnms = syn_fn_defs_to_named_params(stmt.asgnms, def_vars);
       return let_stmt(asgnms: asgnms, body: body);
     },

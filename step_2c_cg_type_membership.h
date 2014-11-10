@@ -5,7 +5,7 @@ BoolProcDef mk_named_type_memb_test_fn(TypeSymbol type_name, (TypeSymbol => User
   code = gen_type_checking_code(
             typedefs[type_name],
             fn_par(0),
-            res_var;
+            res_var,
             next_set_it_var_id = 0,
             next_seq_it_var_id = 0,
             next_map_it_var_id = 0,
@@ -36,7 +36,7 @@ using
       elem_code = gen_type_checking_code(
                      type.elem_type,
                      elem_var,
-                     res_var;
+                     res_var,
                      next_obj_var_id    = next_obj_var_id + 1,
                      next_set_it_var_id = next_set_it_var_id + 1
                    );
@@ -69,7 +69,7 @@ using
       elem_code = gen_type_checking_code(
                      type.elem_type,
                      elem_var,
-                     res_var;
+                     res_var,
                      next_obj_var_id    = next_obj_var_id + 1,
                      next_seq_it_var_id = next_seq_it_var_id + 1
                    );
@@ -119,7 +119,7 @@ using
                 ];
       ;
             
-      return [execute_block(code)];                          
+      return [execute_block(code)];
     },
 
 
@@ -140,14 +140,14 @@ using
               ];
 
       //## BAD: THIS IS PROBABLY NOT IDEAL, IT IS LIKE THIS IN ORDER TO MINIMIZE THE AMOUNT OF CODE THAT HAD TO BE CHANGED WHEN I CHANGED THE TUPLE TYPE
-      sorted_fields = sort_set({(label: l, type: f.type, optional: f.optional) : l => f <- fs}; is_strictly_ordered(f1, f2) = f1.label < f2.label);
+      sorted_fields = sort_set({(label: l, type: f.type, optional: f.optional) : l => f <- fs}, is_strictly_ordered(f1, f2) = f1.label < f2.label);
 
       for (b : sorted_fields)
         inner_code = [set_var(obj_var, get_curr_value(it_var))] &
                       gen_type_checking_code(
                         b.type,
                         obj_var,
-                        res_var;
+                        res_var,
                         next_int_var_id    = next_int_var_id + 1,
                         next_obj_var_id    = next_obj_var_id + 1,
                         next_map_it_var_id = next_map_it_var_id + 1

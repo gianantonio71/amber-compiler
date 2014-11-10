@@ -53,7 +53,7 @@ FnDef* syn_fndef_to_fndefs(SynFnDef fndef, SynSgn* named_params, (TypeName => An
                     // No need to include fn_par(i) among the variables
       expr:         desugar_expr(
                       fndef.expr,
-                      {p.var : p <- set(fndef.params), p.var?};
+                      {p.var : p <- set(fndef.params), p.var?},
                       named_params  = {:named_par(_obj_(np.name)) : np <- named_params}, //## BAD BAD BAD
                       local_fns     = lfns,
                       curr_outer_fn = outer_fn,

@@ -17,9 +17,9 @@ CCodeOutput compile_to_c(ProcDef* prg)
   // symbs = (select SymbObj in prg end - {obj_true, obj_false}) & {:object(:string)};
   // symbs = [obj_true, obj_false] & sort_set(symbs; is_strictly_ordered(s1, s2) = s1 < s2);
   symbs = select SymbObj in prg end & {obj_true, obj_false, :object(:string)};
-  symbs = sort_set(symbs; is_strictly_ordered(s1, s2) = s1 < s2);
+  symbs = sort_set(symbs, is_strictly_ordered(s1, s2) = s1 < s2);
 
-  symb_decls = ["const Obj " & to_c_expr(s; typesymb2name(ts) = typesymb2str(ts, ptss)) & " = " & to_str(16*(i+1)+1) & ";" : s @ i <- symbs] & rep_seq(4, "");
+  symb_decls = ["const Obj " & to_c_expr(s, typesymb2name(ts) = typesymb2str(ts, ptss)) & " = " & to_str(16*(i+1)+1) & ";" : s @ i <- symbs] & rep_seq(4, "");
   symb_decls = symb_decls & ["const int EMB_SYMB_COUNT = " & to_text(length(symbs)) & ";"] & rep_seq(4, "");
 
   c_code = symb_decls;
@@ -109,7 +109,7 @@ CCodeOutput compile_to_c(ProcDef* prg)
   proc_code = compile_to_c(
                  obj_proc_defs,
                  bool_proc_defs,
-                 sorted_cls_defs;
+                 sorted_cls_defs,
                  typesymb2name(ts) = typesymb2str(ts, ptss),
                  cls2id(cls)       = index_first(cls, sorted_cls_defs)
                  //obj2var(obj)    = {assert false; return to_str(_counter_(nil));};

@@ -514,11 +514,16 @@ ParsingRule rule_fn_call_expr =
     rule_anon_choice([rule_id, atomic_rule(operator)]),
     par_rule(
       rule_seq([
-        comma_sep_seq(rule_ref_expr),
-        optional_rule(
+        comma_sep_seq(
           rule_seq([
-            atomic_rule(semicolon),
-            comma_sep_seq(rule_actual_named_par)
+            rule_neg(rule_actual_named_par),
+            rule_ref_expr
+          ])
+        ),
+        rep_rule(
+          rule_seq([
+            atomic_rule(comma),
+            rule_actual_named_par
           ])
         )
       ])

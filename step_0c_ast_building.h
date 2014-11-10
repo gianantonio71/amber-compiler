@@ -647,14 +647,9 @@ SynExpr build_fn_call_expr_ast(RuleMatch mtc)
 
   nodes = rule_seq_nodes(nodes[1]);
   assert length(nodes) == 2;
-  params = [build_expr_ast(n) : n <- rep_rule_nodes(nodes[0])];
 
-  named_pars = [];
-  if (nodes[1] /= null_match)
-    nodes = rule_seq_nodes(nodes[1]);
-    nodes = rep_rule_nodes(nodes[1]);
-    named_pars = [build_actual_named_par_ast(n) : n <- nodes];
-  ;
+  params = [build_expr_ast(rule_seq_nodes(n)[1]) : n <- rep_rule_nodes(nodes[0])];
+  named_pars = [build_actual_named_par_ast(rule_seq_nodes(n)[1]) : n <- rep_rule_nodes(nodes[1])];
 
   return syn_fn_call(fn_name, params, named_pars);
 

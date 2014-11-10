@@ -29,7 +29,7 @@ using
   [Instr^] gen_fn_body(Expr expr)
   {
     fn_res_var = lvar(next_obj_var_id);
-    code = gen_eval_code(expr, fn_res_var; next_obj_var_id = next_obj_var_id + 1);
+    code = gen_eval_code(expr, fn_res_var, next_obj_var_id = next_obj_var_id + 1);
     return code & [ret_val(fn_res_var)];
   }
 
@@ -77,7 +77,7 @@ using
   gen_eval_info(Expr expr)
   {
     var    = lvar(next_obj_var_id);
-    info   = gen_eval_info(expr, var; next_obj_var_id = next_obj_var_id + 1); //## BUG? BUG? BUG?
+    info   = gen_eval_info(expr, var, next_obj_var_id = next_obj_var_id + 1); //## BUG? BUG? BUG?
     return info & (next_var_id: next_obj_var_id + if info.var_used then 1 else 0 end);
   }
 
@@ -97,7 +97,7 @@ using
     next_var_id       = next_obj_var_id;
     
     for (e : exprs)
-      info = gen_eval_info(e; next_obj_var_id = next_var_id);
+      info = gen_eval_info(e, next_obj_var_id = next_var_id);
       eval_code         = eval_code & info.eval_code;
       cleanup_code      = info.cleanup_code & cleanup_code;
       add_ref_eval_code = add_ref_eval_code & info.add_ref_eval_code;
@@ -125,7 +125,7 @@ using
     code = gen_vector_eval_code(
               exprs,
               elems_var,
-              count_var;
+              count_var,
               next_vector_var_id = next_vector_var_id + 1,
               next_int_var_id    = next_int_var_id + 1
             );
@@ -147,7 +147,7 @@ using
         else
           assert e :: CondExpr;
           
-          cond_eval_info = gen_eval_info(e.cond, cond_var; next_obj_var_id = next_obj_var_id + 1);
+          cond_eval_info = gen_eval_info(e.cond, cond_var, next_obj_var_id = next_obj_var_id + 1);
           
           // No need to change next_obj_var_id, as cond_var is not used anymore when running this code
           expr_eval_code = gen_eval_code(e.expr, curr_slot_var);
@@ -272,7 +272,7 @@ using
       ;
 
       if (expr.head /= [])
-        info = gen_vector_eval_info(expr.head; next_obj_var_id = new_obj_var_id);
+        info = gen_vector_eval_info(expr.head, next_obj_var_id = new_obj_var_id);
         code = info.code & [mk_seq(head_res_var, info.vect_var, info.count_var)];
       else
         code = [set_var(head_res_var, empty_seq)];
@@ -280,7 +280,7 @@ using
       
       if (expr.tail?)
         // info.vect_var and info.count_var are not in use anymore here and can be reused.
-        info = gen_eval_info(expr.tail; next_obj_var_id = new_obj_var_id);
+        info = gen_eval_info(expr.tail, next_obj_var_id = new_obj_var_id);
         code = code & info.eval_code &
                 [ join_seqs(res_var, head_res_var, info.expr),
                   release(head_res_var)
@@ -311,7 +311,7 @@ using
           entry_code = key_code & value_code & [increment(count_var)];
                         
           if (e.cond?)
-            cond_info = gen_eval_info(e.cond, cond_var; next_obj_var_id = next_obj_var_id + 1);
+            cond_info = gen_eval_info(e.cond, cond_var, next_obj_var_id = next_obj_var_id + 1);
             
             entry_code = cond_info.eval_code &
                           [ check(is_bool(cond_info.expr)),
@@ -385,7 +385,7 @@ using
       code = gen_type_checking_code(
                 expr.type,
                 info.expr,
-                bool_var;
+                bool_var,
                 next_obj_var_id  = info.next_var_id,
                 next_bool_var_id = next_bool_var_id + 1
               );
@@ -481,7 +481,7 @@ using
       action = eval_expr_and_add_to_set(expr.expr, strm_var);
       action = action(expr.sel_expr, action) if expr.sel_expr?;
       
-      code = gen_iter_code(expr.source, {}, action; next_stream_var_id = next_stream_var_id + 1);
+      code = gen_iter_code(expr.source, {}, action, next_stream_var_id = next_stream_var_id + 1);
       
       return [init_stream(strm_var)] & code & [mk_set_from_stream(res_var, strm_var)];
     },
@@ -495,7 +495,7 @@ using
       action = eval_exprs_and_add_to_map(expr.key_expr, expr.value_expr, key_strm_var, value_strm_var);
       action = action(expr.sel_expr, action) if expr.sel_expr?;
       
-      code = gen_iter_code(expr.source, {}, action; next_stream_var_id = next_stream_var_id + 2);
+      code = gen_iter_code(expr.source, {}, action, next_stream_var_id = next_stream_var_id + 2);
 
       return [init_stream(key_strm_var), init_stream(value_strm_var)] & code &
              [mk_map_from_streams(res_var, key_strm_var, value_strm_var)];
@@ -626,7 +626,7 @@ using
     
     if (expr :: Expr)
       info = gen_eval_info(expr);
-      body = make_scopes(rem_asgnms, body_gen_info; next_obj_var_id = info.next_var_id);
+      body = make_scopes(rem_asgnms, body_gen_info, next_obj_var_id = info.next_var_id);
       return info.eval_code & [var_scope(var, info.expr, body)] & info.cleanup_code;
 
     else
@@ -730,7 +730,7 @@ using
         if (in(var, all_rel_vars))
           if (in(var, extern_vars(stmt.value)))
             tmp_var = lvar(next_obj_var_id);
-            code    = gen_eval_code(stmt.value, tmp_var; next_obj_var_id = next_obj_var_id + 1) &
+            code    = gen_eval_code(stmt.value, tmp_var, next_obj_var_id = next_obj_var_id + 1) &
                        [release(var), set_var(var, tmp_var)];
           else
             code = [release(var)] & gen_eval_code(stmt.value, var);
@@ -740,7 +740,7 @@ using
         ;
       else
         tmp_var = lvar(next_obj_var_id);
-        code = gen_eval_code(stmt.value, tmp_var; next_obj_var_id = next_obj_var_id + 1);
+        code = gen_eval_code(stmt.value, tmp_var, next_obj_var_id = next_obj_var_id + 1);
         //## THIS CHECK MIGHT BE REDUNDANT WITH STATIC TYPE CHECKING
         code = code & [check(and_then(is_ne_seq(tmp_var), is_eq(get_seq_len(tmp_var), length(stmt.vars))))];
         code = code & [release(v) : v <- stmt.vars, in(v, all_rel_vars)];
@@ -780,7 +780,7 @@ using
         start_eval_code = gen_eval_code(stmt.start_val, tmp_var);
         end_eval_code   = gen_eval_code(stmt.end_val, tmp_var);
         
-        body_code = gen_code(stmt.body, res_var, all_rel_vars, {}, {}; next_int_var_id = next_int_var_id + 3);
+        body_code = gen_code(stmt.body, res_var, all_rel_vars, {}, {}, next_int_var_id = next_int_var_id + 3);
       ;
       
       return start_eval_code & [set_ivar(idx_var, get_int_val(tmp_var))] &
@@ -804,14 +804,14 @@ using
 
       has_idx_var = stmt.idx_var?;
 
-      src_info = gen_eval_info(stmt.values, src_var; next_obj_var_id = next_obj_var_id + 1);
+      src_info = gen_eval_info(stmt.values, src_var, next_obj_var_id = next_obj_var_id + 1);
 
       body_code = gen_code(
                      stmt.body,
                      res_var,
                      all_rel_vars & {src_var if src_info.var_used},
                      {},
-                     {};
+                     {},
                      next_obj_var_id    = next_obj_var_id + if src_info.var_used then 1 else 0 end,
                      next_int_var_id    = next_int_var_id + if has_idx_var then 1 else 0 end,
                      next_seq_it_var_id = next_seq_it_var_id + 1

@@ -22,7 +22,7 @@ using
 
     for (p : fn_def.params)
       if (p.type?)
-        sgn_errs = sgn_errs & type_wf_errors(p.type; type_vars_in_scope = ts);
+        sgn_errs = sgn_errs & type_wf_errors(p.type, type_vars_in_scope = ts);
       ;
 
       if (p.var?)
@@ -32,13 +32,13 @@ using
     ;
 
     ret_type_errs = if fn_def.res_type?
-                       then type_wf_errors(fn_def.res_type; type_vars_in_scope = ts)
+                       then type_wf_errors(fn_def.res_type, type_vars_in_scope = ts)
                        else {}
                      end;
 
     loc_fns_errs  = seq_union([fndef_wf_errors(fn, all_fns, ts, impl_pars) : fn <- fn_def.local_fns]);
     
-    expr_errs     = expr_wf_errors(fn_def.expr, vs; fns_in_scope = all_fns, type_vars_in_scope = ts, impl_params = impl_pars);
+    expr_errs     = expr_wf_errors(fn_def.expr, vs, fns_in_scope = all_fns, type_vars_in_scope = ts, impl_params = impl_pars);
 
     return sgn_errs & ret_type_errs & loc_fns_errs & expr_errs;
   }
@@ -83,7 +83,7 @@ using
     //where_expr(expr: SynExpr, fndefs: [SynFnDef^]),
     
     //where_expr()        = { ips = impl_params & {untyped_sgn(fd) : fd <- set(expr.fndefs)};
-    //                        expr_errs  = expr_wf_errors(expr.expr, def_vars; impl_params = ips);
+    //                        expr_errs  = expr_wf_errors(expr.expr, def_vars, impl_params = ips);
     //                        fndef_errs = fndefs_wf_errors(set(expr.fndefs), def_vars);
     //                        return expr_errs & fndef_errs;
     //                      },
@@ -178,7 +178,7 @@ using
     
                           //## A LET EXPRESSION WOULD BE NICER HERE
     where_expr()        = { ips = impl_params & {untyped_sgn(fd) : fd <- set(expr.fndefs)};
-                            expr_errs  = expr_wf_errors(expr.expr, def_vars; impl_params = ips);
+                            expr_errs  = expr_wf_errors(expr.expr, def_vars, impl_params = ips);
                             fndef_errs = fndefs_wf_errors(set(expr.fndefs), def_vars);
                             return expr_errs & fndef_errs;
                           },
@@ -296,7 +296,7 @@ using
                                              stmt.body,
                                              all_def_vars,
                                              readonly_vars,
-                                             inside_loop;
+                                             inside_loop,
                                              impl_params = new_impl_params
                                            );
 
@@ -330,7 +330,7 @@ using
     for (p : syn_case.patterns)
       pvs  = syn_new_vars(p);
       errs = errs & {:already_def_ptrn_var(v) : v <- intersection(pvs, vs)};
-      // errs = errs & {:free_var_in_try_expr(p.name)} if p :: <ptrn_var(name: Var)>; //## BAD BAD
+      // errs = errs & {:free_var_in_try_expr(p.name)} if p :: <ptrn_var(name: Var)>, //## BAD BAD
       errs = errs & ptrn_wf_errors(p, {}); //## BAD BAD THIS WOULD GENERATE A WEIRD ERROR MESSAGE...
       vs   = vs & pvs;
     ;
@@ -443,7 +443,7 @@ Bool has_top_level_break([SynStmt] stmts)
     ;
   ;
   
-  return false;    
+  return false;
 }
 
 //## BUG BUG BUG IF THE RETURN STATEMENT IS INSIDE A NESTED,

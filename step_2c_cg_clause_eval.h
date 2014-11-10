@@ -54,7 +54,7 @@ using
 
     cond_match_action() = {
       cond_var    = lvar(next_obj_var_id);
-      cond_info   = gen_eval_info(action.cond, cond_var; next_obj_var_id = next_obj_var_id + 1);
+      cond_info   = gen_eval_info(action.cond, cond_var, next_obj_var_id = next_obj_var_id + 1);
       action_code = gen_code(action.action, loc_bound_vars);
       
       return cond_info.eval_code &
@@ -67,15 +67,15 @@ using
 
     eval_expr_and_add_to_set() = {
       tmp_var = lvar(next_obj_var_id);
-      info    = gen_eval_info(action.expr, tmp_var; next_obj_var_id = next_obj_var_id + 1);
+      info    = gen_eval_info(action.expr, tmp_var, next_obj_var_id = next_obj_var_id + 1);
       return info.add_ref_eval_code & [append(action.stream_var, info.expr)];     
     },
     
     eval_exprs_and_add_to_map() = {
       tmp_var    = lvar(next_obj_var_id);
       
-      key_info   = gen_eval_info(action.key_expr, tmp_var; next_obj_var_id = next_obj_var_id + 1);
-      value_info = gen_eval_info(action.value_expr, tmp_var; next_obj_var_id = next_obj_var_id + 1);
+      key_info   = gen_eval_info(action.key_expr, tmp_var, next_obj_var_id = next_obj_var_id + 1);
+      value_info = gen_eval_info(action.value_expr, tmp_var, next_obj_var_id = next_obj_var_id + 1);
     
       return key_info.add_ref_eval_code   & [append(action.key_stream_var, key_info.expr)] &
              value_info.add_ref_eval_code & [append(action.value_stream_var, value_info.expr)];

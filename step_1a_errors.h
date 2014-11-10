@@ -114,18 +114,18 @@ UserErr* wf_errors(SynPrg prg)
   //## BAD BAD BAD, INEFFICIENT
   //## BUG THIS STATEMENT WILL FAIL IF A FUNCTION SIGNATURE USES A TYPE THAT IS NOT DEFINED
   incomp_fn_sgns = for (s => fns <- fn_groups, fd1 <- fns, fd2 <- fns)
-                      if (fd1 /= fd2, not syn_fns_are_compatible(fd1, fd2; typedefs = inst_tdefs)) {
+                      if (fd1 /= fd2, not syn_fns_are_compatible(fd1, fd2, typedefs = inst_tdefs)) {
                         incomp_fndefs(
                           name:   s.name,
                           arity:  s.arity,
-                          params: {par_parts(fd; typedefs = inst_tdefs) : fd <- {fd1, fd2}}
+                          params: {par_parts(fd, typedefs = inst_tdefs) : fd <- {fd1, fd2}}
                         )
                       }
                     ;
 
   //## DOES THIS HAVE TO BE DONE BEFORE CREATING THE TYPE MAP, THAT IS, CAN
   //## THE CREATION OF THE TYPE MAP FAIL IN THE PRESENCE OF ONE OF THESE ERRORS?
-  undef_type_symb_errs = undef_type_symbol_errs(fndefs, ublocks; typedefs = inst_tdefs);
+  undef_type_symb_errs = undef_type_symbol_errs(fndefs, ublocks, typedefs = inst_tdefs);
 
   //## ALSO CHECK FOR TOP-LEVEL CYCLES IN THE OBJECT GRAPH
 
@@ -208,7 +208,7 @@ using (SynTypeSymbol => SynType) typedefs
 using (SynTypeSymbol => SynType) typedefs, (symbol: BasicTypeSymbol, arity: NzNat)* all_par_type_symbols
 {
   UserErr* tdef_errs(SynTypedef* tdefs) =
-    for (td <- tdefs, es = type_wf_errors(td.type; type_vars_in_scope = {}))
+    for (td <- tdefs, es = type_wf_errors(td.type, type_vars_in_scope = {}))
       if (es /= {}) {
         tdef_err(
           type: td.name,
@@ -218,7 +218,7 @@ using (SynTypeSymbol => SynType) typedefs, (symbol: BasicTypeSymbol, arity: NzNa
 
   //## NOT SURE THIS IS THE RIGHT WAY TO CHECK FOR UNDEFINED TYPE VARIABLES
   UserErr* par_tdef_errs(SynParTypedef* par_tdefs) =
-    for (td <- par_tdefs, es = type_wf_errors(td.type; type_vars_in_scope = set(td.params)))
+    for (td <- par_tdefs, es = type_wf_errors(td.type, type_vars_in_scope = set(td.params)))
       if (es /= {}) {
         tdef_err(
           type: td.name,
@@ -227,7 +227,7 @@ using (SynTypeSymbol => SynType) typedefs, (symbol: BasicTypeSymbol, arity: NzNa
       };
 
   UserErr* inst_tdef_errs((SynTypeSymbol => SynType) inst_tdefs) =
-    for (s => t <- inst_tdefs, es = type_wf_errors(t; type_vars_in_scope = select TypeVar in s end))
+    for (s => t <- inst_tdefs, es = type_wf_errors(t, type_vars_in_scope = select TypeVar in s end))
       if (es /= {}) {
         tdef_err(
           type: s,
@@ -262,8 +262,8 @@ using (SynTypeSymbol => SynType) typedefs, (symbol: BasicTypeSymbol, arity: NzNa
   TDefUserErr* sgn_wf_errors(SynSgn sgn)
   {
     type_vars = select TypeVar in sgn end; //## BAD BAD BAD THIS IS ALL WRONG.
-    in_errs   = seq_union([type_wf_errors(t; type_vars_in_scope = type_vars) : t <- sgn.params]);
-    out_errs  = type_wf_errors(sgn.res_type; type_vars_in_scope = type_vars);
+    in_errs   = seq_union([type_wf_errors(t, type_vars_in_scope = type_vars) : t <- sgn.params]);
+    out_errs  = type_wf_errors(sgn.res_type, type_vars_in_scope = type_vars);
     return in_errs & out_errs;
   }
 }

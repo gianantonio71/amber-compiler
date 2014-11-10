@@ -1,5 +1,5 @@
 
-AnonType user_type_to_anon_type(UserType type, (TypeName => AnonType) typedefs) = user_type_to_anon_type(type; typedefs=typedefs);
+AnonType user_type_to_anon_type(UserType type, (TypeName => AnonType) typedefs) = user_type_to_anon_type(type, typedefs=typedefs);
 
 using (TypeName => AnonType) typedefs
 {
@@ -70,8 +70,8 @@ Pattern type_to_pseudotype_pattern(AnonType type) = pseudotype_pattern(pseudotyp
 
 PseudoType pseudotype(UserType type, (TypeName => AnonType) typedefs) = pseudotype(user_type_to_anon_type(type, typedefs));
 
-Bool user_type_can_be_converted_into_pattern(UserType type, (TypeName => AnonType) typedefs) = type_can_be_converted_into_pattern(user_type_to_anon_type(type; typedefs=typedefs));
+Bool user_type_can_be_converted_into_pattern(UserType type, (TypeName => AnonType) typedefs) = type_can_be_converted_into_pattern(user_type_to_anon_type(type, typedefs=typedefs));
 
-Pattern user_type_to_pattern(UserType type, (TypeName => AnonType) typedefs) = type_to_pattern(user_type_to_anon_type(type; typedefs=typedefs));
+Pattern user_type_to_pattern(UserType type, (TypeName => AnonType) typedefs) = type_to_pattern(user_type_to_anon_type(type, typedefs=typedefs));
 
-Pattern user_type_to_pseudotype_pattern(UserType type, (TypeName => AnonType) typedefs) = type_to_pseudotype_pattern(user_type_to_anon_type(type; typedefs=typedefs));
+Pattern user_type_to_pseudotype_pattern(UserType type, (TypeName => AnonType) typedefs) = type_to_pseudotype_pattern(user_type_to_anon_type(type, typedefs=typedefs));

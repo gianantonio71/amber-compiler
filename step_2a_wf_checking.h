@@ -15,10 +15,10 @@ True prg_is_wf(Program prg)
   return false if (? s => es <- tl_ref_deep_map : in(s, es));
 
   // Every Type must be well formed
-  return false if (? s => t <- prg.tdefs : not user_type_is_wf(t, select TypeVar in s end; typedefs=prg.anon_tdefs, user_typedefs=prg.tdefs));
+  return false if (? s => t <- prg.tdefs : not user_type_is_wf(t, select TypeVar in s end, typedefs=prg.anon_tdefs, user_typedefs=prg.tdefs));
 
   // Now checking that all functions are OK
-  return fndefs_are_wf(prg.fndefs; typedefs=prg.anon_tdefs, user_typedefs=prg.tdefs);
+  return fndefs_are_wf(prg.fndefs, typedefs=prg.anon_tdefs, user_typedefs=prg.tdefs);
 
   // Local functions
   TypeSymbol* top_level_refs(UserType type):
@@ -70,7 +70,7 @@ using (TypeName => AnonType) typedefs, (TypeSymbol => UserType) user_typedefs
 
     return expr_is_wf(
              fndef.expr,
-             scalar_vars(fndef);
+             scalar_vars(fndef),
              type_vars    = tvars,
              fns_in_scope	= fndefs,
              cls_vars = cls_vars(fndef)
