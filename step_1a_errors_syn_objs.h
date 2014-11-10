@@ -142,9 +142,10 @@ using
                                    expr_wf_errors(expr.value_expr, vs);
                           },
 
-    seq_comp()          = { vs   = def_vars & {expr.var, expr.idx_var if expr.idx_var?};
+    seq_comp()          = { vs   = def_vars & set(expr.vars) & {expr.idx_var if expr.idx_var?};
                             errs = expr_wf_errors(expr.src_expr, def_vars) & expr_wf_errors(expr.expr, vs);
                             errs = errs & expr_wf_errors(expr.sel_expr, vs) if expr.sel_expr?;
+                            errs = errs & {:rep_asgn_var(v) : v <- dupl_elems(expr.vars)};
                             return errs;
                           },
 
@@ -249,8 +250,10 @@ using
 
   SynObjErr* stmt_wf_errors(SynStmt stmt, Var* all_def_vars, Var* readonly_vars, Bool inside_loop):
   
+    //## BUG: SHOULD ALSO CHECK THAT THE VARIABLES ARE ALL DIFFERENT
     assignment_stmt()   = expr_wf_errors(stmt.value, all_def_vars) &
-                          {:asgnm_readonly_var(stmt.var) if in(stmt.var, readonly_vars)},
+                          {:asgnm_readonly_var(v) : v <- set(stmt.vars), in(v, readonly_vars)} &
+                          {:rep_asgn_var(v) : v <- dupl_elems(stmt.vars)},
 
     return_stmt(e?)     = expr_wf_errors(e, all_def_vars),
 
@@ -308,9 +311,9 @@ using
   SynObjErr* iter_wf_errors(SynIter iter, Var* def_vars):
   
     seq_iter()    = expr_wf_errors(iter.values, def_vars) &
-                    { :var_redef(iter.var) if in(iter.var, def_vars),
-                      :var_redef(iter.idx_var) if iter.idx_var? and in(iter.idx_var, def_vars)
-                    },
+                    {:rep_asgn_var(v) : v <- dupl_elems(iter.vars)} &
+                    {:var_redef(iter.v) : v <- set(iter.vars), in(v, def_vars)} &
+                    {:var_redef(iter.idx_var) if iter.idx_var? and in(iter.idx_var, def_vars)},
                     
     range_iter()  = expr_wf_errors(iter.start_val, def_vars) &
                     expr_wf_errors(iter.end_val, def_vars)   &

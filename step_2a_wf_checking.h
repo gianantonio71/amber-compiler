@@ -47,7 +47,7 @@ using (TypeName => AnonType) typedefs, (TypeSymbol => UserType) user_typedefs
     {
       assert arity(fd1) == arity(fd2);
       
-      for (p1, i : fd1.params)
+      for (p1 @ i : fd1.params)
         p2 = fd2.params[i];
         return true if p1.type? and p2.type? and are_compatible(p1.type, p2.type, typedefs);
       ;

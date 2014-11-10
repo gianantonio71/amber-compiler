@@ -12,7 +12,7 @@ Bool typechecks(Program prg)
   signatures = merge_values({(fd.name => signature(fd, typedefs)) : fd <- prg.fndefs});
   for (fd : rand_sort(prg.fndefs))
 // if (to_c_fn_name(fd.name) /= "To_Text__Match_Idxs")
-//## NON TYPECHECKING: Parse_Obj__Parse_Seq, Parse_Obj__Parse_Set, Parse_Obj__Parse_Map_Or_Tuple, Tokenize
+//## NON TYPECHECKING: Parse_Obj__Parse_Seq, Parse_Obj__Parse_Set, Parse_Obj__Parse_Map_Or_Record, Tokenize
 // if (not in(to_c_fn_name(fd.name), {"To_Text__Match_Idxs"}))
 // if (to_c_fn_name(fd.name) == "Parse_Obj__Parse_Obj")
     // print "Now doing function " & to_c_fn_name(fd.name);
@@ -43,7 +43,7 @@ Bool typechecks(FnDef fn_def, (TypeName => AnonType) typedefs, (FnSymbol => FnTy
     return true;
   ;
 
-  let (typedefs=typedefs, signatures=signatures, var_aliases=set([{fn_par(i), p.var} : p, i <- fn_def.params, p.var?]), halt_on_failure_to_typecheck=false)
+  let (typedefs=typedefs, signatures=signatures, var_aliases=set([{fn_par(i), p.var} : p @ i <- fn_def.params, p.var?]), halt_on_failure_to_typecheck=false)
     scalar_vars = (p.var => user_type_to_anon_type(p.type) : p <- set(fn_def.params), p.var?, p.type :: UserType) &
                    (fn_par(i) => user_type_to_anon_type(fn_def.params[i].type) : i <- index_set(fn_def.params), fn_def.params[i].type :: UserType) &
                    (v => user_type_to_anon_type(t) : v => t <- fn_def.named_params, t :: UserType);
@@ -148,7 +148,7 @@ if (not res and halt_on_failure_to_typecheck)
       return contains_empty_map(exp_type) if ses == {};
       // Inclusion conditions, if they exist, must typecheck as booleans
       return false if (? se <- ses : se.cond? and not is_typechecking_bool_expr(se.cond));
-      // The expected type could contain either a map or a tuple type (or none at all).
+      // The expected type could contain either a map or a record type (or none at all).
       // Here we check to see if there's a map type
       exp_key_type = map_key_type(exp_type);
       exp_value_type = map_value_type(exp_type);
@@ -157,13 +157,13 @@ if (not res and halt_on_failure_to_typecheck)
         // If the expected type includes a map type, we go for that
         return not (? se <- ses : not typechecks(se.key, exp_key_type) or not typechecks(se.value, exp_value_type));
       ;
-      // There wasn't a map type. Now we check to see if there is a tuple type
-      exp_tuple_type = tuple_type(exp_type);
-      // If there is no tuple type we are done, the expression does not typecheck
-      return false if exp_tuple_type == void_type;
-      fields = _obj_(exp_tuple_type);
+      // There wasn't a map type. Now we check to see if there is a record type
+      exp_record_type = record_type(exp_type);
+      // If there is no record type we are done, the expression does not typecheck
+      return false if exp_record_type == void_type;
+      fields = _obj_(exp_record_type);
       exp_labels = keys(fields);
-      // Making sure that the resulting tuple will always have all the required fields
+      // Making sure that the resulting record will always have all the required fields
       return false if not subset({l : l => f <- fields, not f.optional}, {se.key : se <- ses, not se.cond?});
       // Checking that the keys are symbols, that they are among the expected labels
       // and that the corresponding types all typecheck to the respective types.
@@ -203,14 +203,14 @@ if (not res and halt_on_failure_to_typecheck)
       return false if not typechecks(expr.expr);
       types = split_type(expr_type(expr.expr));
       for (t : rand_sort(types)) //## UGLY UGLY
-        if (t :: TupleType[AnonType])
-          tuple_type = t;
-        elif (t :: TagObjType[AnonType] and t.obj_type :: TupleType[AnonType])
-          tuple_type = t.obj_type;
+        if (t :: RecordType[AnonType])
+          record_type = t;
+        elif (t :: TagObjType[AnonType] and t.obj_type :: RecordType[AnonType])
+          record_type = t.obj_type;
         else
           return false;
         ;
-        field_type = mandatory_tuple_field_type(tuple_type, expr.field);
+        field_type = mandatory_record_field_type(record_type, expr.field);
         return false if field_type == void_type or not is_subset(field_type, exp_type);
       ;
       return true;
@@ -219,7 +219,7 @@ if (not res and halt_on_failure_to_typecheck)
     accessor_test()       = {
       return false if not is_subset(type_bool, exp_type);
       type = expr_type(expr);
-      return if type :: TupleType[AnonType] then tuple_has_field(type, expr.field),
+      return if type :: RecordType[AnonType] then record_has_field(type, expr.field),
                 type :: MapType[AnonType]   then is_subset(symb_type(expr.field), type.key_type)
                                             else false
             end;
@@ -466,7 +466,7 @@ if (not res and halt_on_failure_to_typecheck)
       env_2 = update_environment(ss; environment=env_1);
       return env_1 == env_2;
     },
-    foreach_stmt()      = {
+    foreach_stmt()      = { //## BUG: THE OBJECT HAS BEEN UPDATED: .var (Var) => .vars ([Var^])
       return false if not is_typechecking_seq_expr(stmt.values);
       elem_type = seq_elem_type(expr_type(stmt.values));
       return false if elem_type == void_type;
@@ -530,7 +530,7 @@ if (not res and halt_on_failure_to_typecheck)
     map_expr(ses?) = {
       return empty_map_type if ses == {};
       if (not (? se <- ses : not se.key :: SymbObj))
-        return tuple_type((se.key => (type: expr_type(se.value), optional: se.cond?) : se <- ses));
+        return record_type((se.key => (type: expr_type(se.value), optional: se.cond?) : se <- ses));
       else
         key_type = union_superset({expr_type(se.key) : se <- ses});
         value_type = union_superset({expr_type(se.value) : se <- ses});
@@ -574,12 +574,12 @@ if (not res and halt_on_failure_to_typecheck)
     accessor()            = {
       types = for (t <- split_type(expr_type(expr.expr))) {
                  match (t)
-                   tuple_type()    = t,
-                   tag_obj_type()  = match (t.obj_type) tuple_type() ot? = ot;
+                   record_type()   = t,
+                   tag_obj_type()  = match (t.obj_type) record_type() ot? = ot;
                  ;
                };
-      assert types :: <TupleType[AnonType]+>;
-      field_types = {mandatory_tuple_field_type(t, expr.field) : t <- types};
+      assert types :: <RecordType[AnonType]+>;
+      field_types = {mandatory_record_field_type(t, expr.field) : t <- types};
       //## MAYBE union_superset() SHOULD ACCEPT ALSO SETS OF JUST ONE TYPE. WHAT ABOUT THE EMPTY SET?
       return if size(field_types) == 1 then only_element(field_types) else union_superset(field_types) end;
     },
@@ -665,7 +665,7 @@ if (not res and halt_on_failure_to_typecheck)
       ret_type_1 = return_type(ss; environment=env_1);
       return union_superset(ret_type_0, ret_type_1);
     },
-    foreach_stmt() = {
+    foreach_stmt() = { //## BUG: THE OBJECT HAS BEEN UPDATED: .var (Var) => .vars ([Var^])
       elem_type = seq_elem_type(expr_type(stmt.values));
       assert elem_type /= void_type;
       // env_0 = update(environment, (stmt.var => elem_type, stmt.idx_var => type_nat if stmt.idx_var?));
@@ -713,7 +713,7 @@ if (not res and halt_on_failure_to_typecheck)
 
     // Returns the empty map when the statement cannot fall through
     (Var => AnonType) update_environment(Statement stmt):
-      assignment_stmt()   = update(environment, (stmt.var => expr_type(stmt.value))),
+      assignment_stmt()   = {fail;}, //update(environment, (stmt.var => expr_type(stmt.value))),
 
       return_stmt(e?)     = (),
 
@@ -747,7 +747,7 @@ if (not res and halt_on_failure_to_typecheck)
         return merge_envs(env_0, env_1);
       },
 
-      foreach_stmt() = {
+      foreach_stmt() = { //## BUG: THE OBJECT HAS BEEN UPDATED: .var (Var) => .vars ([Var^])
         elem_type = seq_elem_type(expr_type(stmt.values));
         assert elem_type /= void_type;
         loop_vars = {stmt.var, stmt.idx_var if stmt.idx_var?};

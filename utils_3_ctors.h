@@ -51,7 +51,7 @@ NatIntOp mult(IntExpr e1, IntExpr e2) = mult(val1: e1, val2: e2);
 NatIntOp idiv(IntExpr e1, IntExpr e2) = idiv(val1: e1, val2: e2);
 NatIntOp unique_int                   = :unique_int;
 
-//NatObjOp at(ObjExpr s, ObjExpr i)              = at(seq: s, idx: i);
+NatObjOp at(ObjExpr s, IntExpr i)              = at(seq: s, idx: i);
 NatObjOp get_tag(ObjExpr e)                    = :get_tag(e);
 NatObjOp get_inner_obj(ObjExpr e)              = :get_inner_obj(e);
 NatObjOp to_obj(<BoolExpr, IntExpr> e)         = :to_obj(e);
@@ -90,7 +90,7 @@ Instr get_seq_slice(ObjVar v, ObjExpr s, IntExpr f, IntExpr l) = get_seq_slice(v
 Instr join_seqs(ObjVar v, ObjExpr l, ObjExpr r)                = join_seqs(var: v, left: l, right: r);
 Instr join_mult_seqs(ObjVar v, ObjExpr ss)                     = join_mult_seqs(var: v, seqs: ss);
 Instr rev_seq(ObjVar v, ObjExpr s)                             = rev_seq(var: v, seq: s);
-Instr get_at(ObjVar v, ObjExpr s, IntExpr i)                   = get_at(var: v, seq: s, idx: i);
+// Instr get_at(ObjVar v, ObjExpr s, IntExpr i)                   = get_at(var: v, seq: s, idx: i);
 Instr set_at(ObjVar v, IntExpr i, ObjExpr x)                   = set_at(var: v, idx: i, value: x);
 
 Instr lookup(BoolVar sv, ObjVar v, ObjExpr m, ObjExpr k)     = lookup(success_var: sv, var: v, map: m, key: k);

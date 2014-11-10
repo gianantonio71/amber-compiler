@@ -56,7 +56,7 @@ type NatIntOp     = get_int_val(ObjExpr),
                     idiv(val1: IntExpr, val2: IntExpr),
                     unique_int;
 
-type NatObjOp     = //at(seq: ObjExpr, idx: ObjExpr),
+type NatObjOp     = at(seq: ObjExpr, idx: IntExpr),
                     //lookup(map: ObjExpr, key: ObjExpr),
                     get_tag(ObjExpr),
                     get_inner_obj(ObjExpr), //## RENAME?
@@ -107,7 +107,7 @@ type Instr        = init_stream(StreamVar),
                     join_seqs(var: ObjVar, left: ObjExpr, right: ObjExpr),
                     join_mult_seqs(var: ObjVar, seqs: ObjExpr),
                     rev_seq(var: ObjVar, seq: ObjExpr),
-                    get_at(var: ObjVar, seq: ObjExpr, idx: IntExpr),
+                    // get_at(var: ObjVar, seq: ObjExpr, idx: IntExpr),
                     //## BUG BUG BUG: IF ObjExpr CONTAINS A NON-COUNTED REFERENCE TO THE ARRAY,
                     //## I COULD END UP WITH A CYCLE IN THE OBJECT GRAPH AND MAYBE OTHER PROBLEMS
                     set_at(var: ObjVar, idx: IntExpr, value: ObjExpr),

@@ -62,6 +62,7 @@ SynType build_type_ast(RuleMatch mtc)
                 type_seq          = build_seq_type_ast(submatch),
                 type_map          = build_map_type_ast(submatch),
                 type_record       = build_record_type_ast(submatch),
+                type_tuple        = build_tuple_type_ast(submatch),
                 type_any_tag_obj  = build_any_tag_obj_type(submatch);
               ;
   for (s : rep_rule_nodes(nodes[1]))
@@ -166,6 +167,8 @@ SynRecordType build_record_type_ast(RuleMatch mtc)
     return (label: label, type: type, optional: optional);
   }
 }
+
+SynTupleType build_tuple_type_ast(RuleMatch mtc) = syn_tuple_type([build_type_ast(n) : n <- rep_rule_nodes(mtc)]);
 
 SynType build_any_tag_obj_type(RuleMatch mtc)
 {
@@ -455,7 +458,7 @@ SynExpr build_expr_0_ast(RuleMatch mtc) =
     seq           = build_seq_expr_ast(mtc.match),                                            // rule_seq_expr
     tag_record    = build_tag_record_expr_ast(mtc.match),                                     // rule_tag_record_expr
     builtin_call  = build_builtin_call_expr_ast(mtc.match),                                   // rule_seq([atomic_rule(builtin), par_rule(comma_sep_seq(rule_ref_expr))])
-    par_expr      = build_expr_ast(mtc.match),                                                // par_rule(rule_ref_expr)
+    par_exprs     = build_tuple_or_par_expr_ast(mtc.match),                                   // par_rule(comma_sep_seq(rule_ref_expr))
     ex_qual       = build_ex_qual_expr_ast(mtc.match),                                        // rule_ex_qual_expr
     set_cp        = build_set_cp_expr_ast(mtc.match),                                         // rule_set_cp_expr
     map_cp        = build_map_cp_expr_ast(mtc.match),                                         // rule_map_cp_expr
@@ -489,6 +492,13 @@ SynSeqExpr build_seq_expr_ast(RuleMatch mtc)
   else
     return syn_seq_expr(head_nodes, build_expr_ast(get_rule_seq_node(nodes[1], 1)));
   ;
+}
+
+SynExpr build_tuple_or_par_expr_ast(RuleMatch mtc)
+{
+  exprs = [build_expr_ast(n) : n <- rep_rule_nodes(mtc)];
+  assert length(exprs) > 0;
+  return if length(exprs) == 1 then exprs[0] else syn_tuple_expr(exprs) end;
 }
 
 SynMapExpr build_map_expr_ast(RuleMatch mtc) = syn_map_expr([build_map_entry_ast(n) : n <- rep_rule_nodes(mtc)]);
@@ -551,14 +561,14 @@ SynLCExpr build_seq_cp_expr_ast(RuleMatch mtc)
   assert length(nodes) == 7;
 
   expr     = build_expr_ast(nodes[0]);
-  var      = var(get_lowercase_id(nodes[2]));
+  vars     = [var(get_lowercase_id(n)) : n <- rep_rule_nodes(nodes[2])];
   idx_var  = if nodes[3] == null_match then nil else {ns = rule_seq_nodes(nodes[3]); return just(var(get_lowercase_id(ns[1])));} end; //## UGLY UGLY UGLY
   src_expr = build_expr_ast(nodes[5]);
   sel_expr = if nodes[6] == null_match then nil else {ns = rule_seq_nodes(nodes[6]); return just(build_expr_ast(ns[1]));} end; //## UGLY UGLY UGLY
 
   return seq_comp(
     expr: expr,
-    var: var,
+    vars: vars,
     idx_var: value(idx_var) if idx_var /= nil,
     src_expr: src_expr,
     sel_expr: value(sel_expr) if sel_expr /= nil
@@ -743,9 +753,9 @@ SynStmt build_asgnm_stmt_ast(RuleMatch mtc)
   assert length(nodes) == 6;
   assert nodes[0] == null_match;
   vars = [var(get_lowercase_id(n)) : n <- rep_rule_nodes(nodes[1])];
-  assert length(vars) == 1;
+  assert vars /= [];
   expr = build_expr_ast(nodes[3]);
-  stmt = syn_asgnm_stmt(vars[0], expr);
+  stmt = syn_asgnm_stmt(vars, expr);
   return stmt if nodes[4] == null_match;
   cond = build_expr_ast(get_rule_seq_node(nodes[4], 1));
   return syn_if_stmt(cond, [stmt]);
@@ -828,15 +838,17 @@ SynStmt build_for_stmt_ast(RuleMatch mtc)
   SynIter build_iter_ast(RuleMatch mtc)
   {
     nodes = rule_seq_nodes(mtc.match);
-    var = var(get_lowercase_id(nodes[0]));
     if (mtc.name == :foreach)
+      vars = [var(get_lowercase_id(n)) : n <- rep_rule_nodes(nodes[0])];
       expr = build_expr_ast(nodes[2]);
-      return syn_seq_iter(var, expr);
+      return syn_seq_iter(vars, expr);
     elif (mtc.name == :foreach_idx)
+      vars = [var(get_lowercase_id(n)) : n <- rep_rule_nodes(nodes[0])];
       idx_var = var(get_lowercase_id(nodes[2]));
       expr = build_expr_ast(nodes[4]);
-      return syn_seq_iter(var, idx_var, expr);
+      return syn_seq_iter(vars, idx_var, expr);
     else
+      var = var(get_lowercase_id(nodes[0]));
       assert mtc.name == :for;
       start_expr = build_expr_ast(nodes[2]);
       end_expr = build_expr_ast(nodes[4]);

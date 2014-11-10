@@ -185,6 +185,7 @@ using
                           return [lookup(bvar, res_var, params[0], params[1]), set_var(res_var, to_obj(bvar))];
                         },
              lookup   = [lookup(res_var, params[0], params[1]), add_ref(res_var)],
+             at       = [set_var(res_var, at(params[0], get_int_val(params[1]))), add_ref(res_var)],
              _        = [gen_eval_instr(name, params, res_var)];
            ;
 
@@ -194,7 +195,7 @@ using
       mcat          = join_mult_seqs(res_var, ps[0]),
       rev           = rev_seq(res_var, ps[0]),
       set           = seq_to_set(res_var, ps[0]),
-      at            = get_at(res_var, ps[0], get_int_val(ps[1])),
+      // at            = get_at(res_var, ps[0], get_int_val(ps[1])),
       mset          = seq_to_mset(res_var, ps[0]),
       isort         = internal_sort(res_var, ps[0]),
       union         = merge_sets(res_var, ps[0]),
@@ -441,7 +442,7 @@ using
         let (next_obj_var_id = info.next_var_id)
           case_code = gen_eval_code(c.expr, res_var);
           case_code = case_code & [exit_block];
-          for (p, i : reverse(c.ptrns))
+          for (p @ i : reverse(c.ptrns))
             // No need for now to set next_bool_var_id as it's not used
             // by gen_ptrn_matching_code
             case_code = gen_ptrn_matching_code(p, rev_at(info.exprs, i), tmp_bvar, {}) &
@@ -506,6 +507,7 @@ using
       src_var  = lvar(next_obj_var_id);
       item_var = lvar(next_obj_var_id + 1);
       sel_var  = lvar(next_obj_var_id + 2);
+      tmp_var  = lvar(next_obj_var_id + 3); // This is only needed during a destructuring assignment, it can be safely reused elsewhere
       it_var   = seq_it_var(next_seq_it_var_id);
       strm_var = svar(next_stream_var_id);
       idx_var  = ivar(next_int_var_id); //## BAD BAD BAD USED EVEN WHEN NOT REQUIRED
@@ -537,6 +539,14 @@ using
                           ];
       ;
       
+      if (length(expr.vars) == 1)
+        var_set_code = [set_var(expr.vars[0], get_curr_obj(it_var))];
+      else
+        var_set_code = [set_var(tmp_var, get_curr_obj(it_var))];
+        var_set_code = var_set_code & [set_var(v, at(tmp_var, i)) : v @ i <- expr.vars];
+      ;
+      var_set_code = var_set_code & [set_var(expr.idx_var, to_obj(idx_var))] if expr.idx_var?;
+
       loop_code = [ if knows_size
                        then mk_array(res_var, get_seq_len(src_info.expr), obj_nil)
                        else init_stream(strm_var)
@@ -544,14 +554,10 @@ using
                      get_iter(it_var, src_info.expr),
                      maybe_op(set_ivar(idx_var, 0), needs_idx_var),
                      repeat(
-                       [ break_if(is_out_of_range(it_var)),
-                         set_var(expr.var, get_curr_obj(it_var)),
-                         if expr.idx_var? then set_var(expr.idx_var, to_obj(idx_var)) else no_op end
-                       ] &
+                       [break_if(is_out_of_range(it_var))] &
+                       var_set_code &
                        core_loop_code &
-                       [ move_forward(it_var),
-                         maybe_op(increment(idx_var), needs_idx_var)
-                       ]
+                       [move_forward(it_var), maybe_op(increment(idx_var), needs_idx_var)]
                      ),
                      maybe_op(mk_seq_from_stream(res_var, strm_var), not knows_size)
                    ];
@@ -572,8 +578,8 @@ using
     //    //## THE CLOSURE. I SHOULD CHECK AND STOP THIS DURING THE WELL-FORMEDNESS CHECK.
     //    loc_vs   = set([v : v <- cls.vars, v /= nil] & [:fn_par(i) : i <- inc_seq(length(cls.vars))]);
     //    ext_vs   = rand_sort(extern_vars(cls.body) - loc_vs);
-    //    cls_body = [set_var(v, fn_par(i)) : v, i <- cls.vars, v /= nil]    &
-    //                [set_var(v, cls_ext_par(i)) : v, i <- ext_vs] &
+    //    cls_body = [set_var(v, fn_par(i)) : v @ i <- cls.vars, v /= nil]    &
+    //                [set_var(v, cls_ext_par(i)) : v @ i <- ext_vs] &
     //                gen_fn_body(cls.body);
     //    code     = [cls_scope(cls.name, length(cls.vars), ext_vs, cls_body, code)];
     //  ;
@@ -628,8 +634,8 @@ using
       arity    = length(expr.params);
       loc_vs   = set([v : v <- expr.params, v /= nil] & [:fn_par(i) : i <- indexes(expr.params)]); //## BAD
       ext_vs   = rand_sort(extern_vars(expr.expr) - loc_vs);
-      cls_body = [set_var(v, fn_par(i)) : v, i <- expr.params, v /= nil] &
-                  [set_var(v, cls_ext_par(i)) : v, i <- ext_vs]           &
+      cls_body = [set_var(v, fn_par(i)) : v @ i <- expr.params, v /= nil] &
+                  [set_var(v, cls_ext_par(i)) : v @ i <- ext_vs]          &
                   gen_fn_body(expr.expr);
       body     = make_scopes(rem_asgnms, body_gen_info);
       return [cls_scope(var, arity, ext_vs, cls_body, body)];
@@ -719,20 +725,31 @@ using
 
     assignment_stmt() =
     {
-      if (in(stmt.var, all_rel_vars))
-        if (in(stmt.var, extern_vars(stmt.value)))
-          tmp_var = lvar(next_obj_var_id);
-          code    = gen_eval_code(stmt.value, tmp_var; next_obj_var_id = next_obj_var_id + 1) &
-                     [release(stmt.var), set_var(stmt.var, tmp_var)];
+      if (length(stmt.vars) == 1)
+        var = stmt.vars[0];
+        if (in(var, all_rel_vars))
+          if (in(var, extern_vars(stmt.value)))
+            tmp_var = lvar(next_obj_var_id);
+            code    = gen_eval_code(stmt.value, tmp_var; next_obj_var_id = next_obj_var_id + 1) &
+                       [release(var), set_var(var, tmp_var)];
+          else
+            code = [release(var)] & gen_eval_code(stmt.value, var);
+          ;
         else
-          code = [release(stmt.var)] & gen_eval_code(stmt.value, stmt.var);
+          code = gen_eval_code(stmt.value, var);
         ;
       else
-        code = gen_eval_code(stmt.value, stmt.var);
+        tmp_var = lvar(next_obj_var_id);
+        code = gen_eval_code(stmt.value, tmp_var; next_obj_var_id = next_obj_var_id + 1);
+        //## THIS CHECK MIGHT BE REDUNDANT WITH STATIC TYPE CHECKING
+        code = code & [check(and_then(is_ne_seq(tmp_var), is_eq(get_seq_len(tmp_var), length(stmt.vars))))];
+        code = code & [release(v) : v <- stmt.vars, in(v, all_rel_vars)];
+        code = code & join([[set_var(v, at(tmp_var, i)), add_ref(v)] : v @ i <- stmt.vars]);
+        code = code & [release(tmp_var)]; //## BAD: HERE FIRST I DO AN ADD REF AND THEN A RELEASE FOR EACH ELEMENT OF THE TUPLE
       ;
       return code;
     },
-
+ 
     if_stmt() =
     {
       cond_info = gen_eval_info(stmt.cond);
@@ -745,8 +762,8 @@ using
       else_code = gen_code(stmt.else, res_var, all_rel_vars, break_vars, surv_vars);
       
       branch_code = [ check(is_bool(cond_info.expr)),
-                       branch(is_true(cond_info.expr), if_code, else_code)
-                     ];
+                      branch(is_true(cond_info.expr), if_code, else_code)
+                    ];
       
       return cond_info.eval_code & branch_code;
     },
@@ -781,13 +798,14 @@ using
     foreach_stmt() =
     {
       src_var = lvar(next_obj_var_id);
+      tmp_var = lvar(next_obj_var_id+1); // Only used for destructuring assignments, remains free for the body to use
       idx_var = ivar(next_int_var_id);
       it_var  = seq_it_var(next_seq_it_var_id);
-      
+
       has_idx_var = stmt.idx_var?;
-      
+
       src_info = gen_eval_info(stmt.values, src_var; next_obj_var_id = next_obj_var_id + 1);
-      
+
       body_code = gen_code(
                      stmt.body,
                      res_var,
@@ -799,13 +817,20 @@ using
                      next_seq_it_var_id = next_seq_it_var_id + 1
                    );
 
+      if (length(stmt.vars) == 1)
+        var_set_code = [set_var(stmt.vars[0], get_curr_obj(it_var))];
+      else
+        var_set_code = [set_var(tmp_var, get_curr_obj(it_var))];
+        var_set_code = var_set_code & [set_var(v, at(tmp_var, i)) : v @ i <- stmt.vars];
+      ;
+      var_set_code = var_set_code & [set_var(stmt.idx_var, to_obj(idx_var))] if stmt.idx_var?;
+
       loop_code = [ get_iter(it_var, src_info.expr),
                      if stmt.idx_var? then set_ivar(idx_var, 0) else no_op end,
                      repeat(
-                       [ break_if(is_out_of_range(it_var)),
-                         set_var(stmt.var, get_curr_obj(it_var)),
-                         if stmt.idx_var? then set_var(stmt.idx_var, to_obj(idx_var)) else no_op end
-                       ] & body_code &
+                       [break_if(is_out_of_range(it_var))] &
+                       var_set_code &
+                       body_code &
                        [ move_forward(it_var),
                          if stmt.idx_var? then increment(idx_var) else no_op end
                        ]

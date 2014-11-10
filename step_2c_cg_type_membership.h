@@ -93,41 +93,6 @@ using
     },
 
 
-    // fixed_seq_type(ts?) =
-    // {
-    //   len_var  = ivar(next_int_var_id);
-    //   elem_var = lvar(next_obj_var_id);
-    //   it_var   = seq_it_var(next_seq_it_var_id);
-      
-    //   len  = length(ts);
-
-    //   code = [ set_bvar(res_var, false),
-    //             exit_block_if_not(is_ne_seq(obj)),
-    //             set_ivar(len_var, get_seq_len(obj)),
-    //             exit_block_if_not(is_eq(len_var, len)),
-    //             get_iter(it_var, obj)
-    //           ];
-
-    //   let ( next_int_var_id = next_int_var_id + 1,
-    //         next_obj_var_id = next_obj_var_id + 1,
-    //         next_seq_it_var_id = next_seq_it_var_id + 1)
-                  
-    //     for (t, i : ts)
-    //       code = code &
-    //               [get_curr_obj(elem_var, it_var)] &
-    //               gen_type_checking_code(t, elem_var, res_var) &
-    //               [ exit_block_if_not(res_var),
-    //                 maybe_op(move_forward(it_var), i /= len - 1)
-    //               ];
-    //     ;
-    //   ;
-      
-    //   code = code & [set_bvar(res_var, true)];
-      
-    //   return [execute_block(code)];
-    // },
-
-
     ne_map_type() =
     {
       obj_var = lvar(next_obj_var_id);
@@ -158,7 +123,7 @@ using
     },
 
 
-    tuple_type(fs?) =
+    record_type(fs?) =
     {
       size_var = ivar(next_int_var_id);
       obj_var  = lvar(next_obj_var_id);
@@ -207,6 +172,41 @@ using
       code = code & [set_bvar(res_var, is_out_of_range(it_var))];
       
       return [execute_block(code)];  
+    },
+
+
+    tuple_type(ts?) =
+    {
+      len_var  = ivar(next_int_var_id);
+      elem_var = lvar(next_obj_var_id);
+      it_var   = seq_it_var(next_seq_it_var_id);
+
+      len  = length(ts);
+
+      code = [ set_bvar(res_var, false),
+               exit_block_if_not(is_ne_seq(obj)),
+               set_ivar(len_var, get_seq_len(obj)),
+               exit_block_if_not(is_eq(len_var, len)),
+               get_iter(it_var, obj)
+             ];
+
+      let ( next_int_var_id = next_int_var_id + 1,
+            next_obj_var_id = next_obj_var_id + 1,
+            next_seq_it_var_id = next_seq_it_var_id + 1)
+
+        for (t @ i : ts)
+          code = code &
+                  [get_curr_obj(elem_var, it_var)] &
+                  gen_type_checking_code(t, elem_var, res_var) &
+                  [ exit_block_if_not(res_var),
+                    maybe_op(move_forward(it_var), i /= len - 1)
+                  ];
+        ;
+      ;
+
+      code = code & [set_bvar(res_var, true)];
+
+      return [execute_block(code)];
     },
 
 

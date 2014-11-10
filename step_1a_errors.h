@@ -12,7 +12,8 @@ type TDefUserErr  = undef_type_name(BasicTypeSymbol),
                     //incompatible_types_in_set_type(SynType++),
                     incompatible_types_in_union_type(SynType++),
                     invalid_type_for_tag(SynType),
-                    rep_labels_in_map(SymbObj*);
+                    rep_labels_in_map(SymbObj*),
+                    single_element_tuple_type;
 
 type UBlockErr    = TDefUserErr,
                     dupl_type_pars(Var+);
@@ -46,7 +47,8 @@ type SynObjErr    = TDefUserErr,
                     diff_vars_in_or_clause(Var+),  //## IS THIS STILL USED?
                     
                     //## NOT CHECKED YET
-                    nested_local_fn(outer_fn: BasicUntypedSgn, inner_fn: BasicUntypedSgn);
+                    nested_local_fn(outer_fn: BasicUntypedSgn, inner_fn: BasicUntypedSgn),
+                    rep_asgn_var(Var);
 
 
 //## NOT SURE IF IT IS CHECKED OR NOT:
@@ -180,7 +182,7 @@ using (SynTypeSymbol => SynType) typedefs
     assert fd1.name == fd2.name;
     assert arity(fd1) == arity(fd2);
     
-    for (p1, i : fd1.params)
+    for (p1 @ i : fd1.params)
       p2 = fd2.params[i];
       return true if p1.type? and p2.type? and are_part_compatible(p1.type, p2.type);
     ;

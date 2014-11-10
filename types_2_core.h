@@ -48,12 +48,14 @@ type SetType[T]     = empty_set_type, NeSetType[T];
 type NeMapType[T]   = ne_map_type(key_type: T, value_type: T);
 type MapType[T]     = empty_map_type, NeMapType[T];
 
-type TupleType[T]   = tuple_type((SymbObj => (type: T, optional: Bool))); //## THE EMPTY MAP SHOULD NOT BE INCLUDED. OR SHOULD IT?
+type RecordType[T]  = record_type((SymbObj => (type: T, optional: Bool))); //## THE EMPTY MAP SHOULD NOT BE INCLUDED. OR SHOULD IT?
+
+type TupleType[T]   = tuple_type([T^]);
 
 type TagType        = SymbType, atom_type; //, TypeVar; //## THE CODE HASN'T BEEN UPDATED YET
 type TagObjType[T]  = tag_obj_type(tag_type: TagType, obj_type: T);
 
-type CompType[T]    = NeSeqType[T], NeSetType[T], NeMapType[T], TupleType[T], TagObjType[T]; //## FIND BETTER NAME
+type CompType[T]    = NeSeqType[T], NeSetType[T], NeMapType[T], RecordType[T], TupleType[T], TagObjType[T]; //## FIND BETTER NAME
 
 type UnionType[T]   = union_type(T+);
 
@@ -143,7 +145,7 @@ type Expr     = LeafObj, //## UPDATE ALL REFERENCES
                 ex_qual(source: Clause, sel_expr: Expr?),
                 set_comp(expr: Expr, source: Clause, sel_expr: Expr?),
                 map_comp(key_expr: Expr, value_expr: Expr, source: Clause, sel_expr: Expr?),
-                seq_comp(expr: Expr, var: Var, idx_var: Var?, src_expr: Expr, sel_expr: Expr?),
+                seq_comp(expr: Expr, vars: [Var^], idx_var: Var?, src_expr: Expr, sel_expr: Expr?),
 
                 select_expr(type: UserType, src_expr: Expr),
                 replace_expr(expr: Expr, src_expr: Expr, type: UserType, var: Var);
@@ -190,11 +192,11 @@ type Clause   = in_clause(ptrn: Pattern, src: Expr),
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type Statement  = assignment_stmt(var: Var, value: Expr),
+type Statement  = assignment_stmt(vars: [Var^], value: Expr),
                   return_stmt(Expr),
                   if_stmt(cond: Expr, body: [Statement^], else: [Statement]),
                   loop_stmt([Statement^]),
-                  foreach_stmt(var: Var, idx_var: Var?, values: Expr, body: [Statement^]),
+                  foreach_stmt(vars: [Var^], idx_var: Var?, values: Expr, body: [Statement^]),
                   for_stmt(var: Var, start_val: Expr, end_val: Expr, body: [Statement^]),
                   let_stmt(asgnms: (<named_par(Atom)> => Expr), body: [Statement^]), //## BAD
                   break_stmt,

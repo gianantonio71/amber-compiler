@@ -29,7 +29,7 @@ ClosedType map_key_type(AnonType type)            = only_element_or_def_if_empty
 
 ClosedType map_value_type(AnonType type)          = only_element_or_def_if_empty({t.value_type : ne_map_type() t <- expand_type(type)}, void_type);
 
-<TupleType[AnonType], void_type> tuple_type(AnonType type)  = only_element_or_def_if_empty({t : tuple_type() t <- expand_type(type)}, void_type);
+<RecordType[AnonType], void_type> record_type(AnonType type)  = only_element_or_def_if_empty({t : record_type() t <- expand_type(type)}, void_type);
 
 TagObjType[AnonType]* tagged_obj_types(AnonType type) = {t : tag_obj_type() t <- expand_type(type)};
 // {
@@ -92,11 +92,12 @@ AnonType+ expand_type(AnonType type):
 // }
 
 AnonType replace_rec_refs(AnonType type, (SelfPretype => AnonType) rec_map):
-  SelfPretype     = rec_map[type],
-  ne_seq_type()   = ne_seq_type(replace_rec_refs(type.elem_type, rec_map)),
-  ne_set_type()   = ne_set_type(replace_rec_refs(type.elem_type, rec_map)),
-  ne_map_type()   = ne_map_type(replace_rec_refs(type.key_type, rec_map), replace_rec_refs(type.value_type, rec_map)),
-  tuple_type(fs?) = tuple_type((l => (type: replace_rec_refs(f.type, rec_map), optional: f.optional) : l => f <- fs)),
-  tag_obj_type()  = tag_obj_type(type.tag_type, replace_rec_refs(type.obj_type, rec_map)),
-  union_type(ts?) = union_type({replace_rec_refs(t, rec_map) : t <- ts}),
-  _               = type;
+  SelfPretype       = rec_map[type],
+  ne_seq_type()     = ne_seq_type(replace_rec_refs(type.elem_type, rec_map)),
+  ne_set_type()     = ne_set_type(replace_rec_refs(type.elem_type, rec_map)),
+  ne_map_type()     = ne_map_type(replace_rec_refs(type.key_type, rec_map), replace_rec_refs(type.value_type, rec_map)),
+  record_type(fs?)  = record_type((l => (type: replace_rec_refs(f.type, rec_map), optional: f.optional) : l => f <- fs)),
+  tuple_type(ts?)   = {fail;}, //tuple_type([replace_rec_refs(t, rec_map) : t <- ts]),
+  tag_obj_type()    = tag_obj_type(type.tag_type, replace_rec_refs(type.obj_type, rec_map)),
+  union_type(ts?)   = union_type({replace_rec_refs(t, rec_map) : t <- ts}),
+  _                 = type;

@@ -123,6 +123,7 @@ ParsingRule rule_type =
       (name: :type_seq,         rule: rule_type_seq),
       (name: :type_map,         rule: rule_type_map),
       (name: :type_record,      rule: rule_type_record),
+      (name: :type_tuple,       rule: rule_type_tuple),
       (name: :type_any_tag_obj, rule: rule_type_any_tag_obj)
     ]),
     rep_rule(
@@ -154,6 +155,8 @@ ParsingRule rule_type_seq         = bracket_rule(rule_seq([rule_ref_type, option
 ParsingRule rule_type_map         = par_rule(rule_seq([rule_ref_type, atomic_rule(double_right_arrow), rule_ref_type]));
 
 ParsingRule rule_type_record      = par_rule(comma_sep_seq(record_field));
+
+ParsingRule rule_type_tuple       = par_rule(comma_sep_seq(rule_ref_type, 2));
 
 ParsingRule rule_type_any_tag_obj = par_rule(rule_seq([rule_type_any_symbol, atomic_rule(at), rule_ref_type]));
 
@@ -346,8 +349,8 @@ ParsingRule rule_for_stmt =
 
 ParsingRule rule_for_range =
   rule_choice([
-    (name: :foreach,      rule: rule_seq([rule_id, atomic_rule(colon), rule_ref_expr])),
-    (name: :foreach_idx,  rule: rule_seq([rule_id, atomic_rule(comma), rule_id, atomic_rule(colon), rule_ref_expr])),
+    (name: :foreach,      rule: rule_seq([comma_sep_seq(rule_id), atomic_rule(colon), rule_ref_expr])),
+    (name: :foreach_idx,  rule: rule_seq([comma_sep_seq(rule_id), atomic_rule(at), rule_id, atomic_rule(colon), rule_ref_expr])),
     (name: :for,          rule: rule_seq([rule_id, atomic_rule(equals), rule_ref_expr, atomic_rule(double_dot), rule_ref_expr]))
   ]);
 
@@ -448,7 +451,7 @@ ParsingRule rule_expr_0 =
 
     (name: :builtin_call, rule: rule_seq([atomic_rule(builtin), par_rule(comma_sep_seq(rule_ref_expr))])),
 
-    (name: :par_expr,     rule: par_rule(rule_ref_expr)),
+    (name: :par_exprs,    rule: par_rule(comma_sep_seq(rule_ref_expr))),
 
     (name: :ex_qual,      rule: rule_ex_qual_expr),
     (name: :set_cp,       rule: rule_set_cp_expr),
@@ -496,8 +499,7 @@ ParsingRule rule_record_expr =
   );
 
 ParsingRule rule_seq_expr =
-  block_rule(
-    bracket,
+  bracket_rule(
     rule_seq([
       rep_rule(rule_subexpr, atomic_rule(comma)),
       optional_rule(rule_seq([atomic_rule(pipe), rule_ref_expr]))
@@ -593,8 +595,8 @@ ParsingRule rule_seq_cp_expr =
     rule_seq([
       rule_ref_expr,
       atomic_rule(colon),
-      rule_id,
-      optional_rule(rule_seq([atomic_rule(comma), rule_id])),
+      comma_sep_seq(rule_id),
+      optional_rule(rule_seq([atomic_rule(at), rule_id])),
       atomic_rule(left_arrow),
       rule_ref_expr,
       optional_rule(rule_seq([atomic_rule(comma), rule_ref_expr]))

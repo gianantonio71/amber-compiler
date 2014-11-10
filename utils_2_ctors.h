@@ -38,7 +38,13 @@ NeSetType[T] ne_set_type(T elem_type) = ne_set_type(elem_type: elem_type);
 
 NeMapType[T] ne_map_type(T key_type, T value_type) = ne_map_type(key_type: key_type, value_type: value_type);
 
-TupleType[T] tuple_type((SymbObj => (type: T, optional: Bool)) fs) = :tuple_type(fs);
+RecordType[T] record_type((SymbObj => (type: T, optional: Bool)) fs) = :record_type(fs);
+
+TupleType[T] tuple_type([T^] ts)
+{
+  assert length(ts) > 1;
+  return :tuple_type(ts);
+}
 
 TagObjType[T] tag_obj_type(TagType tag_type, T obj_type) = tag_obj_type(tag_type: tag_type, obj_type: obj_type);
 

@@ -45,7 +45,7 @@ Var* gen_vars(Expr expr):
   ex_qual()       = new_vars(expr.source),
   set_comp()      = new_vars(expr.source), //## BAD
   map_comp()      = new_vars(expr.source), //## BAD
-  seq_comp()      = {expr.var, expr.idx_var if expr.idx_var?},
+  seq_comp()      = set(expr.vars) & {expr.idx_var if expr.idx_var?},
   replace_expr()  = {expr.var},
   _               = {};
 
@@ -67,7 +67,7 @@ Var* new_vars(Clause clause):
   or_clause()         = intersection(new_vars(clause.left), new_vars(clause.right));
 
 Var* new_vars(Statement stmt):
-  assignment_stmt() = {stmt.var},
+  assignment_stmt() = set(stmt.vars),
   if_stmt()         = intersection({new_vars(stmt.body) if may_fall_through(stmt.body), new_vars(stmt.else) if may_fall_through(stmt.else)}),
   let_stmt()        = new_vars(stmt.body),
   _                 = {};
@@ -128,7 +128,7 @@ Var* extern_vars(Statement s):
   return_stmt(e?)   = extern_vars(e),
   if_stmt()         = extern_vars(s.cond) & extern_vars(s.body) & extern_vars(s.else),
   loop_stmt(ss?)    = extern_vars(ss),
-  foreach_stmt()    = extern_vars(s.values) & (extern_vars(s.body) - {s.var, s.idx_var if s.idx_var?}),
+  foreach_stmt()    = extern_vars(s.values) & (extern_vars(s.body) - (set(s.vars) & {s.idx_var if s.idx_var?})),
   for_stmt()        = extern_vars(s.start_val) & extern_vars(s.end_val) & (extern_vars(s.body) - {s.var}),
   break_stmt        = {},
   fail_stmt         = {},

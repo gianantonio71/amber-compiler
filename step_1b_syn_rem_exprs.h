@@ -138,10 +138,10 @@ using
                                );
                       },
 
-    seq_comp()      = { vs = def_vars & {expr.var, expr.idx_var if expr.idx_var?};
+    seq_comp()      = { vs = def_vars & set(expr.vars) & {expr.idx_var if expr.idx_var?};
                         return seq_comp(
                                  expr:     desugar_expr(expr.expr, vs),
-                                 var:      expr.var,
+                                 vars:     expr.vars,
                                  idx_var:  expr.idx_var if expr.idx_var?,
                                  src_expr: desugar_expr(expr.src_expr, def_vars),
                                  sel_expr: desugar_expr(expr.sel_expr, vs) if expr.sel_expr?
@@ -274,7 +274,7 @@ using
 
   Statement desugar_stmt(SynStmt stmt, Var* def_vars):
 
-    assignment_stmt()   = assignment_stmt(var: stmt.var, value: desugar_expr(stmt.value, def_vars)),
+    assignment_stmt()   = assignment_stmt(vars: stmt.vars, value: desugar_expr(stmt.value, def_vars)),
     
     return_stmt(e?)     = :return_stmt(desugar_expr(e, def_vars)),
     
@@ -339,16 +339,20 @@ using
       vs     = def_vars;
       for_vs = [];
       for (it : iters)
-        vs     = vs & {it.var, it.idx_var if it.idx_var?};
+        ivs  = match (it)
+                 seq_iter()   = set(it.vars),
+                 range_iter() = {it.var};
+               ;
+        vs     = vs & ivs & {it.idx_var if it.idx_var?};
         for_vs = for_vs & [vs];
       ;
       res = desugar_stmts(stmt.body, vs);
-      for (it, i : reverse(iters))
+      for (it @ i : reverse(iters))
         vs = rev_at(for_vs, i);
         if (it :: <seq_iter(Any)>) //## BAD BAD BAD
           vals = desugar_expr(it.values, vs);
           res  = [ foreach_stmt(
-                      var:     it.var,
+                      vars:    it.vars,
                       idx_var: it.idx_var if it.idx_var?,
                       values:  vals,
                       body:    res

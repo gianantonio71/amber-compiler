@@ -23,7 +23,7 @@ type NeSet          = Any+;
 type Seq            = [Any];
 type NeSeq          = [Any];
 
-type Tuple          = (Atom => Any);
+type Record         = (Atom => Any);
 type Map            = (Any => Any);
 
 type TagObj         = (<+> @ Any);
@@ -107,6 +107,10 @@ Bool not_all([Bool^] s) = in(true, s);
 
 ////////////////////////////////////////////////////////////////////////////////
 
+Nat bit(Bool b) = if b then 1 else 0 end;
+
+////////////////////////////////////////////////////////////////////////////////
+
 Int op_-(Int n)         = _neg_(n);
 Int op_+(Int a, Int b)  = _add_(a, b);
 
@@ -179,20 +183,16 @@ Nat length(Seq seq) = _len_(seq);
 
 T at([T^] seq, Nat idx, T default) = if idx < _len_(seq) then _at_(seq, idx) else default end;
 
-// Should be like this...
-// T1 left((T1, T2) s)  = _at_(s, 0);
-// T2 right((T1, T2) s) = _at_(s, 1);
-T left([T] s)
+T1 left((T1, T2) s)  = _at_(s, 0);
+T2 right((T1, T2) s) = _at_(s, 1);
+
+[(T1, T2)] zip([T1] s1, [T2] s2)
 {
-  assert length(s) == 2;
-  return s[0];
+  assert length(s1) == length(s2);
+  return [(e1, s2[i]) : e1 @ i <- s1]; //## NOT PARTICULARLY ELEGANT...
 }
 
-T right([T] s)
-{
-  assert length(s) == 2;
-  return s[1];
-}
+([T1], [T2]) unzip([(T1, T2)] ts) = ([left(t) : t <- ts], [right(t) : t <- ts]); //## NOT PARTICULARLY ELEGANT EITHER...
 
 T head([T^] s) = _at_(s, 0);
 T tail([T^] s) = _slice_(s, 1, _len_(s)-1);
@@ -212,7 +212,7 @@ Bool in(Any e, Seq s)
 
 Nat index_first(Any e, Seq s)
 {
-  for (x, i : s)
+  for (x @ i : s)
     return i if x == e;
   ;
   fail;
@@ -236,7 +236,7 @@ reverse(Seq seq) = _rev_(seq);
   len = length(seq);
   subseqs = [];
   start = 0;
-  for (x, i : seq)
+  for (x @ i : seq)
     if (x == sep)
       subseqs = subseqs & [subseq(seq, start, i-start)];
       start = i + 1;
@@ -538,7 +538,7 @@ T* set([T] seq) = _set_(seq);
 T* dupl_elems([T] s)
 {
   r = {};
-  for (e1, i1 : s ; e2, i2 : s)
+  for (e1 @ i1 : s ; e2 @ i2 : s)
     r = r & {e1, e2} if (e1 == e2 and i1 /= i2);
   ;
   return r;
@@ -548,8 +548,7 @@ Bool has_duplicates([Any] s) = dupl_elems(s) /= {};
 
 [T] rand_sort(T* set) = _isort_(set);
 
-//## Add the result type. Something like: [(TK, TV)]
-rand_sort_pairs((TK => TV) map) = rand_sort({[k, v] : k => v <- map});
+[(TK, TV)] rand_sort_pairs((TK => TV) map) = rand_sort({(k, v) : k => v <- map});
 
 
 T an_elem(T+ s) = {ses = rand_sort(s); return ses[0];};
@@ -634,7 +633,7 @@ using Bool condition(Any), Any eval(Any)
 }
 
 
-[T] intermix([T] seq, T obj) = join([[obj if i /= 0, e] : e, i <- seq]);
+[T] intermix([T] seq, T obj) = join([[obj if i /= 0, e] : e @ i <- seq]);
 
 
 String to_str(Int n)
@@ -678,7 +677,7 @@ Int to_int(String str)
   res = 0;
   neg = false;
 
-  for (ch, i : _obj_(str))
+  for (ch @ i : _obj_(str))
     if (ch == ascii_minus and i == 0)
       neg = true;
       assert length(str) > 1;
@@ -712,7 +711,7 @@ String to_text(Any obj)
   String to_txt_tag_obj(Atom tag, Any obj)
   {
     str = to_txt(obj);
-    str = "(" & str & ")" if not obj :: Tuple;
+    str = "(" & str & ")" if not obj :: Record;
     return _str_(tag) & str;
   }
     
@@ -765,7 +764,7 @@ String to_text(Any obj, Nat line_len, Nat indent_level)
 
   [String^] to_txt_tag_obj(Atom tag, Any obj, Nat line_len)
   {
-    obj_is_tuple = match (obj)
+    obj_is_record = match (obj)
                       (...)   = keys(obj) :: <Atom*>,
                       _       = false;
                     ;
@@ -775,8 +774,8 @@ String to_text(Any obj, Nat line_len, Nat indent_level)
     first_line   = obj_lines[0];
 
     if (line_count == 1)
-      if (obj_is_tuple or length(first_line) + length(tag_str) + 2 <= line_len)
-        return [tag_str & if obj_is_tuple then first_line else "(" & first_line & ")" end];
+      if (obj_is_record or length(first_line) + length(tag_str) + 2 <= line_len)
+        return [tag_str & if obj_is_record then first_line else "(" & first_line & ")" end];
       else
         return [tag_str & "(", "  " & first_line, ")"];
       ;
@@ -785,8 +784,8 @@ String to_text(Any obj, Nat line_len, Nat indent_level)
       last_line    = rev_at(obj_lines, 0);
       if (length(first_line) == 1)
         indent = "";
-        head   = [tag_str & if obj_is_tuple then "" else "(" end & first_line];
-        tail   = [last_line & if obj_is_tuple then "" else ")" end];
+        head   = [tag_str & if obj_is_record then "" else "(" end & first_line];
+        tail   = [last_line & if obj_is_record then "" else ")" end];
       else
         indent = "  ";
         head = [tag_str & "(", "  " & first_line];
@@ -807,33 +806,33 @@ String to_text(Any obj, Nat line_len, Nat indent_level)
       ;
     ;
     last_idx = length(lines_seq) - 1;
-    indented_lines_with_commas = join([["  " & l : l <- if i /= last_idx then append_to_last(ls, ",") else ls end] : ls, i <- lines_seq]);
+    indented_lines_with_commas = join([["  " & l : l <- if i /= last_idx then append_to_last(ls, ",") else ls end] : ls @ i <- lines_seq]);
     return [left_del] & indented_lines_with_commas & [right_del];
   }
 
-  // [String^] append_to_last([String^] lines, String str) = [if i /= last_idx then l else l & str end : l, i <- lines] let last_idx = length(lines) - 1;;
+  // [String^] append_to_last([String^] lines, String str) = [if i /= last_idx then l else l & str end : l @ i <- lines] let last_idx = length(lines) - 1;;
   [String^] append_to_last([String^] lines, String str)
   {
     last_idx = length(lines) - 1;
-    return [if i /= last_idx then l else l & str end : l, i <- lines];
+    return [if i /= last_idx then l else l & str end : l @ i <- lines];
   }
   
 
   [String^] to_txt_map(Map map, Nat line_len)
   {
-    is_tuple    = keys(map) :: <Atom*>;
-    key_val_sep = if is_tuple then ": " else " => " end;
+    is_record   = keys(map) :: <Atom*>;
+    key_val_sep = if is_record then ": " else " => " end;
     size        = size(map);
     es          = rand_sort({(key: k, value: v) : k => v <- map});
     lines       = [];
     single_line = "";
     is_single_line_so_far = true;
-    for (e, i : es)
+    for (e @ i : es)
       key_ls = to_txt(e.key, line_len);
       value_ls = to_txt(e.value, line_len);
       // The pair goes in a single line if both key and value must be on a single line and
-      // either it's a tuple or the entire pair (including the separator) fits in a single line
-      if (length(key_ls) == 1 and length(value_ls) == 1 and (is_tuple or length(key_ls[0]) + length(value_ls[0]) + 2 < line_len))
+      // either it's a record or the entire pair (including the separator) fits in a single line
+      if (length(key_ls) == 1 and length(value_ls) == 1 and (is_record or length(key_ls[0]) + length(value_ls[0]) + 2 < line_len))
         ls = [key_ls[0] & key_val_sep & value_ls[0]];
       else
         ls = append_to_last(key_ls, key_val_sep) & value_ls;
@@ -1293,7 +1292,7 @@ ParseResult parse_obj([Token] tokens)
              Char obj?                = (obj: obj, offset: offset+1),
              string() obj?            = (obj: obj, offset: offset+1),
              left(brace)              = parse_set(tokens, offset),
-             left(parenthesis)        = parse_map_or_tuple(tokens, offset),
+             left(parenthesis)        = parse_map_or_record(tokens, offset),
              left(bracket)            = parse_seq(tokens, offset),
              _                        = error(offset);
            ;
@@ -1310,16 +1309,16 @@ ParseResult parse_obj([Token] tokens)
       return (obj: _obj_(tokens[offset]), offset: offset+1);
     ;
 
-    res = parse_map_or_tuple(tokens, offset+1);
-    is_tuple = not res :: ParseError;
-    if (not is_tuple)
+    res = parse_map_or_record(tokens, offset+1);
+    is_record = not res :: ParseError;
+    if (not is_record)
       res = parse_obj(tokens, offset+2);
       return res if res :: ParseError;
       return error(res.offset) if at(tokens, res.offset, nil) /= right_parenthesis;
     ;
     
     obj = _obj_(tokens[offset]) @ res.obj;
-    return (obj: obj, offset: res.offset + if is_tuple then 0 else 1 end);
+    return (obj: obj, offset: res.offset + if is_record then 0 else 1 end);
   }
 
   //ParseIntermRes parse_set([Token^] tokens, Nat offset)
@@ -1345,15 +1344,15 @@ ParseResult parse_obj([Token] tokens)
     return (obj: res.objs, offset: res.offset);
   }
   
-  //<ParseIntermRes, ParseError> parse_map_or_tuple([Token^] tokens, Nat offset)
-  parse_map_or_tuple(tokens, offset)
+  //<ParseIntermRes, ParseError> parse_map_or_record([Token^] tokens, Nat offset)
+  parse_map_or_record(tokens, offset)
   {
     assert offset < length(tokens) and tokens[offset] == left_parenthesis;
     
     len = length(tokens);
     os  = offset + 1;
     
-    is_tuple = at(tokens, os, nil) :: <label(Atom)>;
+    is_record = at(tokens, os, nil) :: <label(Atom)>;
     
     keys   = [];
     values = [];
@@ -1363,7 +1362,7 @@ ParseResult parse_obj([Token] tokens)
       head = tokens[os];
       break if head == right_parenthesis;
       
-      if (is_tuple)
+      if (is_record)
         return error(os) if not head :: <label(Atom)>;
         key    = _obj_(head);
         val_os = os + 1;

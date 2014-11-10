@@ -20,7 +20,9 @@ using (TypeName => AnonType) typedefs, (TypeSymbol => UserType) user_typedefs
     ne_map_type()       = user_type_is_wf(type.key_type, type_vars) and
                           user_type_is_wf(type.value_type, type_vars),
     
-    tuple_type(bs?)     = not (? l => b <- bs : not user_type_is_wf(b.type, type_vars)),
+    record_type(bs?)    = not (? l => b <- bs : not user_type_is_wf(b.type, type_vars)),
+
+    tuple_type(ts?)     = length(ts) > 1 and all([user_type_is_wf(t, type_vars) : t <- ts]),
     
     //## BUG BUG BUG THIS IS INCOMPLETE, THE TAG TYPE MUST BE A SUBSET OF atom_type
     tag_obj_type()      = user_type_is_wf(type.tag_type, type_vars) and
@@ -31,7 +33,7 @@ using (TypeName => AnonType) typedefs, (TypeSymbol => UserType) user_typedefs
     union_type(ts?)     = size(ts) >= 2                                             and
                           //## BAD BAD BAD THIS SHOULD BE ENFORCED IN THE TYPE DEFINITION
                           not (? union_type() <- ts)                                and
-                          not (? t <- ts : not user_type_is_wf(t, type_vars))            and
+                          not (? t <- ts : not user_type_is_wf(t, type_vars))       and
                           //## BAD BAD BAD
                           not (? t1 <- ts, t2 <- ts : t1 /= t2, not are_compatible(t1, t2, typedefs));
 }
@@ -71,7 +73,9 @@ Bool anon_pretype_is_wf_impl(AnonType type, (SelfPretype => PseudoType) self_par
 
   tag_obj_type()        = anon_pretype_is_wf(type.tag_type, self_parts, type_vars) and anon_pretype_is_wf(type.obj_type, self_parts, type_vars),
 
-  tuple_type(fs?)       = not (? l => f <- fs : not anon_pretype_is_wf(f.type, self_parts, type_vars)),
+  record_type(fs?)      = not (? l => f <- fs : not anon_pretype_is_wf(f.type, self_parts, type_vars)),
+
+  tuple_type(ts?)       = length(ts) > 1 and all([anon_pretype_is_wf(t, self_parts, type_vars) : t <- ts]),
 
                           //## BAD: SEE ALL THE REASONS LISTED ABOVE
   union_type(ts?)       = size(ts) > 1 and not (? union_type() <- ts) and
@@ -89,7 +93,7 @@ Bool anon_pretype_is_wf_impl(AnonType type, (SelfPretype => PseudoType) self_par
     //## THIS CHECK IS NOT ENOUGH. IF TYPE 1 HAS JUST A TOP LEVEL REFERENCE TO TYPE 2 AND
     //## TYPE 2 HAS ONLY A TOP LEVEL REFERENCE TO TYPE 1, WE HAVE THE EQUIVALENT OF A TOP
     //## LEVEL SELF LOOP. IS THIS SOMEHOW CONNECTED WITH THE OTHER COMMENT ABOVE?
-    for (t, i : type.types)
+    for (t @ i : type.types)
       return false if has_top_level_self(t, self(i));
     ;
 
@@ -119,7 +123,12 @@ Bool has_ground_branches(AnonType type, SelfPretype* ground_refs):
   ne_seq_type()         = has_ground_branches(type.elem_type, ground_refs),
   ne_set_type()         = has_ground_branches(type.elem_type, ground_refs),
   ne_map_type()         = has_ground_branches(type.key_type, ground_refs) and has_ground_branches(type.value_type, ground_refs),
-  tuple_type(fs?)       = (? l => f <- fs : has_ground_branches(f.type, ground_refs)), //## WHAT IF THAT PARTICULAR FIELD IS OPTIONAL?
+
+  //## BUG BUG BUG BUG BUG BUG BUG: ONE BRANCH THAT IS NOT GROUNDED SHOULD BE ENOUGHT
+  //## TO MAKE THE ENTIRE TUPLE NON-GROUNDED. THINK ABOUT IT.
+  record_type(fs?)      = (? l => f <- fs : has_ground_branches(f.type, ground_refs)), //## WHAT IF THAT PARTICULAR FIELD IS OPTIONAL?
+
+  tuple_type(ts?)       = all([has_ground_branches(t) : t <- ts]),
   tag_obj_type()        = has_ground_branches(type.obj_type, ground_refs),
   union_type(ts?)       = (? t <- ts : has_ground_branches(t, ground_refs)),
   self_rec_type(t?)     = has_ground_branches(t, ground_refs), //## NOT SURE HERE...
@@ -134,7 +143,8 @@ Bool has_rec_branches(AnonType type):
   ne_seq_type()         = has_rec_branches(type.elem_type),
   ne_set_type()         = has_rec_branches(type.elem_type),
   ne_map_type()         = has_rec_branches(type.key_type) or has_rec_branches(type.value_type),
-  tuple_type(fs?)       = (? l => f <- fs : has_rec_branches(f.type)), //## WHAT IF THAT PARTICULAR FIELD IS OPTIONAL?
+  record_type(fs?)      = (? l => f <- fs : has_rec_branches(f.type)), //## WHAT IF THAT PARTICULAR FIELD IS OPTIONAL?
+  tuple_type(ts?)       = at_least_one([has_rec_branches(t) : t <- ts]),
   tag_obj_type()        = has_rec_branches(type.obj_type),
   union_type(ts?)       = (? t <- ts : has_rec_branches(t)),
   self_rec_type(t?)     = false, //## NOT SURE HERE...

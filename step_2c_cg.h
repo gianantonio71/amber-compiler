@@ -67,12 +67,12 @@ ObjProcDef gen_fn_code(FnDef fndef)
         next_stream_var_id = 0)
 
     //// Checking parameter types
-    //for (p, i : fndef.params)
+    //for (p @ i : fndef.params)
     //  body = body & gen_type_checking_code(p.type, fn_par(i), tmp_bvar) & [check(tmp_bvar)] if p.type?;
     //;
 
     // Setting named variables for parameters
-    body = body & [set_var(p.var, fn_par(i)) : p, i <- fndef.params, p.var?];
+    body = body & [set_var(p.var, fn_par(i)) : p @ i <- fndef.params, p.var?];
 
     // Evaluating the expression
     body = body & gen_eval_code(fndef.expr, fn_res_var);
@@ -120,7 +120,7 @@ FnDef merge_fns(FnDef+ fds, (TypeName => AnonType) typedefs)
   for (i : inc_seq(arity))
     params = [fd.params[i] : fd <- rand_sort(fds)];
     ptypes = [if p.type? then pseudotype(p.type, typedefs) else pseudotype_any end : p <- params];
-    good = all([all([are_disjoint(p1, p2) : p2 <- right_subseq(ptypes, j+1)]) : p1, j <- ptypes]); //## BAD: INEFFICIENT. ALSO A BIT UGLY...
+    good = all([all([are_disjoint(p1, p2) : p2 <- right_subseq(ptypes, j+1)]) : p1 @ j <- ptypes]); //## BAD: INEFFICIENT. ALSO A BIT UGLY...
     candidates = candidates & [i] if good;
   ;
 
@@ -137,7 +137,7 @@ FnDef merge_fns(FnDef+ fds, (TypeName => AnonType) typedefs)
 
   cases = [];
   for (fd : rand_sort(fds))
-    ptrns = [mk_ptrn(p, typedefs, is_checked[i]) : p, i <- fd.params];
+    ptrns = [mk_ptrn(p, typedefs, is_checked[i]) : p @ i <- fd.params];
     case  = (ptrns: ptrns, expr: fd.expr);
     cases = [case | cases];  
   ;

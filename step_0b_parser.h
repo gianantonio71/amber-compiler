@@ -7,6 +7,7 @@ ParsingRule empty_block_rule(ParType pt) = block_rule(pt, empty_rule);
 ParsingRule comma_sep_seq(ParsingRule rule) = comma_sep_seq(rule, true);
 ParsingRule opt_comma_sep_seq(ParsingRule rule) = comma_sep_seq(rule, false);
 ParsingRule comma_sep_seq(ParsingRule rule, Bool nonempty) = rep_rule(rule, atomic_rule(comma), nonempty, false);
+ParsingRule comma_sep_seq(ParsingRule rule, Nat min_count) = rep_rule(rule, min_count, atomic_rule(comma), false);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -114,6 +115,7 @@ ParserResult parse(ParsingRule rule, PreAst pre_ast, Nat offset, (Atom => Parsin
 
   rep_rule()        = {
     matches = [];
+    num_of_matches = 0;
     delta = 0;
     res = nil; //## BUG: THIS IS HERE ONLY BECAUSE THE COMPILER WOULD OTHERWISE COMPLAIN ABOUT THE VARIABLE res BEING UNDEFINED IN THE LAST LINE
     loop
@@ -128,15 +130,19 @@ ParserResult parse(ParsingRule rule, PreAst pre_ast, Nat offset, (Atom => Parsin
       ;
       // Matching the main rule
       res = parse(rule.rule, pre_ast, offset+delta+sep_nodes, rec_rules);
-      if (is_failure(res))
-        return res if rule.at_least_one and matches == [];
-        break;
-      ;
+      break if is_failure(res);
+      // if (is_failure(res))
+      //   return res if num_of_matches < rule.min_count;
+      //   break;
+      // ;
       res = get_result(res);
       matches = matches & [res.rule_match];
+      num_of_matches = num_of_matches + 1;
       delta = delta + sep_nodes + res.nodes_consumed;
     ;
-    assert not (rule.at_least_one and matches == []);
+    assert res /= nil;
+    // assert num_of_matches >= rule.min_count;
+    return res if num_of_matches < rule.min_count;
     return success(parser_match(rep_rule_match(matches), delta, get_error(res)));
   },
 
@@ -154,7 +160,7 @@ ParserResult parse(ParsingRule rule, PreAst pre_ast, Nat offset, (Atom => Parsin
     ;
     //## BAD: I WOULD NEED A max_by(xs, p) FUNCTION HERE
     idx = 0;
-    for (e, i : errs)
+    for (e @ i : errs)
       idx = i if index_of_last_matched_token(e, pre_ast) > index_of_last_matched_token(errs[idx], pre_ast);
     ;
     //## BAD: LOSES ERROR INFORMATION HERE

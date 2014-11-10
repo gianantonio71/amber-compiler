@@ -62,6 +62,9 @@ using Bool inst_type_vars
 
 
   IsSubset is_subset_if(AnonType t1, AnonType t2):
+    tuple_type(),         _                   = {fail;}, //## HAVENT FIGURED OUT YET WHERE THESE SHOULD GO
+    _,                    tuple_type()        = {fail;},
+
     // Type vars only match themselves or type any
     _,                    type_var()          = if inst_type_vars then subset_when(t2, t1) else if t1 == t2 then {} else not_a_subset end end,
 
@@ -103,24 +106,24 @@ using Bool inst_type_vars
 
     // Map types
     empty_map_type,       empty_map_type      = {},
-    empty_map_type,       tuple_type(fs?)     = if not (? l => f <- fs : not f.optional) then {} else not_a_subset end,
+    empty_map_type,       record_type(fs?)    = if not (? l => f <- fs : not f.optional) then {} else not_a_subset end,
     empty_map_type,       _                   = not_a_subset,
 
     ne_map_type(),        ne_map_type()       = all_conds({is_subset_if(t1.key_type, t2.key_type), is_subset_if(t1.value_type, t2.value_type)}),
-    ne_map_type(),        tuple_type(fs?)     = is_ne_map_tuple_subset_if(t1.key_type, t1.value_type, fs),
+    ne_map_type(),        record_type(fs?)    = is_ne_map_record_subset_if(t1.key_type, t1.value_type, fs),
     ne_map_type(),        _                   = not_a_subset,
 
-    // Tuple types
-    tuple_type(fs1?),     tuple_type(fs2?)    = is_tuple_subset_if(fs1, fs2),
-    tuple_type(fs?),      ne_map_type()       = is_tuple_map_subset_if(fs, t2),
-    tuple_type(),         _                   = not_a_subset,
+    // Record types
+    record_type(fs1?),    record_type(fs2?)   = is_record_subset_if(fs1, fs2),
+    record_type(fs?),     ne_map_type()       = is_record_map_subset_if(fs, t2),
+    record_type(),        _                   = not_a_subset,
 
     // Tagged types
     tag_obj_type(),       tag_obj_type()      = all_conds({is_subset_if(t1.tag_type, t2.tag_type), is_subset_if(t1.obj_type, t2.obj_type)}),
     tag_obj_type(),       _                   = not_a_subset;
 
 
-  IsSubset is_tuple_subset_if((SymbObj => (type: AnonType, optional: Bool)) fs1, (SymbObj => (type: AnonType, optional: Bool)) fs2)
+  IsSubset is_record_subset_if((SymbObj => (type: AnonType, optional: Bool)) fs1, (SymbObj => (type: AnonType, optional: Bool)) fs2)
   {
     labels_1 = keys(fs1);
     labels_2 = keys(fs2);
@@ -147,9 +150,9 @@ using Bool inst_type_vars
   }
 
 
-  IsSubset is_tuple_map_subset_if((SymbObj => (type: AnonType, optional: Bool)) tuple_fields, MapType[AnonType] map_type) =
+  IsSubset is_record_map_subset_if((SymbObj => (type: AnonType, optional: Bool)) record_fields, MapType[AnonType] map_type) =
     all_conds(
-      for (l => f <- tuple_fields) {
+      for (l => f <- record_fields) {
         all_conds(
           { is_subset_if(symb_type(l), map_type.key_type),
             is_subset_if(f.type, map_type.value_type)
@@ -159,18 +162,18 @@ using Bool inst_type_vars
     );
 
 
-  IsSubset is_ne_map_tuple_subset_if(AnonType key_type, AnonType value_type, (SymbObj => (type: T, optional: Bool)) tuple_fields)
+  IsSubset is_ne_map_record_subset_if(AnonType key_type, AnonType value_type, (SymbObj => (type: T, optional: Bool)) record_fields)
   {
-    return not_a_subset if not is_subset(key_type, union_type({symb_type(l) : l => _ <- tuple_fields}));
+    return not_a_subset if not is_subset(key_type, union_type({symb_type(l) : l => _ <- record_fields}));
 
     if (key_type :: SymbType)
       only_key_obj = _obj_(key_type);
-      return not_a_subset if (? l => f <- tuple_fields : l /= only_key_obj, not f.optional);
+      return not_a_subset if (? l => f <- record_fields : l /= only_key_obj, not f.optional);
     else
-      return not_a_subset if (? _ => f <- tuple_fields : not f.optional);
+      return not_a_subset if (? _ => f <- record_fields : not f.optional);
     ;
 
-    return all_conds({is_subset_if(key_type, f.type) : l => f <- tuple_fields, includes_symbol(key_type, l)});
+    return all_conds({is_subset_if(key_type, f.type) : l => f <- record_fields, includes_symbol(key_type, l)});
   }
 }
 
@@ -196,17 +199,18 @@ Bool is_integer_subset(IntType t1, IntType t2):
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 AnonType unfold(AnonType type, (SelfPretype => AnonType) sub_map):
-  LeafType        = type,
-  TypeVar         = type,
-  SelfPretype     = sub_map[type],
-  ne_seq_type()   = ne_seq_type(unfold(type.elem_type, sub_map)),
-  ne_set_type()   = ne_set_type(unfold(type.elem_type, sub_map)),
-  ne_map_type()   = ne_map_type(unfold(type.key_type, sub_map), unfold(type.value_type, sub_map)),
-  tuple_type(fs?) = tuple_type((l => (type: unfold(f.type, sub_map), optional: f.optional) : l => f <- fs)),
-  tag_obj_type()  = tag_obj_type(type.tag_type, unfold(type.obj_type, sub_map)),
-  union_type(ts?) = union_type({unfold(t, sub_map) : t <- ts}),
-  self_rec_type() = type,
-  mut_rec_type()  = type;
+  LeafType          = type,
+  TypeVar           = type,
+  SelfPretype       = sub_map[type],
+  ne_seq_type()     = ne_seq_type(unfold(type.elem_type, sub_map)),
+  ne_set_type()     = ne_set_type(unfold(type.elem_type, sub_map)),
+  ne_map_type()     = ne_map_type(unfold(type.key_type, sub_map), unfold(type.value_type, sub_map)),
+  record_type(fs?)  = record_type((l => (type: unfold(f.type, sub_map), optional: f.optional) : l => f <- fs)),
+  tuple_type(ts?)   = {fail;},
+  tag_obj_type()    = tag_obj_type(type.tag_type, unfold(type.obj_type, sub_map)),
+  union_type(ts?)   = union_type({unfold(t, sub_map) : t <- ts}),
+  self_rec_type()   = type,
+  mut_rec_type()    = type;
 
 
 AnonType unfold(AnonType type):

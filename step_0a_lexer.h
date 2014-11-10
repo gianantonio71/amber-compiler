@@ -51,11 +51,11 @@ LexerResult lex_src_file([Nat] chars)
 {
   lines = [remove_line_comment(l) : l <- split_lines(chars)];
   tokens = [];
-  for (l, i : lines)
+  for (l @ i : lines)
     res = split_line_into_tokens(l);
     if (is_success(res))
       start_idx = length(tokens);
-      tokens = tokens & [annotated_token(ti, i+1, start_idx+j) : ti, j <- get_result(res)];
+      tokens = tokens & [annotated_token(ti, i+1, start_idx+j) : ti @ j <- get_result(res)];
     else
       return failure(lexer_error(i+1, get_error(res)));
     ;
@@ -276,8 +276,8 @@ Maybe[String] best_match([Nat] bytes, Int offset, String* strings)
 }
 
 //## REENABLE THE COMMENTED OUT IMPLEMENTATION AS SOON AS POSSIBLE
-// [Nat^] to_lower_with_underscores([Nat^] bytes) = join([[ascii_underscore if i > 0 and is_upper(b), lower(b)] : b, i <- bytes]);
-[Nat^] to_lower_with_underscores([Nat^] bytes) = join([if i > 0 and is_upper(b) then [ascii_underscore, lower(b)] else [lower(b)] end : b, i <- bytes]);
+// [Nat^] to_lower_with_underscores([Nat^] bytes) = join([[ascii_underscore if i > 0 and is_upper(b), lower(b)] : b @ i <- bytes]);
+[Nat^] to_lower_with_underscores([Nat^] bytes) = join([if i > 0 and is_upper(b) then [ascii_underscore, lower(b)] else [lower(b)] end : b @ i <- bytes]);
 
 //## THINK OF A BETTER WAY TO WRITE ALL THESE FUNCTIONS. THERE MUST BE ONE
 

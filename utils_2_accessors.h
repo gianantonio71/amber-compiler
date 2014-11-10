@@ -1,7 +1,5 @@
 
-// type TupleType  = tuple_type((label: SymbObj, type: Type, optional: Bool)+);
-
-ClosedType mandatory_tuple_field_type(TupleType[AnonType] type, SymbObj label)
+ClosedType mandatory_record_field_type(RecordType[AnonType] type, SymbObj label)
 {
 	mfs = {f : l => f <- _obj_(type), l == label};
 	assert size(mfs) >= 0;
@@ -10,7 +8,7 @@ ClosedType mandatory_tuple_field_type(TupleType[AnonType] type, SymbObj label)
 	return if mf.optional then void_type else mf.type end;
 }
 
-Bool tuple_has_field(TupleType[AnonType] type, SymbObj label)
+Bool record_has_field(RecordType[AnonType] type, SymbObj label)
 {
 	//## IMPLEMENT
 	fail;

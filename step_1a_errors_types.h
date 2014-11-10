@@ -32,14 +32,16 @@ using
     //map_type(key_type: Type, value_type: Type);
     ne_map_type()                   = type_wf_errors(type.key_type) & type_wf_errors(type.value_type),
 
-    //tuple_type([label: SymbObj, type: Type, optional: Bool^])
-    tuple_type(fs?)                 = { lab_count = bag([f.label : f <- fs]); //## USING SEQUENCES WHERE BAGS WOULD SUFFICE FEELS WRONG...
+    //record_type([label: SymbObj, type: Type, optional: Bool^])
+    record_type(fs?)                = { lab_count = bag([f.label : f <- fs]); //## USING SEQUENCES WHERE BAGS WOULD SUFFICE FEELS WRONG...
                                         rep_labs  = {l : l => n <- lab_count, n > 1};
                                         lab_errs  = if rep_labs == {} then {} else {:rep_labels_in_map(rep_labs)} end;
                                         return union({type_wf_errors(f.type) : f <- set(fs)}) & lab_errs;
                                       },
 
-
+    tuple_type(ts?)                 = { assert length(ts) > 1;
+                                        return seq_union([type_wf_errors(t) : t <- ts]);
+                                      },
 
     //tag_obj_type(tag_type: TagType, obj_type: Type)
     tag_obj_type()                  = { //## THIS DOES NOT HANDLE TYPE REFERENCES YET

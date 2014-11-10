@@ -45,7 +45,7 @@ Nat arity(Expr)        = 0;
 
 
 Var* scalar_vars(FnDef fn_def) = {p.var : p <- set(fn_def.params), p.var? and (not p.type? or p.type :: UserType)} &
-                                 set([:fn_par(i) : p, i <- fn_def.params, not p.type? or p.type :: UserType])       &
+                                 set([:fn_par(i) : p @ i <- fn_def.params, not p.type? or p.type :: UserType])       &
                                  {v : v => t <- fn_def.named_params, t :: UserType};
 
 //## FOR THE TIME BEING, THE fn_par(Nat) VARIABLES ARE DEFINED ONLY FOR SCALAR PARAMETERS, NOT CLOSURES
@@ -67,7 +67,7 @@ Bool lower_than(Atom a1, Atom a2)
   //return len1 < len2 if len1 /= len2;
   return (len2 - len1) :: NzNat if len1 /= len2; //## BAD BAD BAD UGLY HACK TO WORK AROUND A BUG IN THE INTERPRETER
   
-  for (ch1, i : _obj_(str1))
+  for (ch1 @ i : _obj_(str1))
     ch2 = str2[i];
     //return ch1 < ch2 if ch1 /= ch2;
     return (ch2 - ch1) :: NzNat if ch1 /= ch2; //## BAD BAD BAD UGLY HACK TO WORK AROUND A BUG IN THE INTERPRETER

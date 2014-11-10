@@ -97,7 +97,7 @@ Var* syn_new_vars(SynPtrn ptrn):
 
 
 Var* syn_new_vars(SynStmt stmt):
-  assignment_stmt() = {stmt.var},
+  assignment_stmt() = set(stmt.vars),
   if_stmt()         = {
     bodies = {b.body : b <- set(stmt.branches)} & {stmt.else};
     return intersection({syn_new_vars(ss) : ss <- bodies, not never_falls_through(ss)});
@@ -118,7 +118,7 @@ Var* syn_new_vars(SynClause clause):
 
 
 Var* syn_new_vars(SynIter iter):
-  seq_iter()    = {iter.var, iter.idx_var if iter.idx_var?},
+  seq_iter()    = set(iter.vars) & {iter.idx_var if iter.idx_var?},
   range_iter()  = {iter.var};
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -130,18 +130,19 @@ TypeSymbol syn_type_symbol_to_type_symbol(SynTypeSymbol ts):
 
 
 UserType syn_type_to_user_type(SynType type):
-  LeafType              = type,
-  TypeVar               = type,
-  type_ref(ts?)         = type_ref(syn_type_symbol_to_type_symbol(ts)),
-  syn_int_range()       = int_range(type.min, type.max),
-  ne_seq_type()         = ne_seq_type(syn_type_to_user_type(type.elem_type)),
-  ne_set_type()         = ne_set_type(syn_type_to_user_type(type.elem_type)),
-  ne_map_type()         = ne_map_type(syn_type_to_user_type(type.key_type), syn_type_to_user_type(type.value_type)),
-  tuple_type([...] fs?) = tuple_type((f.label => (type: syn_type_to_user_type(f.type), optional: f.optional) : f <- set(fs))),
-  tuple_type((...))     = type,
-  tag_obj_type()        = tag_obj_type(type.tag_type, syn_type_to_user_type(type.obj_type)),
-  union_type(ts?)       = union_type({syn_type_to_user_type(t) : t <- ts}),
-  syn_union_type(ts?)   = union_type({syn_type_to_user_type(t) : t <- set(ts)});
+  LeafType                = type,
+  TypeVar                 = type,
+  type_ref(ts?)           = type_ref(syn_type_symbol_to_type_symbol(ts)),
+  syn_int_range()         = int_range(type.min, type.max),
+  ne_seq_type()           = ne_seq_type(syn_type_to_user_type(type.elem_type)),
+  ne_set_type()           = ne_set_type(syn_type_to_user_type(type.elem_type)),
+  ne_map_type()           = ne_map_type(syn_type_to_user_type(type.key_type), syn_type_to_user_type(type.value_type)),
+  record_type([...] fs?)  = record_type((f.label => (type: syn_type_to_user_type(f.type), optional: f.optional) : f <- set(fs))),
+  record_type((...))      = type,
+  tuple_type(ts?)         = tuple_type([syn_type_to_user_type(t) : t <- ts]),
+  tag_obj_type()          = tag_obj_type(type.tag_type, syn_type_to_user_type(type.obj_type)),
+  union_type(ts?)         = union_type({syn_type_to_user_type(t) : t <- ts}),
+  syn_union_type(ts?)     = union_type({syn_type_to_user_type(t) : t <- set(ts)});
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -154,21 +155,22 @@ UserType syn_type_to_user_type(SynType type):
 using (SynTypeSymbol => SynType) typedefs
 {
   PseudoType syn_pseudotype(SynType type):
-    LeafType              = pseudotype(type),
-    syn_int_range()       = pseudotype_integers,
+    LeafType                = pseudotype(type),
+    syn_int_range()         = pseudotype_integers,
     //## BUG BUG BUG ASSUMING THERE ARE NO DIRECT CYCLES IN TYPEDEFS
     //## BUG BUG BUG ALSO ASSUMING NO TYPE REFERENCE IS "DANGLING"
-    type_ref(ts?)         = syn_pseudotype(typedefs[ts]),
-    TypeVar               = pseudotype_any,
-    ne_set_type()         = pseudotype_ne_seqs,
-    ne_seq_type()         = pseudotype_ne_sets,
-    ne_map_type()         = pseudotype_ne_maps,
-    tuple_type((...) fs?) = pseudotype_union({pseudotype_ne_maps, pseudotype_empty_map if (? l => f <- fs : not f.optional)}),
-    tuple_type()          = syn_pseudotype(syn_type_to_user_type(type)),
-    union_type(ts?)       = pseudotype_union({syn_pseudotype(t) : t <- ts}),
-    syn_union_type(ts?)   = pseudotype_union({syn_pseudotype(t) : t <- set(ts)}),
-    tag_obj_type()        = match (type.tag_type)
-                              symb_type(object(a?)) = pseudotype_tag_obj(a),
-                              atom_type             = pseudotype_tag_objs;
-                            ;
+    type_ref(ts?)           = syn_pseudotype(typedefs[ts]),
+    TypeVar                 = pseudotype_any,
+    ne_set_type()           = pseudotype_ne_seqs,
+    ne_seq_type()           = pseudotype_ne_sets,
+    ne_map_type()           = pseudotype_ne_maps,
+    record_type((...) fs?)  = pseudotype_union({pseudotype_ne_maps, pseudotype_empty_map if (? l => f <- fs : not f.optional)}),
+    record_type()           = syn_pseudotype(syn_type_to_user_type(type)),
+    tuple_type()            = pseudotype_ne_seqs,
+    union_type(ts?)         = pseudotype_union({syn_pseudotype(t) : t <- ts}),
+    syn_union_type(ts?)     = pseudotype_union({syn_pseudotype(t) : t <- set(ts)}),
+    tag_obj_type()          = match (type.tag_type)
+                                symb_type(object(a?)) = pseudotype_tag_obj(a),
+                                atom_type             = pseudotype_tag_objs;
+                              ;
 }

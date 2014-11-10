@@ -121,7 +121,8 @@ PseudoType pretype_pseudotype(AnonType type, (SelfPretype => PseudoType) self_ps
   ne_seq_type()         = pseudotype_ne_seqs,
   empty_map_type        = pseudotype_empty_map,
   ne_map_type()         = pseudotype_ne_maps,
-  tuple_type(fs?)       = pseudotype_union({pseudotype_ne_maps, pseudotype_empty_map if (? l => f <- fs : not f.optional)}),
+  record_type(fs?)      = pseudotype_union({pseudotype_ne_maps, pseudotype_empty_map if (? l => f <- fs : not f.optional)}),
+  tuple_type()          = pseudotype_ne_seqs,
   union_type(ts?)       = pseudotype_union({pretype_pseudotype(t, self_pseudotypes) : t <- ts}),
   tag_obj_type()        = match (type.tag_type)
                             symb_type(object(a?)) = pseudotype_tag_obj(a),

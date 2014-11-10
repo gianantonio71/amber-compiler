@@ -26,7 +26,7 @@ using
       ex_qual()        = clause_is_wf(expr.source, scalar_vars),
       set_comp()       = clause_is_wf(expr.source, scalar_vars),
       map_comp()       = clause_is_wf(expr.source, scalar_vars),
-      seq_comp()       = (not expr.idx_var? or expr.var /= expr.idx_var) and disjoint(gen_vars(expr), scalar_vars),
+      seq_comp()       = not has_duplicates(expr.vars) and (not expr.idx_var? or not in(expr.idx_var, expr.vars)) and disjoint(gen_vars(expr), scalar_vars),
       match_expr()     = all([case_is_wf(c, scalar_vars, length(expr.exprs)) : c <- expr.cases]),
       do_expr(ss?)     = stmts_are_wf(ss, scalar_vars),
       select_expr()    = user_type_is_wf(expr.type, type_vars),
@@ -100,7 +100,7 @@ using
     vs        = scalar_vars;
     reachable = true;
 
-    for (s, i : stmts)
+    for (s @ i : stmts)
       return false if not reachable or not stmt_is_wf(s, vs, is_inside_loop);
       vs        = vs & new_vars(s);
       reachable = reachable and may_fall_through(s);
@@ -112,6 +112,7 @@ using
   
   True stmt_is_wf(Statement stmt, Var* scalar_vars, Bool is_inside_loop):
 
+    //## SHOULDNT I ALSO CHECK THAT THE VARIABLE(S) BEING ASSIGNED TO ARE ACTUALLY WRITEABLE?
     assignment_stmt() = expr_is_wf(stmt.value, scalar_vars), // and (not stmt.type? or user_type_is_wf(stmt.type)),
     
     return_stmt(e?)   = expr_is_wf(e, scalar_vars),
@@ -142,7 +143,7 @@ using
     loop_stmt(ss?)    = stmts_are_wf(ss, scalar_vars, true, false),
     
                         //## SHOULD THE LOOP VARIABLES BE READ-ONLY?
-    foreach_stmt()    = { nvs = {stmt.var, stmt.idx_var if stmt.idx_var?};
+    foreach_stmt()    = { nvs = set(stmt.vars) & {stmt.idx_var if stmt.idx_var?};
                           return disjoint(nvs, scalar_vars)           and
                                  expr_is_wf(stmt.values, scalar_vars) and
                                  stmts_are_wf(stmt.body, scalar_vars & nvs, true, false);

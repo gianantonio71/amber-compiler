@@ -7,15 +7,16 @@ using (TypeName => AnonType) typedefs
 
 
   AnonType user_type_to_anon_type(UserType type): //## BAD: SHOULD BE USING A REPLACE EXPRESSION HERE...
-    LeafType        = type,
-    TypeVar         = type,
-    type_ref(ts?)   = dereference_type_symbol(ts),
-    ne_seq_type()   = ne_seq_type(user_type_to_anon_type(type.elem_type)),
-    ne_set_type()   = ne_set_type(user_type_to_anon_type(type.elem_type)),
-    ne_map_type()   = ne_map_type(user_type_to_anon_type(type.key_type), user_type_to_anon_type(type.value_type)),
-    tuple_type(fs?) = tuple_type((l => (type: user_type_to_anon_type(f.type), optional: f.optional) : l => f <- fs)),
-    tag_obj_type()  = tag_obj_type(type.tag_type, user_type_to_anon_type(type.obj_type)),
-    union_type(ts?) = union_type({user_type_to_anon_type(t) : t <- ts});
+    LeafType          = type,
+    TypeVar           = type,
+    type_ref(ts?)     = dereference_type_symbol(ts),
+    ne_seq_type()     = ne_seq_type(user_type_to_anon_type(type.elem_type)),
+    ne_set_type()     = ne_set_type(user_type_to_anon_type(type.elem_type)),
+    ne_map_type()     = ne_map_type(user_type_to_anon_type(type.key_type), user_type_to_anon_type(type.value_type)),
+    record_type(fs?)  = record_type((l => (type: user_type_to_anon_type(f.type), optional: f.optional) : l => f <- fs)),
+    tuple_type(ts?)   = tuple_type([user_type_to_anon_type(t) : t <- ts]),
+    tag_obj_type()    = tag_obj_type(type.tag_type, user_type_to_anon_type(type.obj_type)),
+    union_type(ts?)   = union_type({user_type_to_anon_type(t) : t <- ts});
 
 
   AnonType dereference_type_symbol(TypeSymbol type_symbol)
@@ -33,7 +34,8 @@ using (TypeName => AnonType) typedefs
     ne_seq_type()     = ne_seq_type(instantiate_generic_params(generic_type.elem_type, actual_params)),
     ne_set_type()     = ne_set_type(instantiate_generic_params(generic_type.elem_type, actual_params)),
     ne_map_type()     = ne_map_type(instantiate_generic_params(generic_type.key_type, actual_params), instantiate_generic_params(generic_type.value_type, actual_params)),
-    tuple_type(fs?)   = tuple_type((l => (type: instantiate_generic_params(f.type, actual_params), optional: f.optional) : l => f <- fs)),
+    record_type(fs?)  = record_type((l => (type: instantiate_generic_params(f.type, actual_params), optional: f.optional) : l => f <- fs)),
+    tuple_type(ts?)   = tuple_type([instantiate_generic_params(t, actual_params) : t <- ts]),
     tag_obj_type()    = tag_obj_type(instantiate_generic_params(generic_type.tag_type, actual_params), instantiate_generic_params(generic_type.obj_type, actual_params)),
     union_type(ts?)   = union_type({instantiate_generic_params(t, actual_params) : t <- ts}),
     self_rec_type(t?) = self_rec_type(instantiate_generic_params(t, actual_params)),

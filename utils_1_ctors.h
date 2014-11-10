@@ -5,10 +5,16 @@ SynParTypeSymbol syn_par_type_symbol(BasicTypeSymbol s, [SynType^] ps) = par_typ
 
 SynType       syn_int_range(Int min, Int max)                       = syn_int_range(min: min, max: max);
 SynTypeRef    syn_type_ref(BasicTypeSymbol s, [SynType^] ps)        = :type_ref(syn_par_type_symbol(s, ps));
-SynRecordType syn_record_type([SynRecordField^] fields)             = :tuple_type(fields);
+SynRecordType syn_record_type([SynRecordField^] fields)             = :record_type(fields);
 SynTagObjType syn_tag_obj_type(TagType tag_type, SynType obj_type)  = tag_obj_type(tag_type: tag_type, obj_type: obj_type);
 SynTagObjType syn_any_tag_obj_type(SynType obj_type)                = syn_tag_obj_type(atom_type, obj_type);
 SynType       syn_union([SynType^] types)                           = if length(types) == 1 then types[0] else :syn_union_type(types) end;
+
+SynTupleType syn_tuple_type([SynType^] ts)
+{
+  assert length(ts) >= 2;
+  return :tuple_type(ts);
+}
 
 SynType syn_set_type(SynType elem_type, Bool non_empty)
 {
@@ -43,6 +49,8 @@ ConstOrVar const_or_var(Atom a)                           = :const_or_var(a);
 
 SynSeqExpr syn_seq_expr([SynSubExpr] h)                   = seq_expr(head: h);
 SynSeqExpr syn_seq_expr([SynSubExpr] h, SynExpr t)        = seq_expr(head: h, tail: t);
+//## BUG: THIS SHOULD PRODUCE A DIFFERENT TYPE OF EXPRESSION FROM syn_seq_expr. IT MATTERS FOR TYPECHECKING.
+SynSeqExpr syn_tuple_expr([SynExpr^] es)                  = seq_expr(head: es);
 SynSetExpr syn_set_expr([SynSubExpr] ses)                 = :set_expr(set(ses));
 SynMapExpr syn_map_expr([SynMapExprEntry] es)             = :map_expr(set(es));
 SynTagObjExpr syn_tag_obj_expr(SynExpr t, SynExpr o)      = tag_obj_expr(tag: t, obj: o);
@@ -91,7 +99,7 @@ SynCondExpr cond_expr(SynExpr e, SynExpr c) = cond_expr(expr: e, cond: c);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-SynAsgnStmt syn_asgnm_stmt(Var v, SynExpr e)                                = assignment_stmt(var: v, value: e);
+SynAsgnStmt syn_asgnm_stmt([Var^] vs, SynExpr e)                            = assignment_stmt(vars: vs, value: e);
 SynReturnStmt syn_ret_stmt(SynExpr e)                                       = :return_stmt(e);
 SynIfStmt syn_if_stmt(SynExpr c, [SynStmt^] ss)                             = syn_if_stmt([(cond: c, body: ss)], []);
 SynIfStmt syn_if_stmt([(cond: SynExpr, body: [SynStmt^])^] bs, [SynStmt] e) = if_stmt(branches: bs, else: e);
@@ -105,16 +113,8 @@ SynPrintStmt syn_print_stmt(SynExpr e)                                      = :p
 
 SynFnDefStmt syn_fn_def_stmt(SynFnDef fd)                                   = :fn_def_stmt(fd);
 
-// type SynAsgnStmt    = assignment_stmt(var: Var, value: SynExpr);
-// type SynReturnStmt  = return_stmt(SynExpr);
-// type SynIfStmt      = if_stmt(branches: [(cond: SynExpr, body: [SynStmt^])^], else: [SynStmt]);
-// type SynLoopStmt    = loop_stmt(cond: SynExpr, skip_first: Bool, body: [SynStmt^]);
-// type SynInfLoopStmt = inf_loop_stmt([SynStmt^]);
-// type SynForStmt     = for_stmt(loops: [SynIter^], body: [SynStmt^]);
-// type SynLetStmt     = let_stmt(asgnms: [SynFnDef^], body: [SynStmt^]);
-
-SynIter syn_seq_iter(Var v, SynExpr e)                                      = seq_iter(var: v, values: e);
-SynIter syn_seq_iter(Var v, Var iv, SynExpr e)                              = seq_iter(var: v, idx_var: iv, values: e);
+SynIter syn_seq_iter([Var^] vs, SynExpr e)                                  = seq_iter(vars: vs, values: e);
+SynIter syn_seq_iter([Var^] vs, Var iv, SynExpr e)                          = seq_iter(vars: vs, idx_var: iv, values: e);
 SynIter syn_range_iter(Var v, SynExpr se, SynExpr ee)                       = range_iter(var: v, start_val: se, end_val: ee);
 
 ////////////////////////////////////////////////////////////////////////////////

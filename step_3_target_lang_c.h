@@ -19,7 +19,7 @@ CCodeOutput compile_to_c(ProcDef* prg)
   symbs = select SymbObj in prg end & {obj_true, obj_false, :object(:string)};
   symbs = sort_set(symbs; is_strictly_ordered(s1, s2) = s1 < s2);
 
-  symb_decls = ["const Obj " & to_c_expr(s; typesymb2name(ts) = typesymb2str(ts, ptss)) & " = " & to_str(16*(i+1)+1) & ";" : s, i <- symbs] & rep_seq(4, "");
+  symb_decls = ["const Obj " & to_c_expr(s; typesymb2name(ts) = typesymb2str(ts, ptss)) & " = " & to_str(16*(i+1)+1) & ";" : s @ i <- symbs] & rep_seq(4, "");
   symb_decls = symb_decls & ["const int EMB_SYMB_COUNT = " & to_text(length(symbs)) & ";"] & rep_seq(4, "");
 
   c_code = symb_decls;
@@ -44,7 +44,7 @@ CCodeOutput compile_to_c(ProcDef* prg)
 
   env_decl = ["struct Env {"];
   
-  for (na, i : all_param_arity_pairs)
+  for (na @ i : all_param_arity_pairs)
     var   = na.var;
     arity = na.arity;
     
@@ -155,7 +155,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     type_checking_fn_decls = [gen_c_decl(pd) : pd <- bool_proc_defs] & rep_seq(4, "");
     print "Type checking function declarations generated";
 
-    closure_decls = [gen_c_decl(d, i) : d, i <- cls_defs] & rep_seq(4, "");
+    closure_decls = [gen_c_decl(d, i) : d @ i <- cls_defs] & rep_seq(4, "");
     print "Closure declarations generated";
 
     fn_decls = [gen_c_decl(pd) : pd <- obj_proc_defs] & rep_seq(4, "");
@@ -164,7 +164,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     type_checking_fns = join([compile_to_c(d) & ["", ""] : d <- bool_proc_defs]) & rep_seq(4, "");
     print "Type checking functions generated";
 
-    closures = join([compile_to_c(d, i) & ["", ""] : d, i <- cls_defs]) & rep_seq(4, "");
+    closures = join([compile_to_c(d, i) & ["", ""] : d @ i <- cls_defs]) & rep_seq(4, "");
     print "Closures generated";
 
     functions = join([compile_to_c(d) & ["", ""] : d <- obj_proc_defs]);
@@ -313,7 +313,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     join_seqs()           = mk_call(instr.var, "join_seqs", [instr.left, instr.right]),
     join_mult_seqs()      = mk_call(instr.var, "join_mult_seqs", [instr.seqs]),
     rev_seq()             = mk_call(instr.var, "rev_seq", [instr.seq]),
-    get_at()              = mk_call(instr.var, "get_at", [instr.seq, instr.idx]),
+    // get_at()              = mk_call(instr.var, "get_at", [instr.seq, instr.idx]),
     
     set_at()              = mk_call("set_at", [instr.var, instr.idx, instr.value]),
 
@@ -554,6 +554,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
 using String typesymb2name(TypeSymbol)
 {
+  //## IT WOULD MUCH BETTER IF WE COULD USE mk_call HERE...
   String to_c_expr(ObjExpr expr):
     object(Atom a?)     = "S_" & _str_(a),
     object(Int n?)      = "to_obj(" & to_str(n) & ")",
@@ -561,6 +562,7 @@ using String typesymb2name(TypeSymbol)
     empty_seq           = "empty_seq",
     empty_map           = "empty_map",
     ObjVar              = to_c_var_name(expr),
+    at()                = "at("         & to_c_expr(expr.seq) & ", " & to_c_expr(expr.idx) & ")",
     get_tag(e?)         = "get_tag("        & to_c_expr(e)     & ")",
     get_inner_obj(e?)   = "get_inner_obj("  & to_c_expr(e)     & ")",
     to_obj(e?)          = "to_obj("         & to_c_expr(e)     & ")",
@@ -707,7 +709,7 @@ String capitalize(String s)
 {
   first = true;
   res = [];
-  for (ch, i : _obj_(s))
+  for (ch @ i : _obj_(s))
     if (ch == 95)
       first = true;
     else

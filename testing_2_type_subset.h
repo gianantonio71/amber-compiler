@@ -1,4 +1,3 @@
-Nat bit(Bool b) = if b then 1 else 0 end;
 // Bool bool([0..1] n) = if n == 0 then false else true end;
 
 T*+ powerset(T* s)
@@ -140,7 +139,7 @@ String** typess_to_string(AnonType** typess)   = {{type_to_str(t) : t <- ts} : t
 
 Bool test_type_subset_checking([AnonType] types, [Any] objs)
 {
-  incl_matrix = [[i : o, i <- objs, type_contains_obj(t, o)] : t <- types];
+  incl_matrix = [[i : o @ i <- objs, type_contains_obj(t, o)] : t <- types];
   ok = true;
   count = 0;
   for (i1 : indexes(types))
@@ -197,7 +196,7 @@ Bool check_intersection(ClosedType inters, [Any] objs, [Nat] ns1, [Nat] ns2)
 
 test_type_intersection_checking([AnonType] types, [Any] objs)
 {
-  incl_matrix = [[i : o, i <- objs, type_contains_obj(t, o)] : t <- types];
+  incl_matrix = [[i : o @ i <- objs, type_contains_obj(t, o)] : t <- types];
   low_counter = 0;
   high_counter = 0;
   for (t1, i1 : types; t2, i2 : types)
@@ -447,7 +446,7 @@ using
 ////////////////////////////////////////////////////////////////////////////////
 
 type LeafTypeGroup  = any_symb, int, empty_seq, empty_set, empty_map, symb(Atom);
-type CompTypeGroup  = ne_seq, ne_set, ne_map, tuple, tag_obj_any_tag, tag_obj(Atom);
+type CompTypeGroup  = ne_seq, ne_set, ne_map, record, tag_obj_any_tag, tag_obj(Atom);
 type TypeGroup      = LeafTypeGroup, CompTypeGroup;
 
 Bool are_compatible(TypeGroup g1, TypeGroup g2)
@@ -456,8 +455,8 @@ Bool are_compatible(TypeGroup g1, TypeGroup g2)
 
   are_half_comp(g1, g2):
     :any_symb,        symb()      = false,
-    :empty_map,       :tuple      = false,
-    :ne_map,          :tuple      = false,
+    :empty_map,       :record     = false,
+    :ne_map,          :record     = false,
     :tag_obj_any_tag, tag_obj()   = false,
     _,                _           = true;
 }
@@ -466,7 +465,7 @@ Bool are_compatible(TypeGroup g1, TypeGroup g2)
 AnonType+ gen_rand_non_rec_types(NzNat max_depth, NzNat count, Atom* term_symbs, Atom* func_symbs) 
 {
   leaf_type_groups = {:any_symb, :int, :empty_seq, :empty_set, :empty_map} & {:symb(s) : s <- term_symbs};
-  comp_type_groups = {:ne_seq, :ne_set, :ne_map, :tuple, :tag_obj_any_tag} & {:tag_obj(s) : s <- func_symbs};
+  comp_type_groups = {:ne_seq, :ne_set, :ne_map, :record, :tag_obj_any_tag} & {:tag_obj(s) : s <- func_symbs};
 
   valid_sets_of_leaf_type_groups = {ss : ss <- powerset(leaf_type_groups) ; is_valid_subset(ss)};
   valid_sets_of_type_groups = {ss : ss <- powerset(leaf_type_groups & comp_type_groups) ; is_valid_subset(ss, comp_type_groups)};
@@ -537,7 +536,7 @@ using
     :ne_seq           = ne_seq_type(gen_rand_non_rec_type(max_depth-1)),
     :ne_set           = ne_set_type(gen_rand_non_rec_type(max_depth-1)),
     :ne_map           = ne_map_type(gen_rand_non_rec_type(max_depth-1), gen_rand_non_rec_type(max_depth-1)),
-    :tuple            = gen_rand_non_rec_tuple_type(max_depth),
+    :record           = gen_rand_non_rec_record_type(max_depth),
     tag_obj(s)        = tag_obj_type(symb_type(s), gen_rand_non_rec_type(max_depth-1)),
     :tag_obj_any_tag  = tag_obj_type(atom_type, gen_rand_non_rec_type(max_depth-1));
 
@@ -545,7 +544,7 @@ using
 
   IntType gen_rand_int_type = rand_elem({integer, low_ints(rand_nat(1000)), high_ints(rand_nat(1000)), int_range(min: rand_nat(1000), size: rand_nat(1, 1000))});
 
-  AnonType gen_rand_non_rec_tuple_type(NzNat max_depth) = tuple_type((object(l) => (type: gen_rand_non_rec_type(max_depth-1), optional: once_in(3)) : l <- rand_subset(term_symbs, 1)));
+  AnonType gen_rand_non_rec_record_type(NzNat max_depth) = record_type((object(l) => (type: gen_rand_non_rec_type(max_depth-1), optional: once_in(3)) : l <- rand_subset(term_symbs, 1)));
 }
 
 
@@ -583,7 +582,7 @@ test_main =
 
   inters_semi_errors_count = 0;
 
-  for (ts, i : rand_sort(type_pairs))
+  for (ts @ i : rand_sort(type_pairs))
     print i;
     t0 = ts[0];
     t1 = ts[1];
