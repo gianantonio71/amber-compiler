@@ -38,8 +38,7 @@ Bool is_alpha(Nat ch, <upper, lower, any> case)     = (case /= :lower and is_upp
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Bool looks_like_a_lowercase_id_or_label([Nat] bytes, Int offset)   = is_lower(bytes, offset) and not looks_like_an_operator_fn(bytes, offset); //## THE OPERATOR THING IS TEMPORARY, UNTIL WE CHANGE THE OPERATOR SYNTAX
-Bool looks_like_an_operator_fn([Nat] bytes, Int offset)            = is_str(bytes, offset, "op_") and not is_alphanum(bytes, offset+3, :any);
+Bool looks_like_a_lowercase_id_or_label([Nat] bytes, Int offset)   = is_lower(bytes, offset);
 Bool looks_like_a_mixed_or_upper_case_id([Nat] bytes, Int offset)  = is_upper(bytes, offset);
 Bool looks_like_a_qualified_symbol([Nat] bytes, Int offset)        = is_char(bytes, offset, ascii_colon) and is_lower(bytes, offset+1);
 Bool looks_like_an_integer([Nat] bytes, Int offset)                = is_digit(bytes, offset);
@@ -83,14 +82,13 @@ ParseLineResult split_line_into_tokens([Nat] bytes)
     ;
     break if idx >= len;
     res = if looks_like_a_lowercase_id_or_label(bytes, idx)  then read_lowercase_id_or_label(bytes, idx),
-              looks_like_an_operator_fn(bytes, idx)           then read_operator_fn(bytes, idx),
-              looks_like_a_mixed_or_upper_case_id(bytes, idx) then read_mixed_or_upper_case_id(bytes, idx),
-              looks_like_a_qualified_symbol(bytes, idx)       then read_qualified_symbol(bytes, idx),
-              looks_like_an_integer(bytes, idx)               then read_integer(bytes, idx),
-              looks_like_a_string(bytes, idx)                 then read_string(bytes, idx),
-              //looks_like_a_char(bytes, idx)                   then read_char(bytes, idx),
-              looks_like_a_builtin(bytes, idx)                then read_builtin(bytes, idx)
-                                                              else read_symbolic_token(bytes, idx)
+             looks_like_a_mixed_or_upper_case_id(bytes, idx) then read_mixed_or_upper_case_id(bytes, idx),
+             looks_like_a_qualified_symbol(bytes, idx)       then read_qualified_symbol(bytes, idx),
+             looks_like_an_integer(bytes, idx)               then read_integer(bytes, idx),
+             looks_like_a_string(bytes, idx)                 then read_string(bytes, idx),
+             //looks_like_a_char(bytes, idx)                   then read_char(bytes, idx),
+             looks_like_a_builtin(bytes, idx)                then read_builtin(bytes, idx)
+                                                             else read_symbolic_token(bytes, idx)
            end;
     return res if not is_success(res);
     info = get_result(res);
@@ -118,22 +116,6 @@ ParseTokenResult read_lowercase_id_or_label([Nat] bytes, Int offset)
   ;
   return success(info);
 }
-
-
-ParseTokenResult read_operator_fn([Nat] bytes, Int offset)
-{
-  assert is_str(bytes, offset, "op_");
-  map = string_to_operator;
-  strs = keys(map);
-  maybe_best_match = best_match(bytes, offset+3, strs);
-  return failure(offset) if maybe_best_match == nil;
-  str = value(maybe_best_match);
-  //## WE SHOULD DO SOME CHECKING HERE, TO MAKE SURE WE DON'T GET A STRANGE SEQUENCE OF ADJACENT IDENTIFIERS
-  //## OR MAYBE THERE'S JUST NO POINT, AS THE SYNTAX IS GOING TO CHANGE SOON FROM op_X TO (X)
-  //## PROBABLY AT THAT POINT WE WON'T NEED THIS FUNCTION ANYMORE...
-  return success(token_line_info(operator(map[str]), offset, length(str)+3));
-}
-
 
 ParseTokenResult read_mixed_or_upper_case_id([Nat] bytes, Int offset)
 {
@@ -349,32 +331,18 @@ Int digit_length([Nat] bytes, Int offset)
   //"<="    =>  double_left_arrow,
   "\\/"   =>  logical_or_operator,
 
-  "..."   =>  triple_dot
+  "..."   =>  triple_dot,
 
-  // "(+)"     =>  operator(:plus),
-  // "(-)"     =>  operator(:minus),
-  // "(*)"     =>  operator(:star),   //## RENAME
-  // "(/)"     =>  operator(:slash),  //## RENAME
-  // "(^)"     =>  operator(:exp),    //## RENAME
-  // "(&)"     =>  operator(:amp),    //## RENAME
-  // "(<)"     =>  operator(:lower),
-  // "(>)"     =>  operator(:greater),
-  // "(<=)"    =>  operator(:lower_eq),
-  // "(>=)"    =>  operator(:greater_eq),
-  // "([])"    =>  operator(:brackets)
-);
-
-
-(String => Operator) string_to_operator = (
-  "+"     =>  :plus,
-  "-"     =>  :minus,
-  "*"     =>  :star,
-  "/"     =>  :slash,
-  "^"     =>  :exp,
-  "&"     =>  :amp,
-  "<"     =>  :lower,
-  ">"     =>  :greater,
-  "<="    =>  :lower_eq,
-  ">="    =>  :greater_eq,
-  "[]"    =>  :brackets
+  "(-_)"    => operator(:minus),
+  "(_+_)"   => operator(:plus),
+  "(_-_)"   => operator(:minus),
+  "(_*_)"   => operator(:star),     //## RENAME
+  "(_/_)"   => operator(:slash),    //## RENAME
+  "(_^_)"   => operator(:exp),      //## RENAME
+  "(_&_)"   => operator(:amp),      //## RENAME
+  "(_<_)"   => operator(:lower),
+  "(_>_)"   => operator(:greater),
+  "(_<=_)"  => operator(:lower_eq),
+  "(_>=_)"  => operator(:greater_eq),
+  "(_[_])"  => operator(:brackets)
 );

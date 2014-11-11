@@ -54,7 +54,7 @@ Var* scalar_vars(FnDef fn_def) = {p.var : p <- set(fn_def.params), p.var? and (n
                                         (v => length(t.in_types) : v => t <- fn_def.named_params, t :: UserClsType);
 
 
-Bool op_< (SymbObj s1, SymbObj s2) = lower_than(_obj_(s1), _obj_(s2));
+Bool (_<_) (SymbObj s1, SymbObj s2) = lower_than(_obj_(s1), _obj_(s2));
 
 Bool lower_than(Atom a1, Atom a2)
 {

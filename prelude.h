@@ -111,31 +111,21 @@ Nat bit(Bool b) = if b then 1 else 0 end;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Int op_-(Int n)         = _neg_(n);
-Int op_+(Int a, Int b)  = _add_(a, b);
+Int (-_)  (Int n)         = _neg_(n);
+Int (_+_) (Int a, Int b)  = _add_(a, b);
 
-Int op_-(Int a, Int b)  = a + -b;
+Int (_-_) (Int a, Int b)  = a + -b;
 
-Int op_*(Int a, Int b)  = if a == 0     then 0,
-                            a :: [1..*] then (a-1) * b + b
-                                        else -(-a * b)
-                          end;
+Int (_*_) (Int a, Int b)  = if a == 0      then 0,
+                               a :: [1..*] then (a-1) * b + b
+                                           else -(-a * b)
+                            end;
 
-Bool op_<(Int a, Int b) = (b - a) :: [1..*];
+Bool (_<_) (Int a, Int b) = (b - a) :: [1..*];
 
-// Int op_*(Int a, Int b):
-//   [0..0]  = 0,
-//   [1..*]  = (a-1) * b + b,
-//   [*..-1] = -(-a * b);
-
-// Bool op_<(Int a, Int b):
-//   [0..0], [1..*]  = true,
-//   [0..0], _       = false,
-//   _, _            = 0 < b - a;
-
-Bool op_>(Int a, Int b) = b < a;
-Bool op_>=(Int a, Int b) = a > b or a == b;
-Bool op_<=(Int a, Int b) = a < b or a == b;
+Bool (_>_)  (Int a, Int b) = b < a;
+Bool (_>=_) (Int a, Int b) = a > b or a == b;
+Bool (_<=_) (Int a, Int b) = a < b or a == b;
 
 Int min(Int a, Int b) = if a < b then a else b end;
 Int max(Int a, Int b) = if a > b then a else b end;
@@ -174,8 +164,8 @@ Int sum([Int] ns)
 // Should it be defined for empty sequences (and negative integers)
 // as well? It's always going to fail...
 
-//T op_[]([T^] seq, Nat idx) = _at_(seq, idx);
-op_[](Seq seq, Nat idx) = _at_(seq, idx); //## BAD BAD BAD
+//T (_[_]) ([T^] seq, Nat idx) = _at_(seq, idx);
+(_[_])(Seq seq, Nat idx) = _at_(seq, idx); //## BAD BAD BAD
 
 T rev_at([T^] seq, Nat idx) = _at_(seq, _len_(seq)-idx-1);
 
@@ -200,7 +190,7 @@ T last([T^] s) = _at_(s, _len_(s)-1);
 
 Bool is_valid_idx(Seq seq, Int idx) = idx >= 0 and idx < length(seq);
 
-op_&(Seq s1, Seq s2) = _cat_(s1, s2);
+(_&_)(Seq s1, Seq s2) = _cat_(s1, s2);
 
 Bool in(Any e, Seq s)
 {
@@ -265,7 +255,7 @@ Maybe[Nat] left_search(Seq seq, Seq subseq)
 }
 
 
-[T] op_*(Nat count, [T] seq)
+[T] (_*_)(Nat count, [T] seq)
 {
   res = [];
   for (i : inc_seq(count))
@@ -384,8 +374,8 @@ T* union(T* s1, T* s2)         = _union_({s1, s2});
 T* intersection(T* s1, T* s2)  = {e : e <- s1, e <- s2};
 T* difference(T* s1, T* s2)    = {e : e <- s1, not in(e, s2)};
 
-T* op_&(T* s1, T* s2) = union(s1, s2);
-T* op_-(T* s1, T* s2) = difference(s1, s2);
+T* (_&_)(T* s1, T* s2) = union(s1, s2);
+T* (_-_)(T* s1, T* s2) = difference(s1, s2);
 
 Bool disjoint(Set s1, Set s2)     = intersection(s1, s2) == {};
 Bool subset(Set s1, Set s2)       = s1 - s2 == {};
@@ -458,7 +448,7 @@ T* seq_union([T*] sets) = union(set(sets));
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
-T2 op_[]((T1 => T2) map, T1 key) = _lookup_(map, key); // = only_element({v : k => v <- map ; k == key});
+T2 (_[_])((T1 => T2) map, T1 key) = _lookup_(map, key); // = only_element({v : k => v <- map ; k == key});
  
 // T2 lookup((T1 => T2) map, T1 key, T2 default) = only_element_or_def_if_empty({v : k => v <- map ; k == key}, default);
 
@@ -473,9 +463,9 @@ T1* keys((T1 => T2) map) = {k : k => _ <- map};
 
 Bool has_key((T1 => T2) map, T1 key) = _has_key_(map, key); // = (? k => _ <- map : k == key);
 
-(T1 => T2) op_&((T1 => T2) map1, (T1 => T2) map2) = _merge_({map1, map2});
+(T1 => T2) (_&_)((T1 => T2) map1, (T1 => T2) map2) = _merge_({map1, map2});
 
-// (T1 => T2) op_&((T1 => T2) map1, (T1 => T2) map2)
+// (T1 => T2) (_&_)((T1 => T2) map1, (T1 => T2) map2)
 // {
 //   assert {
 //     ks1 = keys(map1);
@@ -857,12 +847,12 @@ String to_text(Any obj, Nat line_len, Nat indent_level)
 
 ///////////////////////////////////////////////////////////////////////////////
 
-String string([Int] raw)   = :string(raw); //## SHOULDN't IT BE string([Nat] raw) ?
+String string([Int] raw)      = :string(raw); //## SHOULDN't IT BE string([Nat] raw) ?
 
-Nat length(String s)        = length(_obj_(s));
-Nat op_[](String s, Nat n)  = op_[](_obj_(s), n);
+Nat length(String s)          = length(_obj_(s));
+Nat (_[_]) (String s, Nat n)  = (_[_])(_obj_(s), n);
 
-String op_&(String s1, String s2)     = string(_obj_(s1) & _obj_(s2));
+String (_&_) (String s1, String s2)   = string(_obj_(s1) & _obj_(s2));
 String append([String] ss)            = string(join([_obj_(s) : s <- ss]));
 String reverse(String s)              = string(reverse(_obj_(s)));
 String substr(String s, Nat n, Nat m) = string(subseq(_obj_(s), n, m));
@@ -870,7 +860,7 @@ String substr(String s, Nat n, Nat m) = string(subseq(_obj_(s), n, m));
 String rep_str(Nat len, Nat ch)       = string(rep_seq(len, ch));
 <Nat, nil> at(String str, Nat idx)    = at(_obj_(str), idx, nil);
 
-Bool op_<(String str1, String str2)
+Bool (_<_)(String str1, String str2)
 {
   len1 = length(str1);
   len2 = length(str2);
