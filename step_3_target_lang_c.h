@@ -19,7 +19,7 @@ CCodeOutput compile_to_c(ProcDef* prg)
   symbs = select SymbObj in prg end & {obj_true, obj_false, :object(:string)};
   symbs = sort_set(symbs, is_strictly_ordered(s1, s2) = s1 < s2);
 
-  symb_decls = ["const Obj " & to_c_expr(s, typesymb2name(ts) = typesymb2str(ts, ptss)) & " = " & to_str(16*(i+1)+1) & ";" : s @ i <- symbs] & rep_seq(4, "");
+  symb_decls = ["const Obj " & to_c_expr(s, typesymb2name(ts) = typesymb2str(ts, ptss)) & " = symb(" & to_str(i) & ");" : s @ i <- symbs] & rep_seq(4, "");
   symb_decls = symb_decls & ["const int EMB_SYMB_COUNT = " & to_text(length(symbs)) & ";"] & rep_seq(4, "");
 
   c_code = symb_decls;
