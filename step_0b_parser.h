@@ -84,6 +84,7 @@ ParserResult parse_all(ParsingRule rule, PreAst pre_ast, (Atom => ParsingRule) r
   return failure(err);
 }
 
+
 ParserResult parse(ParsingRule rule, PreAst pre_ast, Nat offset, (Atom => ParsingRule) rec_rules):
   empty_rule        = success(parser_match(null_match, 0)),
 
@@ -102,12 +103,23 @@ ParserResult parse(ParsingRule rule, PreAst pre_ast, Nat offset, (Atom => Parsin
 
   rule_seq(rs?)     = {
     matches = [];
+    maybe_prev_err = nil;
     delta = 0;
     for (r : rs)
       res = parse(r, pre_ast, offset+delta, rec_rules);
-      return res if is_failure(res);
+      if (is_failure(res))
+        if (maybe_prev_err /= nil)
+          err = get_error(res);
+          prev_err = value(maybe_prev_err);
+          err_idx = index_of_last_matched_token(err, pre_ast);
+          prev_err_idx = index_of_last_matched_token(prev_err, pre_ast);
+          return failure(prev_err) if prev_err_idx > err_idx;
+        ;
+        return res;
+      ;
       res = get_result(res);
       matches = matches & [res.rule_match];
+      maybe_prev_err = if res.failure? then just(res.failure) else nil end;
       delta = delta + res.nodes_consumed;
     ;
     return success(parser_match(rule_seq_match(matches), delta));
