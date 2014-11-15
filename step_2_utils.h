@@ -188,6 +188,10 @@ Bool arity_is_correct(BuiltIn name, NzNat arity) = arity == builtin_arity_map[na
 (BuiltIn => NzNat) builtin_arity_map = (
   neg:         1,
   add:         2,
+  sub:         2,
+  mult:        2,
+  div:         2,
+  mod:         2,
   str:         1,
   symb:        1,
   at:          2,

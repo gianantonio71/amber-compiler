@@ -41,15 +41,17 @@ BoolExpr is_eq(ObjExpr e1, ObjExpr e2):
   InlineObj,  _           = inline_is_eq(e2, e1),
   _,          _           = is_eq(expr1: e1, expr2: e2);
 
-NatIntOp get_int_val(ObjExpr e)       = :get_int_val(e);
-NatIntOp get_set_size(ObjExpr e)      = :get_set_size(e);
-NatIntOp get_seq_len(ObjExpr e)       = :get_seq_len(e);
-NatIntOp get_map_size(ObjExpr e)      = :get_map_size(e);
-NatIntOp minus(IntExpr e)             = :minus(e);
-NatIntOp add(IntExpr e1, IntExpr e2)  = add(val1: e1, val2: e2);
-NatIntOp mult(IntExpr e1, IntExpr e2) = mult(val1: e1, val2: e2);
-NatIntOp idiv(IntExpr e1, IntExpr e2) = idiv(val1: e1, val2: e2);
-NatIntOp unique_int                   = :unique_int;
+NatIntOp get_int_val(ObjExpr e)         = :get_int_val(e);
+NatIntOp get_set_size(ObjExpr e)        = :get_set_size(e);
+NatIntOp get_seq_len(ObjExpr e)         = :get_seq_len(e);
+NatIntOp get_map_size(ObjExpr e)        = :get_map_size(e);
+NatIntOp minus(IntExpr e)               = :minus(e);
+NatIntOp add(IntExpr e1, IntExpr e2)    = add(val1: e1, val2: e2);
+NatIntOp sub(IntExpr e1, IntExpr e2)    = sub(val1: e1, val2: e2);
+NatIntOp mult(IntExpr e1, IntExpr e2)   = mult(val1: e1, val2: e2);
+NatIntOp div(IntExpr e1, IntExpr e2)    = div(val1: e1, val2: e2);
+NatIntOp mod_op(IntExpr e1, IntExpr e2) = mod(val1: e1, val2: e2); //## THIS SHOULD JUST BE NAMED mod, BUT THAT WOULD CONFLICT WITH THE INTEGER MOD OPERATION
+NatIntOp unique_int                     = :unique_int;
 
 NatObjOp at(ObjExpr s, IntExpr i)              = at(seq: s, idx: i);
 NatObjOp get_tag(ObjExpr e)                    = :get_tag(e);

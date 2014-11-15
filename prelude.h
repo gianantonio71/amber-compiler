@@ -113,13 +113,11 @@ Nat bit(Bool b) = if b then 1 else 0 end;
 
 Int (-_)  (Int n)         = _neg_(n);
 Int (_+_) (Int a, Int b)  = _add_(a, b);
+Int (_-_) (Int a, Int b)  = _sub_(a, b);
+Int (_*_) (Int a, Int b)  = _mult_(a, b);
+Int (_/_) (Int a, Int b)  = _div_(a, b);
 
-Int (_-_) (Int a, Int b)  = a + -b;
-
-Int (_*_) (Int a, Int b)  = if a == 0      then 0,
-                               a :: [1..*] then (a-1) * b + b
-                                           else -(-a * b)
-                            end;
+Int mod(Int a, Int b)     = _mod_(a, b);
 
 Bool (_<_) (Int a, Int b) = (b - a) :: [1..*];
 

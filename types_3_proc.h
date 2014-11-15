@@ -52,8 +52,10 @@ type NatIntOp     = get_int_val(ObjExpr),
                     get_map_size(ObjExpr),
                     minus(IntExpr),
                     add(val1: IntExpr, val2: IntExpr),
+                    sub(val1: IntExpr, val2: IntExpr),
                     mult(val1: IntExpr, val2: IntExpr),
-                    idiv(val1: IntExpr, val2: IntExpr),
+                    div(val1: IntExpr, val2: IntExpr),
+                    mod(val1: IntExpr, val2: IntExpr),
                     unique_int;
 
 type NatObjOp     = at(seq: ObjExpr, idx: IntExpr),

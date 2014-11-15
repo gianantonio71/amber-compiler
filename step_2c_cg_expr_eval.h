@@ -208,14 +208,16 @@ using
       symb        = to_symb(ps[0]),
       neg         = to_obj(minus(get_int_val(ps[0]))),
       add         = to_obj(add(get_int_val(ps[0]), get_int_val(ps[1]))),
+      sub         = to_obj(sub(get_int_val(ps[0]), get_int_val(ps[1]))),
       mult        = to_obj(mult(get_int_val(ps[0]), get_int_val(ps[1]))),
+      div         = to_obj(div(get_int_val(ps[0]), get_int_val(ps[1]))),
+      mod         = to_obj(mod_op(get_int_val(ps[0]), get_int_val(ps[1]))),
       counter     = to_obj(unique_int),
       len         = to_obj(get_seq_len(ps[0])),
       tag         = get_tag(ps[0]),
       in          = to_obj(has_elem(ps[1], ps[0]));
       // rand_nat   =
       // rand_elem  =
-      // counter    =
   }
   
   

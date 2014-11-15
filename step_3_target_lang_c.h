@@ -630,8 +630,10 @@ using String typesymb2name(TypeSymbol)
     get_map_size(e?)  = "get_map_size(" & to_c_expr(e) & ")",
     minus(e?)         = "-" & to_c_expr(e, true),
     add()             = to_nary_op(" + ", [expr.val1, expr.val2], parentesised),
+    sub()             = to_nary_op(" - ", [expr.val1, expr.val2], parentesised),
     mult()            = to_nary_op(" * ", [expr.val1, expr.val2], parentesised),
-    idiv()            = to_nary_op(" / ", [expr.val1, expr.val2], parentesised),
+    div()             = to_nary_op(" / ", [expr.val1, expr.val2], parentesised),
+    mod()             = to_nary_op(" % ", [expr.val1, expr.val2], parentesised),
     unique_int        = "unique_int()";
 
 
