@@ -180,14 +180,15 @@ using
   [Instr] gen_eval_code(BuiltIn name, [AtomicExpr] params, ObjVar res_var)
   {
     return match (name)
-             obj      = [set_var(res_var, get_inner_obj(params[0])), add_ref(res_var)],
-             has_key  = { bvar = bvar(next_bool_var_id);
-                          return [lookup(bvar, res_var, params[0], params[1]), set_var(res_var, to_obj(bvar))];
-                        },
-             lookup   = [lookup(res_var, params[0], params[1]), add_ref(res_var)],
-             at       = [set_var(res_var, at(params[0], get_int_val(params[1]))), add_ref(res_var)],
-             _        = [gen_eval_instr(name, params, res_var)];
-           ;
+      obj         = [set_var(res_var, get_inner_obj(params[0])), add_ref(res_var)],
+      has_key     = { bvar = bvar(next_bool_var_id);
+                      return [lookup(bvar, res_var, params[0], params[1]), set_var(res_var, to_obj(bvar))];
+                    },
+      lookup      = [lookup(res_var, params[0], params[1]), add_ref(res_var)],
+      at          = [set_var(res_var, at(params[0], get_int_val(params[1]))), add_ref(res_var)],
+      rand_elem   = [set_var(res_var, rand_elem(params[0])), add_ref(res_var)],
+      _           = [gen_eval_instr(name, params, res_var)];
+    ;
 
     Instr gen_eval_instr(BuiltIn name, [AtomicExpr] ps, ObjVar res_var):
       slice         = get_seq_slice(res_var, ps[0], get_int_val(ps[1]), get_int_val(ps[2])),
@@ -212,12 +213,12 @@ using
       mult        = to_obj(mult(get_int_val(ps[0]), get_int_val(ps[1]))),
       div         = to_obj(div(get_int_val(ps[0]), get_int_val(ps[1]))),
       mod         = to_obj(mod_op(get_int_val(ps[0]), get_int_val(ps[1]))),
-      counter     = to_obj(unique_int),
       len         = to_obj(get_seq_len(ps[0])),
       tag         = get_tag(ps[0]),
-      in          = to_obj(has_elem(ps[1], ps[0]));
-      // rand_nat   =
-      // rand_elem  =
+      in          = to_obj(has_elem(ps[1], ps[0])),
+      rand_nat    = to_obj(rand_nat(ps[0])),
+      counter     = to_obj(unique_nat),
+      ticks       = to_obj(ticks);
   }
   
   

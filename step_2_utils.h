@@ -213,5 +213,6 @@ Bool arity_is_correct(BuiltIn name, NzNat arity) = arity == builtin_arity_map[na
   merge:       1,
   rand_nat:    1,
   rand_elem:   1,
-  counter:     1
+  counter:     1,
+  ticks:       1
 );

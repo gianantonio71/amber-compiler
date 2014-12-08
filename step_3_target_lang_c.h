@@ -571,7 +571,9 @@ using String typesymb2name(TypeSymbol)
     to_symb(e?)         = "to_symb("        & to_c_expr(e)     & ")",
     get_curr_obj(v?)    = "get_curr_obj("   & to_c_var_name(v) & ")",
     get_curr_key(v?)    = "get_curr_key("   & to_c_var_name(v) & ")",
-    get_curr_value(v?)  = "get_curr_value(" & to_c_var_name(v) & ")";
+    get_curr_value(v?)  = "get_curr_value(" & to_c_var_name(v) & ")",
+    rand_elem(e?)       = "rand_set_elem("  & to_c_expr(e)     & ")";
+
 
   String to_c_expr(ObjExpr expr, Bool) = to_c_expr(expr);
 
@@ -634,7 +636,9 @@ using String typesymb2name(TypeSymbol)
     mult()            = to_nary_op(" * ", [expr.val1, expr.val2], parentesised),
     div()             = to_nary_op(" / ", [expr.val1, expr.val2], parentesised),
     mod()             = to_nary_op(" % ", [expr.val1, expr.val2], parentesised),
-    unique_int        = "unique_int()";
+    rand_nat(e?)      = "rand_nat(" & to_c_expr(e) & ")",
+    unique_nat        = "unique_nat()",
+    ticks             = "get_tick_count()";
 
 
   String to_c_expr(<VecVar, ItVar, StreamVar> var) = to_c_var_name(var);

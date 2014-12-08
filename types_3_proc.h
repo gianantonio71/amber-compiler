@@ -56,7 +56,9 @@ type NatIntOp     = get_int_val(ObjExpr),
                     mult(val1: IntExpr, val2: IntExpr),
                     div(val1: IntExpr, val2: IntExpr),
                     mod(val1: IntExpr, val2: IntExpr),
-                    unique_int;
+                    rand_nat(IntExpr),  // Non-deterministic
+                    unique_nat,         // Non-deterministic
+                    ticks;              // Impure
 
 type NatObjOp     = at(seq: ObjExpr, idx: IntExpr),
                     //lookup(map: ObjExpr, key: ObjExpr),
@@ -66,12 +68,14 @@ type NatObjOp     = at(seq: ObjExpr, idx: IntExpr),
                     to_obj(<BoolExpr, IntExpr>),
                     obj_neg(ObjExpr),
 
-                    to_str(ObjExpr), //## FOR THIS TO BE A NO-DELETE OPERATION, THE STRING MUST BE CACHED
+                    to_str(ObjExpr), // For this to be a no-delete operation, the string must be cached
                     to_symb(ObjExpr),
 
                     get_curr_obj(<SetItVar, SeqItVar>),
                     get_curr_key(MapItVar),
-                    get_curr_value(MapItVar);
+                    get_curr_value(MapItVar),
+
+                    rand_elem(ObjExpr); // Non-deterministic
 
 type BoolExpr     = true,
                     false,
@@ -157,28 +161,28 @@ type Instr        = init_stream(StreamVar),
                     exit_block,
 
                     call_proc(var: ObjVar, name: ObjFnName, params: [ObjExpr]),
-                    call_cls(var: ObjVar, cls_var: Var, params: [ObjExpr]), //## NEW
+                    call_cls(var: ObjVar, cls_var: Var, params: [ObjExpr]),
                     
                     push_call_info(fn_name: FnSymbol, params: [ObjVar]),
                     pop_call_info,
 
                     runtime_check(cond: ObjExpr),
 
-                    var_scope(var: <named_par(Atom)>, new_value: AtomicExpr, body: [Instr^]),     //## STILL NEW
-                    cls_scope(var: <named_par(Atom)>, env: [Var], cls: ClsDef, body: [Instr^]);  //## NEW
+                    var_scope(var: <named_par(Atom)>, new_value: AtomicExpr, body: [Instr^]),
+                    cls_scope(var: <named_par(Atom)>, env: [Var], cls: ClsDef, body: [Instr^]);
                     
 
 type ClsDef       = cls_def(
-                      //name:   FnSymbol, //## NEW
+                      //name:   FnSymbol,
                       arity:  NzNat,
-                      //env:    [Var],  //## NEW - NOT ENTIRELY SURE ABOUT THIS ONE
+                      //env:    [Var],  //## NOT ENTIRELY SURE ABOUT THIS ONE
                       body:   [Instr^]
                     );
 
 type ObjProcDef   = obj_proc_def(
                       name:         ObjFnName,
                       in_arity:     Nat, //## THIS HAS TO BE UPDATED ONCE I ALLOW CLOSURES AS POSITIONAL PARAMETERS
-                      named_params: (<named_par(Atom)> => Nat), //## NEW - SHOULD IT BE <named_var(name: Atom, arity: Nat)>* INSTEAD?
+                      named_params: (<named_par(Atom)> => Nat), //## SHOULD IT BE <named_var(name: Atom, arity: Nat)>* INSTEAD?
                       body:         [Instr^]
                     );
 

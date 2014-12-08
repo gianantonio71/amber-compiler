@@ -95,8 +95,9 @@ type SubtypeDecl  = subtype_decl(subtype: UserType, supertype: UserType);
 
 type Operator = plus, minus, star, slash, exp, amp, lower, greater, lower_eq, greater_eq, brackets;
 
-type BuiltIn  = neg, add, sub, mult, div, mod, str, symb, at, len, slice, cat, mcat, rev, set, mset,
-                isort, list_to_seq, tag, obj, in, has_key, lookup, union, merge, rand_nat, rand_elem, counter;
+type BuiltIn  = neg, add, sub, mult, div, mod, str, symb, at, len, slice, cat, mcat, rev, set,
+                mset, isort, list_to_seq, tag, obj, in, has_key, lookup, union, merge,
+                rand_nat, rand_elem, counter, ticks;
 
 type FnSymbol = fn_symbol(Atom),
                 op_symbol(Operator),
