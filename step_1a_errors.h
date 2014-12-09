@@ -45,6 +45,7 @@ type SynObjErr    = TDefUserErr,
                     unreachable_code,
                     
                     diff_vars_in_or_clause(Var+),  //## IS THIS STILL USED?
+                    invalid_pos_for_cls_par,
                     
                     //## NOT CHECKED YET
                     nested_local_fn(outer_fn: BasicUntypedSgn, inner_fn: BasicUntypedSgn),
@@ -132,6 +133,8 @@ UserErr* wf_errors(SynPrg prg)
   errs_so_far = dup_tdef_errs & dup_par_tdef_errs & incomp_fn_sgns & undef_type_symb_errs;
   return errs_so_far if errs_so_far /= {};
 
+  fn_param_arities = get_fn_param_arities(fndefs, ublocks);
+
   let (fns_in_scope         = all_def_fns,
        typedefs             = inst_tdefs,
        all_par_type_symbols = {(symbol: p.name, arity: length(p.params)) : p <- par_tdefs})
@@ -139,8 +142,8 @@ UserErr* wf_errors(SynPrg prg)
     decl_errs = tdef_errs(tdefs)                      &
                  par_tdef_errs(par_tdefs)             &
                  inst_tdef_errs(inst_tdefs)           &
-                 fn_def_errs(fndefs, all_def_fns, {}) &
-                 ublock_errors(ublocks, all_def_fns);
+                 fn_def_errs(fndefs, all_def_fns, fn_param_arities, {}) &
+                 ublock_errors(ublocks, all_def_fns, fn_param_arities);
   ;
 
   return decl_errs;
@@ -235,8 +238,8 @@ using (SynTypeSymbol => SynType) typedefs, (symbol: BasicTypeSymbol, arity: NzNa
         )
       };
 
-  UserErr* fn_def_errs(SynFnDef* fndefs, UntypedSgn* global_fns, BasicUntypedSgn* impl_pars) =
-    for (fd <- fndefs, es = fndef_wf_errors(fd, global_fns, impl_pars))
+  UserErr* fn_def_errs(SynFnDef* fndefs, UntypedSgn* global_fns, ((FnSymbol, Nat) => [Nat]) fn_param_arities, BasicUntypedSgn* impl_pars) =
+    for (fd <- fndefs, es = fndef_wf_errors(fd, global_fns, fn_param_arities, impl_pars))
     if (es /= {}) {
       fndef_err(
         name: fd.name,
@@ -246,17 +249,19 @@ using (SynTypeSymbol => SynType) typedefs, (symbol: BasicTypeSymbol, arity: NzNa
     };
 
 
-  UserErr* ublock_errors(SynUsingBlock* ublocks, UntypedSgn* global_fns) =
-    union({block_wf_errors(b, global_fns) : b <- ublocks});
+  UserErr* ublock_errors(SynUsingBlock* ublocks, UntypedSgn* global_fns, ((FnSymbol, Nat) => [Nat]) fn_param_arities) =
+    union({block_wf_errors(b, global_fns, fn_param_arities) : b <- ublocks});
 
-  UserErr* block_wf_errors(SynUsingBlock ublock, UntypedSgn* global_fns)
+  UserErr* block_wf_errors(SynUsingBlock ublock, UntypedSgn* global_fns, ((FnSymbol, Nat) => [Nat]) fn_param_arities)
   {
     //## UGLY UGLY
     block_errs = seq_union([sgn_wf_errors(s) : s <- ublock.signatures]);
     err        = if block_errs == {} then {} else {ublock_err(errs: block_errs)} end;
     req_fns    = {untyped_sgn(s) : s <- set(ublock.signatures)};
     all_fns    = merge_and_override(global_fns, {untyped_sgn(s) : s <- set(ublock.signatures)});
-    return err & fn_def_errs(set(ublock.fn_defs), all_fns, req_fns);
+    new_fpas   = ((s.name, arity) => arity * [0] : s <- set(ublock.signatures), arity = length(s.params));
+    all_fpas   = update(fn_param_arities, new_fpas);
+    return err & fn_def_errs(set(ublock.fn_defs), all_fns, all_fpas, req_fns);
   }
 
   TDefUserErr* sgn_wf_errors(SynSgn sgn)

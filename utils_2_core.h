@@ -43,6 +43,9 @@ Nat arity(UserType)        = 0;
 NzNat arity(ClsExpr e) = length(e.params);
 Nat arity(Expr)        = 0;
 
+Bool is_scalar_par(FnFrmPar):
+  scalar_par()      = true,
+  non_scalar_par()  = false;
 
 Var* scalar_vars(FnDef fn_def) = {p.var : p <- set(fn_def.params), p.var? and (not p.type? or p.type :: UserType)} &
                                  set([:fn_par(i) : p @ i <- fn_def.params, not p.type? or p.type :: UserType])       &

@@ -66,7 +66,23 @@ CCodeOutput compile_to_c(ProcDef* prg)
   
   c_code = c_code & env_decl;
 
-  all_fn_arities = set([d.in_arity : d <- obj_proc_defs]);
+  NzNat* cls_arities(ProcDef pd):
+    obj_proc_def()  = set([p.arity : p <- pd.params, p /= :obj]),
+    bool_proc_def() = {};
+
+  all_cls_arities = union({cls_arities(pd) : pd <- prg}); //## MAYBE HERE IT WOULD BE BETTER TO DO A NORMAL SORT
+
+  [String] generate_cls_obj_typedef(NzNat arity) = [
+    "struct CLS" & to_str(arity) & " {",
+    "  Obj (*fn_ptr)(" & append(intermix(arity * ["Obj"], ", ")) & ", const Obj *, Env &env);",
+    "  const Obj *data;",
+    "};"
+  ];
+
+  cls_obj_typedefs = join(intermix([generate_cls_obj_typedef(a) : a <- rand_sort(all_cls_arities)], 2 * [""])) & 4 * [""];
+  c_code = c_code & cls_obj_typedefs;
+
+  all_fn_arities = set([in_arity(d) : d <- obj_proc_defs]);
   c_code = c_code & join(intermix([generate_push_call_info_wrapper(a) : a <- rand_sort(all_fn_arities)], 2 * [""])) & 4 * [""];
 
 //  print "compile_to_c#1";
@@ -116,7 +132,7 @@ CCodeOutput compile_to_c(ProcDef* prg)
                );
 
   body = ["#include \"lib.h\"\n\n", "", "namespace generated", "{"] & indent(c_code & proc_code.body) & ["}"];
-  header = ["namespace generated", "{"] & indent(symb_decls & env_decl & proc_code.header) & ["}"];
+  header = ["namespace generated", "{"] & indent(symb_decls & env_decl & cls_obj_typedefs & proc_code.header) & ["}"];
   
   return (body: body, header: header);
 
@@ -145,7 +161,7 @@ CCodeOutput compile_to_c(ProcDef* prg)
 
 
 //## THIS SHOULD NOT GO HERE
-type FnCallParam = ObjExpr, VecVar, BoolExpr, IntExpr, ItVar, StreamVar;
+type FnCallParam = null_obj, ObjExpr, VecVar, BoolExpr, IntExpr, ItVar, StreamVar;
 
 
 using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
@@ -177,23 +193,36 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
 
   //## ALL THE CODE HERE IS DUPLICATED FROM compile_to_c()
-  String gen_c_decl(ProcDef pd)
-  {
-    par_list = append(intermix(rep_seq(arity(pd), "Obj") & extra_params(pd), ", "));
+  // String gen_c_decl(ProcDef pd)
+  // {
+  //   par_list = append(intermix(rep_seq(arity(pd), "Obj") & extra_params(pd), ", "));
 
-    return ret_type_str(pd) & to_c_fn_name(pd.name) & "(" & par_list & ");";
+  //   return ret_type_str(pd) & to_c_fn_name(pd.name) & "(" & par_list & ");";
     
-    Nat arity(ProcDef pd):
-      obj_proc_def()    = pd.in_arity,
-      bool_proc_def()   = pd.arity;
+  //   Nat arity(ProcDef pd):
+  //     obj_proc_def()    = in_arity(pd),
+  //     bool_proc_def()   = pd.arity;
     
-    String ret_type_str(ProcDef):
-      obj_proc_def()    = "Obj ",
-      bool_proc_def()   = "bool ";
+  //   String ret_type_str(ProcDef):
+  //     obj_proc_def()    = "Obj ",
+  //     bool_proc_def()   = "bool ";
     
-    [String] extra_params(ProcDef):
-      obj_proc_def()    = ["Env &"],
-      bool_proc_def()   = [];
+  //   [String] extra_params(ProcDef):
+  //     obj_proc_def()    = ["Env &"],
+  //     bool_proc_def()   = [];
+  // }
+
+  String gen_c_decl(ObjProcDef pd)
+  {
+    par_types = [if p == :obj then "Obj" else "CLS" & to_str(p.arity) & " &" end : p <- pd.params];
+    par_list = append(intermix(par_types & ["Env &"], ", "));
+    return "Obj " & to_c_fn_name(pd.name) & "(" & par_list & ");";
+  }
+
+  String gen_c_decl(BoolProcDef pd)
+  {
+    par_list = append(intermix(pd.arity * ["Obj"], ", "));
+    return "bool " & to_c_fn_name(pd.name) & "(" & par_list & ");";
   }
 
   String gen_c_decl(ClsDef cd, Nat id)
@@ -203,10 +232,9 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     return "Obj cls_" & to_str(id) & "(" & par_list & ");";
   }
 
-
   [String] compile_to_c(ProcDef pd)
   {
-    par_list  = ["Obj p" & to_str(n) : n <- inc_seq(arity(pd))] & extra_params(pd); //## BAD
+    par_list = gen_fn_pars(pd);
     signature = ret_type_str(pd) & to_c_fn_name(pd.name) & "(" & append(intermix(par_list, ", ")) & ")";
 
     body = pd.body;
@@ -230,16 +258,30 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
     
     Nat arity(ProcDef pd):
-      obj_proc_def()    = pd.in_arity,
+      obj_proc_def()    = in_arity(pd),
       bool_proc_def()   = pd.arity;
     
     String ret_type_str(ProcDef):
       obj_proc_def()    = "Obj ",
       bool_proc_def()   = "bool ";
 
-    [String] extra_params(ProcDef):
-      obj_proc_def()    = ["Env &env"],
-      bool_proc_def()   = [];
+    // [String] extra_params(ProcDef):
+    //   obj_proc_def()    = ["Env &env"],
+    //   bool_proc_def()   = [];
+
+    // String gen_fn_par(Nat arity, Nat pos) =
+    //   if arity == 0
+    //     then "Obj p" & to_str(pos)
+    //     else "Obj (*p" & to_str(pos) & ")(" & append(intermix(arity * ["Obj"], ",")) & ")"
+    //   end;
+
+    String gen_fn_par(ObjProcPar par, Nat pos):
+      obj   = "Obj p" & to_str(pos),
+      cls() = "CLS" & to_str(par.arity) & " &" & if par.name? then to_c_var_name(par.name) else "c" & to_str(pos) end;
+
+    String gen_fn_pars(ProcDef pd):
+      ObjProcDef  = [gen_fn_par(p, i) : p @ i <- pd.params] & ["Env &env"],
+      BoolProcDef = ["Obj p" & to_str(n) : n <- inc_seq(arity(pd))];
   }
 
   //## DUPLICATED CODE
@@ -376,13 +418,14 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
                               return ["goto block_" & to_str(block_id) & "_end;"];
                             },
 
-    call_proc()           = mk_fn_call(instr.var, to_c_fn_name(instr.name), instr.params),
+    call_proc()           = compile_call_proc_to_c(instr, block_id),
 
-    //call_cls()            = mk_cls_call(instr.var, instr.cls_var, instr.params), //## INLINE THE FUNCTION
+    call_cls()            = mk_cls_call(instr.cls_var, instr.var, instr.params), //## INLINE THE FUNCTION
 
-    call_cls()            = mk_cls_call(instr.var, instr.cls_var, instr.params), //## INLINE THE FUNCTION
-
-    push_call_info()      = [mk_gen_call("push_call_info_wrapper", [quote(fn_name_to_str(instr.fn_name))], instr.params, [])],
+    push_call_info()      = { fn_name = [quote(fn_name_to_str(instr.fn_name))];
+                              params = [if p == nil then :null_obj else value(p) end : p <- instr.params];
+                              return [mk_gen_call("push_call_info_wrapper", fn_name, params, [])];
+                            },
 
     pop_call_info         = mk_call("pop_call_info", []),
 
@@ -427,9 +470,6 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
       return code & ["}"];
     },
 
-
-    // var_scope(var: <named_par(Atom)>, new_value: AtomicExpr, body: [Instr^]),     //## STILL NEW
-
     var_scope() =
     {
       scope_id = to_str(_counter_(nil));
@@ -472,8 +512,9 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
       scope_id = to_str(_counter_(nil));
        
       var   = instr.var;
-      arity = instr.cls.arity;
-      env   = instr.env;
+      cls   = instr.bound_cls.cls;
+      arity = cls.arity;
+      env   = instr.bound_cls.env;
       env_size = length(env);
       
       var_str = _str_(_obj_(var)); //## BAD, DUPLICATED LOGIC
@@ -492,8 +533,8 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
       tmp = append(tmp);
 
       code = [ "Obj (*" & fn_bk_var & ")(" & tmp & ") = " & fn_var & ";",
-                "const Obj *BD" & scope_id & " = " & data_var & ";"
-              ];
+               "const Obj *BD" & scope_id & " = " & data_var & ";"
+             ];
 
       code = code & ["Obj " & new_data_var & "[" & env_size_str & "];"] if env_size > 0;
 
@@ -504,7 +545,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
                        ];
       ;
       
-      code = code & [ fn_var & " = cls_" & to_str(cls2id(instr.cls)) & ";",
+      code = code & [ fn_var & " = cls_" & to_str(cls2id(cls)) & ";",
                        data_var & " = " & if env_size > 0 then new_data_var else "0" end & ";"
                      ];
       
@@ -523,6 +564,55 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
       return code;
     };
 
+
+  ///////////////////////////////////////////////////////////////////////////////
+
+  //## BAD: THE TYPE OF THE FIRST ARGUMENT IS NOT SPECIFIC ENOUGHT
+  [String] compile_call_proc_to_c(Instr instr, <Nat, nil> block_id)
+  {
+    pars_info = [gen_par_info(p) : p <- instr.params];
+    code_frags, args = unzip(pars_info);
+    return join(code_frags) & mk_fn_call(instr.var, to_c_fn_name(instr.name), args);
+
+
+    ([String], FnCallParam) gen_par_info(ObjExpr p) = ([], p);
+
+    ([String], FnCallParam) gen_par_info(BoundCls p):
+      ClsVar      = ([], p),
+      fn_ref()    = {
+        par_id = _counter_(nil);
+        par_var = cls_var(par_id);
+        par_name = to_c_expr(par_var);
+        code = [
+          "CLS" & to_str(p.arity) & " " & par_name & ";",
+          par_name & ".fn_ptr = " & to_c_fn_name(p.name) & ";",
+          par_name & ".data = 0;"
+        ];
+        return (code, par_var);
+      },
+      bound_cls() = {
+        //## BAD: THE FIRST LINES OF CODE ARE THE SAME AS ABOVE...
+        par_id = _counter_(nil);
+        par_var = cls_var(par_id);
+        par_name = to_c_expr(par_var);
+        code = [
+          "CLS" & to_str(p.cls.arity) & " " & par_name & ";",
+          par_name & ".fn_ptr = " & "cls_" & to_str(cls2id(p.cls)) & ";"
+        ];
+        if (p.env /= [])
+          var_name = "cd_" & to_str(par_id);
+          code = code & ["Obj " & var_name & "[" & to_str(length(p.env)) & "];"];
+          for (v @ i : p.env)
+            code = code & [var_name & "[" & to_str(i) & "] = " & to_c_expr(v) & ";"];
+          ;
+          code = code & [par_name & ".data = " & var_name & ";"];
+        else
+          code = code & [par_name & ".data = 0;"];
+        ;
+        return (code, par_var);
+      };
+  }
+
   ///////////////////////////////////////////////////////////////////////////////
   ///////////////////////////////////////////////////////////////////////////////
 
@@ -535,18 +625,21 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
   [String] mk_call(String fn_name, [FnCallParam] params)             = [mk_gen_call(fn_name, [], params, [])];
   [String] mk_call(AnyVar var, String fn_name, [FnCallParam] params) = [mk_gen_call(var, fn_name, [], params, [])];
   
-  //[String] mk_fn_call(String fn_name, [FnCallParam] params)             = [mk_gen_call(fn_name, [], params, ["env"])];
   [String] mk_fn_call(AnyVar var, String fn_name, [FnCallParam] params) = [mk_gen_call(var, fn_name, [], params, ["env"])];
 
   //## AnyVar IS WRONG HERE, SHOULD ONLY BE OBJ/BOOL/INT VARS
   [String] mk_assignment(AnyVar var, AnyExpr value) = [to_c_var_name(var) & " = " & to_c_expr(value) & ";"];
 
 
-  [String] mk_cls_call(ObjVar var, Var cls_var, [ObjExpr] params)
-  {
-    name         = to_str(length(params)) & "_" & _str_(_obj_(cls_var));
-    return [mk_gen_call(var, "env.n" & name, [], params, ["env.C" & name, "env"])];
-  }
+  [String] mk_cls_call(Var cls_var, ObjVar var, [ObjExpr] params):
+    cls_var(symb?) = {
+      name = "c_" & _str_(symb);
+      return [mk_gen_call(var, name & ".fn_ptr", [], params, [name & ".data", "env"])];
+    },
+    named_par(symb?) = {
+      name = to_str(length(params)) & "_" & _str_(_obj_(cls_var));
+      return [mk_gen_call(var, "env.n" & name, [], params, ["env.C" & name, "env"])];
+    };
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -643,7 +736,10 @@ using String typesymb2name(TypeSymbol)
 
   String to_c_expr(<VecVar, ItVar, StreamVar> var) = to_c_var_name(var);
   
-  
+  String to_c_expr(<null_obj>) = "null_obj";
+
+  String to_c_expr(ClsVar v) = to_c_var_name(v);
+
   String to_nary_op(String op, [AnyExpr^] exprs, Bool parentesised)
   {
     expr = append(intermix([to_c_expr(e, true) : e <- exprs], op));
@@ -659,6 +755,14 @@ using String typesymb2name(TypeSymbol)
     cls_ext_par(Nat n?)   = "C["  & to_str(n) & "]",
     lvar(Nat n?)          = "l"   & to_str(n),
     evar()                = "V" & to_str(v.id) & "[" & to_c_expr(v.idx) & "]";
+
+  String to_c_var_name(ClsVar v):
+    cls_var(+ a?)  = "c_" & _str_(a),
+    cls_var(* n?)  = "c_" & to_str(n);
+    // cls_var(+)  = "c_" & _str_(_obj_(v)),
+    // cls_var(*)  = "c_" & to_str(_obj_(v));
+
+  // String to_c_var_name(ClsVar v) = "c_" & _str_(_obj_(v));
 
   //## USE AnyVar?
   String to_c_var_name(VecVar v)    = "V" & to_str(v.id);
@@ -689,7 +793,8 @@ using String typesymb2name(TypeSymbol)
   String to_c_fn_name(FnSymbol fn_symb):
     fn_symbol(symb?)    = capitalize(_str_(symb)),
     op_symbol(op?)      = _str_(op),
-    nested_fn_symbol()  = to_c_fn_name(fn_symb.outer) & "__" & to_c_fn_name(fn_symb.inner);
+    nested_fn_symbol()  = to_c_fn_name(fn_symb.outer) & "__" & to_c_fn_name(fn_symb.inner),
+    unique_fn_symbol()  = to_c_fn_name(fn_symb.symbol) & "__" & to_str(fn_symb.id); //## IS THIS ENOUGHT TO AVOID CONFLICTS?
 
   String to_c_fn_name(BoolFnName): memb_test(ts?) = "is_" & typesymb2name(ts);
 
@@ -701,7 +806,8 @@ using String typesymb2name(TypeSymbol)
     op_symbol(op?)      = _str_(op),
     //## BUG: THIS DOESN'T SPECIFY WHICH OF THE OUTER FUNCTIONS
     //## WITH THE SAME NAME THE NESTED FUNCTION BELONGS TO
-    nested_fn_symbol()  = fn_name_to_str(fn_symb.outer) & ":" & fn_name_to_str(fn_symb.inner);
+    nested_fn_symbol()  = fn_name_to_str(fn_symb.outer) & ":" & fn_name_to_str(fn_symb.inner),
+    unique_fn_symbol()  = fn_name_to_str(fn_symb.symbol); //## BAD: THE DISPATCH FUNCTION WILL APPEAR ON THE STACK, AND IT WILL BE INDISTINGUISHABLE FROM ONE OF THE REAL FUNCTIONS
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -29,13 +29,18 @@ type SynUnionType   = union_type(SynType+), syn_union_type([SynType^]);
 
 /////////////////////////////////////////////////////////////////////////////////////
 
+type SynClsType  = cls_type(in_types: [SynType^], out_type: SynType);
+type SynExtType  = SynType, SynClsType;
+
+/////////////////////////////////////////////////////////////////////////////////////
+
 type SynTypedef    = typedef(name: BasicTypeSymbol, type: SynType);
 
 type SynParTypedef = par_typedef(name: BasicTypeSymbol, params: [TypeVar^], type: SynType);
 
 /////////////////////////////////////////////////////////////////////////////////////
 
-type SynExpr  = LeafObj, Var, ConstOrVar,
+type SynExpr  = LeafObj, Var, ConstOrVar, ClsPar,
                 SynSeqExpr, SynSetExpr, SynMapExpr, SynTagObjExpr,
                 SynFnCall, SynBuiltInCall,
                 SynBoolExpr, SynCmpExpr,
@@ -48,6 +53,8 @@ type SynExpr  = LeafObj, Var, ConstOrVar,
                 SynLetExpr;
 
 type ConstOrVar       = const_or_var(Atom); //## NOT SURE ATOM IS THE RIGHT THING HERE
+
+type ClsPar           = cls_par(Nat);
 
 type SynSeqExpr       = seq_expr(head: [SynSubExpr], tail: SynExpr?);
 type SynSetExpr       = set_expr(SynSubExpr*);
@@ -151,7 +158,7 @@ type SynFnDef       = syn_fn_def(
                         local_fns:  [SynFnDef]
                       );
 
-type SynFnArg       = (type: SynType?, var: var(Atom)?);
+type SynFnArg       = (type: SynExtType?, var: var(Atom)?);
 
 type SynSgn         = syn_sgn(
                         name:     FnSymbol,

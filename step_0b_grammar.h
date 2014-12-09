@@ -222,8 +222,18 @@ ParsingRule rule_fn_arg =
   rule_choice([
     (name: :unknown,  rule: atomic_rule(underscore)),
     (name: :untyped,  rule: rule_id),
-    (name: :typed,    rule: rule_seq([rule_type, optional_rule(rule_id)]))
+    (name: :typed,    rule: rule_seq([rule_type, optional_rule(rule_id)])),
+    (name: :cls,      rule: rule_seq([rule_cls_type, rule_id]))
   ]);
+
+ParsingRule rule_cls_type =
+  par_rule(
+    rule_seq([
+      comma_sep_seq(rule_type),
+      atomic_rule(right_arrow),
+      rule_type
+    ])
+  );
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -469,7 +479,8 @@ ParsingRule rule_expr_0 =
     (name: :replace_expr, rule: rule_replace_expr),
 
     (name: :fn_call,      rule: rule_fn_call_expr),
-    (name: :const_or_var, rule: rule_id)
+    (name: :const_or_var, rule: rule_id),
+    (name: :cls_par,      rule: atomic_rule(qual_var))
   ]);
 
 ParsingRule rule_subexpr = rule_seq([rule_ref_expr, optional_rule(rule_seq([keyword_if, rule_ref_expr]))]);

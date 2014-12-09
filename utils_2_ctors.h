@@ -80,7 +80,9 @@ MutRecType[T] mut_rec_type(Nat index, [T^] pretypes) = mut_rec_type(index: index
 
 ////////////////////////////////////////////////////////////////////////////////
 
-ClsType cls_type([AnonType^] in_types, AnonType out_type) = cls_type(in_types: in_types, out_type: out_type);
+ClsType cls_type([AnonType^] its, AnonType ot)          = cls_type(in_types: its, out_type: ot);
+
+UserClsType user_cls_type([UserType^] its, UserType ot) = cls_type(in_types: its, out_type: ot);
 
 FnType fn_type([ExtType] ps, AnonType rt) = fn_type(ps, (), rt);
 FnType fn_type([ExtType] ps, (<named_par(Atom)> => ExtType) nps, AnonType rt) = fn_type(params: ps, named_params: nps, ret_type: rt);
@@ -122,18 +124,28 @@ Statement fail_stmt  = :fail_stmt;
 FnSymbol fn_symbol(Atom a)                        = :fn_symbol(a);
 FnSymbol op_symbol(Operator op)                   = :op_symbol(op);
 FnSymbol nested_fn_symbol(FnSymbol o, FnSymbol i) = nested_fn_symbol(outer: o, inner: i);
+FnSymbol unique_fn_symbol(FnSymbol s, Nat id)     = unique_fn_symbol(symbol: s, id: id);
 
 Var var(Atom a)       = :var(a);
 Var fn_par(Nat n)     = :fn_par(n);
 Var named_par(Atom a) = :named_par(a);
+
+ClsVar cls_var(Atom a)  = :cls_var(a);
+
+ClsPar non_scalar_par(ClsVar v, UserClsType t) = non_scalar_par(var: v, arity: arity(t), type: t);
+ClsPar non_scalar_par(ClsVar v, NzNat a)       = non_scalar_par(var: v, arity: a);
+ClsPar non_scalar_par(NzNat a)                 = non_scalar_par(arity: a);
 
 Expr seq_expr([SubExpr] h)          = seq_expr(head: h);
 Expr seq_expr([SubExpr] h, Expr t)  = seq_expr(head: h, tail: t);
 
 Expr tag_obj_expr(Expr t, Expr o)   = tag_obj_expr(tag: t, obj: o);
 
+Expr fn_call(FnSymbol name, [ExtExpr] params) = fn_call(name, params, ());
 Expr fn_call(FnSymbol name, [ExtExpr] params, (<named_par(Atom)> => ExtExpr) named_params) = fn_call(name: name, params: params, named_params: named_params);
 Expr membership(Expr obj, UserType type) = membership(obj: obj, type: type);
 Expr if_expr(Expr cond, Expr true_expr, Expr false_expr) = if_expr(cond: cond, then: true_expr, else: false_expr);
 
-ClsExpr cls_expr([<var(Atom), nil>^] params, Expr expr) = cls_expr(params: params, expr: expr);
+ClsExpr fn_ptr(FnSymbol s, NzNat a)              = fn_ptr(name: s, arity: a);
+ClsExpr cls_expr(Nat a, Expr e)                  = cls_expr(a * [nil], e);
+ClsExpr cls_expr([<var(Atom), nil>^] ps, Expr e) = cls_expr(params: ps, expr: e);

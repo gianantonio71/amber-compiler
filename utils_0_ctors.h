@@ -53,6 +53,7 @@ PlainToken qualified_symbol(Atom s) = :qualified_symbol(s);
 PlainToken label(Atom s)            = :label(s);
 PlainToken operator(Operator op)    = :operator(op);
 PlainToken builtin(BuiltIn b)       = :builtin(b);
+PlainToken qual_var(Nat n)			= :qual_var(n);
 
 AnnotatedToken annotated_token(PlainToken t, NzNat l, NzNat c, Nat i) = annotated_token(token: t, line: l, col: c, index: i);
 
@@ -66,6 +67,7 @@ TokenMatchingRule string            = :string;
 TokenMatchingRule char              = :char;
 TokenMatchingRule operator          = :operator;
 TokenMatchingRule builtin           = :builtin;
+TokenMatchingRule qual_var          = :qual_var;
 TokenMatchingRule keyword(Atom a)   = :keyword(a);
 
 ParsingRule empty_rule                                                = :empty_rule;

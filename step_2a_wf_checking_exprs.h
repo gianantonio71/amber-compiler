@@ -134,9 +134,7 @@ using
                           stmt.body,
                           scalar_vars & keys(stmt.asgnms),
                           is_inside_loop,
-                          false,
-                          //## HUGE BUG HERE BUG BUG BUG
-                          cls_vars = cls_vars & (v => length(e.params) : v => cls_expr() e <- stmt.asgnms) //## BAD BAD BUG WHAT HAPPENS IF THE LET STATEMENT REDEFINE A NAMED PARAM CHANGING ITS ARITY?
+                          false
                         ),
 
                         //## THERE MUST BE A WAY OUT, A BREAK OR A RETURN

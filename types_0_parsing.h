@@ -47,7 +47,8 @@ type PlainToken = AmberSymb,
                   String,
                   Char,
                   operator(Operator),
-                  builtin(BuiltIn);
+                  builtin(BuiltIn),
+                  qual_var(Nat);
 
 type AnnotatedToken = annotated_token(token: PlainToken, line: NzNat, col: NzNat, index: Nat);
 
@@ -66,6 +67,7 @@ type TokenMatchingRule  = AmberSymb,
                           char,
                           operator,
                           builtin,
+                          qual_var,
                           keyword(Atom);
 
 type ParsingRule  = empty_rule,

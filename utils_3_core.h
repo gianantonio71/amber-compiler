@@ -1,0 +1,1 @@
+Nat in_arity(ObjProcDef p) = length(p.params);

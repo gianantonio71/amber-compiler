@@ -64,6 +64,7 @@ Bool matches(TokenMatchingRule rule, PlainToken token):
   char,               Char                = true,
   operator,           operator()          = true,
   builtin,            builtin()           = true,
+  qual_var,           qual_var()          = true,
   keyword(kw?),       lowercase_id(a?)    = kw == a,
   _,                  _                   = false;
 

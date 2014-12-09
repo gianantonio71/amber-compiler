@@ -160,28 +160,27 @@ type Instr        = init_stream(StreamVar),
                     execute_block([Instr^]),
                     exit_block,
 
-                    call_proc(var: ObjVar, name: ObjFnName, params: [ObjExpr]),
+                    call_proc(var: ObjVar, name: ObjFnName, params: [<ObjExpr, BoundCls>]),
                     call_cls(var: ObjVar, cls_var: Var, params: [ObjExpr]),
                     
-                    push_call_info(fn_name: FnSymbol, params: [ObjVar]),
+                    push_call_info(fn_name: FnSymbol, params: [Maybe[ObjVar]]),
                     pop_call_info,
 
                     runtime_check(cond: ObjExpr),
 
                     var_scope(var: <named_par(Atom)>, new_value: AtomicExpr, body: [Instr^]),
-                    cls_scope(var: <named_par(Atom)>, env: [Var], cls: ClsDef, body: [Instr^]);
-                    
+                    cls_scope(var: <named_par(Atom)>, bound_cls: BoundCls, body: [Instr^]);
 
-type ClsDef       = cls_def(
-                      //name:   FnSymbol,
-                      arity:  NzNat,
-                      //env:    [Var],  //## NOT ENTIRELY SURE ABOUT THIS ONE
-                      body:   [Instr^]
-                    );
+
+type ClsDef       = cls_def(arity: NzNat, body: [Instr^]);
+
+type BoundCls     = ClsVar, bound_cls(cls: ClsDef, env: [Var]);
+
+type ObjProcPar   = obj, cls(name: ClsVar?, arity: NzNat);
 
 type ObjProcDef   = obj_proc_def(
                       name:         ObjFnName,
-                      in_arity:     Nat, //## THIS HAS TO BE UPDATED ONCE I ALLOW CLOSURES AS POSITIONAL PARAMETERS
+                      params:       [ObjProcPar],
                       named_params: (<named_par(Atom)> => Nat), //## SHOULD IT BE <named_var(name: Atom, arity: Nat)>* INSTEAD?
                       body:         [Instr^]
                     );

@@ -5,14 +5,15 @@ using
   (symbol: BasicTypeSymbol, arity: NzNat)*  all_par_type_symbols;
 
 
-  SynObjErr* fndef_wf_errors(SynFnDef fn_def, UntypedSgn* global_fns, BasicUntypedSgn* impl_pars) =
-                  fndef_wf_errors(fn_def, global_fns, {}, impl_pars);
+  SynObjErr* fndef_wf_errors(SynFnDef fn_def, UntypedSgn* global_fns, ((FnSymbol, Nat) => [Nat]) fn_param_arities, BasicUntypedSgn* impl_pars) =
+                  fndef_wf_errors(fn_def, global_fns, fn_param_arities, {}, impl_pars);
 
   //## global_fns IS A BAD NAME, THIS COULD BE A LOCAL FUNCTION, A FUNCTION IN A WHERE CLAUSE, 
   //## OR IT COULD BE DEFINED INSIDE A USING BLOCK
-  SynObjErr* fndef_wf_errors(SynFnDef fn_def, UntypedSgn* global_fns, TypeVar* type_vars, BasicUntypedSgn* impl_pars)
+  SynObjErr* fndef_wf_errors(SynFnDef fn_def, UntypedSgn* global_fns, ((FnSymbol, Nat) => [Nat]) fn_param_arities, TypeVar* type_vars, BasicUntypedSgn* impl_pars)
   {
-    vs = set([:fn_par(i) : i <- indexes(fn_def.params)]); //## BAD BAD BAD
+    vs = set([:fn_par(i) : p @ i <- fn_def.params, not p.type? or p.type :: SynType]); //## BAD BAD BAD
+    clss = set([untyped_sgn(p.var, p.type) : p <- fn_def.params, p.var? and p.type? and p.type :: SynClsType]);
 
     //## WHAT IF THE LOCAL FUNCTIONS ARE INSIDE A USING BLOCK? IT SHOULD NOT MATTER, BUT I'M NOT QUITE SURE
     all_fns = merge_and_override(global_fns, {untyped_sgn(lfd) : lfd <- set(fn_def.local_fns)});
@@ -25,7 +26,7 @@ using
         sgn_errs = sgn_errs & type_wf_errors(p.type, type_vars_in_scope = ts);
       ;
 
-      if (p.var?)
+      if (p.var? and (not p.type? or not p.type :: SynClsType))
         sgn_errs = sgn_errs & {:var_redef(p.var)} if in(p.var, vs);
         vs       = vs & {p.var};
       ;
@@ -36,9 +37,21 @@ using
                        else {}
                      end;
 
-    loc_fns_errs  = seq_union([fndef_wf_errors(fn, all_fns, ts, impl_pars) : fn <- fn_def.local_fns]);
+    loc_fn_param_arities = get_fn_param_arities(set(fn_def.local_fns), {});
+    all_fn_param_arities = update(fn_param_arities, loc_fn_param_arities);
+
+    loc_fns_errs  = seq_union([fndef_wf_errors(fn, all_fns, all_fn_param_arities, ts, impl_pars) : fn <- fn_def.local_fns]);
     
-    expr_errs     = expr_wf_errors(fn_def.expr, vs, fns_in_scope = all_fns, type_vars_in_scope = ts, impl_params = impl_pars);
+    expr_errs = expr_wf_errors(
+      fn_def.expr,
+      vs,
+      fns_in_scope = all_fns,
+      clss_in_scope = clss,
+      type_vars_in_scope = ts,
+      impl_params = impl_pars,
+      fn_param_arities = all_fn_param_arities,
+      is_fn_par = false
+    );
 
     return sgn_errs & ret_type_errs & loc_fns_errs & expr_errs;
   }
@@ -52,7 +65,10 @@ using
   (symbol: BasicTypeSymbol, arity: NzNat)*  all_par_type_symbols,
   TypeVar*                                  type_vars_in_scope,
   UntypedSgn*                               fns_in_scope,
-  BasicUntypedSgn*                          impl_params;
+  BasicUntypedSgn*                          clss_in_scope,
+  BasicUntypedSgn*                          impl_params,
+  ((FnSymbol, Nat) => [Nat])                fn_param_arities,
+  Bool                                      is_fn_par;
 
 
   SynObjErr* expr_wf_errors(SynExpr expr, Var* def_vars):
@@ -80,6 +96,8 @@ using
                                    end;
                           },
 
+    cls_par(n?)         = {:invalid_pos_for_cls_par if not is_fn_par},
+
     //where_expr(expr: SynExpr, fndefs: [SynFnDef^]),
     
     //where_expr()        = { ips = impl_params & {untyped_sgn(fd) : fd <- set(expr.fndefs)};
@@ -91,16 +109,53 @@ using
     // fn_call(name: FnSymbol, params: [ExtSynExpr], named_params: [SynFnDef]), //## NEW
 
     fn_call()           = { ips = impl_params & {untyped_sgn(fd) : fd <- set(expr.named_params)};
-    
-                            errs = exprs_wf_errors(expr.params, def_vars);
 
                             //## I DON'T UNDERSTAND WHAT I HAVE DONE HERE
-                            if (not is_def(expr.name, length(expr.params), fns_in_scope, ips))
+                            if (not is_def(expr.name, length(expr.params), fns_in_scope & clss_in_scope, ips))
                               err_info = (name: expr.name, arity: length(expr.params));
                               almost_def = is_almost_def(expr.name, length(expr.params), fns_in_scope);
-                              errs = errs & {if almost_def then :almost_def_fn(err_info) else :undef_fn(err_info) end};
+                              return {if almost_def then :almost_def_fn(err_info) else :undef_fn(err_info) end};
                             ;
-                            
+
+                            if (is_def(expr.name, length(expr.params), fns_in_scope, ips))
+                              pars_arity = fn_param_arities[(expr.name, length(expr.params))];
+                              errs = {};
+                              for (p, a : zip(expr.params, pars_arity))
+                                if (a == 0)
+                                  errs = errs & expr_wf_errors(p, def_vars);
+                                else
+                                  //  Here the function expects a closure. The parameter can be:
+                                  //    1) A normal expression, implicitly defining a constant functions
+                                  //    2) The name of a an existing closure
+                                  //    3) The name of a function
+                                  //    4) A closure expression
+
+                                  //  Handling cases 1) and 4) above
+                                  //## BUG: JUST SPECIFYING THAT THE EXPRESSION IS A FUNCTION CALL PARAMETER
+                                  //## IS NOT ENOUGHT. I ALSO NEED TO SPECIFY THE ARITY OF THE CLOSURE
+                                  par_errs = expr_wf_errors(p, def_vars, is_fn_par=true);
+                                  if (par_errs /= {})
+                                    // We got back an error, so cases 1) and 4) above do not apply
+
+                                    if (p :: ConstOrVar) //## SHOULD BE: if (p :: const_or_var(a?))
+                                      symb = _obj_(p);
+                                      // The parameter is an identifier, so it could be the name
+                                      // of a function or closure
+                                      sgn = untyped_sgn(fn_symbol(symb), a);
+                                      if (not in(sgn, clss_in_scope) and not in(sgn, fns_in_scope))
+                                        // Nothing could match that name and arity
+                                        //## WHAT WOULD BE THE RIGHT ERROR MESSAGE HERE
+                                        errs = errs & par_errs;
+                                      ;
+                                    ;
+                                  ;
+                                ;
+                              ;
+
+                            else
+                              errs = exprs_wf_errors(expr.params, def_vars, is_fn_par = true);
+                            ;
+
                             np_errs = fndefs_wf_errors(set(expr.named_params), def_vars);
                             //## I SHOULD ALSO CHECK THAT THE NAMED PARAMS THAT I SUPPLY
                             //## ARE ONLY THE ONES THAT ARE REQUIRED BY THE FUNCTION I CALL

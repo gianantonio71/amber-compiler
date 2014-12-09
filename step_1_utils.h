@@ -23,8 +23,12 @@ type UntypedSgn       = untyped_sgn(
 //   named_par(a), UserType  = untyped_sgn(name: :fn_symbol(a), arity: 0),
 //   named_par(a), UserClsType   = untyped_sgn(name: :fn_symbol(a), arity: length(type.in_types));
 
+BasicUntypedSgn untyped_sgn(FnSymbol n, Nat a) = untyped_sgn(name: n, arity: a);
+
 BasicUntypedSgn untyped_sgn(<named_par(Atom)> var, UserType type)    = untyped_sgn(name: :fn_symbol(_obj_(var)), arity: 0);
 BasicUntypedSgn untyped_sgn(<named_par(Atom)> var, UserClsType type) = untyped_sgn(name: :fn_symbol(_obj_(var)), arity: length(type.in_types));
+
+BasicUntypedSgn untyped_sgn(<var(Atom)> var, SynClsType type) = untyped_sgn(name: :fn_symbol(_obj_(var)), arity: length(type.in_types));
 
 //BasicUntypedSgn* untyped_sgns((<named_par(Atom)> => UserExtType) nps) = {untyped_sgn(v, t) : v => t <- nps};
 
@@ -69,6 +73,15 @@ UntypedSgn* merge_and_override(UntypedSgn* low_priority_sgns, UntypedSgn* high_p
 }
 
 Nat arity(SynFnDef d) = length(d.params);
+
+Nat arity(SynFnArg arg) =
+  if arg.type?
+    then
+      match (arg.type)
+        cls_type()  = length(arg.type.in_types),
+        _           = 0;
+    else 0
+  end;
 
 Bool is_def(FnSymbol name, Nat arity, UntypedSgn* env, BasicUntypedSgn* actual_named_params)
 {
@@ -143,6 +156,9 @@ UserType syn_type_to_user_type(SynType type):
   tag_obj_type()          = tag_obj_type(type.tag_type, syn_type_to_user_type(type.obj_type)),
   union_type(ts?)         = union_type({syn_type_to_user_type(t) : t <- ts}),
   syn_union_type(ts?)     = union_type({syn_type_to_user_type(t) : t <- set(ts)});
+
+UserExtType syn_type_to_user_type(SynClsType type) =
+  user_cls_type([syn_type_to_user_type(t) : t <- type.in_types], syn_type_to_user_type(type.out_type));
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////

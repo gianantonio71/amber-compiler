@@ -226,8 +226,9 @@ SynFnDef build_switch_fndef_ast(RuleMatch mtc)
   ret_type = build_maybe_type_ast(nodes[0]);
   params = build_fn_params_ast(nodes[2]);
   cases = [build_switch_case_ast(n) : n <- rep_rule_nodes(nodes[4])];
+  arity = syn_case_arity(cases[0]);
   // expr = syn_try_expr([fn_par(i) : i <- indexes(cases[0].patterns)], cases); //## REENABLE THIS ONCE ALL THE TESTING IS DONE
-  expr = syn_try_expr([fn_par(i) : i <- indexes(params)], cases);
+  expr = syn_try_expr([fn_par(i) : i <- inc_seq(arity)], cases);
   return syn_fn_def(
     name:       build_fn_symbol_ast(nodes[1]),
     params:     params,
@@ -285,8 +286,22 @@ SynFnArg build_fn_arg_ast(RuleMatch mtc) =
       nodes = rule_seq_nodes(mtc.match);
       assert length(nodes) == 2;
       return (type: build_type_ast(nodes[0]), var: var(get_lowercase_id(nodes[1])) if nodes[1] /= null_match);
+    },
+    cls       = {
+      nodes = rule_seq_nodes(mtc.match);
+      assert length(nodes) == 2;
+      return (type: build_cls_type_ast(nodes[0]), var: var(get_lowercase_id(nodes[1])));
     };
   ;
+
+SynClsType build_cls_type_ast(RuleMatch mtc)
+{
+  nodes = rule_seq_nodes(mtc);
+  assert length(nodes) == 3;
+  in_types = [build_type_ast(n) : n <- rep_rule_nodes(nodes[0])];
+  out_type = build_type_ast(nodes[2]);
+  return syn_cls_type(in_types, out_type);
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -470,7 +485,8 @@ SynExpr build_expr_0_ast(RuleMatch mtc) =
     select_expr   = build_select_expr_ast(mtc.match),                                         // rule_select_expr
     replace_expr  = build_replace_expr_ast(mtc.match),                                        // rule_replace_expr
     fn_call       = build_fn_call_expr_ast(mtc.match),                                        // rule_fn_call_expr
-    const_or_var  = const_or_var(get_lowercase_id(mtc.match));                                // rule_id
+    const_or_var  = const_or_var(get_lowercase_id(mtc.match)),                                // rule_id
+    cls_par       = cls_par(get_cls_par_idx(mtc.match));                                      // atomic_rule(qual_var))
   ;
 
 SynTagObjExpr build_tag_obj_expr_ast(RuleMatch mtc)
@@ -999,6 +1015,7 @@ Atom get_qualified_symbol(RuleMatch mtc)  = _obj_(get_token(mtc));
 Atom get_label(RuleMatch mtc)             = _obj_(get_token(mtc));
 Atom get_builtin(RuleMatch mtc)           = _obj_(get_token(mtc));
 String get_string(RuleMatch mtc)          = get_token(mtc);
+Nat get_cls_par_idx(RuleMatch mtc)        = _obj_(get_token(mtc));
 
 
 AnnotatedToken annotated_token(RuleMatch, Nat idx):
@@ -1013,7 +1030,6 @@ Atom get_qualified_symbol(RuleMatch mtc, Nat idx)  = _obj_(get_token(mtc, idx));
 Atom get_label(RuleMatch mtc, Nat idx)             = _obj_(get_token(mtc, idx));
 Atom get_builtin(RuleMatch mtc, Nat idx)           = _obj_(get_token(mtc, idx));
 String get_string(RuleMatch mtc, Nat idx)          = get_token(mtc, idx);
-
 
 [RuleMatch^] rule_seq_nodes(RuleMatch):
   rule_seq_match(ns?) = ns;

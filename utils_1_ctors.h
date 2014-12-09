@@ -38,6 +38,10 @@ SynType syn_map_type(SynType key_type, SynType value_type) =
 
 ////////////////////////////////////////////////////////////////////////////////
 
+SynClsType syn_cls_type([SynType^] its, SynType ot) = cls_type(in_types: its, out_type: ot);
+
+////////////////////////////////////////////////////////////////////////////////
+
 SynTypedef syn_typedef(BasicTypeSymbol n, SynType t) = typedef(name: n, type: t);
 
 SynParTypedef syn_par_typedef(BasicTypeSymbol n, [TypeVar^] ps, SynType t) = par_typedef(name: n, params: ps, type: t);
@@ -46,6 +50,8 @@ SynParTypedef syn_par_typedef(BasicTypeSymbol n, [TypeVar^] ps, SynType t) = par
 
 
 ConstOrVar const_or_var(Atom a)                           = :const_or_var(a);
+
+ClsPar cls_par(Nat n)                                     = :cls_par(n);
 
 SynSeqExpr syn_seq_expr([SynSubExpr] h)                   = seq_expr(head: h);
 SynSeqExpr syn_seq_expr([SynSubExpr] h, SynExpr t)        = seq_expr(head: h, tail: t);

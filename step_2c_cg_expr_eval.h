@@ -614,8 +614,13 @@ using
       if (body_gen_info.expr?)
         expr = body_gen_info.expr;
         res_var = body_gen_info.res_var;
-        pars_info = gen_eval_info(expr.params);
-        call_code = [call_proc(res_var, expr.name, pars_info.exprs)];
+        pars_are_first_order = [p :: Expr : p <- expr.params];
+        par_packed_idxs = packed_indexes(pars_are_first_order);
+        pars_info = gen_eval_info([p : p @ i <- expr.params, pars_are_first_order[i]]);
+        all_params = [if pars_are_first_order[i] then pars_info.exprs[value(par_packed_idxs[i])] else gen_non_scalar_par_code(p) end : p @ i <- expr.params];
+
+        call_code = [call_proc(res_var, expr.name, all_params)];
+
         return pars_info.eval_code & call_code & pars_info.cleanup_code;
       else
         return gen_code(body_gen_info.body, body_gen_info.res_var, body_gen_info.all_rel_vars, body_gen_info.break_vars, body_gen_info.surv_vars); //## NOT SURE ABOUT THIS ONE
@@ -633,18 +638,29 @@ using
       return info.eval_code & [var_scope(var, info.expr, body)] & info.cleanup_code;
 
     else
-      //name     = :fn_symbol(_obj_(var));
-      arity    = length(expr.params);
-      loc_vs   = set([v : v <- expr.params, v /= nil] & [:fn_par(i) : i <- indexes(expr.params)]); //## BAD
-      ext_vs   = rand_sort(extern_vars(expr.expr) - loc_vs);
-      cls_body = [set_var(v, fn_par(i)) : v @ i <- expr.params, v /= nil] &
-                  [set_var(v, cls_ext_par(i)) : v @ i <- ext_vs]          &
-                  gen_fn_body(expr.expr);
-      body     = make_scopes(rem_asgnms, body_gen_info);
-      return [cls_scope(var, arity, ext_vs, cls_body, body)];
-      //return [add_ref(v) : v <- ext_vs] & [cls_scope(var, arity, ext_vs, cls_body, body)] & [release(v) : v <- ext_vs];
+      bound_cls = gen_non_scalar_par_code(expr);
+      body = make_scopes(rem_asgnms, body_gen_info);
+      return [cls_scope(var, bound_cls, body)];
     ;
   }
+
+  BoundCls gen_non_scalar_par_code(ClsExpr expr):
+    ClsVar      = expr,
+    fn_ptr()    = {
+      var = lvar(0);
+      ps = [fn_par(i) : i <- inc_seq(expr.arity)];
+      body = [call_proc(var, expr.name, ps), ret_val(var)];
+      cls = cls_def(expr.arity, body);
+      return bound_cls(cls, []);
+    },
+    cls_expr()  = {
+      loc_vs = seq_union([{v if v /= nil, fn_par(i)} : v @ i <- expr.params]);
+      ext_vs = rand_sort(extern_vars(expr.expr) - loc_vs);
+      cls_body = [set_var(v, fn_par(i)) : v @ i <- expr.params, v /= nil] &
+                 [set_var(v, cls_ext_par(i)) : v @ i <- ext_vs] &
+                 gen_fn_body(expr.expr);
+      return bound_cls(cls_def(arity(expr), cls_body), ext_vs);
+    };
 
 
   [Instr] gen_code([Statement] stmts, ObjVar res_var) = gen_code(stmts, res_var, {}, {}, {});

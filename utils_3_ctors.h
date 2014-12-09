@@ -146,7 +146,7 @@ Instr break_loop         = :break_loop;
 Instr execute_block([Instr^] b) = :execute_block(b);
 Instr exit_block                = :exit_block;
 
-Instr call_proc(ObjVar v, ObjFnName n, [ObjExpr] ps) = call_proc(var: v, name: n, params: ps);
+Instr call_proc(ObjVar v, ObjFnName n, [<ObjExpr, BoundCls>] ps) = call_proc(var: v, name: n, params: ps);
 Instr call_cls(ObjVar v, Var cv, [ObjExpr] ps)  = call_cls(var: v, cls_var: cv, params: ps);
 
 Instr push_call_info(FnSymbol fn_name, [ObjVar] params) = push_call_info(fn_name: fn_name, params: params);
@@ -155,14 +155,22 @@ Instr pop_call_info = :pop_call_info;
 Instr runtime_check(ObjExpr c) = runtime_check(cond: c);
 
 Instr var_scope(<named_par(Atom)> var, AtomicExpr value, [Instr^] body) = var_scope(var: var, new_value: value, body: body);
-Instr cls_scope(<named_par(Atom)> v, [Var] e, ClsDef c, [Instr^] b) = cls_scope(var: v, env: e, cls: c, body: b);
+Instr cls_scope(<named_par(Atom)> v, BoundCls c, [Instr^] b) = cls_scope(var: v, bound_cls: c, body: b);
 
 //////////////////// //////////////////// ////////////////////
 
-ObjProcDef obj_proc_def(ObjFnName name, Nat arity, (<named_par(Atom)> => Nat) nps, [Instr^] body) =
+ClsDef   cls_def(NzNat a, [Instr^] b)   = cls_def(arity: a, body: b);
+
+BoundCls bound_cls(ClsDef c, [Var] vs)  = bound_cls(cls: c, env: vs);
+
+// ObjProcPar obj = :obj; //## DEFINING THIS WILL BREAK THE GENERATED CODE
+ObjProcPar cls(ClsVar n, NzNat a) = cls(name: n, arity: a);
+ObjProcPar cls(NzNat a) = cls(arity: a);
+
+ObjProcDef obj_proc_def(ObjFnName name, [ObjProcPar] params, (<named_par(Atom)> => Nat) nps, [Instr^] body) =
   obj_proc_def(
     name:         name,
-    in_arity:     arity,
+    params:       params,
     named_params: nps,
     body:         body
   );
@@ -203,12 +211,6 @@ SymbObj obj_true  = :object(true);
 SymbObj obj_false = :object(false);
 
 ObjExpr obj_nil   = :object(nil);
-
-Instr cls_scope(<named_par(Atom)> var, Int arity, [Var] env, [Instr^] cls_body, [Instr^] body)
-{
-  cls = cls_def(arity: arity, body: cls_body);
-  return cls_scope(var, env, cls, body);
-}
 
 //////////////////// Derived instructions ////////////////////
 

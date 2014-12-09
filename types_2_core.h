@@ -84,7 +84,7 @@ type TypeRef  = type_ref(TypeSymbol);
 
 ///////////////////////////////////////////////////////////////////////////////
 
-type UserClsType  = user_cls_type(in_types: [UserType^], out_type: UserType);
+type UserClsType  = cls_type(in_types: [UserType^], out_type: UserType);
 type UserExtType  = UserType, UserClsType;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -103,9 +103,13 @@ type FnSymbol = fn_symbol(Atom),
                 op_symbol(Operator),
                 //## BUG: AN FnSymbol IS NOT ENOUGH TO IDENTIFY WHICH WAS THE OUTER FUNCTION.
                 //## TWO FUNCTIONS WITH THE SAME NAME COULD CONTAIN INNER FUNCTIONS WITH THE SAME NAME
-                nested_fn_symbol(outer: FnSymbol, inner: FnSymbol); //## BAD
+                nested_fn_symbol(outer: FnSymbol, inner: FnSymbol),
+                unique_fn_symbol(symbol: FnSymbol, id: Nat); //## THE symbol: FIELD SHOULD ONLY CONTAIN EITHER fn_symbol() OR op_symbol()
 
-type Var      = var(Atom), fn_par(Nat), named_par(Atom), unique_var(Nat); //## BAD
+type Var      = var(Atom), fn_par(Nat), unique_var(Nat), NamedPar; //## BAD
+type NamedPar = named_par(Atom);
+
+type ClsVar   = cls_var(<Atom, Nat>); //## BAD: THERE SHOULD BE A NAMED VERSION OF ClsVar
 
 type CondExpr = cond_expr(expr: Expr, cond: Expr);
 
@@ -124,7 +128,7 @@ type Expr     = LeafObj, //## UPDATE ALL REFERENCES
                 //## BUT THE DATA STRUCTURE AND THE SYNTAX ALLOW IT. MAKE SURE IT'S CHECHED
                 //## IN THE WELL-FORMEDNESS CHECKING LAYER.
                 fn_call(name: FnSymbol, params: [ExtExpr], named_params: (<named_par(Atom)> => ExtExpr)), //## BAD
-                cls_call(name: Var, params: [Expr]),  //## NEW --- RENAME name: TO var:
+                cls_call(name: <ClsVar, NamedPar>, params: [Expr]),  //## BAD: THERE SHOULD BE A NAMED VERSION OF ClsVar
                 builtin_call(name: BuiltIn, params: [Expr]), //## CAN A BUILTIN HAVE NO ARGUMENTS?
 
                 and_expr(left: Expr, right: Expr), //## NOT SURE HERE
@@ -155,7 +159,9 @@ type Expr     = LeafObj, //## UPDATE ALL REFERENCES
 
 //type Closure  = closure(params: [var(Atom)^], expr: Expr, captured_vars: Var*);
 
-type ClsExpr  = cls_expr(params: [<var(Atom), nil>^], expr: Expr);
+type ClsExpr  = ClsVar,
+                fn_ptr(name: FnSymbol, arity: NzNat),
+                cls_expr(params: [<var(Atom), nil>^], expr: Expr);
 
 type ExtExpr  = Expr, ClsExpr;
 
@@ -213,9 +219,12 @@ type Statement  = assignment_stmt(vars: [Var^], value: Expr),
 //                    res_type: Type
 //                  );
 
+type FnFrmPar   = scalar_par(var: var(Atom)?, type: UserType?),
+                  non_scalar_par(var: ClsVar?, arity: NzNat, type: UserClsType?); //## BAD: THE VAR AND TYPE FIELDS HERE ARE OPTIONAL ONLY TO ALLOW MERGING OF FUNCTIONS WITH DIFFERENT ARITIES. ALSO, ARITY IS REDUNDANT WHEN TYPE IS PRESENT. CHECK THIS IN THE WELL-FORMEDNESS CHECKING LAYER. ALSO, REALLY BAD NAME.
+
 type FnDef      = fn_def(
                     name:         FnSymbol,
-                    params:       [(var: var(Atom)?, type: UserExtType?)], //## BAD BAD
+                    params:       [FnFrmPar], //## BAD BAD
                     named_params: (<named_par(Atom)> => UserExtType), //## BAD: THIS DOESN'T ALLOW FOR IMPLICIT PARAMETER WITH THE SAME NAME BUT DIFFERENT ARITIES. ALSO THE TYPE IS TOO LOOSE. INCLUDE A CHECK IN THE WELL-FORMEDNESS CHECKING LAYER
                     res_type:     UserType?,
                     expr:         Expr

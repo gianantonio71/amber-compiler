@@ -45,6 +45,7 @@ Bool looks_like_an_integer([Nat] bytes, Int offset)                = is_digit(by
 Bool looks_like_a_string([Nat] bytes, Int offset)                  = is_char(bytes, offset, ascii_double_quotes);
 Bool looks_like_a_char([Nat] bytes, Int offset)                    = is_char(bytes, offset, ascii_single_quote);
 Bool looks_like_a_builtin([Nat] bytes, Int offset)                 = is_char(bytes, offset, ascii_underscore) and is_lower(bytes, offset+1);
+Bool looks_like_a_cls_par([Nat] bytes, Int offset)                 = is_char(bytes, offset, ascii_dollar);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -87,7 +88,8 @@ ParseLineResult split_line_into_tokens([Nat] bytes)
              looks_like_an_integer(bytes, idx)               then read_integer(bytes, idx),
              looks_like_a_string(bytes, idx)                 then read_string(bytes, idx),
              //looks_like_a_char(bytes, idx)                   then read_char(bytes, idx),
-             looks_like_a_builtin(bytes, idx)                then read_builtin(bytes, idx)
+             looks_like_a_builtin(bytes, idx)                then read_builtin(bytes, idx),
+             looks_like_a_cls_par(bytes, idx)                then read_cls_par(bytes, idx)
                                                              else read_symbolic_token(bytes, idx)
            end;
     return res if not is_success(res);
@@ -218,6 +220,15 @@ ParseTokenResult read_builtin([Nat] bytes, Int offset)
   symbol = symb(subseq(bytes, offset+1, len));
   return failure(offset) if not symbol :: BuiltIn; //## WOULD BE GOOD TO ADD MORE INFORMATION ABOUT THE FAILURE HERE
   return success(token_line_info(builtin(symbol), offset, len+2));
+}
+
+
+ParseTokenResult read_cls_par([Nat] bytes, Int offset)
+{
+  assert is_char(bytes, offset, ascii_dollar);
+  return success(token_line_info(qual_var(0), offset, 1)) if not is_lower(bytes, offset+1);
+  return failure(offset+2) if is_lower(bytes, offset+2);
+  return success(token_line_info(qual_var(bytes[offset+1]-ascii_lower_a), offset, 2));
 }
 
 

@@ -66,6 +66,8 @@ T value(Maybe[T]):
   just(x?)  = x,
   _         = {fail;};
 
+Maybe[T] maybe(T x, Bool cond) = if cond then :just(x) else nil end;
+
 ////////////////////////////////////////////////////////////////////////////////
 
 <success(T)> success(T r) = :success(r);
@@ -178,6 +180,13 @@ T2 right((T1, T2) s) = _at_(s, 1);
 {
   assert length(s1) == length(s2);
   return [(e1, s2[i]) : e1 @ i <- s1]; //## NOT PARTICULARLY ELEGANT...
+}
+
+[(T1, T2, T3)] zip([T1] s1, [T2] s2, [T3] s3)
+{
+  assert length(s1) == length(s2) and length(s2) == length(s3);
+  return [(e1, s2[i], s3[i]) : e1 @ i <- s1]; //## NOT PARTICULARLY ELEGANT...
+
 }
 
 ([T1], [T2]) unzip([(T1, T2)] ts) = ([left(t) : t <- ts], [right(t) : t <- ts]); //## NOT PARTICULARLY ELEGANT EITHER...
@@ -297,6 +306,18 @@ Maybe[Nat] left_search(Seq seq, Seq subseq)
 [Nat] indexes(Seq s, Nat m) = inc_seq(m, length(s));
 
 Nat* index_set(Seq s) = set(indexes(s));
+
+[Bool] bit_map([Int] idxs, Nat len) = [in(i, idxs) : i <- inc_seq(len)]; //## BAD: HORRIBLY INEFFICIENT
+
+//## BAD: THE NAME IS TOTALLY MEANINGLESS, AND THE IMPLEMENTATION IS INEFFICIENT
+[Maybe[Nat]] packed_indexes([Bool] bs)
+{
+  idxs = [];
+  for (b : bs)
+    idxs = idxs & [if b then just(length(idxs)) else nil end];
+  ;
+  return idxs;
+}
 
 using Bool is_strictly_ordered(T, T) //## BAD BAD BAD
 {

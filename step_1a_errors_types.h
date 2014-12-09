@@ -83,6 +83,11 @@ using
       IntType,  IntType   = true,
       _,        _         = are_disjoint(syn_pseudotype(t1), syn_pseudotype(t2));
   }
+
+
+  TDefUserErr* type_wf_errors(SynClsType type) =
+    seq_union([type_wf_errors(t) : t <- type.in_types]) &
+    type_wf_errors(type.out_type);
 }
 
 //## THIS ONE MAYBE SHOULD GO IN A DIFFERENT FILE

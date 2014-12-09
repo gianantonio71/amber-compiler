@@ -2,10 +2,12 @@
 
 using
 {
-  <named_par(Atom)>*      named_params,
-  BasicUntypedSgn*        local_fns,
-  FnSymbol                curr_outer_fn,
-  (TypeName => AnonType)  typedefs;
+  BasicUntypedSgn*            clss_in_scope,
+  <named_par(Atom)>*          named_params,
+  BasicUntypedSgn*            local_fns,
+  FnSymbol                    curr_outer_fn,
+  (TypeName => AnonType)      typedefs,
+  ((FnSymbol, Nat) => [Nat])  fn_param_arities;
 
 
   Expr desugar_expr(SynExpr expr, Var* def_vars):
@@ -34,6 +36,8 @@ using
 
     Var             = expr,
     
+    cls_par(n?)     = fn_par(n),
+
     const_or_var(a?)  = { return :var(a) if in(:var(a), def_vars);
                           return :named_par(a) if in(:named_par(a), named_params);
                           sgn = untyped_sgn(name: :fn_symbol(a), arity: 0);
@@ -48,20 +52,27 @@ using
                           //;
                         },
 
-// fn_call(name: FnSymbol, params: [ExtSynExpr], named_params: [SynFnDef]), //## NEW
-// fn_call(name: FnSymbol, params: [ExtExpr], named_params: (<named_par(Atom)> => ExtExpr)), //## NEW BAD BAD
-
     fn_call()       = { assert length(expr.params) > 0;
     
+                        //## BAD (BUG?): THIS IS NOT VALID IF THE PARAMETER IS A CLOSURE
+                        //## VARIABLE OR IF IT'S THE NAME OF A FUNCTION. RIGHT NOW IT
+                        //## SHOULD NOT FAIL, BUT ONLY BECAUSE THE const_or_var() DOESN'T
+                        //## DO ANY CHECKING AT THE MOMENT
                         ps  = [desugar_expr(e, def_vars) : e <- expr.params];
-    
                         sgn = untyped_sgn(name: expr.name, arity: length(expr.params));
-
                         nps = syn_fn_defs_to_named_params(expr.named_params, def_vars);
 
-                        // Local functions first
+                        // Closures first
+                        if (in(sgn, clss_in_scope))
+                          assert nps == ();
+                          ps = [desugar_expr(e, def_vars) : e <- expr.params];
+                          return cls_call(name: cls_var(_obj_(expr.name)), params: ps);
+                        ;
+
+                        // Then local functions
                         if (in(sgn, local_fns))
                           fs = nested_fn_symbol(outer: curr_outer_fn, inner: expr.name);
+                          ps = [desugar_expr(e, def_vars) : e <- expr.params];
                           return fn_call(name: fs, params: ps, named_params: nps);
                         ;
                          
@@ -72,10 +83,38 @@ using
                           return cls_call(name: np, params: ps);
                         ;
                         
-                        // And last global functions
-                        return fn_call(name: expr.name, params: ps, named_params: nps);
+                        // And last global functions.
+                        // Since here we may have to deal with closure parameters,
+                        // we have to transform the plain expressions into closures
+                        // if required.
+
+                        pas = fn_param_arities[(expr.name, length(expr.params))];
+                        // ps = [if a == 0 then p else cls_expr(a, p) end : p, a <- zip(ps, pas)];
+                        fps = [];
+                        for (op, dp, a : zip(expr.params, ps, pas))
+                          if (a == 0)
+                            fp = dp;
+                          elif (not op :: ConstOrVar)
+                            fp = cls_expr(a, dp);
+                          else
+                            symb = _obj_(op);
+                            if (in(var(symb), def_vars) or in(named_par(symb), named_params))
+                              fp = cls_expr(a, dp);
+                            else
+                              sgn = untyped_sgn(fn_symbol(symb), a);
+                              if (in(sgn, clss_in_scope))
+                                fp = cls_var(symb);
+                              else
+                                // assert in(sgn, fns_in_scope);
+                                fp = fn_ptr(fn_symbol(symb), a);
+                              ;
+                            ;
+                          ;
+                          fps = fps & [fp];
+                        ;
+                        return fn_call(name: expr.name, params: fps, named_params: nps);
                       },
-    
+
     builtin_call()  = builtin_call(
                         name: expr.name,
                         params: [desugar_expr(e, def_vars) : e <- expr.params]

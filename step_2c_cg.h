@@ -1,7 +1,7 @@
 
 ProcDef* gen_prg_code(Program prg)
 {
-  simpl_prg  = merge_fns_same_name_and_arity(prg);
+  simpl_prg  = generate_dispatch_functions(prg);
   
   memb_tests = {mk_named_type_memb_test_fn(tn, prg.tdefs) : tn <- keys(simpl_prg.tdefs)}; // where type_map = simpl_prg.tdefs;;
                 
@@ -72,7 +72,7 @@ ObjProcDef gen_fn_code(FnDef fndef)
     //;
 
     // Setting named variables for parameters
-    body = body & [set_var(p.var, fn_par(i)) : p @ i <- fndef.params, p.var?];
+    body = body & [set_var(p.var, fn_par(i)) : p @ i <- fndef.params, var_has_to_be_set(p)];
 
     // Evaluating the expression
     body = body & gen_eval_code(fndef.expr, fn_res_var);
@@ -83,29 +83,40 @@ ObjProcDef gen_fn_code(FnDef fndef)
     //;
   ;
 
-  body = [push_call_info(fndef.name, [fn_par(i) : i <- indexes(fndef.params)])] & body & [pop_call_info, ret_val(fn_res_var)];
+  body = [push_call_info(fndef.name, [maybe(fn_par(i), is_scalar_par(p)) : p @ i <- fndef.params])] & body & [pop_call_info, ret_val(fn_res_var)];
 
-  return obj_proc_def(fndef.name, length(fndef.params), (v => arity(t) : v => t <- fndef.named_params), body);
+  ObjProcPar low_level_param(FnFrmPar p):
+    scalar_par()      = :obj,
+    non_scalar_par()  = if p.var? then cls(p.var, p.arity) else cls(p.arity) end;
+
+  params = [low_level_param(p) : p <- fndef.params];
+
+  return obj_proc_def(fndef.name, params, (v => arity(t) : v => t <- fndef.named_params), body);
+
+  //## UGLY: ISNT THERE ANY BETTER WAY? HAVING TO WRITE A FUNCTIONS FOR SOMETHING SO SIMPLE FEELS OVERKILL
+  Bool var_has_to_be_set(FnFrmPar p):
+    scalar_par()      = p.var?,
+    non_scalar_par()  = false;
 }
 
 
-Program merge_fns_same_name_and_arity(Program prg)
+Program generate_dispatch_functions(Program prg)
 {
   mult_map = bag([[fd.name, arity(fd)] : fd <- rand_sort(prg.fndefs)]); //## BAD: USING A SEQUENCE INSTEAD OF A BAG AND AGAIN A SEQUENCE INSTEAD OF A TUPLE
 
-  fns_to_merge = for (na => m <- mult_map)
-                    if (m > 1) {{
-                      fd : fd <- prg.fndefs, [fd.name, arity(fd)] == na
-                    }};
+  overloaded_fns = for (na => m <- mult_map)
+                     if (m > 1) {{
+                       fd : fd <- prg.fndefs, [fd.name, arity(fd)] == na
+                     }};
   
-  merged_fns = {merge_fns(fns, prg.anon_tdefs) : fns <- fns_to_merge};
+  dispatched_fns = union({generate_dispatch_function(fns, prg.anon_tdefs) : fns <- overloaded_fns});
   
-  new_fns = merged_fns & (prg.fndefs - union(fns_to_merge));
+  new_fns = dispatched_fns & (prg.fndefs - union(overloaded_fns));
   
   return program(tdefs: prg.tdefs, anon_tdefs: prg.anon_tdefs, subtype_decls: prg.subtype_decls, fndefs: new_fns);
 }
 
-FnDef merge_fns(FnDef+ fds, (TypeName => AnonType) typedefs)
+FnDef+ generate_dispatch_function(FnDef+ fds, (TypeName => AnonType) typedefs)
 {
   assert size(fds) > 1;
   assert size({length(fd.params) : fd <- fds}) == 1; // All functions have the same arity
@@ -113,19 +124,34 @@ FnDef merge_fns(FnDef+ fds, (TypeName => AnonType) typedefs)
   //## I DON'T PARTICULARLY LIKE THIS...
   rand_fd      = an_elem(fds);
   name         = rand_fd.name;
+  scalar_pars  = [i : p @ i <- rand_fd.params, is_scalar_par(p)];
   arity        = arity(rand_fd);
   named_params = rand_fd.named_params;
 
+  //## BAD: THIS IS REALLY UGLY. NEED A NON-DESTRUCTIVE OPERATION TO UPDATE THE FIELDS OF A TUPLE
+  FnDef make_unique(FnDef fd, Nat i) =
+    fn_def(
+      name:         unique_fn_symbol(fd.name, i),
+      params:       fd.params,
+      named_params: fd.named_params,
+      res_type:     fd.res_type if fd.res_type?,
+      expr:         fd.expr
+      // expr:         Expr
+    );
+
+  unique_fds = [make_unique(fd, i) : fd @ i <- rand_sort(fds)];
+
   candidates = [];
-  for (i : inc_seq(arity))
+  for (i : scalar_pars)
     params = [fd.params[i] : fd <- rand_sort(fds)];
     ptypes = [if p.type? then pseudotype(p.type, typedefs) else pseudotype_any end : p <- params];
     good = all([all([are_disjoint(p1, p2) : p2 <- right_subseq(ptypes, j+1)]) : p1 @ j <- ptypes]); //## BAD: INEFFICIENT. ALSO A BIT UGLY...
     candidates = candidates & [i] if good;
   ;
 
-  // If not single parameter is enough to discriminate between all the functions,
-  // then we just check all of them. Otherwise we use the first parameter that can do the job.
+  // If no single parameter is enough to discriminate between all the functions,
+  // then we just check all of them, except for closures. Otherwise we use the
+  // first parameter that can do the job.
   //## EVEN IF NO SINGLE PARAMETER IS ENOUGHT TO DISCRIMINATE BETWEEN ALL THE FUNCTIONS,
   //## CHANCES ARE THAT WE STILL DON'T NEED TO CHECK ALL OF THEM. ALSO, IF THERE IS MORE
   //## THAN ONE CANDIDATE PARAMETER, WE SHOULD CHOOSE THE BEST ONE, THAT IS, THE ONE THAT
@@ -133,57 +159,37 @@ FnDef merge_fns(FnDef+ fds, (TypeName => AnonType) typedefs)
   //## ALSO, THE PARAMETERS THAT ARE NOT CHECKED AND THAT DO NOT DEFINE ANY VARIABLES
   //## SHOULD NOT BE INCLUDED IN THE MATCH AT ALL (ALTHOUGH THIS WOULD MAKE A DIFFERENCE
   //## ONLY WHEN AT LEAST ONE PARAMETER IS NOT NAMED IN ANY OF THE FUNCTIONS)
-  is_checked = if candidates == [] then arity * [true] else [i == candidates[0] : i <- inc_seq(arity)] end;
+  is_checked = if candidates == [] then bit_map(scalar_pars, arity) else [i == candidates[0] : i <- inc_seq(arity)] end;
+
+  dispatch_call_params = [if is_scalar_par(p) then fn_par(i) else cls_var(i) end : p @ i <- rand_fd.params];
+
+  Pattern mk_ptrn(<(var: var(Atom)?, type: UserExtType?)> param, (TypeName => AnonType) typedefs, Bool is_checked) =
+    if param.type? and is_checked
+      then user_type_to_pseudotype_pattern(param.type, typedefs)
+      else ptrn_any
+    end;
 
   cases = [];
-  for (fd : rand_sort(fds))
+  for (fd : unique_fds)
     ptrns = [mk_ptrn(p, typedefs, is_checked[i]) : p @ i <- fd.params];
-    case  = (ptrns: ptrns, expr: fd.expr);
-    cases = [case | cases];  
+    case  = (ptrns: ptrns, expr: fn_call(fd.name, dispatch_call_params));
+    cases = [case | cases];
   ;
 
-// print "*****************";
-// print cases;
-
-
   new_expr = match_expr(
-                exprs: [fn_par(i) : i <- inc_seq(arity)], //## BAD
-                cases: cases
-              );
+    exprs: [fn_par(i) : i <- inc_seq(arity)], //## BAD
+    cases: cases
+  );
 
-// print "$$$$$$$$$$$$$$$$$$$";
-// print new_expr;
+  params = [if is_scalar_par(p) then :scalar_par(()) else non_scalar_par(p.arity) end : p @ i <- rand_fd.params];
 
-// print "###################";
-// print fn_def(
-//            name:          name,
-//            params:        rep_seq(arity, ()), //## BAD
-//            named_params:  named_params,
-//            //res_type: ????
-//            expr:          new_expr
-//          );
+  dispatch_fn = fn_def(
+    name:          name,
+    params:        params,
+    named_params:  named_params,
+    //res_type: ????
+    expr:          new_expr
+  );
 
-  
-  return fn_def(
-           name:          name,
-           params:        rep_seq(arity, ()), //## BAD
-           named_params:  named_params,
-           //res_type: ????
-           expr:          new_expr
-         );
-
-  Pattern mk_ptrn(<(var: var(Atom)?, type: UserExtType?)> param, (TypeName => AnonType) typedefs, Bool is_checked)
-  {
-// Pattern user_type_to_pseudotype_pattern(UserType type, (TypeName => AnonType) typedefs);
-    ptrn = if param.type? and is_checked then user_type_to_pseudotype_pattern(param.type, typedefs) else ptrn_any end;
-    ptrn = ptrn_var(param.var, ptrn) if param.var?;
-
-    // ptrn = if param.type? then :type_ptrn(param.type) else :ptrn_any end;
-    // ptrn = var_ptrn(name: param.var, ptrn: ptrn) if param.var?;
-// print "----------------";
-// print param;
-// print ptrn;
-
-    return ptrn;
-  }
+  return set(unique_fds) & {dispatch_fn};
 }
