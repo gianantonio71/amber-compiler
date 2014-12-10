@@ -173,7 +173,7 @@ FnDef+ generate_dispatch_function(FnDef+ fds, (TypeName => AnonType) typedefs)
   for (fd : unique_fds)
     ptrns = [mk_ptrn(p, typedefs, is_checked[i]) : p @ i <- fd.params];
     case  = (ptrns: ptrns, expr: fn_call(fd.name, dispatch_call_params));
-    cases = [case | cases];
+    cases = [case] & cases;
   ;
 
   new_expr = match_expr(

@@ -264,10 +264,11 @@ Maybe[Nat] left_search(Seq seq, Seq subseq)
 
 [T] (_*_)(Nat count, [T] seq)
 {
+  l = length(seq);
   res = [];
   for (i : inc_seq(count))
-    for (x : reverse(seq))
-      res = [x | res];
+    for (x : seq)
+      res = res & [x];
     ;
   ;
   return res;
@@ -275,11 +276,11 @@ Maybe[Nat] left_search(Seq seq, Seq subseq)
 
 [T] rep_seq(Nat size, T value)
 {
-  n = size;
+  n = 0;
   s = [];
-  while (n > 0)
-    s = [value | s];
-    n = n - 1;
+  while (n < size)
+    s = s & [value];
+    n = n + 1;
   ;
   return s;
 }
@@ -325,19 +326,6 @@ using Bool is_strictly_ordered(T, T) //## BAD BAD BAD
   
   [T] sort([T] s) = mergesort(s);
 
-  //[T] quicksort([T] s) = quicksort(s, false);
-  //
-  //[T] quicksort([T], Bool (no_dups)):
-  //  []       = [],
-  //  [e]      = [e],
-  //  [p | r]  = do
-  //               head = [e : e <- r, e < p and (not no_dups or e /= p)];
-  //               tail = [e : e <- r, not(e < p) and (not no_dups or e /= p)];
-
-  //               return quicksort(head, no_dups) & [p] & quicksort(tail, no_dups);
-  //             ;
-  //;
-
   [T] mergesort([T] seq)
   {
     len = length(seq);
@@ -348,11 +336,11 @@ using Bool is_strictly_ordered(T, T) //## BAD BAD BAD
       idx = 0;
       //## BAD BAD BAD DOESN'T WORK WELL WITH A ROPE
       while (len > idx+1)
-        nss = [merge(ss[idx], ss[idx+1]) | nss];
+        nss = [merge(ss[idx], ss[idx+1])] & nss;
         idx = idx + 2;
       ;
       assert idx == length(ss) or idx == length(ss) - 1;
-      ss  = if len > idx then [ss[idx] | nss] else nss end;
+      ss  = if len > idx then [ss[idx]] & nss else nss end;
       len = length(ss); //## SHOULD BE len = (len + 1) / 2;
     ;
     return ss[0];
@@ -366,10 +354,10 @@ using Bool is_strictly_ordered(T, T) //## BAD BAD BAD
       i2 = 0;
       while (i1 < l1 or i2 < l2)
         if (i1 == l1 or (i2 < l2 and is_strictly_ordered(seq2[i2], seq1[i1])))
-          rs = [seq2[i2] | rs];
+          rs = [seq2[i2]] & rs;
           i2 = i2 + 1;
         else
-          rs = [seq1[i1] | rs];
+          rs = [seq1[i1]] & rs;
           i1 = i1 + 1;
         ;
       ;
@@ -522,17 +510,12 @@ Bool has_key((T1 => T2) map, T1 key) = _has_key_(map, key); // = (? k => _ <- ma
 
 (T1 => T2) select_by_key((T1 => T2) map, T1* keys) = (k => map[k] : k <- keys);
 
-//#### (T1 => T2) merge((T1 => T2)* maps):
-//####   {}          = [->],
-//####   {m}         = m,
-//####   {ms1 | ms2} = merge(merge(ms1), merge(ms2));
-//#### 
-//#### [T2 -> {T1+}] reverse([T1 -> {T2+}] map)
-//#### {
-//####   // HOW TO MAKE THIS EFFICIENT?
-//####   vs = union({v : [k, v] <- map});
-//####   return [v -> {k : [k, s] <- map ; in(v, s)} : v <- vs];
-//#### }
+// [T2 -> {T1+}] reverse([T1 -> {T2+}] map)
+// {
+//   // HOW TO MAKE THIS EFFICIENT?
+//   vs = union({v : [k, v] <- map});
+//   return [v -> {k : [k, s] <- map ; in(v, s)} : v <- vs];
+// }
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
@@ -659,7 +642,7 @@ String to_str(Int n)
   div  = 10;
   divs = [1];
   while (div <= m)
-    divs = [div | divs];
+    divs = [div] & divs;
     div  = 10 * div;
   ;
   
@@ -735,19 +718,21 @@ String to_text(Any obj)
 
 String quote(String str)
 {
-  qr_str = [];
+  qstr = [];
   for (ch : _obj_(str))
     if (ch == ascii_newline)
-      qr_str = [ascii_lower_n, ascii_backslash | qr_str];
+      qchs = [ascii_lower_n, ascii_backslash];
     elif (ch == ascii_backslash)
-      qr_str = [ascii_backslash, ascii_backslash | qr_str];
+      qchs = [ascii_backslash, ascii_backslash];
     elif (ch == ascii_double_quotes)
-      qr_str = [ascii_double_quotes, ascii_backslash | qr_str];
+      qchs = [ascii_double_quotes, ascii_backslash];
     else
-      qr_str = [ch | qr_str];
+      qchs = [ch];
     ;
+
+    qstr = qstr & qchs;
   ;
-  return "\"" & string(reverse(qr_str)) & "\"";
+  return "\"" & string(qstr) & "\"";
 }
 
 
