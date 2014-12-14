@@ -29,6 +29,7 @@ type AtomicExpr   = InlineObj, ObjVar;
 
 type NatBoolOp    = is_symb(ObjExpr),
                     is_int(ObjExpr),
+                    is_float(ObjExpr),
                     is_ne_set(ObjExpr),
                     is_ne_seq(ObjExpr),
                     is_ne_map(ObjExpr),
@@ -56,6 +57,8 @@ type NatIntOp     = get_int_val(ObjExpr),
                     mult(val1: IntExpr, val2: IntExpr),
                     div(val1: IntExpr, val2: IntExpr),
                     mod(val1: IntExpr, val2: IntExpr),
+                    mantissa(ObjExpr),
+                    dec_exp(ObjExpr),
                     rand_nat(IntExpr),  // Non-deterministic
                     unique_nat,         // Non-deterministic
                     ticks;              // Impure
@@ -101,12 +104,24 @@ type Instr        = init_stream(StreamVar),
                     mk_set(var: ObjVar, elems: VecVar, size: IntExpr),
 
                     mk_seq_from_stream(var: ObjVar, stream: StreamVar),
-                    mk_seq(var: ObjVar, elems: VecVar, size: IntExpr), //## I DON'T LIKE "elems"
+                    mk_seq(var: ObjVar, elems: VecVar, size: IntExpr),
 
                     mk_map_from_streams(var: ObjVar, key_stream: StreamVar, value_stream: StreamVar),
                     mk_map(var: ObjVar, keys: VecVar, values: VecVar, size: IntExpr),
                     
                     mk_tagged_obj(var: ObjVar, tag: ObjExpr, obj: ObjExpr),
+
+                    mk_float(var: ObjVar, mantissa: Int, dec_exp: Int),
+
+                    neg_float(var: ObjVar, value: ObjExpr),
+                    add_floats(var: ObjVar, values: (ObjExpr, ObjExpr)),
+                    sub_floats(var: ObjVar, values: (ObjExpr, ObjExpr)),
+                    mult_floats(var: ObjVar, values: (ObjExpr, ObjExpr)),
+                    div_floats(var: ObjVar, values: (ObjExpr, ObjExpr)),
+                    square_root(var: ObjVar, value: ObjExpr),
+                    floor_op(var: ObjVar, value: ObjExpr),
+                    ceiling_op(var: ObjVar, value: ObjExpr),
+                    int_to_float(var: ObjVar, value: ObjExpr),
 
                     mk_array(var: ObjVar, size: IntExpr, value: ObjExpr),
                     get_seq_slice(var: ObjVar, seq: ObjExpr, idx_first: IntExpr, len: IntExpr),

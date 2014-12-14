@@ -63,6 +63,7 @@ TokenMatchingRule uppercase_id      = :uppercase_id;
 TokenMatchingRule qualified_symbol  = :qualified_symbol;
 TokenMatchingRule label             = :label;
 // TokenMatchingRule integer           = :integer; //## Conflicts with "IntType integer = :integer;" int utils_2_ctors.h
+TokenMatchingRule float             = :float;
 TokenMatchingRule string            = :string;
 TokenMatchingRule char              = :char;
 TokenMatchingRule operator          = :operator;

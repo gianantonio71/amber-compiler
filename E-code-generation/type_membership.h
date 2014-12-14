@@ -251,6 +251,7 @@ BoolExpr gen_type_checking_expr(UserType type, AtomicExpr obj):
   low_ints()      = and_then(is_int(obj), is_le(get_int_val(obj), type.max)),
   high_ints()     = and_then(is_int(obj), is_ge(get_int_val(obj), type.min)),
   int_range()     = and_then(is_int(obj), is_ge(get_int_val(obj), type.min), is_le(get_int_val(obj), max(type))),
+  float_type      = is_float(obj),
   type_ref(ts?)   = eval_bool_fn(:memb_test(ts), [obj]),
   type_var()      = true, //## BUG BUG BUG THIS IS TEMPORARY...
   empty_seq_type  = is_eq(obj, empty_seq),

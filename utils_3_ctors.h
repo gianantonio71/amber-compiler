@@ -20,6 +20,7 @@ AtomicExpr empty_map = :empty_map;
 
 NatBoolOp is_symb(ObjExpr e)                    = :is_symb(e);
 NatBoolOp is_int(ObjExpr e)                     = :is_int(e);
+NatBoolOp is_float(ObjExpr e)                   = :is_float(e);
 NatBoolOp is_ne_set(ObjExpr e)                  = :is_ne_set(e);
 NatBoolOp is_ne_seq(ObjExpr e)                  = :is_ne_seq(e);
 NatBoolOp is_ne_map(ObjExpr e)                  = :is_ne_map(e);
@@ -51,6 +52,8 @@ NatIntOp sub(IntExpr e1, IntExpr e2)    = sub(val1: e1, val2: e2);
 NatIntOp mult(IntExpr e1, IntExpr e2)   = mult(val1: e1, val2: e2);
 NatIntOp div(IntExpr e1, IntExpr e2)    = div(val1: e1, val2: e2);
 NatIntOp mod_op(IntExpr e1, IntExpr e2) = mod(val1: e1, val2: e2); //## THIS SHOULD JUST BE NAMED mod, BUT THAT WOULD CONFLICT WITH THE INTEGER MOD OPERATION
+NatIntOp mantissa(ObjExpr e)            = :mantissa(e);
+NatIntOp dec_exp(ObjExpr e)             = :dec_exp(e);
 NatIntOp unique_nat                     = :unique_nat;
 NatIntOp rand_nat(ObjExpr e)            = :rand_nat(get_int_val(e));
 NatIntOp ticks                          = :ticks;
@@ -89,6 +92,18 @@ Instr mk_map_from_streams(ObjVar v, StreamVar ks, StreamVar vs) = mk_map_from_st
 Instr mk_map(ObjVar v, VecVar ks, VecVar vs, IntExpr s)         = mk_map(var: v, keys: ks, values: vs, size: s);
 
 Instr mk_tagged_obj(ObjVar v, ObjExpr t, ObjExpr o) = mk_tagged_obj(var: v, tag: t, obj: o);
+
+Instr mk_float(ObjVar v, Int m, Int e)  = mk_float(var: v, mantissa: m, dec_exp: e);
+
+Instr neg_float(ObjVar var, ObjExpr val)              = neg_float(var: var, value: val);
+Instr add_floats(ObjVar var, ObjExpr lv, ObjExpr rv)  = add_floats(var: var, values: (lv, rv));
+Instr sub_floats(ObjVar var, ObjExpr lv, ObjExpr rv)  = sub_floats(var: var, values: (lv, rv));
+Instr mult_floats(ObjVar var, ObjExpr lv, ObjExpr rv) = mult_floats(var: var, values: (lv, rv));
+Instr div_floats(ObjVar var, ObjExpr lv, ObjExpr rv)  = div_floats(var: var, values: (lv, rv));
+Instr square_root(ObjVar var, ObjExpr value)          = square_root(var: var, value: value);
+Instr floor_op(ObjVar var, ObjExpr value)             = floor_op(var: var, value: value);
+Instr ceiling_op(ObjVar var, ObjExpr value)           = ceiling_op(var: var, value: value);
+Instr int_to_float(ObjVar var, ObjExpr value)         = int_to_float(var: var, value: value);
 
 Instr mk_array(ObjVar v, IntExpr s, ObjExpr d)                 = mk_array(var: v, size: s, value: d);
 Instr get_seq_slice(ObjVar v, ObjExpr s, IntExpr f, IntExpr l) = get_seq_slice(var: v, seq: s, idx_first: f, len: l);

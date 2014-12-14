@@ -350,6 +350,18 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
     mk_tagged_obj()       = mk_call(instr.var, "make_tagged_obj", [instr.tag, instr.obj]),
 
+    mk_float()            = [mk_gen_call(instr.var, "make_float", [float_to_str(instr.mantissa, instr.dec_exp)], [], [])],
+
+    neg_float()           = mk_call(instr.var, "neg_float", [instr.value]),
+    add_floats()          = mk_call(instr.var, "add_floats", instr.values),
+    sub_floats()          = mk_call(instr.var, "sub_floats", instr.values),
+    mult_floats()         = mk_call(instr.var, "mult_floats", instr.values),
+    div_floats()          = mk_call(instr.var, "div_floats", instr.values),
+    square_root()         = mk_call(instr.var, "square_root", [instr.value]),
+    floor_op()            = mk_call(instr.var, "floor", [instr.value]),
+    ceiling_op()          = mk_call(instr.var, "ceiling", [instr.value]),
+    int_to_float()        = mk_call(instr.var, "int_to_float", [instr.value]),
+
     mk_array()            = mk_call(instr.var, "make_array", [instr.size, instr.value]),
     get_seq_slice()       = mk_call(instr.var, "get_seq_slice", [instr.seq, instr.idx_first, instr.len]),
     join_seqs()           = mk_call(instr.var, "join_seqs", [instr.left, instr.right]),
@@ -679,6 +691,7 @@ using String typesymb2name(TypeSymbol)
     BoolVar               = to_c_var_name(expr),
     is_symb(e?)           = "is_symb("    & to_c_expr(e) & ")",
     is_int(e?)            = "is_int("     & to_c_expr(e) & ")",
+    is_float(e?)          = "is_float("   & to_c_expr(e) & ")",
     is_ne_set(e?)         = "is_ne_set("  & to_c_expr(e) & ")",
     is_ne_seq(e?)         = "is_ne_seq("  & to_c_expr(e) & ")",
     is_ne_map(e?)         = "is_ne_map("  & to_c_expr(e) & ")",
@@ -729,6 +742,8 @@ using String typesymb2name(TypeSymbol)
     mult()            = to_nary_op(" * ", [expr.val1, expr.val2], parentesised),
     div()             = to_nary_op(" / ", [expr.val1, expr.val2], parentesised),
     mod()             = to_nary_op(" % ", [expr.val1, expr.val2], parentesised),
+    mantissa(e?)      = "mantissa(" & to_c_expr(e) & ")",
+    dec_exp(e?)       = "dec_exp(" & to_c_expr(e) & ")",
     rand_nat(e?)      = "rand_nat(" & to_c_expr(e) & ")",
     unique_nat        = "unique_nat()",
     ticks             = "get_tick_count()";

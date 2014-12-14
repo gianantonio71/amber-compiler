@@ -120,6 +120,7 @@ ParsingRule rule_type =
       (name: :type_union,       rule: rule_type_union),
       (name: :type_any_symbol,  rule: rule_type_any_symbol),
       (name: :type_integer,     rule: rule_type_integer),
+      (name: :type_float,       rule: rule_type_float),
       (name: :type_seq,         rule: rule_type_seq),
       (name: :type_map,         rule: rule_type_map),
       (name: :type_record,      rule: rule_type_record),
@@ -151,6 +152,7 @@ ParsingRule rule_type_name_par    = rule_seq([rule_type_name, bracket_rule(comma
 ParsingRule rule_type_union       = rule_seq([atomic_rule(lower), comma_sep_seq(rule_ref_pretype), atomic_rule(greater)]);
 ParsingRule rule_type_any_symbol  = rule_seq([atomic_rule(lower), atomic_rule(plus), atomic_rule(greater)]);
 ParsingRule rule_type_integer     = bracket_rule(rule_seq([int_type_bound, atomic_rule(double_dot), int_type_bound]));
+ParsingRule rule_type_float       = rule_seq([atomic_rule(lower), atomic_rule(circumflex), atomic_rule(greater)]);
 ParsingRule rule_type_seq         = bracket_rule(rule_seq([rule_ref_type, optional_rule(atomic_rule(circumflex))]));
 ParsingRule rule_type_map         = par_rule(rule_seq([rule_ref_type, atomic_rule(double_right_arrow), rule_ref_type]));
 
@@ -252,6 +254,7 @@ ParsingRule rule_switch_ptrn = //## rule_try_ptrn? rule_match_ptrn?
       (name: :integer,      rule: rule_seq([optional_rule(atomic_rule(minus)), atomic_rule(integer)])),
       (name: :atom_any,     rule: atomic_rule(plus)),
       (name: :integer_any,  rule: atomic_rule(asterisk)),
+      (name: :float,        rule: atomic_rule(circumflex)),
       (name: :any,          rule: atomic_rule(underscore)),
       // (name: :empty_seq,    rule: empty_block_rule(bracket)),
       (name: :seq,          rule: bracket_rule(atomic_rule(triple_dot))),
@@ -447,6 +450,7 @@ ParsingRule rule_expr_0 =
     (name: :integer,      rule: atomic_rule(integer)),
     (name: :symbol,       rule: atomic_rule(qualified_symbol)),
     (name: :string,       rule: atomic_rule(string)),
+    (name: :float,        rule: atomic_rule(float)),
 
     (name: true,          rule: atomic_rule(keyword(true))),
     (name: false,         rule: atomic_rule(keyword(false))),

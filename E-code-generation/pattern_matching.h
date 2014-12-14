@@ -46,6 +46,7 @@ using
 BoolExpr gen_ptrn_matching_expr(Pattern ptrn, AtomicExpr obj):
   ptrn_symbol                   = is_symb(obj),
   ptrn_integer                  = is_int(obj),
+  ptrn_float                    = is_float(obj),
   ptrn_empty_set                = is_eq(obj, empty_set),
   ptrn_ne_set                   = is_ne_set(obj),
   ptrn_empty_seq                = is_eq(obj, empty_seq),

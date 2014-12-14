@@ -59,6 +59,7 @@ SynType build_type_ast(RuleMatch mtc)
                 type_union        = build_type_union_ast(submatch),
                 type_any_symbol   = atom_type,
                 type_integer      = build_integer_type_ast(submatch),
+                type_float        = float_type,
                 type_seq          = build_seq_type_ast(submatch),
                 type_map          = build_map_type_ast(submatch),
                 type_record       = build_record_type_ast(submatch),
@@ -460,33 +461,34 @@ SynExpr build_expr_1_ast(RuleMatch mtc)
 
 SynExpr build_expr_0_ast(RuleMatch mtc) =
   match (mtc.name)
-    tag_obj       = build_tag_obj_expr_ast(mtc.match),                                        // rule_seq([atomic_rule(qualified_symbol), par_rule(rule_ref_expr)])
-    integer       = object(get_integer(mtc.match)),                                           // atomic_rule(integer)
-    symbol        = object(get_qualified_symbol(mtc.match)),                                  // atomic_rule(qualified_symbol)
-    string        = build_string_expr_ast(mtc.match),                                         // atomic_rule(string)
-    true          = object(true),                                                             // atomic_rule(keyword(true))
-    false         = object(false),                                                            // atomic_rule(keyword(false))
-    nil           = object(nil),                                                              // atomic_rule(keyword(nil))
-    set           = build_set_expr_ast(mtc.match),                                            // brace_rule(opt_comma_sep_seq(rule_subexpr))
-    map           = build_map_expr_ast(mtc.match),                                            // par_rule(opt_comma_sep_seq(rule_map_entry))
-    record        = build_record_expr_ast(mtc.match),                                         // rule_record_expr
-    seq           = build_seq_expr_ast(mtc.match),                                            // rule_seq_expr
-    tag_record    = build_tag_record_expr_ast(mtc.match),                                     // rule_tag_record_expr
-    builtin_call  = build_builtin_call_expr_ast(mtc.match),                                   // rule_seq([atomic_rule(builtin), par_rule(comma_sep_seq(rule_ref_expr))])
-    par_exprs     = build_tuple_or_par_expr_ast(mtc.match),                                   // par_rule(comma_sep_seq(rule_ref_expr))
-    ex_qual       = build_ex_qual_expr_ast(mtc.match),                                        // rule_ex_qual_expr
-    set_cp        = build_set_cp_expr_ast(mtc.match),                                         // rule_set_cp_expr
-    map_cp        = build_map_cp_expr_ast(mtc.match),                                         // rule_map_cp_expr
-    seq_cp        = build_seq_cp_expr_ast(mtc.match),                                         // rule_seq_cp_expr
-    alt_cp        = build_alt_cp_expr_ast(mtc.match),                                         // rule_alt_cp_expr
-    if_else       = build_if_else_expr_ast(mtc.match),                                        // rule_if_expr
-    match_expr    = build_match_expr_ast(mtc.match),                                          // rule_match_expr
-    proc          = build_proc_expr_ast(mtc.match),                                           // brace_rule(rep_rule(rule_ref_stmt, true))
-    select_expr   = build_select_expr_ast(mtc.match),                                         // rule_select_expr
-    replace_expr  = build_replace_expr_ast(mtc.match),                                        // rule_replace_expr
-    fn_call       = build_fn_call_expr_ast(mtc.match),                                        // rule_fn_call_expr
-    const_or_var  = const_or_var(get_lowercase_id(mtc.match)),                                // rule_id
-    cls_par       = cls_par(get_cls_par_idx(mtc.match));                                      // atomic_rule(qual_var))
+    tag_obj       = build_tag_obj_expr_ast(mtc.match),          // rule_seq([atomic_rule(qualified_symbol), par_rule(rule_ref_expr)])
+    integer       = object(get_integer(mtc.match)),             // atomic_rule(integer)
+    symbol        = object(get_qualified_symbol(mtc.match)),    // atomic_rule(qualified_symbol)
+    string        = build_string_expr_ast(mtc.match),           // atomic_rule(string)
+    float         = get_float_lit(mtc.match),                   // atomic_rule(float)
+    true          = object(true),                               // atomic_rule(keyword(true))
+    false         = object(false),                              // atomic_rule(keyword(false))
+    nil           = object(nil),                                // atomic_rule(keyword(nil))
+    set           = build_set_expr_ast(mtc.match),              // brace_rule(opt_comma_sep_seq(rule_subexpr))
+    map           = build_map_expr_ast(mtc.match),              // par_rule(opt_comma_sep_seq(rule_map_entry))
+    record        = build_record_expr_ast(mtc.match),           // rule_record_expr
+    seq           = build_seq_expr_ast(mtc.match),              // rule_seq_expr
+    tag_record    = build_tag_record_expr_ast(mtc.match),       // rule_tag_record_expr
+    builtin_call  = build_builtin_call_expr_ast(mtc.match),     // rule_seq([atomic_rule(builtin), par_rule(comma_sep_seq(rule_ref_expr))])
+    par_exprs     = build_tuple_or_par_expr_ast(mtc.match),     // par_rule(comma_sep_seq(rule_ref_expr))
+    ex_qual       = build_ex_qual_expr_ast(mtc.match),          // rule_ex_qual_expr
+    set_cp        = build_set_cp_expr_ast(mtc.match),           // rule_set_cp_expr
+    map_cp        = build_map_cp_expr_ast(mtc.match),           // rule_map_cp_expr
+    seq_cp        = build_seq_cp_expr_ast(mtc.match),           // rule_seq_cp_expr
+    alt_cp        = build_alt_cp_expr_ast(mtc.match),           // rule_alt_cp_expr
+    if_else       = build_if_else_expr_ast(mtc.match),          // rule_if_expr
+    match_expr    = build_match_expr_ast(mtc.match),            // rule_match_expr
+    proc          = build_proc_expr_ast(mtc.match),             // brace_rule(rep_rule(rule_ref_stmt, true))
+    select_expr   = build_select_expr_ast(mtc.match),           // rule_select_expr
+    replace_expr  = build_replace_expr_ast(mtc.match),          // rule_replace_expr
+    fn_call       = build_fn_call_expr_ast(mtc.match),          // rule_fn_call_expr
+    const_or_var  = const_or_var(get_lowercase_id(mtc.match)),  // rule_id
+    cls_par       = cls_par(get_cls_par_idx(mtc.match));        // atomic_rule(qual_var))
   ;
 
 SynTagObjExpr build_tag_obj_expr_ast(RuleMatch mtc)
@@ -943,6 +945,7 @@ SynPtrn build_switch_ptrn_ast(Atom name, RuleMatch mtc):  //## build_try_ptrn_as
   var           = ptrn_var(var(get_lowercase_id(mtc, 0)), ptrn_any),  //rule_seq([atomic_rule(lowercase_id), atomic_rule(question_mark)])
   atom          = ptrn_symbol(get_lowercase_id(mtc)),                 //atomic_rule(lowercase_id)
   integer       = syn_ptrn_integer(get_integer(mtc, 1)),              //rule_seq([optional_rule(atomic_rule(minus)), atomic_rule(integer)])
+  float         = ptrn_float,                                         //atomic_rule(circumflex)
   atom_any      = ptrn_symbol,                                        //atomic_rule(plus)
   integer_any   = ptrn_integer,                                       //atomic_rule(asterisk)
   any           = ptrn_any,                                           //atomic_rule(underscore)
@@ -1010,6 +1013,7 @@ AnnotatedToken annotated_token(RuleMatch):
 PlainToken get_token(RuleMatch mtc) = annotated_token(mtc).token;
 
 Nat get_integer(RuleMatch mtc)            = get_token(mtc);
+FloatLit get_float_lit(RuleMatch mtc)     = get_token(mtc);
 Atom get_lowercase_id(RuleMatch mtc)      = _obj_(get_token(mtc));
 Atom get_qualified_symbol(RuleMatch mtc)  = _obj_(get_token(mtc));
 Atom get_label(RuleMatch mtc)             = _obj_(get_token(mtc));

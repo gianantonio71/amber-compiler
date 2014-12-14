@@ -627,6 +627,7 @@ using Bool condition(Any), Any eval(Any)
 
 [T] intermix([T] seq, T obj) = join([[obj if i /= 0, e] : e @ i <- seq]);
 
+///////////////////////////////////////////////////////////////////////////////
 
 String to_str(Int n)
 {
@@ -660,6 +661,18 @@ String to_str(Int n)
   return if neg then "-" & str else str end;
 }
 
+
+String float_to_str(Int mantissa, Int dec_exp)
+{
+  mant_str = to_str(mantissa);
+  shift = -dec_exp;
+  padd_zeros = max(0, shift + 1 - length(mant_str));
+  mant_str = append(padd_zeros * ["0"]) & mant_str;
+  left = substr(mant_str, 0, nil, shift);
+  right = substr(mant_str, nil, shift, 0);
+  return left & "." & right;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 Int to_int(String str)
@@ -683,7 +696,6 @@ Int to_int(String str)
   return if neg then -res else res end;
 }
 
-
 ///////////////////////////////////////////////////////////////////////////////
 
 String to_text(Any obj)
@@ -693,6 +705,7 @@ String to_text(Any obj)
   String to_txt(Any obj):
     +           = _str_(obj),
     *           = to_str(obj),
+    ^           = float_to_str(_mantissa_(obj), _dec_exp_(obj)),
     string()    = if obj :: String then quote(obj) else to_txt_tag_obj(:string, _obj_(obj)) end,
     [...]       = "[" & append(intermix([to_txt(x) : x <- obj], ", ")) & "]",
     {...}       = "{" & append(intermix([to_txt(x) : x <- rand_sort(obj)], ", ")) & "}",
@@ -750,6 +763,7 @@ String to_text(Any obj, Nat line_len, Nat indent_level)
   [String^] to_txt(Any obj, Nat line_len):
     +           = [_str_(obj)],
     *           = [to_str(obj)],
+    ^           = [float_to_str(_mantissa_(obj), _dec_exp_(obj))],
     string()    = if obj :: String then [quote(obj)] else to_txt_tag_obj(:string, _obj_(obj), line_len) end,
     [...]       = to_txt_collection(obj, line_len, "[", "]"),
     {...}       = to_txt_collection(rand_sort(obj), line_len, "{", "}"),
@@ -810,7 +824,6 @@ String to_text(Any obj, Nat line_len, Nat indent_level)
     last_idx = length(lines) - 1;
     return [if i /= last_idx then l else l & str end : l @ i <- lines];
   }
-  
 
   [String^] to_txt_map(Map map, Nat line_len)
   {
@@ -860,6 +873,8 @@ String (_&_) (String s1, String s2)   = string(_obj_(s1) & _obj_(s2));
 String append([String] ss)            = string(join([_obj_(s) : s <- ss]));
 String reverse(String s)              = string(reverse(_obj_(s)));
 String substr(String s, Nat n, Nat m) = string(subseq(_obj_(s), n, m));
+
+String substr(String s, <Nat, nil> l, <Nat, nil> m, <Nat, nil> r) = string(subseq(_obj_(s), l, m, r));
 
 String rep_str(Nat len, Nat ch)       = string(rep_seq(len, ch));
 <Nat, nil> at(String str, Nat idx)    = at(_obj_(str), idx, nil);

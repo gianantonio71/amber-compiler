@@ -13,6 +13,8 @@ using
   Expr desugar_expr(SynExpr expr, Var* def_vars):
 
     object()        = expr,
+
+    float_lit()     = expr,
     
     seq_expr()      = seq_expr(
                         head: [desugar_expr(e, def_vars) : e <- expr.head],

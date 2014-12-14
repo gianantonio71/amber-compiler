@@ -202,6 +202,15 @@ using
       union         = merge_sets(res_var, ps[0]),
       merge         = merge_maps(res_var, ps[0]),
       list_to_seq   = list_to_seq(res_var, ps[0]),
+      fneg          = neg_float(res_var, ps[0]),
+      fadd          = add_floats(res_var, ps[0], ps[1]),
+      fsub          = sub_floats(res_var, ps[0], ps[1]),
+      fmult         = mult_floats(res_var, ps[0], ps[1]),
+      fdiv          = div_floats(res_var, ps[0], ps[1]),
+      fsqrt         = square_root(res_var, ps[0]),
+      floor         = floor_op(res_var, ps[0]),
+      ceiling       = ceiling_op(res_var, ps[0]),
+      float         = int_to_float(res_var, ps[0]),
       _             = set_var(res_var, gen_eval_expr(name, ps));
     
     ObjExpr gen_eval_expr(BuiltIn name, [AtomicExpr] ps):
@@ -216,6 +225,8 @@ using
       len         = to_obj(get_seq_len(ps[0])),
       tag         = get_tag(ps[0]),
       in          = to_obj(has_elem(ps[1], ps[0])),
+      mantissa    = to_obj(mantissa(ps[0])),
+      dec_exp     = to_obj(dec_exp(ps[0])),
       rand_nat    = to_obj(rand_nat(ps[0])),
       counter     = to_obj(unique_nat),
       ticks       = to_obj(ticks);
@@ -225,6 +236,8 @@ using
   [Instr^] gen_eval_code(Expr expr, ObjVar res_var):
 
     object()        = [set_var(res_var, expr)],
+
+    float_lit()     = [mk_float(res_var, expr.mantissa, expr.dec_exp)],
 
     Var             = [set_var(res_var, expr), add_ref(res_var)],
 

@@ -74,6 +74,8 @@ using
   SynObjErr* expr_wf_errors(SynExpr expr, Var* def_vars):
     object()            = {},
 
+    float_lit()         = {},
+
     //seq_expr(head: [SynSubExpr], tail: SynExpr?)
     seq_expr()          = union({expr_wf_errors(e, def_vars) : e <- set(expr.head)}) &
                           if expr.tail? then expr_wf_errors(expr.tail, def_vars) else {} end,
@@ -439,6 +441,7 @@ using
   SynObjErr* ptrn_wf_errors(SynPtrn ptrn, Var* ext_vars):
     ptrn_symbol       = {},
     ptrn_integer      = {},
+    ptrn_float        = {},
     ptrn_seq          = {},
     ptrn_set          = {},
     ptrn_map          = {},

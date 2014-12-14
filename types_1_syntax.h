@@ -40,7 +40,7 @@ type SynParTypedef = par_typedef(name: BasicTypeSymbol, params: [TypeVar^], type
 
 /////////////////////////////////////////////////////////////////////////////////////
 
-type SynExpr  = LeafObj, Var, ConstOrVar, ClsPar,
+type SynExpr  = LeafObj, FloatLit, Var, ConstOrVar, ClsPar,
                 SynSeqExpr, SynSetExpr, SynMapExpr, SynTagObjExpr,
                 SynFnCall, SynBuiltInCall,
                 SynBoolExpr, SynCmpExpr,
@@ -107,6 +107,7 @@ type SynMapExprEntry  = (key: SynExpr, value: SynExpr, cond: SynExpr?);
 
 type SynPtrn    = ptrn_symbol,
                   ptrn_integer,
+                  ptrn_float,
                   ptrn_seq,
                   ptrn_set,
                   ptrn_map,

@@ -41,7 +41,7 @@ Bool is_alpha(Nat ch, <upper, lower, any> case)     = (case /= :lower and is_upp
 Bool looks_like_a_lowercase_id_or_label([Nat] bytes, Int offset)   = is_lower(bytes, offset);
 Bool looks_like_a_mixed_or_upper_case_id([Nat] bytes, Int offset)  = is_upper(bytes, offset);
 Bool looks_like_a_qualified_symbol([Nat] bytes, Int offset)        = is_char(bytes, offset, ascii_colon) and is_lower(bytes, offset+1);
-Bool looks_like_an_integer([Nat] bytes, Int offset)                = is_digit(bytes, offset);
+Bool looks_like_an_integer_or_float([Nat] bytes, Int offset)       = is_digit(bytes, offset);
 Bool looks_like_a_string([Nat] bytes, Int offset)                  = is_char(bytes, offset, ascii_double_quotes);
 Bool looks_like_a_char([Nat] bytes, Int offset)                    = is_char(bytes, offset, ascii_single_quote);
 Bool looks_like_a_builtin([Nat] bytes, Int offset)                 = is_char(bytes, offset, ascii_underscore) and is_lower(bytes, offset+1);
@@ -85,7 +85,7 @@ ParseLineResult split_line_into_tokens([Nat] bytes)
     res = if looks_like_a_lowercase_id_or_label(bytes, idx)  then read_lowercase_id_or_label(bytes, idx),
              looks_like_a_mixed_or_upper_case_id(bytes, idx) then read_mixed_or_upper_case_id(bytes, idx),
              looks_like_a_qualified_symbol(bytes, idx)       then read_qualified_symbol(bytes, idx),
-             looks_like_an_integer(bytes, idx)               then read_integer(bytes, idx),
+             looks_like_an_integer_or_float(bytes, idx)      then read_integer_or_float(bytes, idx),
              looks_like_a_string(bytes, idx)                 then read_string(bytes, idx),
              //looks_like_a_char(bytes, idx)                   then read_char(bytes, idx),
              looks_like_a_builtin(bytes, idx)                then read_builtin(bytes, idx),
@@ -161,15 +161,31 @@ ParseTokenResult read_qualified_symbol([Nat] bytes, Int offset)
 }
 
 
-ParseTokenResult read_integer([Nat] bytes, Int offset)
+ParseTokenResult read_integer_or_float([Nat] bytes, Int offset)
 {
   assert is_digit(bytes, offset);
   len = digit_length(bytes, offset);
-  //## CHECK THAT THE INTEGER IS NOT TOO BIG
+  //## CHECK THAT THE INTEGER IS NOT TOO BIG (BUT THAT WOULD BE OK FOR A FLOATING POINT NUMBER)
   next_idx = offset + len;
   return failure(next_idx) if is_alpha(bytes, next_idx, :any);
   value = to_int(string(subseq(bytes, offset, len)));
-  return success(token_line_info(value, offset, len));
+  return success(token_line_info(value, offset, len)) if not is_char(bytes, next_idx, ascii_dot) or is_char(bytes, next_idx+1, ascii_dot);
+
+  dec_len = digit_length(bytes, next_idx+1);
+  dec_chs = subseq(bytes, next_idx+1, dec_len);
+  mantissa = value;
+  exp = 0;
+  for (ch : dec_chs)
+    d = ch - ascii_0;
+    assert d >= 0 and d <= 9;
+    new_mantissa = 10 * mantissa + d;
+    // If the mantissa overflows, we just ignore the least significant digits 
+    break if new_mantissa < mantissa;
+    mantissa = new_mantissa;
+    exp = exp - 1;
+  ;
+  float_value = float_lit(mantissa, exp);
+  return success(token_line_info(float_value, offset, len + dec_len + 1));
 }
 
 

@@ -33,7 +33,9 @@ type SymbType       = symb_type(SymbObj);
 
 type IntType        = integer, low_ints(max: Int), high_ints(min: Int), int_range(min: Int, size: NzNat);
 
-type LeafType       = atom_type, SymbType, IntType, empty_seq_type, empty_set_type, empty_map_type;
+type FloatType      = float_type;
+
+type LeafType       = atom_type, SymbType, IntType, FloatType, empty_seq_type, empty_set_type, empty_map_type;
 
 type SelfPretype    = self, self(Nat);
 
@@ -97,6 +99,7 @@ type Operator = plus, minus, star, slash, exp, amp, lower, greater, lower_eq, gr
 
 type BuiltIn  = neg, add, sub, mult, div, mod, str, symb, at, len, slice, cat, mcat, rev, set,
                 mset, isort, list_to_seq, tag, obj, in, has_key, lookup, union, merge,
+                fneg, fadd, fsub, fmult, fdiv, fsqrt, floor, ceiling, float, mantissa, dec_exp,
                 rand_nat, rand_elem, counter, ticks;
 
 type FnSymbol = fn_symbol(Atom),
@@ -115,7 +118,11 @@ type CondExpr = cond_expr(expr: Expr, cond: Expr);
 
 type SubExpr  = Expr, CondExpr;
 
+type FloatLit = float_lit(mantissa: Int, dec_exp: Int);
+
 type Expr     = LeafObj, //## UPDATE ALL REFERENCES
+
+                FloatLit,
 
                 set_expr(SubExpr*), //## MAYBE I SHOULDN'T ALLOW EMPTY EXPRESSIONS
                 seq_expr(head: [SubExpr], tail: Expr?), //## I DON'T LIKE THIS MUCH
@@ -169,6 +176,7 @@ type ExtExpr  = Expr, ClsExpr;
 
 type Pattern  = ptrn_symbol, //## THE CORRESPONDING TYPE IS CALLED atom_type. RENAME ONE OF THE TWO?
                 ptrn_integer, //## THIS IS ACTUALLY REDUNDANT, AS IT IS THE SAME AS ptrn_integer(integer)
+                ptrn_float,
                 ptrn_empty_set,
                 ptrn_ne_set,
                 ptrn_empty_seq,

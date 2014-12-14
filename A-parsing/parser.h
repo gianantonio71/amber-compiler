@@ -60,6 +60,7 @@ Bool matches(TokenMatchingRule rule, PlainToken token):
   qualified_symbol,   qualified_symbol()  = true,
   label,              label()             = true,
   integer,            Int                 = true,
+  float,              float_lit()         = true,
   string,             String              = true,
   char,               Char                = true,
   operator,           operator()          = true,

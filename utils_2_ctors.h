@@ -16,6 +16,8 @@ void_type = :void_type;
 
 atom_type = :atom_type;
 
+float_type = :float_type;
+
 SymbType symb_type(SymbObj obj) = :symb_type(obj);
 SymbType symb_type(Atom symbol) = :symb_type(:object(symbol));
 
@@ -91,6 +93,7 @@ FnType fn_type([ExtType] ps, (<named_par(Atom)> => ExtType) nps, AnonType rt) = 
 
 Pattern ptrn_symbol                             = :ptrn_symbol;
 Pattern ptrn_integer                            = :ptrn_integer;
+Pattern ptrn_float                              = :ptrn_float;
 
 Pattern ptrn_empty_set                          = :ptrn_empty_set;
 Pattern ptrn_ne_set                             = :ptrn_ne_set;
@@ -135,6 +138,8 @@ ClsVar cls_var(Atom a)  = :cls_var(a);
 ClsPar non_scalar_par(ClsVar v, UserClsType t) = non_scalar_par(var: v, arity: arity(t), type: t);
 ClsPar non_scalar_par(ClsVar v, NzNat a)       = non_scalar_par(var: v, arity: a);
 ClsPar non_scalar_par(NzNat a)                 = non_scalar_par(arity: a);
+
+Expr float_lit(Int m, Int e)  = float_lit(mantissa: m, dec_exp: e);
 
 Expr seq_expr([SubExpr] h)          = seq_expr(head: h);
 Expr seq_expr([SubExpr] h, Expr t)  = seq_expr(head: h, tail: t);
