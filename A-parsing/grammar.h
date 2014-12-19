@@ -460,6 +460,7 @@ ParsingRule rule_expr_0 =
     (name: :map,          rule: par_rule(opt_comma_sep_seq(rule_map_entry))),
     (name: :record,       rule: rule_record_expr),
     (name: :seq,          rule: rule_seq_expr),
+    (name: :seq_tail,     rule: rule_seq_tail_expr),
 
     (name: :tag_record,   rule: rule_tag_record_expr),
 
@@ -513,11 +514,13 @@ ParsingRule rule_record_expr =
     )
   );
 
-ParsingRule rule_seq_expr =
+ParsingRule rule_seq_expr = bracket_rule(comma_sep_seq(rule_subexpr, false));
+
+ParsingRule rule_seq_tail_expr =
   bracket_rule(
     rule_seq([
-      rep_rule(rule_subexpr, atomic_rule(comma)),
-      optional_rule(rule_seq([atomic_rule(pipe), rule_ref_expr]))
+      rule_ref_expr,
+      rule_seq([atomic_rule(pipe), comma_sep_seq(rule_ref_expr)]) //## MAYBE HERE I SHOULD ALLOW ALSO A CONDITIONAL EXPRESSION
     ])
   );
 

@@ -56,7 +56,7 @@ type ConstOrVar       = const_or_var(Atom); //## NOT SURE ATOM IS THE RIGHT THIN
 
 type ClsPar           = cls_par(Nat);
 
-type SynSeqExpr       = seq_expr(head: [SynSubExpr], tail: SynExpr?);
+type SynSeqExpr       = seq_expr([SynSubExpr]), seq_tail_expr(seq: SynExpr, tail: [SynExpr^]);
 type SynSetExpr       = set_expr(SynSubExpr*);
 type SynMapExpr       = map_expr(SynMapExprEntry*);
 type SynTagObjExpr    = tag_obj_expr(tag: SynExpr, obj: SynExpr);

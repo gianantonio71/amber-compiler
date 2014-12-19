@@ -473,6 +473,7 @@ SynExpr build_expr_0_ast(RuleMatch mtc) =
     map           = build_map_expr_ast(mtc.match),              // par_rule(opt_comma_sep_seq(rule_map_entry))
     record        = build_record_expr_ast(mtc.match),           // rule_record_expr
     seq           = build_seq_expr_ast(mtc.match),              // rule_seq_expr
+    seq_tail      = build_seq_tail_expr_ast(mtc.match),         // rule_seq_tail_expr
     tag_record    = build_tag_record_expr_ast(mtc.match),       // rule_tag_record_expr
     builtin_call  = build_builtin_call_expr_ast(mtc.match),     // rule_seq([atomic_rule(builtin), par_rule(comma_sep_seq(rule_ref_expr))])
     par_exprs     = build_tuple_or_par_expr_ast(mtc.match),     // par_rule(comma_sep_seq(rule_ref_expr))
@@ -500,16 +501,15 @@ SynTagObjExpr build_tag_obj_expr_ast(RuleMatch mtc)
 
 SynSetExpr build_set_expr_ast(RuleMatch mtc) = syn_set_expr([build_subexpr_ast(n) : n <- rep_rule_nodes(mtc)]);
 
-SynSeqExpr build_seq_expr_ast(RuleMatch mtc)
+SynSeqExpr build_seq_expr_ast(RuleMatch mtc) = syn_seq_expr([build_subexpr_ast(n) : n <- rep_rule_nodes(mtc)]);
+
+SynSeqExpr build_seq_tail_expr_ast(RuleMatch mtc)
 {
   nodes = rule_seq_nodes(mtc);
   assert length(nodes) == 2;
-  head_nodes = [build_subexpr_ast(n) : n <- rep_rule_nodes(nodes[0])];
-  if (nodes[1] == null_match)
-    return syn_seq_expr(head_nodes);
-  else
-    return syn_seq_expr(head_nodes, build_expr_ast(get_rule_seq_node(nodes[1], 1)));
-  ;
+  seq_expr = build_expr_ast(nodes[0]);
+  tail_exprs = [build_expr_ast(n) : n <- rep_rule_nodes(get_rule_seq_node(nodes[1], 1))];
+  return seq_tail_expr(seq_expr, tail_exprs);
 }
 
 SynExpr build_tuple_or_par_expr_ast(RuleMatch mtc)

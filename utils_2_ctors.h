@@ -141,8 +141,8 @@ ClsPar non_scalar_par(NzNat a)                 = non_scalar_par(arity: a);
 
 Expr float_lit(Int m, Int e)  = float_lit(mantissa: m, dec_exp: e);
 
-Expr seq_expr([SubExpr] h)          = seq_expr(head: h);
-Expr seq_expr([SubExpr] h, Expr t)  = seq_expr(head: h, tail: t);
+Expr seq_expr([SubExpr] es)           = :seq_expr(es);
+Expr seq_tail_expr(Expr s, [Expr^] t) = seq_tail_expr(seq: s, tail: t);
 
 Expr tag_obj_expr(Expr t, Expr o)   = tag_obj_expr(tag: t, obj: o);
 

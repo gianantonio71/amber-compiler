@@ -76,9 +76,10 @@ using
 
     float_lit()         = {},
 
-    //seq_expr(head: [SynSubExpr], tail: SynExpr?)
-    seq_expr()          = union({expr_wf_errors(e, def_vars) : e <- set(expr.head)}) &
-                          if expr.tail? then expr_wf_errors(expr.tail, def_vars) else {} end,
+    seq_expr(es?)       = union({expr_wf_errors(e, def_vars) : e <- set(es)}),
+
+    seq_tail_expr()     = expr_wf_errors(expr.seq, def_vars) &
+                          union({expr_wf_errors(e, def_vars) : e <- set(expr.tail)}),
 
     //set_expr(SynSubExpr*)
     set_expr(es?)       = union({expr_wf_errors(e, def_vars) : e <- es}),

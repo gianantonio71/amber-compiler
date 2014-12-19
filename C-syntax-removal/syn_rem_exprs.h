@@ -16,9 +16,11 @@ using
 
     float_lit()     = expr,
     
-    seq_expr()      = seq_expr(
-                        head: [desugar_expr(e, def_vars) : e <- expr.head],
-                        tail: desugar_expr(expr.tail, def_vars) if expr.tail?
+    seq_expr(es?)   = seq_expr([desugar_expr(e, def_vars) : e <- es]),
+
+    seq_tail_expr() = seq_tail_expr(
+                        seq:  desugar_expr(expr.seq, def_vars),
+                        tail: [desugar_expr(e, def_vars) : e <- expr.tail]
                       ),
     
     set_expr(es?)   = :set_expr({desugar_expr(e, def_vars) : e <- es}),

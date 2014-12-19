@@ -277,30 +277,20 @@ using
     },
 
 
-    seq_expr() =
+    seq_expr(es?) =
     {
-      if (expr.tail?)
-        head_res_var = lvar(next_obj_var_id);
-        new_obj_var_id = next_obj_var_id + 1;
-      else
-        head_res_var = res_var;
-        new_obj_var_id = next_obj_var_id;                        
-      ;
+      return [set_var(res_var, empty_seq)] if es == [];
+      info = gen_vector_eval_info(es);
+      return info.code & [mk_seq(res_var, info.vect_var, info.count_var)];
+    },
 
-      if (expr.head /= [])
-        info = gen_vector_eval_info(expr.head, next_obj_var_id = new_obj_var_id);
-        code = info.code & [mk_seq(head_res_var, info.vect_var, info.count_var)];
-      else
-        code = [set_var(head_res_var, empty_seq)];
-      ;
-      
-      if (expr.tail?)
-        // info.vect_var and info.count_var are not in use anymore here and can be reused.
-        info = gen_eval_info(expr.tail, next_obj_var_id = new_obj_var_id);
-        code = code & info.eval_code &
-                [ join_seqs(res_var, head_res_var, info.expr),
-                  release(head_res_var)
-                ];
+
+    seq_tail_expr() =
+    {
+      code = gen_eval_code(expr.seq, res_var);
+      for (e : expr.tail)
+        info = gen_eval_info(e);
+        code = code & info.add_ref_eval_code & [append_to_seq(res_var, res_var, info.expr)];
       ;
       return code;
     },

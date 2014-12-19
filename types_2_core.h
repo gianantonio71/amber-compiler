@@ -125,7 +125,8 @@ type Expr     = LeafObj, //## UPDATE ALL REFERENCES
                 FloatLit,
 
                 set_expr(SubExpr*), //## MAYBE I SHOULDN'T ALLOW EMPTY EXPRESSIONS
-                seq_expr(head: [SubExpr], tail: Expr?), //## I DON'T LIKE THIS MUCH
+                seq_expr([SubExpr]),
+                seq_tail_expr(seq: Expr, tail: [Expr^]),
                 map_expr((key: Expr, value: Expr, cond: Expr?)*),
                 tag_obj_expr(tag: Expr, obj: Expr),
 

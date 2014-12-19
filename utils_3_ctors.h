@@ -107,6 +107,7 @@ Instr int_to_float(ObjVar var, ObjExpr value)         = int_to_float(var: var, v
 
 Instr mk_array(ObjVar v, IntExpr s, ObjExpr d)                 = mk_array(var: v, size: s, value: d);
 Instr get_seq_slice(ObjVar v, ObjExpr s, IntExpr f, IntExpr l) = get_seq_slice(var: v, seq: s, idx_first: f, len: l);
+Instr append_to_seq(ObjVar v, ObjExpr s, ObjExpr e)            = append_to_seq(var: v, seq: s, new_elem: e);
 Instr join_seqs(ObjVar v, ObjExpr l, ObjExpr r)                = join_seqs(var: v, left: l, right: r);
 Instr join_mult_seqs(ObjVar v, ObjExpr ss)                     = join_mult_seqs(var: v, seqs: ss);
 Instr rev_seq(ObjVar v, ObjExpr s)                             = rev_seq(var: v, seq: s);

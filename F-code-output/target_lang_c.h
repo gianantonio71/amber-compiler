@@ -364,6 +364,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
     mk_array()            = mk_call(instr.var, "make_array", [instr.size, instr.value]),
     get_seq_slice()       = mk_call(instr.var, "get_seq_slice", [instr.seq, instr.idx_first, instr.len]),
+    append_to_seq()       = mk_call(instr.var, "append_to_seq", [instr.seq, instr.new_elem]),
     join_seqs()           = mk_call(instr.var, "join_seqs", [instr.left, instr.right]),
     join_mult_seqs()      = mk_call(instr.var, "join_mult_seqs", [instr.seqs]),
     rev_seq()             = mk_call(instr.var, "rev_seq", [instr.seq]),

@@ -1,7 +1,8 @@
 
 Expr* ordinary_subexprs(Expr expr):
   object()        = {},
-  seq_expr()      = union({subexprs(e) : e <- set(expr.head)}) & {expr.tail if expr.tail?},
+  seq_expr(ses?)  = union({subexprs(e) : e <- set(ses)}),
+  seq_tail_expr() = {expr.seq} & union({subexprs(e) : e <- set(expr.tail)}),
   set_expr(ses?)  = union({subexprs(e) : e <- ses}),
   map_expr(es?)   = union({{e.key, e.value, e.cond if e.cond?} : e <- es}),
   tag_obj_expr()  = {expr.tag, expr.obj},

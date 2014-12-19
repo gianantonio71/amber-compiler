@@ -125,6 +125,8 @@ type Instr        = init_stream(StreamVar),
 
                     mk_array(var: ObjVar, size: IntExpr, value: ObjExpr),
                     get_seq_slice(var: ObjVar, seq: ObjExpr, idx_first: IntExpr, len: IntExpr),
+                    // <seq> and <new_elem> must already be reference-counted
+                    append_to_seq(var: ObjVar, seq: ObjExpr, new_elem: ObjExpr),
                     join_seqs(var: ObjVar, left: ObjExpr, right: ObjExpr),
                     join_mult_seqs(var: ObjVar, seqs: ObjExpr),
                     rev_seq(var: ObjVar, seq: ObjExpr),
