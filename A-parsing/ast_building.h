@@ -755,6 +755,7 @@ SynStmt build_stmt_ast(RuleMatch mtc) =
     fail_stmt   = build_fail_stmt_ast(mtc.match),
     assert_stmt = build_assert_stmt_ast(mtc.match),
     print_stmt  = build_print_stmt_ast(mtc.match),
+    imp_update  = build_imp_update_stmt(mtc.match),
     fn          = syn_fn_def_stmt(build_std_fndef_ast(mtc.match)),
     fn_proc     = syn_fn_def_stmt(build_proc_fndef_ast(mtc.match)),
     fn_case     = syn_fn_def_stmt(build_switch_fndef_ast(mtc.match));
@@ -888,6 +889,16 @@ SynStmt build_print_stmt_ast(RuleMatch mtc)
   return stmt if nodes[2] == null_match;
   cond = build_expr_ast(get_rule_seq_node(nodes[2], 1));
   return syn_if_stmt(cond, [stmt]);
+}
+
+SynStmt build_imp_update_stmt(RuleMatch mtc)
+{
+  nodes = rule_seq_nodes(mtc);
+  assert length(nodes) == 5;
+  var = var(get_lowercase_id(nodes[0]));
+  idx_expr = build_expr_ast(nodes[1]);
+  value_expr = build_expr_ast(nodes[3]);
+  return syn_imp_update_stmt(var, idx_expr, value_expr);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

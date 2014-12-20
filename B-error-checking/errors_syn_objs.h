@@ -313,6 +313,10 @@ using
                           {:asgnm_readonly_var(v) : v <- set(stmt.vars), in(v, readonly_vars)} &
                           {:rep_asgn_var(v) : v <- dupl_elems(stmt.vars)},
 
+    imp_update_stmt()   = expr_wf_errors(stmt.idx, all_def_vars) &
+                          expr_wf_errors(stmt.value, all_def_vars) &
+                          {:undef_var(stmt.obj) if not in(stmt.obj, all_def_vars)},
+
     return_stmt(e?)     = expr_wf_errors(e, all_def_vars),
 
     assert_stmt(e?)     = expr_wf_errors(e, all_def_vars),

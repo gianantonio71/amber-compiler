@@ -218,7 +218,8 @@ type Statement  = assignment_stmt(vars: [Var^], value: Expr),
                   break_stmt,
                   fail_stmt,
                   assert_stmt(Expr),
-                  print_stmt(Expr);
+                  print_stmt(Expr),
+                  imp_update_stmt(obj: Var, idx: Expr, value: Expr);
 
 ///////////////////////////////////////////////////////////////////////////////
 

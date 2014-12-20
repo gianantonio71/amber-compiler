@@ -129,20 +129,22 @@ type SynCase    = case(patterns: [SynPtrn^], expr: SynExpr);
 
 /////////////////////////////////////////////////////////////////////////////////////
 
-type SynStmt  = SynAsgnStmt, SynReturnStmt, SynIfStmt, SynLoopStmt, SynInfLoopStmt, SynForStmt,
-                SynLetStmt, SynBreakStmt, SynFailStmt, SynAssertStmt, SynPrintStmt, SynFnDefStmt;
+type SynStmt  = SynAsgnStmt, SynReturnStmt, SynIfStmt, SynLoopStmt, SynInfLoopStmt,
+                SynForStmt, SynLetStmt, SynBreakStmt, SynFailStmt, SynAssertStmt,
+                SynPrintStmt, SynImpUpdateStmt, SynFnDefStmt;
 
-type SynAsgnStmt    = assignment_stmt(vars: [Var^], value: SynExpr);
-type SynReturnStmt  = return_stmt(SynExpr);
-type SynIfStmt      = if_stmt(branches: [(cond: SynExpr, body: [SynStmt^])^], else: [SynStmt]);
-type SynLoopStmt    = loop_stmt(cond: SynExpr, skip_first: Bool, body: [SynStmt^]);
-type SynInfLoopStmt = inf_loop_stmt([SynStmt^]);
-type SynForStmt     = for_stmt(loops: [SynIter^], body: [SynStmt^]);
-type SynLetStmt     = let_stmt(asgnms: [SynFnDef^], body: [SynStmt^]); //## BAD: REPLACE THOSE SynFnDef WITH SOMETHING MORE APPROPRIATE
-type SynBreakStmt   = break_stmt; //## REPLACE WITH BreakStmt
-type SynFailStmt    = fail_stmt;  //## REPLACE WITH FailStmt
-type SynAssertStmt  = assert_stmt(SynExpr);
-type SynPrintStmt   = print_stmt(SynExpr);
+type SynAsgnStmt      = assignment_stmt(vars: [Var^], value: SynExpr);
+type SynReturnStmt    = return_stmt(SynExpr);
+type SynIfStmt        = if_stmt(branches: [(cond: SynExpr, body: [SynStmt^])^], else: [SynStmt]);
+type SynLoopStmt      = loop_stmt(cond: SynExpr, skip_first: Bool, body: [SynStmt^]);
+type SynInfLoopStmt   = inf_loop_stmt([SynStmt^]);
+type SynForStmt       = for_stmt(loops: [SynIter^], body: [SynStmt^]);
+type SynLetStmt       = let_stmt(asgnms: [SynFnDef^], body: [SynStmt^]); //## BAD: REPLACE THOSE SynFnDef WITH SOMETHING MORE APPROPRIATE
+type SynBreakStmt     = break_stmt; //## REPLACE WITH BreakStmt
+type SynFailStmt      = fail_stmt;  //## REPLACE WITH FailStmt
+type SynAssertStmt    = assert_stmt(SynExpr);
+type SynPrintStmt     = print_stmt(SynExpr);
+type SynImpUpdateStmt = imp_update_stmt(obj: Var, idx: SynExpr, value: SynExpr);
 
 type SynFnDefStmt   = fn_def_stmt(SynFnDef);
 

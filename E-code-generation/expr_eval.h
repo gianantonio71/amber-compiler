@@ -771,7 +771,24 @@ using
       ;
       return code;
     },
- 
+
+    // imp_update_stmt(obj: Var, idx: Expr, value: Expr);
+    // set_at(var: ObjVar, idx: IntExpr, value: ObjExpr),
+    imp_update_stmt() =
+    {
+      idx_var = lvar(next_obj_var_id);
+      value_var = lvar(next_obj_var_id+1);
+
+      idx_info = gen_eval_info(stmt.idx, idx_var, next_obj_var_id=next_obj_var_id+1);
+      val_info = gen_eval_info(stmt.value, value_var, next_obj_var_id=next_obj_var_id+2);
+
+      //## SINCE THE INDEX VARIABLE IS AN INTEGER, THERE'S NO NEED TO WORRY ABOUT
+      //## ABOUT MEMORY ALLOCATION AND DEALLOCATION. BUT WE EXTEND THE CONSTRUCT
+      //## TO MAPS AS WELL, THE CODE WILL HAVE TO BE CHANGED...
+      return idx_info.eval_code & val_info.add_ref_eval_code &
+        [set_at(stmt.obj, get_int_val(idx_info.expr), val_info.expr)];
+    },
+
     if_stmt() =
     {
       cond_info = gen_eval_info(stmt.cond);

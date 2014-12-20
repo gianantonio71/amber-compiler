@@ -292,6 +292,7 @@ ParsingRule rule_stmt =
     (name: :fail_stmt,    rule: rule_fail_stmt),
     (name: :assert_stmt,  rule: rule_assert_stmt),
     (name: :print_stmt,   rule: rule_print_stmt),
+    (name: :imp_update,   rule: rule_imp_update_stmt),
     (name: :fn,           rule: rule_ref_fndef),
     (name: :fn_proc,      rule: rule_ref_fndef_proc),
     (name: :fn_case,      rule: rule_ref_fndef_switch)
@@ -396,6 +397,15 @@ ParsingRule rule_print_stmt =
     keyword_print,
     rule_ref_expr,
     optional_rule(rule_seq([keyword_if, rule_ref_expr])),
+    atomic_rule(semicolon)
+  ]);
+
+ParsingRule rule_imp_update_stmt =
+  rule_seq([
+    rule_id,
+    bracket_rule(rule_ref_expr),
+    atomic_rule(assign),
+    rule_ref_expr,
     atomic_rule(semicolon)
   ]);
 

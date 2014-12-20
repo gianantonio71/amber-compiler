@@ -134,7 +134,8 @@ Var* extern_vars(Statement s):
   break_stmt        = {},
   fail_stmt         = {},
   assert_stmt(e?)   = extern_vars(e),
-  print_stmt(e?)    = extern_vars(e);
+  print_stmt(e?)    = extern_vars(e),
+  imp_update_stmt() = {s.obj} & extern_vars(s.idx) & extern_vars(s.value);
 
 Var* extern_vars(ClsExpr e) = extern_vars(e.expr) - (set(e.params) - {nil});
 
@@ -174,7 +175,8 @@ StmtOutcome+ outcomes(Statement stmt):
   break_stmt        = {:breaks},
   fail_stmt         = {:fails},
   assert_stmt()     = {:falls_through, :fails},
-  print_stmt()      = {:falls_through, :fails};
+  print_stmt()      = {:falls_through, :fails},
+  imp_update_stmt() = {:falls_through, :fails};
 
 ////////////////////////////////////////////////////////////////////////////////
 

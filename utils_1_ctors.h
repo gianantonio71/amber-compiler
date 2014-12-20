@@ -117,6 +117,7 @@ SynForStmt syn_for_stmt([SynIter^] ls, [SynStmt^] b)                        = fo
 SynLetStmt syn_let_stmt([SynFnDef^] a, [SynStmt^] b)                        = let_stmt(asgnms: a, body: b);
 SynAssertStmt syn_assert_stmt(SynExpr e)                                    = :assert_stmt(e);
 SynPrintStmt syn_print_stmt(SynExpr e)                                      = :print_stmt(e);
+SynImpUpdateStmt syn_imp_update_stmt(Var o, SynExpr i, SynExpr v)           = imp_update_stmt(obj: o, idx: i, value: v);
 
 SynFnDefStmt syn_fn_def_stmt(SynFnDef fd)                                   = :fn_def_stmt(fd);
 

@@ -318,7 +318,13 @@ using
   Statement desugar_stmt(SynStmt stmt, Var* def_vars):
 
     assignment_stmt()   = assignment_stmt(vars: stmt.vars, value: desugar_expr(stmt.value, def_vars)),
-    
+
+    imp_update_stmt()   = imp_update_stmt(
+                            stmt.obj,
+                            desugar_expr(stmt.idx, def_vars),
+                            desugar_expr(stmt.value, def_vars)
+                          ),
+
     return_stmt(e?)     = :return_stmt(desugar_expr(e, def_vars)),
     
     break_stmt          = :break_stmt,

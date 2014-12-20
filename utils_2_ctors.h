@@ -122,6 +122,8 @@ Pattern ptrn_union(Pattern+ ps)                 = :ptrn_union(ps);
 Statement break_stmt = :break_stmt;
 Statement fail_stmt  = :fail_stmt;
 
+Statement imp_update_stmt(Var o, Expr i, Expr v)  = imp_update_stmt(obj: o, idx: i, value: v);
+
 ////////////////////////////////////////////////////////////////////////////////
 
 FnSymbol fn_symbol(Atom a)                        = :fn_symbol(a);
