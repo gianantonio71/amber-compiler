@@ -156,3 +156,11 @@ Expr if_expr(Expr cond, Expr true_expr, Expr false_expr) = if_expr(cond: cond, t
 ClsExpr fn_ptr(FnSymbol s, NzNat a)              = fn_ptr(name: s, arity: a);
 ClsExpr cls_expr(Nat a, Expr e)                  = cls_expr(a * [nil], e);
 ClsExpr cls_expr([<var(Atom), nil>^] ps, Expr e) = cls_expr(params: ps, expr: e);
+
+////////////////////////////////////////////////////////////////////////////////
+
+Statement return_stmt = :return_stmt;
+
+////////////////////////////////////////////////////////////////////////////////
+
+ProcSymbol proc_symbol(Atom a) = :proc_symbol(a);

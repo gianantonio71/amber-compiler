@@ -8,10 +8,11 @@ Program rem_syntax(SynPrg prg)
   tdefs         = {d : typedef()       d <- decls};
   par_tdefs     = {d : par_typedef()   d <- decls};
   fndefs        = {d : syn_fn_def()    d <- decls};
+  proc_defs     = {d : proc_def()      d <- decls};
   ublocks       = {d : using_block()   d <- decls};
   subtype_decls = {d : subtype_decl()  d <- decls};
 
-  assert tdefs & par_tdefs & fndefs & ublocks & subtype_decls == decls;
+  assert tdefs & par_tdefs & fndefs & proc_defs & ublocks & subtype_decls == decls;
 
   inst_tdefs = create_type_map(norm_prg);
 
@@ -21,13 +22,21 @@ Program rem_syntax(SynPrg prg)
 
   desugared_fndefs = union({syn_fndef_to_fndefs(fd, {}, anon_tdefs, fn_param_arities) : fd <- fndefs});
   
+  desugared_proc_defs = {syn_proc_def_to_proc_def(pd, anon_tdefs, fn_param_arities) : pd <- proc_defs};
+
   desugared_block_fndefs = union(
                               for (ub <- ublocks, fd <- set(ub.fn_defs), sgns = set(ub.signatures)) {
                                 syn_fndef_to_fndefs(fd, sgns, anon_tdefs, fn_param_arities)
                               }
                             );
 
-  return program(tdefs: inst_tdefs, anon_tdefs: anon_tdefs, subtype_decls: subtype_decls, fndefs: desugared_fndefs & desugared_block_fndefs);
+  return program(
+    tdefs:          inst_tdefs,
+    anon_tdefs:     anon_tdefs,
+    subtype_decls:  subtype_decls,
+    fndefs:         desugared_fndefs & desugared_block_fndefs,
+    proc_defs:      desugared_proc_defs
+  );
 }
 
 ((FnSymbol, Nat) => [Nat]) get_fn_param_arities(SynFnDef* fndefs, SynUsingBlock* ublocks)
@@ -104,3 +113,24 @@ FnDef* syn_fndef_to_fndefs(SynFnDef fndef, SynSgn* named_params,
                                    end : ss <- syn_sgns); //## BAD UGLY UGLY UGLY
 }
 
+
+ProcDef2 syn_proc_def_to_proc_def(SynProcDef pd, (TypeName => AnonType) typedefs, ((FnSymbol, Nat) => [Nat]) fn_param_arities)
+{
+  body = desugar_stmts(
+    pd.body,
+    set([p.var : p <- pd.params]),
+    clss_in_scope = {},
+    named_params = {},
+    local_fns = {},
+    curr_outer_fn = nil, //## BAD BAD BAD CHEATING. FIX FIX FIX FIX FIX FIX FIX FIX FIX FIX FIX
+    typedefs = typedefs,
+    fn_param_arities = fn_param_arities
+  );
+
+  return proc_def(
+    name:       pd.name,
+    params:     pd.params,
+    res_type:   pd.res_type,
+    body:       body
+  );
+}

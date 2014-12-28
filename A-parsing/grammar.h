@@ -41,7 +41,7 @@ ParsingRule ops_prec_prod     = rule_ops([asterisk, slash]);
 ParsingRule rule_ref_type         = rule_ref(:type);
 ParsingRule rule_ref_pretype      = rule_ref(:pretype);
 ParsingRule rule_ref_expr         = rule_ref(:expr);
-ParsingRule rule_ref_stmt         = rule_ref(:stmt);
+ParsingRule rule_ref_stmt(<fn, proc> ctx) = if ctx == :fn then rule_ref(:stmt) else rule_ref(:proc_stmt) end;
 ParsingRule rule_ref_ptrn         = rule_ref(:ptrn);
 ParsingRule rule_ref_fndef        = rule_ref(:fndef);
 ParsingRule rule_ref_fndef_proc   = rule_ref(:fndef_proc);
@@ -60,7 +60,21 @@ ParsingRule rule_declaration =
     (name: :fndef_proc,     rule: rule_proc_fndef(true)),
     (name: :fndef_switch,   rule: rule_switch_fndef),
     (name: :using_block_1,  rule: rule_using_block_1),
-    (name: :using_block_2,  rule: rule_using_block_2)
+    (name: :using_block_2,  rule: rule_using_block_2),
+    (name: :proc_def,       rule: rule_proc_def)
+  ]);
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+ParsingRule rule_proc_def =
+  rule_seq([
+    rule_choice([
+      (name: :ret_val,      rule: rule_seq([rule_type, atomic_rule(mixedcase_id)])),
+      (name: :no_ret_val,   rule: atomic_rule(mixedcase_id))
+    ]),
+    par_rule(opt_comma_sep_seq(rule_seq([rule_type, optional_rule(rule_id)]))),
+    brace_rule(rep_rule(rule_stmt(:proc)))
   ]);
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -207,7 +221,7 @@ ParsingRule rule_proc_fndef(Bool arity_0_allowed) =
     optional_rule(rule_type),
     rule_anon_choice([rule_id, atomic_rule(operator)]),
     maybe_optional_rule(par_rule(comma_sep_seq(rule_fn_arg)), arity_0_allowed),
-    brace_rule(rep_rule(rule_stmt, true))
+    brace_rule(rep_rule(rule_stmt(:fn), true))
   ]);
 
 ParsingRule rule_switch_fndef = //## rule_try_fndef? rule_match_fndef?
@@ -279,23 +293,25 @@ ParsingRule rule_clause_ptrn =
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-ParsingRule rule_stmt =
+ParsingRule rule_stmt(<fn, proc> ctx) =
   rule_choice([
     (name: :asgnm,        rule: rule_asgnm_stmt),
     (name: :ret,          rule: rule_ret_stmt),
-    (name: :if_stmt,      rule: rule_if_stmt),
-    (name: :loop_stmt,    rule: rule_loop_stmt),
-    (name: :while_stmt,   rule: rule_while_stmt),
-    (name: :let_stmt,     rule: rule_let_stmt),
+    (name: :if_stmt,      rule: rule_if_stmt(ctx)),
+    (name: :loop_stmt,    rule: rule_loop_stmt(ctx)),
+    (name: :while_stmt,   rule: rule_while_stmt(ctx)),
+    (name: :let_stmt,     rule: rule_let_stmt(ctx)),
     (name: :break_stmt,   rule: rule_break_stmt),
-    (name: :for_stmt,     rule: rule_for_stmt),
+    (name: :for_stmt,     rule: rule_for_stmt(ctx)),
     (name: :fail_stmt,    rule: rule_fail_stmt),
     (name: :assert_stmt,  rule: rule_assert_stmt),
     (name: :print_stmt,   rule: rule_print_stmt),
     (name: :imp_update,   rule: rule_imp_update_stmt),
-    (name: :fn,           rule: rule_ref_fndef),
-    (name: :fn_proc,      rule: rule_ref_fndef_proc),
-    (name: :fn_case,      rule: rule_ref_fndef_switch)
+    (name: :fn,           rule: rule_ref_fndef) if ctx == :fn,
+    (name: :fn_proc,      rule: rule_ref_fndef_proc) if ctx == :fn,
+    (name: :fn_case,      rule: rule_ref_fndef_switch) if ctx == :fn,
+    (name: :no_val_ret,   rule: rule_no_val_ret_stmt) if ctx == :proc,
+    (name: :proc_call,    rule: rule_proc_call_stmt) if ctx == :proc
   ]);
 
 ParsingRule rule_asgnm_stmt =
@@ -316,48 +332,48 @@ ParsingRule rule_ret_stmt =
     atomic_rule(semicolon)
   ]);
 
-ParsingRule rule_if_stmt =
+ParsingRule rule_if_stmt(<fn, proc> ctx) =
   rule_seq([
     keyword_if,
     par_rule(rule_ref_expr),
-    rep_rule(rule_ref_stmt, true),
+    rep_rule(rule_ref_stmt(ctx), true),
     rep_rule(
       rule_seq([
         keyword_elif,
         par_rule(rule_ref_expr),
-        rep_rule(rule_ref_stmt, true)
+        rep_rule(rule_ref_stmt(ctx), true)
       ])
     ),
     optional_rule(
       rule_seq([
         keyword_else,
-        rep_rule(rule_ref_stmt, true)
+        rep_rule(rule_ref_stmt(ctx), true)
       ])
     ),
     atomic_rule(semicolon)
   ]);
 
-ParsingRule rule_loop_stmt =
+ParsingRule rule_loop_stmt(<fn, proc> ctx) =
   rule_seq([
     keyword_loop,
-    rep_rule(rule_ref_stmt, true),
+    rep_rule(rule_ref_stmt(ctx), true),
     optional_rule(rule_seq([keyword_while, par_rule(rule_ref_expr)])),
     atomic_rule(semicolon)
   ]);
 
-ParsingRule rule_while_stmt =
+ParsingRule rule_while_stmt(<fn, proc> ctx) =
   rule_seq([
     keyword_while,
     par_rule(rule_ref_expr),
-    rep_rule(rule_ref_stmt, true),
+    rep_rule(rule_ref_stmt(ctx), true),
     atomic_rule(semicolon)
   ]);
 
-ParsingRule rule_for_stmt =
+ParsingRule rule_for_stmt(<fn, proc> ctx) =
   rule_seq([
     keyword_for,
     par_rule(rep_rule(rule_for_range, atomic_rule(semicolon), true, false)),
-    rep_rule(rule_ref_stmt, true),
+    rep_rule(rule_ref_stmt(ctx), true),
     atomic_rule(semicolon)
   ]);
 
@@ -368,11 +384,11 @@ ParsingRule rule_for_range =
     (name: :for,          rule: rule_seq([rule_id, atomic_rule(equals), rule_ref_expr, atomic_rule(double_dot), rule_ref_expr]))
   ]);
 
-ParsingRule rule_let_stmt =
+ParsingRule rule_let_stmt(<fn, proc> ctx) =
   rule_seq([
     keyword_let,
     par_rule(comma_sep_seq(rule_seq([rule_id, atomic_rule(equals), rule_ref_expr]))),
-    rep_rule(rule_ref_stmt, true),
+    rep_rule(rule_ref_stmt(ctx), true),
     atomic_rule(semicolon)
   ]);
 
@@ -406,6 +422,21 @@ ParsingRule rule_imp_update_stmt =
     bracket_rule(rule_ref_expr),
     atomic_rule(assign),
     rule_ref_expr,
+    atomic_rule(semicolon)
+  ]);
+
+ParsingRule rule_no_val_ret_stmt =
+  rule_seq([
+    keyword_return,
+    optional_rule(rule_seq([keyword_if, rule_ref_expr])),
+    atomic_rule(semicolon)
+  ]);
+
+ParsingRule rule_proc_call_stmt =
+  rule_seq([
+    optional_rule(rule_seq([rule_id, atomic_rule(equals)])),
+    atomic_rule(mixedcase_id),
+    par_rule(opt_comma_sep_seq(rule_ref_expr)),
     atomic_rule(semicolon)
   ]);
 
@@ -488,7 +519,7 @@ ParsingRule rule_expr_0 =
 
     (name: :if_else,      rule: rule_if_expr),
     (name: :match_expr,   rule: rule_match_expr),
-    (name: :proc,         rule: brace_rule(rep_rule(rule_ref_stmt, true))),
+    (name: :proc,         rule: brace_rule(rep_rule(rule_ref_stmt(:fn), true))),
 
     (name: :select_expr,  rule: rule_select_expr),
     (name: :replace_expr, rule: rule_replace_expr),

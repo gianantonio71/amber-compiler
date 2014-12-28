@@ -131,7 +131,14 @@ CCodeOutput compile_to_c(ProcDef* prg)
                  //obj2var(obj)    = {assert false; return to_str(_counter_(nil));};
                );
 
-  body = ["#include \"lib.h\"\n\n", "", "namespace generated", "{"] & indent(c_code & proc_code.body) & ["}"];
+  body = [
+    "#include \"lib.h\"\n\n",
+    "#include \"iolib.h\"\n\n",
+    "",
+    "namespace generated",
+    "{"
+  ] & indent(c_code & proc_code.body) & ["}"];
+
   header = ["namespace generated", "{"] & indent(symb_decls & env_decl & cls_obj_typedefs & proc_code.header) & ["}"];
   
   return (body: body, header: header);
@@ -585,7 +592,11 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
   {
     pars_info = [gen_par_info(p) : p <- instr.params];
     code_frags, args = unzip(pars_info);
-    return join(code_frags) & mk_fn_call(instr.var, to_c_fn_name(instr.name), args);
+    call_code = if instr.var?
+      then mk_fn_call(instr.var, to_c_fn_name(instr.name), args)
+      else mk_fn_call(to_c_fn_name(instr.name), args)
+    end;
+    return join(code_frags) & call_code;
 
 
     ([String], FnCallParam) gen_par_info(ObjExpr p) = ([], p);
@@ -638,6 +649,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
   [String] mk_call(String fn_name, [FnCallParam] params)             = [mk_gen_call(fn_name, [], params, [])];
   [String] mk_call(AnyVar var, String fn_name, [FnCallParam] params) = [mk_gen_call(var, fn_name, [], params, [])];
   
+  [String] mk_fn_call(String fn_name, [FnCallParam] params)             = [mk_gen_call(fn_name, [], params, ["env"])];
   [String] mk_fn_call(AnyVar var, String fn_name, [FnCallParam] params) = [mk_gen_call(var, fn_name, [], params, ["env"])];
 
   //## AnyVar IS WRONG HERE, SHOULD ONLY BE OBJ/BOOL/INT VARS
@@ -807,12 +819,14 @@ using String typesymb2name(TypeSymbol)
 
   //String to_c_fn_name(ObjFnName name) = to_c_fn_name(_obj_(name));
   String to_c_fn_name(FnSymbol fn_symb):
-    fn_symbol(symb?)    = capitalize(_str_(symb)),
+    fn_symbol(symb?)    = capitalize(_str_(symb), true),
     op_symbol(op?)      = _str_(op),
     nested_fn_symbol()  = to_c_fn_name(fn_symb.outer) & "__" & to_c_fn_name(fn_symb.inner),
     unique_fn_symbol()  = to_c_fn_name(fn_symb.symbol) & "__" & to_str(fn_symb.id); //## IS THIS ENOUGHT TO AVOID CONFLICTS?
 
-  String to_c_fn_name(BoolFnName): memb_test(ts?) = "is_" & typesymb2name(ts);
+  String to_c_fn_name(BoolFnName): memb_test(ts?)   = "is_" & typesymb2name(ts); //## UGLY UGLY UGLY
+
+  String to_c_fn_name(ProcSymbol): proc_symbol(s?)  = "io_" & capitalize(_str_(s), true); //## UGLY UGLY UGLY
 
   ///////////////////////////////////////////////////////////////////////////////
   ///////////////////////////////////////////////////////////////////////////////
@@ -824,6 +838,8 @@ using String typesymb2name(TypeSymbol)
     //## WITH THE SAME NAME THE NESTED FUNCTION BELONGS TO
     nested_fn_symbol()  = fn_name_to_str(fn_symb.outer) & ":" & fn_name_to_str(fn_symb.inner),
     unique_fn_symbol()  = fn_name_to_str(fn_symb.symbol); //## BAD: THE DISPATCH FUNCTION WILL APPEAR ON THE STACK, AND IT WILL BE INDISTINGUISHABLE FROM ONE OF THE REAL FUNCTIONS
+
+  String fn_name_to_str(ProcSymbol proc_symbol): proc_symbol(s?) = capitalize(_str_(s), false); //## UGLY UGLY UGLY
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -833,18 +849,18 @@ using String typesymb2name(TypeSymbol)
 String indent_line(String str) = "  " & str;
 
 
-String capitalize(String s)
+String capitalize(String s, Bool keep_underscores)
 {
   first = true;
   res = [];
   for (ch @ i : _obj_(s))
-    if (ch == 95)
+    if (ch == ascii_underscore)
       first = true;
     else
-      ch  = ch - 32 if ch >= 97 and ch <= 122 and first;
+      ch  = ch - ascii_lower_a + ascii_upper_a if ch >= ascii_lower_a and ch <= ascii_lower_z and first; //## CREATE PRELUDE FUNCTION is_lower()/is_upper() AND to_lower()/to_upper()
       first = false;
     ;
-    res = res & [ch];
+    res = res & [ch if ch /= ascii_underscore or keep_underscores];
   ;
   return string(res);
 }

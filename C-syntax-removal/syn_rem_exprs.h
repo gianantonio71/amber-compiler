@@ -416,7 +416,15 @@ using
       ;
       assert res :: Seq and length(res) == 1;
       return res[0]; //## BAD BAD BAD
-    };
+    },
+
+    return_stmt         = :return_stmt,
+
+    proc_call()         = proc_call(
+                            res_var:    stmt.res_var if stmt.res_var?,
+                            proc_name:  stmt.proc_name,
+                            params:     [desugar_expr(p, def_vars) : p <- stmt.params]
+                          );
 
   ////////////////////////////////////////////////////////////////////////////////
 

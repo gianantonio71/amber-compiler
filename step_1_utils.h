@@ -115,7 +115,8 @@ Var* syn_new_vars(SynStmt stmt):
     bodies = {b.body : b <- set(stmt.branches)} & {stmt.else};
     return intersection({syn_new_vars(ss) : ss <- bodies, not never_falls_through(ss)});
   },
-  let_stmt()        = syn_new_vars(stmt.body),                      
+  let_stmt()        = syn_new_vars(stmt.body),
+  proc_call()       = {stmt.res_var if stmt.res_var?},
   _                 = {};
 
 

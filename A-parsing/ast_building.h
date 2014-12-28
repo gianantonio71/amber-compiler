@@ -8,7 +8,8 @@ PrgDecl build_declaration_ast(RuleMatch decl) =
     fndef_proc      = build_proc_fndef_ast(decl.match),
     fndef_switch    = build_switch_fndef_ast(decl.match),
     using_block_1   = build_using_block_1_ast(decl.match),
-    using_block_2   = build_using_block_2_ast(decl.match);
+    using_block_2   = build_using_block_2_ast(decl.match),
+    proc_def        = build_proc_def_ast(decl.match);
   ;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -268,6 +269,32 @@ SynSgn build_signature_ast(RuleMatch mtc)
     build_fn_symbol_ast(nodes[1]),
     [build_type_ast(t) : t <- rep_rule_nodes(nodes[2])],
     build_type_ast(nodes[0])
+  );
+}
+
+SynProcDef build_proc_def_ast(RuleMatch mtc)
+{
+  nodes = rule_seq_nodes(mtc);
+  assert length(nodes) == 3;
+
+  if (nodes[0].name == :ret_val)
+    ns = rule_seq_nodes(nodes[0].match);
+    assert length(ns) == 2;
+    res_type = just(build_type_ast(ns[0]));
+    name = proc_symbol(get_lowercase_id(ns[1]));
+  else
+    res_type = nil;
+    name = proc_symbol(get_lowercase_id(nodes[0].match));
+  ;
+
+  params = [(type: build_type_ast(get_rule_seq_node(ns, 0)), var: var(get_lowercase_id(get_rule_seq_node(ns, 1)))) : ns <- rep_rule_nodes(nodes[1])];
+  body = [build_stmt_ast(n) : n <- rep_rule_nodes(nodes[2])];
+
+  return proc_def(
+    name:     name,
+    params:   params,
+    res_type: res_type,
+    body:     body
   );
 }
 
@@ -758,7 +785,9 @@ SynStmt build_stmt_ast(RuleMatch mtc) =
     imp_update  = build_imp_update_stmt(mtc.match),
     fn          = syn_fn_def_stmt(build_std_fndef_ast(mtc.match)),
     fn_proc     = syn_fn_def_stmt(build_proc_fndef_ast(mtc.match)),
-    fn_case     = syn_fn_def_stmt(build_switch_fndef_ast(mtc.match));
+    fn_case     = syn_fn_def_stmt(build_switch_fndef_ast(mtc.match)),
+    no_val_ret  = build_no_val_ret_stmt_ast(mtc.match),
+    proc_call   = build_proc_call_stmt_ast(mtc.match);
   ;
 
 SynStmt build_asgnm_stmt_ast(RuleMatch mtc)
@@ -899,6 +928,30 @@ SynStmt build_imp_update_stmt(RuleMatch mtc)
   idx_expr = build_expr_ast(nodes[1]);
   value_expr = build_expr_ast(nodes[3]);
   return syn_imp_update_stmt(var, idx_expr, value_expr);
+}
+
+SynStmt build_no_val_ret_stmt_ast(RuleMatch mtc)
+{
+  nodes = rule_seq_nodes(mtc);
+  assert length(nodes) == 3;
+
+  if (nodes[1] == null_match)
+    return return_stmt;
+  else
+    cond = build_expr_ast(get_rule_seq_node(nodes[1], 1));
+    return syn_if_stmt(cond, [return_stmt]);
+  ;
+}
+
+SynStmt build_proc_call_stmt_ast(RuleMatch mtc)
+{
+  nodes = rule_seq_nodes(mtc);
+  assert length(nodes) == 4;
+  proc_name = proc_symbol(get_lowercase_id(nodes[1]));
+  params = [build_expr_ast(n) : n <- rep_rule_nodes(nodes[2])];
+  return proc_call(proc_name, params) if nodes[0] == null_match;
+  var = var(get_lowercase_id(get_rule_seq_node(nodes[0], 0)));
+  return proc_call(var, proc_name, params);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

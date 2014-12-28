@@ -119,6 +119,11 @@ SynAssertStmt syn_assert_stmt(SynExpr e)                                    = :a
 SynPrintStmt syn_print_stmt(SynExpr e)                                      = :print_stmt(e);
 SynImpUpdateStmt syn_imp_update_stmt(Var o, SynExpr i, SynExpr v)           = imp_update_stmt(obj: o, idx: i, value: v);
 
+ProcOnlyStmt proc_call(ProcSymbol n, [Expr] ps)         = proc_call(proc_name: n, params: ps);
+ProcOnlyStmt proc_call(Var v, ProcSymbol n, [Expr] ps)  = proc_call(res_var: v, proc_name: n, params: ps);
+
+
+
 SynFnDefStmt syn_fn_def_stmt(SynFnDef fd)                                   = :fn_def_stmt(fd);
 
 SynIter syn_seq_iter([Var^] vs, SynExpr e)                                  = seq_iter(vars: vs, values: e);

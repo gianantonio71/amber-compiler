@@ -86,9 +86,10 @@ UserErr* wf_errors(SynPrg prg)
   par_tdefs     = {d : par_typedef()   d <- decls};
   fndefs        = {d : syn_fn_def()    d <- decls};
   ublocks       = {d : using_block()   d <- decls};
+  proc_defs     = {d : proc_def()      d <- decls};
   subtype_decls = {d : subtype_decl()  d <- decls};
 
-  assert tdefs & par_tdefs & fndefs & ublocks & subtype_decls == decls;
+  assert tdefs & par_tdefs & fndefs & ublocks & proc_defs & subtype_decls == decls;
   
   all_def_fns = {untyped_sgn(fd) : fd <- fndefs} &
                  for (ub <- ublocks, fd <- set(ub.fn_defs)) {
@@ -133,21 +134,31 @@ UserErr* wf_errors(SynPrg prg)
   errs_so_far = dup_tdef_errs & dup_par_tdef_errs & incomp_fn_sgns & undef_type_symb_errs;
   return errs_so_far if errs_so_far /= {};
 
+  proc_to_arity = (p.name => arity(p) : p <- proc_defs) & builtin_proc_arities;
+
   fn_param_arities = get_fn_param_arities(fndefs, ublocks);
 
   let (fns_in_scope         = all_def_fns,
        typedefs             = inst_tdefs,
+       proc_to_arity        = proc_to_arity,
        all_par_type_symbols = {(symbol: p.name, arity: length(p.params)) : p <- par_tdefs})
 
-    decl_errs = tdef_errs(tdefs)                      &
-                 par_tdef_errs(par_tdefs)             &
-                 inst_tdef_errs(inst_tdefs)           &
-                 fn_def_errs(fndefs, all_def_fns, fn_param_arities, {}) &
-                 ublock_errors(ublocks, all_def_fns, fn_param_arities);
+    decl_errs = tdef_errs(tdefs)                                          &
+                par_tdef_errs(par_tdefs)                                  &
+                inst_tdef_errs(inst_tdefs)                                &
+                fn_def_errs(fndefs, all_def_fns, fn_param_arities, {})    &
+                proc_def_errors(proc_defs, all_def_fns, fn_param_arities) &
+                ublock_errors(ublocks, all_def_fns, fn_param_arities);
   ;
 
   return decl_errs;
 }
+
+
+(ProcSymbol => Nat) builtin_proc_arities = (
+  proc_symbol(:file_read)     => 1,
+  proc_symbol(:file_write)    => 3
+);
 
 
 using (SynTypeSymbol => SynType) typedefs
@@ -207,9 +218,13 @@ using (SynTypeSymbol => SynType) typedefs
 }
 
 
-
-using (SynTypeSymbol => SynType) typedefs, (symbol: BasicTypeSymbol, arity: NzNat)* all_par_type_symbols
+using
 {
+  (SynTypeSymbol => SynType)                typedefs,
+  (symbol: BasicTypeSymbol, arity: NzNat)*  all_par_type_symbols,
+  (ProcSymbol* => Nat)                      proc_to_arity;
+
+
   UserErr* tdef_errs(SynTypedef* tdefs) =
     for (td <- tdefs, es = type_wf_errors(td.type, type_vars_in_scope = {}))
       if (es /= {}) {
@@ -240,14 +255,19 @@ using (SynTypeSymbol => SynType) typedefs, (symbol: BasicTypeSymbol, arity: NzNa
 
   UserErr* fn_def_errs(SynFnDef* fndefs, UntypedSgn* global_fns, ((FnSymbol, Nat) => [Nat]) fn_param_arities, BasicUntypedSgn* impl_pars) =
     for (fd <- fndefs, es = fndef_wf_errors(fd, global_fns, fn_param_arities, impl_pars))
-    if (es /= {}) {
-      fndef_err(
-        name: fd.name,
-        params:  [if p.type? then p.type else :nil end : p <- fd.params],
-        errs:    es
-      )
-    };
+      if (es /= {}) {
+        fndef_err(
+          name: fd.name,
+          params:  [if p.type? then p.type else :nil end : p <- fd.params],
+          errs:    es
+        )
+      };
 
+    UserErr* proc_def_errors(SynProcDef* proc_defs, UntypedSgn* global_fns, ((FnSymbol, Nat) => [Nat]) fn_param_arities) =
+    for (pd <- proc_defs, es = proc_def_wf_errors(pd, global_fns, fn_param_arities))
+      if (es /= {}) {
+        proc_def_err(name: pd.name, errs: es)
+      };
 
   UserErr* ublock_errors(SynUsingBlock* ublocks, UntypedSgn* global_fns, ((FnSymbol, Nat) => [Nat]) fn_param_arities) =
     union({block_wf_errors(b, global_fns, fn_param_arities) : b <- ublocks});

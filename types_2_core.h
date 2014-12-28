@@ -219,7 +219,10 @@ type Statement  = assignment_stmt(vars: [Var^], value: Expr),
                   fail_stmt,
                   assert_stmt(Expr),
                   print_stmt(Expr),
-                  imp_update_stmt(obj: Var, idx: Expr, value: Expr);
+                  imp_update_stmt(obj: Var, idx: Expr, value: Expr),
+                  //## BAD: MIXING PURE AND IMPURE STATEMENTS
+                  return_stmt,
+                  proc_call(res_var: Var?, proc_name: ProcSymbol, params: [Expr]);
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -241,9 +244,20 @@ type FnDef      = fn_def(
                     //impl_env: Signature*,
                   );
 
+type ProcSymbol = proc_symbol(Atom);
+
+//## SERIOUSLY, FIND BETTER NAME...
+type ProcDef2   = proc_def(
+                    name:       ProcSymbol,
+                    params:     [(var: Var, type: UserType)],
+                    res_type:   Maybe[UserType],
+                    body:       [Statement]
+                  );
+
 type Program    = program(
                     tdefs:          (TypeSymbol => UserType),
                     anon_tdefs:     (TypeName => AnonType),
                     subtype_decls:  SubtypeDecl*,
-                    fndefs:         FnDef*
+                    fndefs:         FnDef*,
+                    proc_defs:      ProcDef2*
                   );

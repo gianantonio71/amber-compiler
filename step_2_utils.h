@@ -126,6 +126,7 @@ Var* extern_vars([Statement] stmts)
 
 Var* extern_vars(Statement s):
   assignment_stmt() = extern_vars(s.value),
+  return_stmt       = {},
   return_stmt(e?)   = extern_vars(e),
   if_stmt()         = extern_vars(s.cond) & extern_vars(s.body) & extern_vars(s.else),
   loop_stmt(ss?)    = extern_vars(ss),
@@ -135,7 +136,8 @@ Var* extern_vars(Statement s):
   fail_stmt         = {},
   assert_stmt(e?)   = extern_vars(e),
   print_stmt(e?)    = extern_vars(e),
-  imp_update_stmt() = {s.obj} & extern_vars(s.idx) & extern_vars(s.value);
+  imp_update_stmt() = {s.obj} & extern_vars(s.idx) & extern_vars(s.value),
+  proc_call()       = seq_union([extern_vars(p) : p <- s.params]);
 
 Var* extern_vars(ClsExpr e) = extern_vars(e.expr) - (set(e.params) - {nil});
 
@@ -157,6 +159,7 @@ StmtOutcome+ outcomes([Statement] stmts)
 
 StmtOutcome+ outcomes(Statement stmt):
   assignment_stmt() = {:fails, :falls_through},
+  return_stmt       = {:returns},
   return_stmt()     = {:fails, :returns},
   if_stmt()         = {:fails} & outcomes(stmt.body) & outcomes(stmt.else),
   loop_stmt(body?)  = {
@@ -176,7 +179,8 @@ StmtOutcome+ outcomes(Statement stmt):
   fail_stmt         = {:fails},
   assert_stmt()     = {:falls_through, :fails},
   print_stmt()      = {:falls_through, :fails},
-  imp_update_stmt() = {:falls_through, :fails};
+  imp_update_stmt() = {:falls_through, :fails},
+  proc_call()       = {:falls_through, :fails};
 
 ////////////////////////////////////////////////////////////////////////////////
 

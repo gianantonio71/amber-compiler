@@ -18,8 +18,7 @@ type ItVar        = SetItVar, SeqItVar, MapItVar;
 
 type AnyVar       = ObjVar, VecVar, BoolVar, IntVar, ItVar, StreamVar;
 
-//## WHY NOT REMOVE ObjFnName ALTOGETHER AND USE FnSymbol DIRECTLY?
-type ObjFnName    = FnSymbol;
+type ObjFnName    = FnSymbol, ProcSymbol;
 
 type BoolFnName   = memb_test(TypeSymbol);
 
@@ -163,6 +162,7 @@ type Instr        = init_stream(StreamVar),
                     
                     print_obj(obj: ObjExpr),
 
+                    no_val_ret,
                     ret_val(<ObjExpr, BoolExpr>),
                     
                     no_op,
@@ -177,7 +177,7 @@ type Instr        = init_stream(StreamVar),
                     execute_block([Instr^]),
                     exit_block,
 
-                    call_proc(var: ObjVar, name: ObjFnName, params: [<ObjExpr, BoundCls>]),
+                    call_proc(var: ObjVar?, name: ObjFnName, params: [<ObjExpr, BoundCls>]),
                     call_cls(var: ObjVar, cls_var: Var, params: [ObjExpr]),
                     
                     push_call_info(fn_name: FnSymbol, params: [Maybe[ObjVar]]),

@@ -131,7 +131,8 @@ type SynCase    = case(patterns: [SynPtrn^], expr: SynExpr);
 
 type SynStmt  = SynAsgnStmt, SynReturnStmt, SynIfStmt, SynLoopStmt, SynInfLoopStmt,
                 SynForStmt, SynLetStmt, SynBreakStmt, SynFailStmt, SynAssertStmt,
-                SynPrintStmt, SynImpUpdateStmt, SynFnDefStmt;
+                SynPrintStmt, SynImpUpdateStmt, SynFnDefStmt,
+                ProcOnlyStmt;  //## BAD: MIXING PURE AND IMPURE STATEMENTS
 
 type SynAsgnStmt      = assignment_stmt(vars: [Var^], value: SynExpr);
 type SynReturnStmt    = return_stmt(SynExpr);
@@ -145,6 +146,9 @@ type SynFailStmt      = fail_stmt;  //## REPLACE WITH FailStmt
 type SynAssertStmt    = assert_stmt(SynExpr);
 type SynPrintStmt     = print_stmt(SynExpr);
 type SynImpUpdateStmt = imp_update_stmt(obj: Var, idx: SynExpr, value: SynExpr);
+
+type ProcOnlyStmt     = return_stmt,
+                        proc_call(res_var: Var?, proc_name: ProcSymbol, params: [SynExpr]);
 
 type SynFnDefStmt   = fn_def_stmt(SynFnDef);
 
@@ -163,6 +167,13 @@ type SynFnDef       = syn_fn_def(
 
 type SynFnArg       = (type: SynExtType?, var: var(Atom)?);
 
+type SynProcDef     = proc_def(
+                        name:       ProcSymbol,
+                        params:     [(var: Var, type: SynType)],
+                        res_type:   Maybe[SynType],
+                        body:       [SynStmt]
+                      );
+
 type SynSgn         = syn_sgn(
                         name:     FnSymbol,
                         params:   [SynType],
@@ -176,6 +187,6 @@ type SynUsingBlock  = using_block(
 
 type SynSubtypeDecl = SubtypeDecl;
 
-type PrgDecl        = SynTypedef, SynParTypedef, SynFnDef, SynUsingBlock, SynSubtypeDecl;
+type PrgDecl        = SynTypedef, SynParTypedef, SynFnDef, SynUsingBlock, SynSubtypeDecl, SynProcDef;
 
 type SynPrg         = prg([PrgDecl]);

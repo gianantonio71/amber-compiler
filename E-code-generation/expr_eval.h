@@ -723,6 +723,8 @@ using
                         return info.eval_code & [print_obj(info.expr)] & info.cleanup_code;
                       },
 
+    return_stmt     = [release(v) : v <- rand_sort(all_rel_vars)] & [exit_block],
+
     return_stmt(e?) = { assert not in(res_var, all_rel_vars);
                         
                         return gen_eval_code(e, res_var)               &
@@ -877,6 +879,12 @@ using
                    ];
       
       return src_info.eval_code & loop_code & src_info.cleanup_code;
+    },
+
+    proc_call() = {
+      pars_info = gen_eval_info(stmt.params);
+      call_code = [call_proc(var: stmt.res_var if stmt.res_var?, name: stmt.proc_name, params: pars_info.exprs)];
+      return pars_info.eval_code & call_code & pars_info.cleanup_code;
     };
 }
 

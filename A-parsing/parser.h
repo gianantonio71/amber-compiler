@@ -87,6 +87,18 @@ ParserResult parse_all(ParsingRule rule, PreAst pre_ast, (Atom => ParsingRule) r
 }
 
 
+// String rule_desc(ParsingRule r):
+//   empty_rule          = to_text(r),
+//   atomic_rule()       = to_text(r),
+//   optional_rule(sr?)  = "optional_rule(" & rule_desc(sr) & ")",
+//   rule_seq(rs?)       = "rule_seq(...)",
+//   rep_rule()          = "rep_rule(" & rule_desc(r.rule) & ", ...)",
+//   rule_choice()       = "rule_choice(...)",
+//   rule_neg(sr?)       = "rule_neg(" & rule_desc(sr) & ")",
+//   block_rule()        = "block_rule(" & rule_desc(r.rule) & ", ...)",
+//   rule_ref()          = to_text(r);
+
+
 ParserResult parse(ParsingRule rule, PreAst pre_ast, Nat offset, (Atom => ParsingRule) rec_rules):
   empty_rule        = success(parser_match(null_match, 0)),
 

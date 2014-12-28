@@ -8,7 +8,9 @@ ProcDef* gen_prg_code(Program prg)
   // fndefs     = {gen_fn_code(fd; type_map = simpl_prg.tdefs) : fd <- simpl_prg.fndefs};
   fndefs     = {gen_fn_code(fd) : fd <- simpl_prg.fndefs};
 
-  return memb_tests & fndefs;
+  proc_defs  = {gen_proc_code(pd) : pd <- simpl_prg.proc_defs};
+
+  return memb_tests & fndefs & proc_defs;
   //return {normalize_var_numbers(pd) : pd <- memb_tests & fndefs};
 }
 
@@ -48,6 +50,46 @@ ProcDef* gen_prg_code(Program prg)
 //    BoolProcDef   = bool_proc_def(pd.name, pd.arity, body);
 //}
 
+
+ObjProcDef gen_proc_code(ProcDef2 proc_def)
+{
+  fn_res_var = lvar(0);
+  tmp_bvar   = bvar(0);
+
+  body = [];
+
+  let ( next_set_it_var_id = 0,
+        next_seq_it_var_id = 0,
+        next_map_it_var_id = 0,
+        next_obj_var_id    = 1,
+        next_int_var_id    = 0,
+        next_bool_var_id   = 1,
+        next_vector_var_id = 0,
+        next_stream_var_id = 0)
+
+    //// Checking parameter types
+    //for (p @ i : fndef.params)
+    //  body = body & gen_type_checking_code(p.type, fn_par(i), tmp_bvar) & [check(tmp_bvar)] if p.type?;
+    //;
+
+    // Setting named variables for parameters
+    body = body & [set_var(p.var, fn_par(i)) : p @ i <- proc_def.params];
+
+    // Evaluating the expression
+    body = body & [execute_block(gen_code(proc_def.body, fn_res_var))];
+
+    //// Checking the type of the result
+    //if (fndef.res_type?)
+    //  body = body & gen_type_checking_code(fndef.res_type, fn_res_var, tmp_bvar) & [check(tmp_bvar)];
+    //;
+  ;
+
+  debug_code = [push_call_info(proc_def.name, [just(fn_par(i)) : p @ i <- proc_def.params])];
+  ret_val = if proc_def.res_type /= nil then fn_res_var else object(nil) end; //## BAD: HERE I'M CHEATING...
+  body = debug_code & body & [pop_call_info, ret_val(ret_val)];
+
+  return obj_proc_def(proc_def.name, arity(proc_def) * [:obj], (), body);
+}
 
 
 ObjProcDef gen_fn_code(FnDef fndef)
@@ -113,7 +155,13 @@ Program generate_dispatch_functions(Program prg)
   
   new_fns = dispatched_fns & (prg.fndefs - union(overloaded_fns));
   
-  return program(tdefs: prg.tdefs, anon_tdefs: prg.anon_tdefs, subtype_decls: prg.subtype_decls, fndefs: new_fns);
+  return program(
+    tdefs:          prg.tdefs,
+    anon_tdefs:     prg.anon_tdefs,
+    proc_defs:      prg.proc_defs,
+    subtype_decls:  prg.subtype_decls,
+    fndefs:         new_fns
+  );
 }
 
 FnDef+ generate_dispatch_function(FnDef+ fds, (TypeName => AnonType) typedefs)

@@ -734,11 +734,11 @@ String quote(String str)
   qstr = [];
   for (ch : _obj_(str))
     if (ch == ascii_newline)
-      qchs = [ascii_lower_n, ascii_backslash];
+      qchs = [ascii_backslash, ascii_lower_n];
     elif (ch == ascii_backslash)
       qchs = [ascii_backslash, ascii_backslash];
     elif (ch == ascii_double_quotes)
-      qchs = [ascii_double_quotes, ascii_backslash];
+      qchs = [ascii_backslash, ascii_double_quotes];
     else
       qchs = [ch];
     ;

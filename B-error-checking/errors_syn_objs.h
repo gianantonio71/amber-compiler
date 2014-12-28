@@ -2,7 +2,8 @@
 using
 {
   (SynTypeSymbol => SynType)                typedefs,
-  (symbol: BasicTypeSymbol, arity: NzNat)*  all_par_type_symbols;
+  (symbol: BasicTypeSymbol, arity: NzNat)*  all_par_type_symbols,
+  (ProcSymbol => Nat)                       proc_to_arity;
 
 
   SynObjErr* fndef_wf_errors(SynFnDef fn_def, UntypedSgn* global_fns, ((FnSymbol, Nat) => [Nat]) fn_param_arities, BasicUntypedSgn* impl_pars) =
@@ -55,6 +56,37 @@ using
 
     return sgn_errs & ret_type_errs & loc_fns_errs & expr_errs;
   }
+
+
+  SynObjErr* proc_def_wf_errors(SynProcDef proc_def, UntypedSgn* global_fns, ((FnSymbol, Nat) => [Nat]) fn_param_arities)
+  {
+    errs = if proc_def.res_type /= nil
+      then type_wf_errors(value(proc_def.res_type), type_vars_in_scope = {})
+      else {}
+    end;
+    for (p : proc_def.params)
+      errs = errs & type_wf_errors(p.type, type_vars_in_scope = {});
+    ;
+
+    par_vars = {p.var : p <- set(proc_def.params)};
+    errs = errs & stmts_wf_errors(
+      proc_def.body,
+      par_vars,                   // all_def_vars
+      par_vars,                   // readonly_vars
+      false,                      // inside_loop
+      true,                       // allow_proc_stmts
+      proc_def.res_type /= nil,   // req_ret_val
+
+      fns_in_scope        = global_fns,
+      clss_in_scope       = {},
+      type_vars_in_scope  = {},
+      impl_params         = {},
+      fn_param_arities    = fn_param_arities,
+      is_fn_par           = false
+    );
+
+    return errs;
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -68,7 +100,8 @@ using
   BasicUntypedSgn*                          clss_in_scope,
   BasicUntypedSgn*                          impl_params,
   ((FnSymbol, Nat) => [Nat])                fn_param_arities,
-  Bool                                      is_fn_par;
+  Bool                                      is_fn_par,
+  (ProcSymbol* => Nat)                      proc_to_arity;
 
 
   SynObjErr* expr_wf_errors(SynExpr expr, Var* def_vars):
@@ -284,20 +317,20 @@ using
   
   SynObjErr* stmts_wf_errors([SynStmt^] stmts, Var* def_vars)
   {
-    errs = stmts_wf_errors(stmts, def_vars, def_vars, false);
+    errs = stmts_wf_errors(stmts, def_vars, def_vars, false, false, true);
     errs = errs & {:no_ret_stmt} if not never_falls_through(stmts);
     return errs;
   }
 
 
-  SynObjErr* stmts_wf_errors([SynStmt] stmts, Var* all_def_vars, Var* readonly_vars, Bool inside_loop)
+  SynObjErr* stmts_wf_errors([SynStmt] stmts, Var* all_def_vars, Var* readonly_vars, Bool inside_loop, Bool allow_proc_stmts, Bool req_ret_val)
   {
     vs        = all_def_vars;
     reachable = true;
     errs      = {};
     for (s : stmts)
       errs      = errs & {:unreachable_code} if not reachable;
-      errs      = errs & stmt_wf_errors(s, vs, readonly_vars, inside_loop);
+      errs      = errs & stmt_wf_errors(s, vs, readonly_vars, inside_loop, allow_proc_stmts, req_ret_val);
       vs        = vs & syn_new_vars(s);
       reachable = reachable and not syn_is_last_for_sure(s);
     ;
@@ -306,7 +339,7 @@ using
   }
 
 
-  SynObjErr* stmt_wf_errors(SynStmt stmt, Var* all_def_vars, Var* readonly_vars, Bool inside_loop):
+  SynObjErr* stmt_wf_errors(SynStmt stmt, Var* all_def_vars, Var* readonly_vars, Bool inside_loop, Bool allow_proc_stmts, Bool req_ret_val):
   
     //## BUG: SHOULD ALSO CHECK THAT THE VARIABLES ARE ALL DIFFERENT
     assignment_stmt()   = expr_wf_errors(stmt.value, all_def_vars) &
@@ -317,7 +350,7 @@ using
                           expr_wf_errors(stmt.value, all_def_vars) &
                           {:undef_var(stmt.obj) if not in(stmt.obj, all_def_vars)},
 
-    return_stmt(e?)     = expr_wf_errors(e, all_def_vars),
+    return_stmt(e?)     = expr_wf_errors(e, all_def_vars) & {:ret_val_not_allowed if not req_ret_val},
 
     assert_stmt(e?)     = expr_wf_errors(e, all_def_vars),
     print_stmt(e?)      = expr_wf_errors(e, all_def_vars),
@@ -326,19 +359,19 @@ using
 
     break_stmt          = {:break_outside_loop if not inside_loop},
 
-    inf_loop_stmt(ss?)  = stmts_wf_errors(ss, all_def_vars, readonly_vars, true) &
+    inf_loop_stmt(ss?)  = stmts_wf_errors(ss, all_def_vars, readonly_vars, true, allow_proc_stmts, req_ret_val) &
                           {:no_way_out_loop if not has_top_level_break(ss) and not has_return(ss)},
 
     if_stmt()           = { errs_cond = [expr_wf_errors(b.cond, all_def_vars) : b <- stmt.branches];
-                            errs_body = [stmts_wf_errors(b.body, all_def_vars, readonly_vars, inside_loop) : b <- stmt.branches];
-                            errs_else = stmts_wf_errors(stmt.else, all_def_vars, readonly_vars, inside_loop);
+                            errs_body = [stmts_wf_errors(b.body, all_def_vars, readonly_vars, inside_loop, allow_proc_stmts, req_ret_val) : b <- stmt.branches];
+                            errs_else = stmts_wf_errors(stmt.else, all_def_vars, readonly_vars, inside_loop, allow_proc_stmts, req_ret_val);
                             return seq_union(errs_cond) & seq_union(errs_body) & errs_else;
                           },
 
     loop_stmt()         = { vs = all_def_vars;
                             vs = vs & syn_new_vars(stmt.body) if stmt.skip_first;
                             errs_cond = expr_wf_errors(stmt.cond, vs);
-                            errs_body = stmts_wf_errors(stmt.body, all_def_vars, readonly_vars, true);
+                            errs_body = stmts_wf_errors(stmt.body, all_def_vars, readonly_vars, true, allow_proc_stmts, req_ret_val);
                             return errs_cond & errs_body;
                           },
 
@@ -348,7 +381,7 @@ using
                               errs = errs & iter_wf_errors(it, vs);
                               vs   = vs & syn_new_vars(it);
                             ;
-                            return errs & stmts_wf_errors(stmt.body, vs, readonly_vars, true);
+                            return errs & stmts_wf_errors(stmt.body, vs, readonly_vars, true, allow_proc_stmts, req_ret_val);
                           },
 
     let_stmt()          = { asgnms_errs = fndefs_wf_errors(set(stmt.asgnms), all_def_vars);
@@ -359,6 +392,8 @@ using
                                              all_def_vars,
                                              readonly_vars,
                                              inside_loop,
+                                             allow_proc_stmts,
+                                             req_ret_val,
                                              impl_params = new_impl_params
                                            );
 
@@ -367,7 +402,29 @@ using
                             //## THOUGH AS I'M PASSING ONTO THE BODY STATEMENTS THE SAME IMPLICIT
                             //## ENVIRONMENT THAT I GET AS INPUT
                             return asgnms_errs & stmts_errs;
-                          };
+                          },
+
+    return_stmt         = {:ret_val_required if req_ret_val},
+
+    proc_call()         = {
+      return {:proc_call_not_allowed} if not allow_proc_stmts;
+      errs = seq_union([expr_wf_errors(p, all_def_vars) : p <- stmt.params]);
+      if (not has_key(proc_to_arity, stmt.proc_name))
+        errs = errs & {:undef_proc_symbol(stmt.proc_name)};
+      else
+        req_arity = proc_to_arity[stmt.proc_name];
+        call_arity = length(stmt.params);
+        if (req_arity /= call_arity)
+          err = wrong_proc_call_arity(
+            proc_name:  stmt.proc_name,
+            req_arity:  req_arity,
+            call_arity: call_arity
+          );
+          errs = errs & {err};
+        ;
+      ;
+      return errs;
+    };
 
 
   SynObjErr* iter_wf_errors(SynIter iter, Var* def_vars):
