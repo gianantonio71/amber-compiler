@@ -167,7 +167,7 @@ type Instr        = init_stream(StreamVar),
                     
                     no_op,
                     
-                    branch(cond: BoolExpr, when_true: [Instr], when_false: [Instr]),
+                    branch(cond: BoolExpr, when_true: [Instr^], when_false: [Instr]),
                     
                     symbol_switch(val: ObjExpr, cases: (vals: SymbObj+, instrs: [Instr])*, else: [Instr^]?),
 

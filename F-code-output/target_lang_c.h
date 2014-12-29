@@ -85,51 +85,15 @@ CCodeOutput compile_to_c(ProcDef* prg)
   all_fn_arities = set([in_arity(d) : d <- obj_proc_defs]);
   c_code = c_code & join(intermix([generate_push_call_info_wrapper(a) : a <- rand_sort(all_fn_arities)], 2 * [""])) & 4 * [""];
 
-//  print "compile_to_c#1";
-//  
-//  //## BAD CONSTRUCTION OF TUPLE IS REPEATED IN TWO DIFFERENT PLACES
-//  set_cls_sgns    = {(name: cls.name, arity: cls.arity) : cls <- cls_defs};
-//  print "compile_to_c#2";
-//  called_cls_sgns = retrieve (cls_var: c.cls_var, arity: length(c.params)) from call_cls() c in prg end;
-//  print "compile_to_c#3";
-//  cls_sgns        = set_cls_sgns & called_cls_sgns;
-//
-////                    call_cls(var: ObjVar, cls_var: Var, params: [ObjExpr]), //## NEW
-//
-//  //## BAD BAD BAD EXPRESSION TOO MESSY
-//  part_to_max_size = for (s <- cls_sgns) (s => {
-//                        sizes = for (cls <- cls_defs)
-//                                   if (cls.name == s.name, s.arity == cls.arity)
-//                                     {length(cls.env)};
-//                        return if sizes == {} then 0 else max(sizes) end;
-//                      });
-
-  ////## MOST OF THIS CODE IS DUPLICATED (LOOK FOR VARIABLE TMP)
-  //for (sgn : rand_sort(cls_sgns))
-  //  //print sgn;
-  //  cls_var  = to_c_imp_var_name(sgn.name, sgn.arity; typesymb2name(ts) = typesymb2str(ts, ptss));
-  //  //print "----------------------------";
-  //  env_var  = to_c_env_var_name(sgn.name, sgn.arity; typesymb2name(ts) = typesymb2str(ts, ptss));
-
-  //  par_list = append(intermix(["const Obj *"] & rep_seq(sgn.arity, "Obj"), ", "));
-  //  max_size = part_to_max_size[sgn];
-
-  //  cls_decl = ["Obj (*" & cls_var & ")(" & par_list & ");"];
-  //  env_decl = [if max_size == 0 then "const Obj *" & env_var & ";" else "Obj " & env_var & "[" & to_str(max_size) & "];" end];
-  //  
-  //  c_code = c_code & cls_decl & env_decl & ["", ""];
-  //;
-
   sorted_cls_defs = rand_sort(cls_defs);
   
   proc_code = compile_to_c(
-                 obj_proc_defs,
-                 bool_proc_defs,
-                 sorted_cls_defs,
-                 typesymb2name(ts) = typesymb2str(ts, ptss),
-                 cls2id(cls)       = index_first(cls, sorted_cls_defs)
-                 //obj2var(obj)    = {assert false; return to_str(_counter_(nil));};
-               );
+    obj_proc_defs,
+    bool_proc_defs,
+    sorted_cls_defs,
+    typesymb2name(ts) = typesymb2str(ts, ptss),
+    cls2id(cls)       = index_first(cls, sorted_cls_defs)
+  );
 
   body = [
     "#include \"lib.h\"\n\n",
@@ -199,26 +163,6 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
   }
 
 
-  //## ALL THE CODE HERE IS DUPLICATED FROM compile_to_c()
-  // String gen_c_decl(ProcDef pd)
-  // {
-  //   par_list = append(intermix(rep_seq(arity(pd), "Obj") & extra_params(pd), ", "));
-
-  //   return ret_type_str(pd) & to_c_fn_name(pd.name) & "(" & par_list & ");";
-    
-  //   Nat arity(ProcDef pd):
-  //     obj_proc_def()    = in_arity(pd),
-  //     bool_proc_def()   = pd.arity;
-    
-  //   String ret_type_str(ProcDef):
-  //     obj_proc_def()    = "Obj ",
-  //     bool_proc_def()   = "bool ";
-    
-  //   [String] extra_params(ProcDef):
-  //     obj_proc_def()    = ["Env &"],
-  //     bool_proc_def()   = [];
-  // }
-
   String gen_c_decl(ObjProcDef pd)
   {
     par_types = [if p == :obj then "Obj" else "CLS" & to_str(p.arity) & " &" end : p <- pd.params];
@@ -226,18 +170,20 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     return "Obj " & to_c_fn_name(pd.name) & "(" & par_list & ");";
   }
 
+
   String gen_c_decl(BoolProcDef pd)
   {
     par_list = append(intermix(pd.arity * ["Obj"], ", "));
     return "bool " & to_c_fn_name(pd.name) & "(" & par_list & ");";
   }
 
+
   String gen_c_decl(ClsDef cd, Nat id)
   {
     par_list = append(intermix(rep_seq(cd.arity, "Obj") & ["const Obj *", "Env &"], ", "));
-    //return "Obj " & to_c_imp_var_name(cd.name, cd.arity) & "__" & to_str(id) & "(" & par_list & ");";
     return "Obj cls_" & to_str(id) & "(" & par_list & ");";
   }
+
 
   [String] compile_to_c(ProcDef pd)
   {
@@ -272,16 +218,6 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
       obj_proc_def()    = "Obj ",
       bool_proc_def()   = "bool ";
 
-    // [String] extra_params(ProcDef):
-    //   obj_proc_def()    = ["Env &env"],
-    //   bool_proc_def()   = [];
-
-    // String gen_fn_par(Nat arity, Nat pos) =
-    //   if arity == 0
-    //     then "Obj p" & to_str(pos)
-    //     else "Obj (*p" & to_str(pos) & ")(" & append(intermix(arity * ["Obj"], ",")) & ")"
-    //   end;
-
     String gen_fn_par(ObjProcPar par, Nat pos):
       obj   = "Obj p" & to_str(pos),
       cls() = "CLS" & to_str(par.arity) & " &" & if par.name? then to_c_var_name(par.name) else "c" & to_str(pos) end;
@@ -291,12 +227,12 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
       BoolProcDef = ["Obj p" & to_str(n) : n <- inc_seq(arity(pd))];
   }
 
+
   //## DUPLICATED CODE
   [String] compile_to_c(ClsDef cd, Nat id)
   {
     par_list  = ["Obj p" & to_str(n) : n <- inc_seq(cd.arity)] & ["const Obj C[]", "Env &env"]; //## BAD
     signature = "Obj cls_" & to_str(id) & "(" & append(intermix(par_list, ", ")) & ")";
-    //signature = "Obj " & to_c_imp_var_name(cd.name, cd.arity) & "__" & to_str(id) & "(" & append(intermix(par_list, ", ")) & ")";
 
     body = cd.body;
     vars_to_decl = vars_to_declare(body);
@@ -307,26 +243,12 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     return [signature, "{"] & indent(var_decls) & [""] & indent(comp_body) & ["}"];
   }
 
-  AnyVar* vars_to_declare([Instr] instrs) //## BAD BAD BAD
-  {
-    //vs = {if x :: <mk_seq(Any+)> then x.elems else x end
-    //       : x <- select <AnyVar, mk_seq(Any+), ClsDef> in instrs end
-    //       ; not x :: <fn_par(Nat), cls_ext_par(Nat), evar(id: Nat, idx: Nat), ClsDef>
-    //      };
 
-//                    cls_ext_par(Nat), //## RENAME THIS
-//                    lvar(Nat), //## THIS IS REDUNDANT, WE ALREADY HAVE unique_var(Nat)
-//                    evar(id: Nat, idx: <Nat, IntVar>);
-//
-//var(Atom), fn_par(Nat), named_par(Atom), unique_var(Nat)
+  AnyVar* vars_to_declare([Instr] instrs) = {
+    x : x <- select <AnyVar, ClsDef> in instrs end,
+        not x :: <fn_par(Nat), named_par(Atom), cls_ext_par(Nat), evar(id: Nat, idx: <Nat, IntVar>), ClsDef>
+  };
 
-    vs = {x : x <- select <AnyVar, ClsDef> in instrs end,
-               not x :: <fn_par(Nat), named_par(Atom), cls_ext_par(Nat), evar(id: Nat, idx: <Nat, IntVar>), ClsDef>
-          };
-    
-    //print rand_sort(vs);
-    return vs;
-  }
 
   String var_decl(AnyVar v):
     ObjVar    = "Obj "      & to_c_var_name(v) & ";",
@@ -438,7 +360,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
                               return ["goto block_" & to_str(block_id) & "_end;"];
                             },
 
-    call_proc()           = compile_call_proc_to_c(instr, block_id),
+    call_proc()           = compile_call_proc_to_c(if instr.var? then just(instr.var) else nil end, instr.name, instr.params, block_id),
 
     call_cls()            = mk_cls_call(instr.cls_var, instr.var, instr.params), //## INLINE THE FUNCTION
 
@@ -451,150 +373,23 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
     runtime_check()       = mk_call("runtime_check", [instr.cond]),
 
-    branch() =
-    {
-      assert instr.when_true? or instr.when_false?;
-      cond       = instr.cond;
-      when_true  = []; //## BAD BAD BAD I SHOULD CHANGE THE SCOPE RULES
-      when_false = [];
-      if (instr.when_true?)
-        when_true  = instr.when_true;
-        when_false = instr.when_false if instr.when_false?;
-      else
-        cond      = neg(cond);
-        when_true = instr.when_false;
-      ;
-      code = ["if (" & to_c_expr(cond) & ")", "{"]     &
-              indent(compile_to_c(when_true, block_id)) &
-              ["}"];
-      if (when_false /= [])
-        code = code & ["else", "{"] & indent(compile_to_c(when_false, block_id)) & ["}"];
-      ;
-      return code;
-    },
+    branch()              = compile_branch_to_c(instr.cond, instr.when_true, instr.when_false, block_id),
 
-    //## HUGE BUG HERE: IF THE CODE IN ONE OF THE CASE STATEMENTS CONTAINS A BREAK
-    //## THAT AFFECTS A LOOP THAT CONTAINS THE SWITCH STATEMENT, THEN THE BREAK WILL
-    //## MISTAKINGLY TERMINATE THE SWITCH, NOT THE LOOP
-    symbol_switch() =
-    {
-      code = ["switch (" & to_c_expr(instr.val) & ")", "{"];
-      for (c : rand_sort(instr.cases))
-        case_code = ["case S_" & _str_(_obj_(s)) & ":" : s <- rand_sort(c.vals)] & //## BAD
-                     indent(compile_to_c(c.instrs, block_id) & ["break;"]);
-        code = code & indent(case_code);
-      ;
-      if (instr.else?)
-        code = code & ["default:"] & indent(compile_to_c(instr.else, block_id));
-      ;
-      return code & ["}"];
-    },
+    symbol_switch()       = compile_symbol_switch_to_c(instr.val, instr.cases, if instr.else? then instr.else else [] end, block_id),
 
-    var_scope() =
-    {
-      scope_id = to_str(_counter_(nil));
-      
-      var = instr.var;
-      val = instr.new_value;
-      
-      //var_str = _str_(_obj_(var));  //## BAD, DUPLICATED LOGIC
-      val_str = to_c_expr(val);
-      
-      env_var = to_c_var_name(var); //"env.n_" & var_str;  //## BAD, DUPLICATED LOGIC
-      bk_var  = "BK" & scope_id;
-      
-      code = [ "Obj " & bk_var & " = " & env_var & ";",
-                env_var & " = " & val_str & ";",
-                "add_ref(" & env_var & ");"
-              ];
+    var_scope()           = compile_var_scope_to_c(instr.var, instr.new_value, instr.body, block_id),
 
-      code = code & compile_to_c(instr.body, block_id);
-      
-      code = code & [ "release(" & env_var & ");",
-                       env_var & " = " & bk_var & ";"
-                     ];
-
-      code = ["{"] & indent(code) & ["}"];
-      
-      return code;
-    },
-
-    //cls_scope(cls: ClsDef, body: [Instr^]);
-    //cls_def(
-    //  name:   FnSymbol,
-    //  arity:  NzNat,
-    //  env:    [Var],
-    //  body:   [Instr^]
-    //);
-
-    cls_scope() =
-    {
-      scope_id = to_str(_counter_(nil));
-       
-      var   = instr.var;
-      cls   = instr.bound_cls.cls;
-      arity = cls.arity;
-      env   = instr.bound_cls.env;
-      env_size = length(env);
-      
-      var_str = _str_(_obj_(var)); //## BAD, DUPLICATED LOGIC
-      arity_str = to_str(arity);
-      env_size_str = to_str(env_size);
-       
-      fn_var = "env.n" & arity_str & "_" & var_str;  //## BAD, DUPLICATED LOGIC
-      data_var = "env.C" & arity_str & "_" & var_str; //## BAD, DUPLICATED LOGIC
-      fn_bk_var = "BF" & scope_id;
-      data_bk_var = "BD" & scope_id;
-      new_data_var = "ND" & scope_id;
-      
-
-      tmp = rep_seq(arity, "Obj") & ["const Obj *", "Env &"];
-      tmp = intermix(tmp, ", ");
-      tmp = append(tmp);
-
-      code = [ "Obj (*" & fn_bk_var & ")(" & tmp & ") = " & fn_var & ";",
-               "const Obj *BD" & scope_id & " = " & data_var & ";"
-             ];
-
-      code = code & ["Obj " & new_data_var & "[" & env_size_str & "];"] if env_size > 0;
-
-      //## HERE I'M ADDING THE add_ref/release PAIRS IN THE WRONG LAYERS
-      for (i : inc_seq(env_size))
-        code = code & [ new_data_var & "[" & to_str(i) & "] = " & to_c_var_name(env[i]) & ";",
-                         "add_ref(" & new_data_var & "[" & to_str(i) & "]);"
-                       ];
-      ;
-      
-      code = code & [ fn_var & " = cls_" & to_str(cls2id(cls)) & ";",
-                       data_var & " = " & if env_size > 0 then new_data_var else "0" end & ";"
-                     ];
-      
-      code = code & compile_to_c(instr.body, block_id);
-
-      code = code & [ fn_var & " = " & fn_bk_var & ";",
-                       data_var & " = " & data_bk_var & ";"
-                     ];
-
-      for (i : inc_seq(env_size))
-        code = code & ["release(" & new_data_var & "[" & to_str(i) & "]);"];
-      ;
-
-      code = ["{"] & indent(code) & ["}"];
-       
-      return code;
-    };
-
+    cls_scope()           = compile_cls_scope_to_c(instr.var, instr.bound_cls, instr.body, block_id);
 
   ///////////////////////////////////////////////////////////////////////////////
 
-  //## BAD: THE TYPE OF THE FIRST ARGUMENT IS NOT SPECIFIC ENOUGHT
-  [String] compile_call_proc_to_c(Instr instr, <Nat, nil> block_id)
+  [String] compile_call_proc_to_c(Maybe[ObjVar] var, ObjFnName name, [<ObjExpr, BoundCls>] params, <Nat, nil> block_id)
   {
-    pars_info = [gen_par_info(p) : p <- instr.params];
+    pars_info = [gen_par_info(p) : p <- params];
     code_frags, args = unzip(pars_info);
-    call_code = if instr.var?
-      then mk_fn_call(instr.var, to_c_fn_name(instr.name), args)
-      else mk_fn_call(to_c_fn_name(instr.name), args)
+    call_code = if var /= nil
+      then mk_fn_call(value(var), to_c_fn_name(name), args)
+      else mk_fn_call(to_c_fn_name(name), args)
     end;
     return join(code_frags) & call_code;
 
@@ -635,6 +430,120 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
         ;
         return (code, par_var);
       };
+  }
+
+
+  [String] compile_branch_to_c(BoolExpr cond, [Instr] when_true, [Instr] when_false, <Nat, nil> block_id)
+  {
+    assert when_true /= [];
+    code = ["if (" & to_c_expr(cond) & ")", "{"]     &
+           indent(compile_to_c(when_true, block_id)) &
+           ["}"];
+    if (when_false /= [])
+      code = code & ["else", "{"] & indent(compile_to_c(when_false, block_id)) & ["}"];
+    ;
+    return code;
+  }
+
+
+  //## HUGE BUG HERE: IF THE CODE IN ONE OF THE CASE STATEMENTS CONTAINS A BREAK
+  //## THAT AFFECTS A LOOP THAT CONTAINS THE SWITCH STATEMENT, THEN THE BREAK WILL
+  //## MISTAKINGLY TERMINATE THE SWITCH, NOT THE LOOP
+  [String] compile_symbol_switch_to_c(ObjExpr val, (vals: SymbObj+, instrs: [Instr])* cases, [Instr] default, <Nat, nil> block_id)
+  {
+    code = ["switch (" & to_c_expr(val) & ")", "{"];
+    for (c : rand_sort(cases))
+      case_code = ["case S_" & _str_(_obj_(s)) & ":" : s <- rand_sort(c.vals)] & //## BAD
+                   indent(compile_to_c(c.instrs, block_id) & ["break;"]);
+      code = code & indent(case_code);
+    ;
+    if (default /= [])
+      code = code & ["default:"] & indent(compile_to_c(default, block_id));
+    ;
+    return code & ["}"];
+  }
+
+
+  [String] compile_var_scope_to_c(<named_par(Atom)> var, AtomicExpr val, [Instr^] body, <Nat, nil> block_id)
+  {
+    scope_id = to_str(_counter_(nil));
+
+    val_str = to_c_expr(val);
+
+    env_var = to_c_var_name(var);
+    bk_var  = "BK" & scope_id;
+
+    code = [
+      "Obj " & bk_var & " = " & env_var & ";",
+      env_var & " = " & val_str & ";",
+      "add_ref(" & env_var & ");"
+    ];
+
+    code = code & compile_to_c(body, block_id);
+    code = code & ["release(" & env_var & ");", env_var & " = " & bk_var & ";"];
+    code = ["{"] & indent(code) & ["}"];
+
+    return code;
+  }
+
+
+  [String] compile_cls_scope_to_c(<named_par(Atom)> var, BoundCls bound_cls, [Instr^] body, <Nat, nil> block_id)
+  {
+    scope_id = to_str(_counter_(nil));
+
+    cls   = bound_cls.cls;
+    arity = cls.arity;
+    env   = bound_cls.env;
+    env_size = length(env);
+
+    var_str = _str_(_obj_(var)); //## BAD, DUPLICATED LOGIC
+    arity_str = to_str(arity);
+    env_size_str = to_str(env_size);
+
+    fn_var = "env.n" & arity_str & "_" & var_str;  //## BAD, DUPLICATED LOGIC
+    data_var = "env.C" & arity_str & "_" & var_str; //## BAD, DUPLICATED LOGIC
+    fn_bk_var = "BF" & scope_id;
+    data_bk_var = "BD" & scope_id;
+    new_data_var = "ND" & scope_id;
+
+    tmp = rep_seq(arity, "Obj") & ["const Obj *", "Env &"];
+    tmp = intermix(tmp, ", ");
+    tmp = append(tmp);
+
+    code = [
+      "Obj (*" & fn_bk_var & ")(" & tmp & ") = " & fn_var & ";",
+      "const Obj *BD" & scope_id & " = " & data_var & ";"
+    ];
+
+    code = code & ["Obj " & new_data_var & "[" & env_size_str & "];"] if env_size > 0;
+
+    //## HERE I'M ADDING THE add_ref/release PAIRS IN THE WRONG LAYERS
+    for (i : inc_seq(env_size))
+      code = code & [
+        new_data_var & "[" & to_str(i) & "] = " & to_c_var_name(env[i]) & ";",
+        "add_ref(" & new_data_var & "[" & to_str(i) & "]);"
+      ];
+    ;
+
+    code = code & [
+      fn_var & " = cls_" & to_str(cls2id(cls)) & ";",
+      data_var & " = " & if env_size > 0 then new_data_var else "0" end & ";"
+    ];
+
+    code = code & compile_to_c(body, block_id);
+
+    code = code & [
+      fn_var & " = " & fn_bk_var & ";",
+      data_var & " = " & data_bk_var & ";"
+    ];
+
+    for (i : inc_seq(env_size))
+      code = code & ["release(" & new_data_var & "[" & to_str(i) & "]);"];
+    ;
+
+    code = ["{"] & indent(code) & ["}"];
+
+    return code;
   }
 
   ///////////////////////////////////////////////////////////////////////////////
