@@ -3,15 +3,15 @@ BoolProcDef mk_named_type_memb_test_fn(TypeSymbol type_name, (TypeSymbol => User
   res_var = bvar(0);
   
   code = gen_type_checking_code(
-            typedefs[type_name],
-            fn_par(0),
-            res_var,
-            next_set_it_var_id = 0,
-            next_seq_it_var_id = 0,
-            next_map_it_var_id = 0,
-            next_obj_var_id    = 0,
-            next_int_var_id    = 0
-          );
+    typedefs[type_name],
+    fn_par(0),
+    res_var,
+    next_set_it_var_id = 0,
+    next_seq_it_var_id = 0,
+    next_map_it_var_id = 0,
+    next_obj_var_id    = 0,
+    next_int_var_id    = 0
+  );
 
   return bool_proc_def(:memb_test(type_name), 1, code & [ret_val(res_var)]);    
 }
@@ -26,221 +26,233 @@ using
 
 
   [Instr^] gen_type_checking_code(UserType type, AtomicExpr obj, BoolVar res_var):
+    ne_set_type()     = gen_ne_set_type_checking_code(type.elem_type, obj, res_var),
+    ne_seq_type()     = gen_ne_seq_type_checking_code(type.elem_type, obj, res_var),
+    ne_map_type()     = gen_map_type_checking_code(type.key_type, type.value_type, obj, res_var),
+    record_type(fs?)  = gen_record_type_checking_code(fs, obj, res_var),
+    tuple_type(ts?)   = gen_tuple_type_checking_code(ts, obj, res_var),
+    tag_obj_type()    = gen_tag_obj_type_checking_code(type.tag_type, type.obj_type, obj, res_var),
+    union_type(ts?)   = gen_union_type_checking_code(ts, obj, res_var),
+    _                 = [set_bvar(res_var, gen_type_checking_expr(type, obj))];
 
-    //## OPTIMIZE FOR SETS OF ANY
-    ne_set_type() =
-    {
-      it_var   = set_it_var(next_set_it_var_id);
-      elem_var = lvar(next_obj_var_id);
 
-      elem_code = gen_type_checking_code(
-                     type.elem_type,
-                     elem_var,
-                     res_var,
-                     next_obj_var_id    = next_obj_var_id + 1,
-                     next_set_it_var_id = next_set_it_var_id + 1
-                   );
- 
-      code = [ // maybe_op(block_success_if(is_empty_set(obj), res_var), not type.nonempty),
-                block_failure_if_not(is_ne_set(obj), res_var),
-                get_iter(it_var, obj),
-                repeat(
-                  [ break_if(is_out_of_range(it_var)),
-                    get_curr_obj(elem_var, it_var)
-                  ] &
-                  elem_code &                  
-                  [ exit_block_if_not(res_var),
-                    move_forward(it_var)
-                  ]
-                ),
-                set_bvar(res_var, true)
-              ];
+  //## OPTIMIZE FOR SETS OF ANY
+  [Instr^] gen_ne_set_type_checking_code(UserType elem_type, AtomicExpr obj, BoolVar res_var)
+  {
+    it_var   = set_it_var(next_set_it_var_id);
+    elem_var = lvar(next_obj_var_id);
 
-      return [execute_block(code)];
-    },
+    elem_code = gen_type_checking_code(
+      elem_type,
+      elem_var,
+      res_var,
+      next_obj_var_id    = next_obj_var_id + 1,
+      next_set_it_var_id = next_set_it_var_id + 1
+    );
+
+    code = [
+      block_failure_if_not(is_ne_set(obj), res_var),
+      get_iter(it_var, obj),
+      repeat(
+        [ break_if(is_out_of_range(it_var)),
+          get_curr_obj(elem_var, it_var)
+        ] &
+        elem_code &
+        [ exit_block_if_not(res_var),
+          move_forward(it_var)
+        ]
+      ),
+      set_bvar(res_var, true)
+    ];
+
+    return [execute_block(code)];
+  }
 
 
     //## OPTIMIZE FOR SEQUENCES OF ANY
-    ne_seq_type() =
-    {
-      elem_var = lvar(next_obj_var_id);
-      it_var   = seq_it_var(next_seq_it_var_id);
-      
-      elem_code = gen_type_checking_code(
-                     type.elem_type,
-                     elem_var,
-                     res_var,
-                     next_obj_var_id    = next_obj_var_id + 1,
-                     next_seq_it_var_id = next_seq_it_var_id + 1
-                   );
-      
-      code = [ //maybe_op(block_success_if(is_empty_seq(obj), res_var), not type.nonempty),
-                block_failure_if_not(is_ne_seq(obj), res_var),
-                get_iter(it_var, obj),
-                repeat(
-                  [ break_if(is_out_of_range(it_var)),
-                    get_curr_obj(elem_var, it_var)
-                  ] &
-                  elem_code &
-                  [ exit_block_if_not(res_var),
-                    move_forward(it_var)
-                  ]
-                ),
-                set_bvar(res_var, true)
-              ];
-      
-      return [execute_block(code)];
-    },
+  [Instr^] gen_ne_seq_type_checking_code(UserType elem_type, AtomicExpr obj, BoolVar res_var)
+  {
+    elem_var = lvar(next_obj_var_id);
+    it_var   = seq_it_var(next_seq_it_var_id);
+
+    elem_code = gen_type_checking_code(
+      elem_type,
+      elem_var,
+      res_var,
+      next_obj_var_id    = next_obj_var_id + 1,
+      next_seq_it_var_id = next_seq_it_var_id + 1
+    );
+
+    code = [
+      block_failure_if_not(is_ne_seq(obj), res_var),
+      get_iter(it_var, obj),
+      repeat(
+        [ break_if(is_out_of_range(it_var)),
+          get_curr_obj(elem_var, it_var)
+        ] &
+        elem_code &
+        [ exit_block_if_not(res_var),
+          move_forward(it_var)
+        ]
+      ),
+      set_bvar(res_var, true)
+    ];
+
+    return [execute_block(code)];
+  }
 
 
-    ne_map_type() =
-    {
-      obj_var = lvar(next_obj_var_id);
-      it_var  = map_it_var(next_map_it_var_id);
-      
-      let (next_obj_var_id = next_obj_var_id + 1, next_map_it_var_id = next_map_it_var_id + 1)
-        code = [ //block_success_if(is_empty_map(obj), res_var),
-                  block_failure_if_not(is_ne_map(obj), res_var),
-                  get_iter(it_var, obj),
-                  repeat(
-                    [ break_if(is_out_of_range(it_var)),
-                      get_curr_key(obj_var, it_var)
-                    ] &
-                    gen_type_checking_code(type.key_type, obj_var, res_var) &
-                    [ exit_block_if_not(res_var),
-                      get_curr_value(obj_var, it_var)
-                    ] &
-                    gen_type_checking_code(type.value_type, obj_var, res_var) &
-                    [ exit_block_if_not(res_var),
-                      move_forward(it_var)
-                    ]
-                  ),
-                  set_bvar(res_var, true)
+  [Instr^] gen_map_type_checking_code(UserType key_type, UserType value_type, AtomicExpr obj, BoolVar res_var)
+  {
+    obj_var = lvar(next_obj_var_id);
+    it_var  = map_it_var(next_map_it_var_id);
+
+    let (next_obj_var_id = next_obj_var_id + 1, next_map_it_var_id = next_map_it_var_id + 1)
+      code = [
+        //block_success_if(is_empty_map(obj), res_var),
+        block_failure_if_not(is_ne_map(obj), res_var),
+        get_iter(it_var, obj),
+        repeat(
+          [ break_if(is_out_of_range(it_var)),
+            get_curr_key(obj_var, it_var)
+          ] &
+          gen_type_checking_code(key_type, obj_var, res_var) &
+          [ exit_block_if_not(res_var),
+            get_curr_value(obj_var, it_var)
+          ] &
+          gen_type_checking_code(value_type, obj_var, res_var) &
+          [ exit_block_if_not(res_var),
+            move_forward(it_var)
+          ]
+        ),
+        set_bvar(res_var, true)
+      ];
+    ;
+
+    return [execute_block(code)];
+  }
+
+
+  [Instr^] gen_record_type_checking_code((SymbObj => (type: T, optional: Bool)) fs, AtomicExpr obj, BoolVar res_var)
+  {
+    size_var = ivar(next_int_var_id);
+    obj_var  = lvar(next_obj_var_id);
+    it_var   = map_it_var(next_map_it_var_id);
+
+    max_fields = size(fs);
+    min_fields = size({f : l => f <- fs, not f.optional});
+
+    code = [
+      maybe_op(block_success_if(is_empty_map(obj), res_var), min_fields == 0),
+      block_failure_if_not(is_ne_map(obj), res_var),
+      set_ivar(size_var, get_map_size(obj)),
+      block_failure_if_not(is_between(size_var, min_fields, max_fields), res_var),
+      get_iter(it_var, obj)
+    ];
+
+    //## BAD: THIS IS PROBABLY NOT IDEAL, IT IS LIKE THIS IN ORDER TO MINIMIZE THE AMOUNT OF CODE THAT HAD TO BE CHANGED WHEN I CHANGED THE TUPLE TYPE
+    sorted_fields = sort_set({(label: l, type: f.type, optional: f.optional) : l => f <- fs}, is_strictly_ordered(f1, f2) = f1.label < f2.label);
+
+    for (b : sorted_fields)
+      inner_code = [set_var(obj_var, get_curr_value(it_var))] &
+                    gen_type_checking_code(
+                      b.type,
+                      obj_var,
+                      res_var,
+                      next_int_var_id    = next_int_var_id + 1,
+                      next_obj_var_id    = next_obj_var_id + 1,
+                      next_map_it_var_id = next_map_it_var_id + 1
+                    ) &
+                    [exit_block_if_not(res_var), move_forward(it_var)];
+
+      if (b.optional)
+        code = code & [
+          do_if_not(
+            is_out_of_range(it_var),
+            [ set_var(obj_var, get_curr_key(it_var)),
+              do_if(is_eq(obj_var, b.label), inner_code)
+            ]
+          )
+        ];
+      else
+        code = code & [
+          block_failure_if(is_out_of_range(it_var), res_var),
+          set_var(obj_var, get_curr_key(it_var)),
+          block_failure_if_not(is_eq(obj_var, b.label), res_var)
+        ] & inner_code;
+      ;
+    ;
+
+    code = code & [set_bvar(res_var, is_out_of_range(it_var))];
+
+    return [execute_block(code)];
+  }
+
+
+  [Instr^] gen_tuple_type_checking_code([UserType^] ts, AtomicExpr obj, BoolVar res_var)
+  {
+    len_var  = ivar(next_int_var_id);
+    elem_var = lvar(next_obj_var_id);
+    it_var   = seq_it_var(next_seq_it_var_id);
+
+    len  = length(ts);
+
+    code = [
+      set_bvar(res_var, false),
+      exit_block_if_not(is_ne_seq(obj)),
+      set_ivar(len_var, get_seq_len(obj)),
+      exit_block_if_not(is_eq(len_var, len)),
+      get_iter(it_var, obj)
+    ];
+
+    let ( next_int_var_id = next_int_var_id + 1,
+          next_obj_var_id = next_obj_var_id + 1,
+          next_seq_it_var_id = next_seq_it_var_id + 1)
+
+      for (t @ i : ts)
+        code = code &
+                [get_curr_obj(elem_var, it_var)] &
+                gen_type_checking_code(t, elem_var, res_var) &
+                [ exit_block_if_not(res_var),
+                  maybe_op(move_forward(it_var), i /= len - 1)
                 ];
       ;
-            
-      return [execute_block(code)];
-    },
+    ;
+
+    code = code & [set_bvar(res_var, true)];
+
+    return [execute_block(code)];
+  }
 
 
-    record_type(fs?) =
-    {
-      size_var = ivar(next_int_var_id);
-      obj_var  = lvar(next_obj_var_id);
-      it_var   = map_it_var(next_map_it_var_id);
+  [Instr^] gen_tag_obj_type_checking_code(TagType tag_type, UserType obj_type, AtomicExpr obj, BoolVar res_var)
+  {
+    obj_var = lvar(next_obj_var_id);
 
-      max_fields = size(fs);
-      min_fields = size({f : l => f <- fs, not f.optional});
-      
-      code = [ maybe_op(block_success_if(is_empty_map(obj), res_var), min_fields == 0),
-                block_failure_if_not(is_ne_map(obj), res_var),
-                set_ivar(size_var, get_map_size(obj)),
-                block_failure_if_not(is_between(size_var, min_fields, max_fields), res_var),
-                get_iter(it_var, obj)
-              ];
+    let (next_obj_var_id = next_obj_var_id + 1)
+      code = [ block_failure_if_not(is_tagged_obj(obj), res_var),
+                set_var(obj_var, get_tag(obj))
+              ] &
+              gen_type_checking_code(tag_type, obj_var, res_var) &
+              [ exit_block_if_not(res_var),
+                set_var(obj_var, get_inner_obj(obj))
+              ] &
+              gen_type_checking_code(obj_type, obj_var, res_var);
+    ;
 
-      //## BAD: THIS IS PROBABLY NOT IDEAL, IT IS LIKE THIS IN ORDER TO MINIMIZE THE AMOUNT OF CODE THAT HAD TO BE CHANGED WHEN I CHANGED THE TUPLE TYPE
-      sorted_fields = sort_set({(label: l, type: f.type, optional: f.optional) : l => f <- fs}, is_strictly_ordered(f1, f2) = f1.label < f2.label);
-
-      for (b : sorted_fields)
-        inner_code = [set_var(obj_var, get_curr_value(it_var))] &
-                      gen_type_checking_code(
-                        b.type,
-                        obj_var,
-                        res_var,
-                        next_int_var_id    = next_int_var_id + 1,
-                        next_obj_var_id    = next_obj_var_id + 1,
-                        next_map_it_var_id = next_map_it_var_id + 1
-                      ) &
-                      [exit_block_if_not(res_var), move_forward(it_var)];
-                    
-        if (b.optional)
-          code = code & [ do_if_not(is_out_of_range(it_var),
-                             [ set_var(obj_var, get_curr_key(it_var)),
-                               do_if(is_eq(obj_var, b.label), inner_code)                              
-                             ]
-                           )
-                         ];
-        else
-          code = code & [ block_failure_if(is_out_of_range(it_var), res_var),
-                           set_var(obj_var, get_curr_key(it_var)),
-                           block_failure_if_not(is_eq(obj_var, b.label), res_var)
-                         ] & inner_code;
-        ;
-      ;
-      
-      code = code & [set_bvar(res_var, is_out_of_range(it_var))];
-      
-      return [execute_block(code)];  
-    },
+    return [execute_block(code)];
+  }
 
 
-    tuple_type(ts?) =
-    {
-      len_var  = ivar(next_int_var_id);
-      elem_var = lvar(next_obj_var_id);
-      it_var   = seq_it_var(next_seq_it_var_id);
-
-      len  = length(ts);
-
-      code = [ set_bvar(res_var, false),
-               exit_block_if_not(is_ne_seq(obj)),
-               set_ivar(len_var, get_seq_len(obj)),
-               exit_block_if_not(is_eq(len_var, len)),
-               get_iter(it_var, obj)
-             ];
-
-      let ( next_int_var_id = next_int_var_id + 1,
-            next_obj_var_id = next_obj_var_id + 1,
-            next_seq_it_var_id = next_seq_it_var_id + 1)
-
-        for (t @ i : ts)
-          code = code &
-                  [get_curr_obj(elem_var, it_var)] &
-                  gen_type_checking_code(t, elem_var, res_var) &
-                  [ exit_block_if_not(res_var),
-                    maybe_op(move_forward(it_var), i /= len - 1)
-                  ];
-        ;
-      ;
-
-      code = code & [set_bvar(res_var, true)];
-
-      return [execute_block(code)];
-    },
-
-
-    tag_obj_type() =
-    {
-      obj_var = lvar(next_obj_var_id);
-
-      let (next_obj_var_id = next_obj_var_id + 1)
-        code = [ block_failure_if_not(is_tagged_obj(obj), res_var),
-                  set_var(obj_var, get_tag(obj))
-                ] &
-                gen_type_checking_code(type.tag_type, obj_var, res_var) &
-                [ exit_block_if_not(res_var),
-                  set_var(obj_var, get_inner_obj(obj))
-                ] &
-                gen_type_checking_code(type.obj_type, obj_var, res_var);
-      ;
-           
-      return [execute_block(code)];
-    },
-
-
-    union_type(ts?) =
-    {
-      //## PERFORMANCE COULD BE IMPROVED HERE USING A SWITCH/CASE
-      code = [];
-      for (t : rand_sort(ts))
-        code = code & gen_type_checking_code(t, obj, res_var) & [exit_block_if(res_var)];
-      ;
-      return [execute_block(code)];
-    },
-
-
-    _             = [set_bvar(res_var, gen_type_checking_expr(type, obj))];
+  [Instr^] gen_union_type_checking_code(UserType ts, AtomicExpr obj, BoolVar res_var)
+  {
+    //## PERFORMANCE COULD BE IMPROVED HERE USING A SWITCH/CASE
+    code = [];
+    for (t : rand_sort(ts))
+      code = code & gen_type_checking_code(t, obj, res_var) & [exit_block_if(res_var)];
+    ;
+    return [execute_block(code)];
+  }
 }
 
 
