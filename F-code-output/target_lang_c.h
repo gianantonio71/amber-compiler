@@ -220,7 +220,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
     String gen_fn_par(ObjProcPar par, Nat pos):
       obj   = "Obj p" & to_str(pos),
-      cls() = "CLS" & to_str(par.arity) & " &" & if par.name? then to_c_var_name(par.name) else "c" & to_str(pos) end;
+      cls() = "CLS" & to_str(par.arity) & " &" & if par.name? then to_c_var_name(par.name) else "c_" & to_str(pos) end;
 
     String gen_fn_pars(ProcDef pd):
       ObjProcDef  = [gen_fn_par(p, i) : p @ i <- pd.params] & ["Env &env"],
