@@ -224,7 +224,7 @@ reverse(Seq seq) = _rev_(seq);
 [T] subseq([T] seq, Nat first, Nat count) = _slice_(seq, first, count);
 
 [T] subseq([T] s, <nil>, Nat m, Nat r) = subseq(s, length(s)-m-r, m);
-[T] subseq([T] s, Nat l, <nil>, Nat r) = subseq(s, l, length(s)-l-r); 
+[T] subseq([T] s, Nat l, <nil>, Nat r) = subseq(s, l, length(s)-l-r);
 [T] subseq([T] s, Nat l, Nat m, <nil>) = subseq(s, l, m);
 
 
@@ -323,7 +323,7 @@ Nat* index_set(Seq s) = set(indexes(s));
 using Bool is_strictly_ordered(T, T) //## BAD BAD BAD
 {
   [T] sort_set(T* s) = sort(rand_sort(s));
-  
+
   [T] sort([T] s) = mergesort(s);
 
   [T] mergesort([T] seq)
@@ -344,7 +344,7 @@ using Bool is_strictly_ordered(T, T) //## BAD BAD BAD
       len = length(ss); //## SHOULD BE len = (len + 1) / 2;
     ;
     return ss[0];
-    
+
     [T] merge([T] seq1, [T] seq2)
     {
       l1 = length(seq1);
@@ -431,21 +431,21 @@ T only_element_or_def_if_empty(T* set, T default)
 {
   seq = rand_sort(set);
   len = length(seq);
-  
+
   fail if len > 1;
- 
+
   return if length(seq) == 1 then seq[0] else default end;
 }
 
 // Int max(Int+ set)
 // {
 //   seq = rand_sort(set);
-  
+
 //   max = seq[0];
 //   for (x : seq)
 //     max = x if x > max;
 //   ;
-  
+
 //   return max;
 // }
 
@@ -456,7 +456,7 @@ T* seq_union([T*] sets) = union(set(sets));
 /////////////////////////////////////////////////////////////////////////////////////////
 
 T2 (_[_])((T1 => T2) map, T1 key) = _lookup_(map, key); // = only_element({v : k => v <- map ; k == key});
- 
+
 // T2 lookup((T1 => T2) map, T1 key, T2 default) = only_element_or_def_if_empty({v : k => v <- map ; k == key}, default);
 
 T2 lookup((T1 => T2) map, T1 key, T2 default) = if has_key(map, key) then map[key] else default end;
@@ -477,7 +477,7 @@ Bool has_key((T1 => T2) map, T1 key) = _has_key_(map, key); // = (? k => _ <- ma
 //   assert {
 //     ks1 = keys(map1);
 //     ks2 = keys(map2);
-    
+
 //     for (k : rand_sort(intersection(ks1, ks2)))
 //       return false if map1[k] /= map2[k];
 //     ;
@@ -526,7 +526,7 @@ T* set([T] seq) = _set_(seq);
 
 //## IMPLEMENT A seq_to_multiset FUNCTION AND SEE IF IT CAN BE USED TO IMPLEMENT dupl_elements efficiently
 
-//## THIS IS DIFFICULT TO IMPLEMENT EFFICIENTLY WITHOUT ACCESS TO THE INTERNAL COMPARISON OPERATOR  
+//## THIS IS DIFFICULT TO IMPLEMENT EFFICIENTLY WITHOUT ACCESS TO THE INTERNAL COMPARISON OPERATOR
 T* dupl_elems([T] s)
 {
   r = {};
@@ -566,16 +566,16 @@ T2* values((T1 => T2) map) = {v : _ => v <- map};
   assert {
     all_starts = keys(map);
     all_refs   = union(values(map));
-    
+
     missing = all_refs - all_starts;
-    
+
     return true if missing == {};
     print "------------------------------------------------------------------------------";
     print map;
     print missing;
     return false;
   };
-  
+
   closure = map;
 
   loop
@@ -594,7 +594,7 @@ using Bool condition(Any)
   Any* select_expr_fn(Any obj)
   {
     return {obj} if condition(obj);
-    
+
     return match (obj)
              +          = {},
              *          = {},
@@ -612,7 +612,7 @@ using Bool condition(Any), Any eval(Any)
   Any replace_expr_fn(Any obj)
   {
     return eval(obj) if condition(obj);
-    
+
     return match (obj)
              +          = obj,
              *          = obj, //## BAD
@@ -637,16 +637,16 @@ String to_str(Int n)
     m   = -m;
     neg = true;
   ;
-  
+
   assert m >= 0;
-  
+
   div  = 10;
   divs = [1];
   while (div <= m)
     divs = [div] & divs;
     div  = 10 * div;
   ;
-  
+
   str = "";
 
   for (d : divs)
@@ -678,7 +678,7 @@ String float_to_str(Int mantissa, Int dec_exp)
 Int to_int(String str)
 {
   assert length(str) > 0;
-  
+
   res = 0;
   neg = false;
 
@@ -719,7 +719,7 @@ String to_text(Any obj)
     str = "(" & str & ")" if not obj :: Record;
     return _str_(tag) & str;
   }
-    
+
   String to_txt(Map map, String key_val_sep)
   {
     es   = rand_sort({(key: k, value: v) : k => v <- map});
@@ -883,20 +883,20 @@ Bool (_<_)(String str1, String str2)
 {
   len1 = length(str1);
   len2 = length(str2);
-  
+
   min_len = min(len1, len2);
-  
+
   i = 0;
   while (i < min_len)
     ch1 = str1[i];
     ch2 = str2[i];
-    
+
     return true if ch1 < ch2;
     return false if ch1 > ch2;
-    
+
     i = i + 1;
   ;
-  
+
   return len1 < len2;
 }
 
