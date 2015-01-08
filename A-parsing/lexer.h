@@ -133,7 +133,7 @@ ParseTokenResult read_mixedcase_id([Nat] bytes, Int offset)
   assert is_upper(bytes, offset);
   len = alphanum_length(bytes, offset);
   return failure(offset+len) if is_char(bytes, offset+len, ascii_underscore);
-  return failure(offset) if none([is_lower(bytes, offset+i) : i <- inc_seq(len)]);
+  return failure(offset) if none([is_lower(bytes, offset+i) : i < len]);
   symbol = symb(to_lower_with_underscores(subseq(bytes, offset, len)));
   return success(token_line_info(mixedcase_id(symbol), offset, len));
 }

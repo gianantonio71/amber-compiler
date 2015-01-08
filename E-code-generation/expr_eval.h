@@ -454,17 +454,10 @@ using
             case_code = gen_ptrn_matching_code(p, rev_at(info.exprs, i), tmp_bvar, {}) &
                          [do_if(tmp_bvar, case_code)];
           ;
-// print "@@@@@@@@@";
-// print case_code;
-
         ;
         code = case_code & code;
       ;
       code = [execute_block(code)];
-
-// print "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@";
-// print info.eval_code & code & info.cleanup_code;
-
       return info.eval_code & code & info.cleanup_code;
     },
 
@@ -510,25 +503,25 @@ using
 
     seq_comp() =
     {
-      src_var  = lvar(next_obj_var_id);
-      item_var = lvar(next_obj_var_id + 1);
-      sel_var  = lvar(next_obj_var_id + 2);
-      tmp_var  = lvar(next_obj_var_id + 3); // This is only needed during a destructuring assignment, it can be safely reused elsewhere
-      it_var   = seq_it_var(next_seq_it_var_id);
-      strm_var = svar(next_stream_var_id);
-      idx_var  = ivar(next_int_var_id); //## BAD BAD BAD USED EVEN WHEN NOT REQUIRED
+      src_var   = lvar(next_obj_var_id);
+      item_var  = lvar(next_obj_var_id + 1);
+      sel_var   = lvar(next_obj_var_id + 2);
+      tmp_var   = lvar(next_obj_var_id + 3); // This is only needed during a destructuring assignment, it can be safely reused elsewhere
+      it_var    = seq_it_var(next_seq_it_var_id);
+      strm_var  = svar(next_stream_var_id);
+      idx_var   = ivar(next_int_var_id);      //## BAD USED EVEN WHEN NOT REQUIRED
+      bound_var = ivar(next_int_var_id + 1);  //## BAD USED EVEN WHEN NOT REQUIRED
 
       let ( next_obj_var_id    = next_obj_var_id    + 3,
             next_seq_it_var_id = next_seq_it_var_id + 1,
             next_stream_var_id = next_stream_var_id + 1,
-            next_int_var_id    = next_int_var_id    + 1)
+            next_int_var_id    = next_int_var_id    + 2)
 
         src_info  = gen_eval_info(expr.src_expr, src_var);
         item_info = gen_eval_info(expr.expr, item_var);
         sel_info  = if expr.sel_expr? then gen_eval_info(expr.sel_expr, sel_var) else nil end; //## BUG BUG BUG
       ;
             
-      needs_idx_var = not expr.sel_expr? or expr.idx_var?;
       knows_size = not expr.sel_expr?;
       
       eval_and_assign_code = item_info.add_ref_eval_code &
@@ -545,28 +538,53 @@ using
                           ];
       ;
       
-      if (length(expr.vars) == 1)
-        var_set_code = [set_var(expr.vars[0], get_curr_obj(it_var))];
-      else
-        var_set_code = [set_var(tmp_var, get_curr_obj(it_var))];
-        var_set_code = var_set_code & [set_var(v, at(tmp_var, i)) : v @ i <- expr.vars];
-      ;
-      var_set_code = var_set_code & [set_var(expr.idx_var, to_obj(idx_var))] if expr.idx_var?;
 
-      loop_code = [ if knows_size
-                       then mk_array(res_var, get_seq_len(src_info.expr), obj_nil)
-                       else init_stream(strm_var)
-                     end,
-                     get_iter(it_var, src_info.expr),
-                     maybe_op(set_ivar(idx_var, 0), needs_idx_var),
-                     repeat(
-                       [break_if(is_out_of_range(it_var))] &
-                       var_set_code &
-                       core_loop_code &
-                       [move_forward(it_var), maybe_op(increment(idx_var), needs_idx_var)]
-                     ),
-                     maybe_op(mk_seq_from_stream(res_var, strm_var), not knows_size)
-                   ];
+      if (expr.src_expr_type == :sequence)
+        needs_idx_var = not expr.sel_expr? or expr.idx_var?;
+
+        if (length(expr.vars) == 1)
+          var_set_code = [set_var(expr.vars[0], get_curr_obj(it_var))];
+        else
+          var_set_code = [set_var(tmp_var, get_curr_obj(it_var))];
+          var_set_code = var_set_code & [set_var(v, at(tmp_var, i)) : v @ i <- expr.vars];
+        ;
+        var_set_code = var_set_code & [set_var(expr.idx_var, to_obj(idx_var))] if expr.idx_var?;
+
+        loop_code = [
+          if knows_size
+            then mk_array(res_var, get_seq_len(src_info.expr), obj_nil)
+            else init_stream(strm_var)
+          end,
+          get_iter(it_var, src_info.expr),
+          maybe_op(set_ivar(idx_var, 0), needs_idx_var),
+          repeat(
+            [break_if(is_out_of_range(it_var))] &
+            var_set_code &
+            core_loop_code &
+            [move_forward(it_var), maybe_op(increment(idx_var), needs_idx_var)]
+          ),
+          maybe_op(mk_seq_from_stream(res_var, strm_var), not knows_size)
+        ];
+      else
+        assert length(expr.vars) == 1 and not expr.idx_var?;
+        var = expr.vars[0];
+        bound_included = expr.src_expr_type.included;
+        iter_count = get_int_val(src_info.expr);
+        iter_count = add(iter_count, 1) if bound_included;
+        loop_code = [
+          if knows_size then mk_array(res_var, iter_count, obj_nil) else init_stream(strm_var) end,
+          set_ivar(bound_var, get_int_val(src_info.expr)),
+          set_ivar(idx_var, 0),
+          repeat(
+            [ break_if(if bound_included then is_gt(idx_var, bound_var) else is_ge(idx_var, bound_var) end),
+              set_var(expr.vars[0], to_obj(idx_var))
+            ] &
+            core_loop_code &
+            [increment(idx_var)]
+          ),
+          maybe_op(mk_seq_from_stream(res_var, strm_var), not knows_size)
+        ];
+      ;
 
       return src_info.eval_code & loop_code & src_info.cleanup_code;
     };
@@ -651,7 +669,7 @@ using
     ClsVar      = expr,
     fn_ptr()    = {
       var = lvar(0);
-      ps = [fn_par(i) : i <- inc_seq(expr.arity)];
+      ps = [fn_par(i) : i < expr.arity];
       body = [call_proc(var, expr.name, ps), ret_val(var)];
       cls = cls_def(expr.arity, body);
       return bound_cls(cls, []);

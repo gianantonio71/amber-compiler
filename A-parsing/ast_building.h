@@ -230,7 +230,7 @@ SynFnDef build_switch_fndef_ast(RuleMatch mtc)
   cases = [build_switch_case_ast(n) : n <- rep_rule_nodes(nodes[4])];
   arity = syn_case_arity(cases[0]);
   // expr = syn_try_expr([fn_par(i) : i <- indexes(cases[0].patterns)], cases); //## REENABLE THIS ONCE ALL THE TESTING IS DONE
-  expr = syn_try_expr([fn_par(i) : i <- inc_seq(arity)], cases);
+  expr = syn_try_expr([fn_par(i) : i < arity], cases);
   return syn_fn_def(
     name:       build_fn_symbol_ast(nodes[1]),
     params:     params,
@@ -603,20 +603,47 @@ SynExpr build_map_cp_expr_ast(RuleMatch mtc)
 SynLCExpr build_seq_cp_expr_ast(RuleMatch mtc)
 {
   nodes = rule_seq_nodes(mtc);
-  assert length(nodes) == 7;
+  assert length(nodes) == 5;
 
   expr     = build_expr_ast(nodes[0]);
-  vars     = [var(get_lowercase_id(n)) : n <- rep_rule_nodes(nodes[2])];
-  idx_var  = if nodes[3] == null_match then nil else {ns = rule_seq_nodes(nodes[3]); return just(var(get_lowercase_id(ns[1])));} end; //## UGLY UGLY UGLY
-  src_expr = build_expr_ast(nodes[5]);
-  sel_expr = if nodes[6] == null_match then nil else {ns = rule_seq_nodes(nodes[6]); return just(build_expr_ast(ns[1]));} end; //## UGLY UGLY UGLY
+
+  var_and_type_node = nodes[2];
+  if (var_and_type_node.name == :seq)
+    ns = rule_seq_nodes(var_and_type_node.match);
+    vars = [var(get_lowercase_id(n)) : n <- rep_rule_nodes(ns[0])];
+    if (ns[1] /= null_match)
+      sub_ns = rule_seq_nodes(ns[1]);
+      idx_var = just(var(get_lowercase_id(sub_ns[1])));
+    else
+      idx_var = nil;
+    ;
+    src_expr_type = :sequence;
+  else
+    assert var_and_type_node.name == :range;
+    ns = rule_seq_nodes(var_and_type_node.match);
+    vars = [var(get_lowercase_id(ns[0]))];
+    op = get_token(ns[1]);
+    assert op == lower or op == lower_eq;
+    src_expr_type = upper_bound(included: op == lower_eq);
+    idx_var = nil;
+  ;
+
+  src_expr = build_expr_ast(nodes[3]);
+
+  if (nodes[4] /= null_match)
+    ns = rule_seq_nodes(nodes[4]);
+    sel_expr = just(build_expr_ast(ns[1]));
+  else
+    sel_expr = nil;
+  ;
 
   return seq_comp(
-    expr: expr,
-    vars: vars,
-    idx_var: value(idx_var) if idx_var /= nil,
-    src_expr: src_expr,
-    sel_expr: value(sel_expr) if sel_expr /= nil
+    expr:           expr,
+    vars:           vars,
+    idx_var:        value(idx_var) if idx_var /= nil,
+    src_expr:       src_expr,
+    src_expr_type:  src_expr_type,
+    sel_expr:       value(sel_expr) if sel_expr /= nil
   );
 }
 

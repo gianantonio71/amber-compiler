@@ -97,7 +97,7 @@ TypeSymbol** type_clusters_to_expand((TypeSymbol => UserType) types, TypeSymbol*
   Bool is_expandable(T node, (T => T*) edges)
   {
     reach = {node};
-    for (i : inc_seq(size(edges) + 1)) //## BAD BAD BAD SHOULD BE <loop (n)> OR <for (n)>
+    for (i = 0..size(edges)) //## BAD BAD BAD SHOULD BE <loop (n)> OR <for (n)>
       reach = union({edges[n] : n <- reach, has_key(edges, n)}) - {node};
     ;
     return reach == {};

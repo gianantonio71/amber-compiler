@@ -183,11 +183,12 @@ using
 
     seq_comp()      = { vs = def_vars & set(expr.vars) & {expr.idx_var if expr.idx_var?};
                         return seq_comp(
-                                 expr:     desugar_expr(expr.expr, vs),
-                                 vars:     expr.vars,
-                                 idx_var:  expr.idx_var if expr.idx_var?,
-                                 src_expr: desugar_expr(expr.src_expr, def_vars),
-                                 sel_expr: desugar_expr(expr.sel_expr, vs) if expr.sel_expr?
+                                 expr:          desugar_expr(expr.expr, vs),
+                                 vars:          expr.vars,
+                                 idx_var:       expr.idx_var if expr.idx_var?,
+                                 src_expr:      desugar_expr(expr.src_expr, def_vars),
+                                 src_expr_type: expr.src_expr_type,
+                                 sel_expr:      desugar_expr(expr.sel_expr, vs) if expr.sel_expr?
                                );
                       },
 

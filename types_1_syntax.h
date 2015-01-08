@@ -81,7 +81,14 @@ type SynAccTestExpr   = accessor_test(expr: SynExpr, field: SymbObj);
 type SynExQualExpr    = ex_qual(source: [SynClause^], sel_exprs: [SynExpr]);
 type SynSCExpr        = set_comp(expr: SynExpr, source: [SynClause^], sel_exprs: [SynExpr]);
 type SynMCExpr        = map_comp(key_expr: SynExpr, value_expr: SynExpr, source: [SynClause^], sel_exprs: [SynExpr]);
-type SynLCExpr        = seq_comp(expr: SynExpr, vars: [Var^], idx_var: Var?, src_expr: SynExpr, sel_expr: SynExpr?);
+type SynLCExpr        = seq_comp(
+                          expr:           SynExpr,
+                          vars:           [Var^],
+                          idx_var:        Var?,
+                          src_expr:       SynExpr, //## BAD: src_expr IS NOT A GOOD NAME ANYMORE, BECAUSE IT MIGHT BE AN UPPER BOUND
+                          src_expr_type:  <sequence, upper_bound(included: Bool)>,
+                          sel_expr:       SynExpr?
+                        );
 
 type SynIfExpr        = if_expr(branches: [(cond: SynExpr, expr: SynExpr)^], else: SynExpr);
 type SynTryExpr       = match_expr(exprs: [SynExpr^], cases: [SynCase^]);

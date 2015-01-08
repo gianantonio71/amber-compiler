@@ -308,7 +308,7 @@ Maybe[Nat] left_search(Seq seq, Seq subseq)
 
 Nat* index_set(Seq s) = set(indexes(s));
 
-[Bool] bit_map([Int] idxs, Nat len) = [in(i, idxs) : i <- inc_seq(len)]; //## BAD: HORRIBLY INEFFICIENT
+[Bool] bit_map([Int] idxs, Nat len) = [in(i, idxs) : i < len]; //## BAD: HORRIBLY INEFFICIENT
 
 //## BAD: THE NAME IS TOTALLY MEANINGLESS, AND THE IMPLEMENTATION IS INEFFICIENT
 [Maybe[Nat]] packed_indexes([Bool] bs)

@@ -75,6 +75,7 @@ ParsingRule empty_rule                                                = :empty_r
 ParsingRule atomic_rule(TokenMatchingRule r)                          = :atomic_rule(r);
 ParsingRule optional_rule(ParsingRule r)                              = :optional_rule(r);
 ParsingRule maybe_optional_rule(ParsingRule r, Bool optional)         = if optional then optional_rule(r) else r end;
+ParsingRule optional_rule_seq([ParsingRule^] rs)                      = :optional_rule(:rule_seq(rs));
 ParsingRule rule_seq([ParsingRule^] rs)                               = :rule_seq(rs);
 ParsingRule rep_rule(ParsingRule r)                                   = rep_rule(r, 0, empty_rule, false);
 ParsingRule rep_rule(ParsingRule r, ParsingRule s)                    = rep_rule(r, 0, s, false);

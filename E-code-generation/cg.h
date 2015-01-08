@@ -207,7 +207,7 @@ FnDef+ generate_dispatch_function(FnDef+ fds, (TypeName => AnonType) typedefs)
   //## ALSO, THE PARAMETERS THAT ARE NOT CHECKED AND THAT DO NOT DEFINE ANY VARIABLES
   //## SHOULD NOT BE INCLUDED IN THE MATCH AT ALL (ALTHOUGH THIS WOULD MAKE A DIFFERENCE
   //## ONLY WHEN AT LEAST ONE PARAMETER IS NOT NAMED IN ANY OF THE FUNCTIONS)
-  is_checked = if candidates == [] then bit_map(scalar_pars, arity) else [i == candidates[0] : i <- inc_seq(arity)] end;
+  is_checked = if candidates == [] then bit_map(scalar_pars, arity) else [i == candidates[0] : i < arity] end;
 
   dispatch_call_params = [if is_scalar_par(p) then fn_par(i) else cls_var(i) end : p @ i <- rand_fd.params];
 
@@ -225,7 +225,7 @@ FnDef+ generate_dispatch_function(FnDef+ fds, (TypeName => AnonType) typedefs)
   ;
 
   new_expr = match_expr(
-    exprs: [fn_par(i) : i <- inc_seq(arity)], //## BAD
+    exprs: [fn_par(i) : i < arity],
     cases: cases
   );
 

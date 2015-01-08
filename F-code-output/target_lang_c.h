@@ -51,7 +51,7 @@ CCodeOutput compile_to_c(ProcDef* prg)
     name = _str_(_obj_(var));
     
     if (arity > 0)
-      ls = [ "  Obj (*n" & to_str(arity) & "_" & name & ")(" & append(["Obj p" & to_str(j) & ", " : j <- inc_seq(na.arity)]) & "const Obj *C, Env &env);",
+      ls = [ "  Obj (*n" & to_str(arity) & "_" & name & ")(" & append(["Obj p" & to_str(j) & ", " : j < na.arity]) & "const Obj *C, Env &env);",
               "  const Obj *C" & to_str(arity) & "_" & name & ";"
             ];
     else
@@ -116,13 +116,13 @@ CCodeOutput compile_to_c(ProcDef* prg)
 
 [String^] generate_push_call_info_wrapper(Nat arity)
 {
-  signature = "void push_call_info_wrapper(const char *fn_name" & append([", Obj p" & to_str(i) : i <- inc_seq(arity)]) & ")";
+  signature = "void push_call_info_wrapper(const char *fn_name" & append([", Obj p" & to_str(i) : i < arity]) & ")";
   code = [signature, "{", "#ifndef NDEBUG"];
   if (arity == 0)
     code = code & ["  push_call_info(fn_name, 0, (Obj *)0);"];
   else
     code = code & ["  Obj *params = new_obj_array(" & to_str(arity) & ");"];
-    for (i : inc_seq(arity))
+    for (i = 0..arity-1)
       code = code & ["  params[" & to_str(i) & "] = p" & to_str(i) & ";"];
     ;
     code = code & ["  push_call_info(fn_name, " & to_str(arity) & ", params);"];
@@ -224,14 +224,14 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
     String gen_fn_pars(ProcDef pd):
       ObjProcDef  = [gen_fn_par(p, i) : p @ i <- pd.params] & ["Env &env"],
-      BoolProcDef = ["Obj p" & to_str(n) : n <- inc_seq(arity(pd))];
+      BoolProcDef = ["Obj p" & to_str(n) : n < arity(pd)];
   }
 
 
   //## DUPLICATED CODE
   [String] compile_to_c(ClsDef cd, Nat id)
   {
-    par_list  = ["Obj p" & to_str(n) : n <- inc_seq(cd.arity)] & ["const Obj C[]", "Env &env"]; //## BAD
+    par_list  = ["Obj p" & to_str(n) : n < cd.arity] & ["const Obj C[]", "Env &env"]; //## BAD
     signature = "Obj cls_" & to_str(id) & "(" & append(intermix(par_list, ", ")) & ")";
 
     body = cd.body;
@@ -518,7 +518,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     code = code & ["Obj " & new_data_var & "[" & env_size_str & "];"] if env_size > 0;
 
     //## HERE I'M ADDING THE add_ref/release PAIRS IN THE WRONG LAYERS
-    for (i : inc_seq(env_size))
+    for (i = 0..env_size-1)
       code = code & [
         new_data_var & "[" & to_str(i) & "] = " & to_c_var_name(env[i]) & ";",
         "add_ref(" & new_data_var & "[" & to_str(i) & "]);"
@@ -537,7 +537,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
       data_var & " = " & data_bk_var & ";"
     ];
 
-    for (i : inc_seq(env_size))
+    for (i = 0..env_size-1)
       code = code & ["release(" & new_data_var & "[" & to_str(i) & "]);"];
     ;
 

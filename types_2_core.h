@@ -124,7 +124,9 @@ type Expr     = LeafObj, //## UPDATE ALL REFERENCES
 
                 FloatLit,
 
-                set_expr(SubExpr*), //## MAYBE I SHOULDN'T ALLOW EMPTY EXPRESSIONS
+                nat_range_expr(upper_bound: Expr, bound_included: Bool),
+
+                set_expr(SubExpr*),
                 seq_expr([SubExpr]),
                 seq_tail_expr(seq: Expr, tail: [Expr^]),
                 map_expr((key: Expr, value: Expr, cond: Expr?)*),
@@ -158,7 +160,16 @@ type Expr     = LeafObj, //## UPDATE ALL REFERENCES
                 ex_qual(source: Clause, sel_expr: Expr?),
                 set_comp(expr: Expr, source: Clause, sel_expr: Expr?),
                 map_comp(key_expr: Expr, value_expr: Expr, source: Clause, sel_expr: Expr?),
-                seq_comp(expr: Expr, vars: [Var^], idx_var: Var?, src_expr: Expr, sel_expr: Expr?),
+
+                //## ISSUES: IF IT'S AN INTEGER LOOP, idx_var SHOULD NOT BE PRESENT AND vars SHOULD CONTAIN ONLY ONE ELEMENT
+                seq_comp(
+                  expr:           Expr,
+                  vars:           [Var^],
+                  idx_var:        Var?,
+                  src_expr:       Expr, //## BAD: src_expr IS NOT A GOOD NAME ANYMORE, BECAUSE IT MIGHT BE AN UPPER BOUND
+                  src_expr_type:  <sequence, upper_bound(included: Bool)>,
+                  sel_expr:       Expr?
+                ),
 
                 select_expr(type: UserType, src_expr: Expr),
                 replace_expr(expr: Expr, src_expr: Expr, type: UserType, var: Var);
