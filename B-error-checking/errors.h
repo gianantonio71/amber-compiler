@@ -157,7 +157,9 @@ UserErr* wf_errors(SynPrg prg)
 
 (ProcSymbol => Nat) builtin_proc_arities = (
   proc_symbol(:file_read)     => 1,
-  proc_symbol(:file_write)    => 3
+  proc_symbol(:file_write)    => 3,
+  proc_symbol(:print)         => 1,
+  proc_symbol(:get_char)      => 0
 );
 
 

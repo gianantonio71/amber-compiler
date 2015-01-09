@@ -30,7 +30,7 @@ CCodeOutput compile_to_c(ProcDef* prg)
     symb_decls = symb_decls & ["extern const char *map_symb_to_str[EMB_SYMB_COUNT];"] & rep_seq(4, "");
   ;
   
-  print "Symbol declarations generated";
+  // print "Symbol declarations generated";
 
   cls_defs = select ClsDef in prg end;
   loop
@@ -140,22 +140,22 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
   CCodeOutput compile_to_c([ObjProcDef] obj_proc_defs, [BoolProcDef] bool_proc_defs, [ClsDef] cls_defs)
   {
     type_checking_fn_decls = [gen_c_decl(pd) : pd <- bool_proc_defs] & rep_seq(4, "");
-    print "Type checking function declarations generated";
+    // print "Type checking function declarations generated";
 
     closure_decls = [gen_c_decl(d, i) : d @ i <- cls_defs] & rep_seq(4, "");
-    print "Closure declarations generated";
+    // print "Closure declarations generated";
 
     fn_decls = [gen_c_decl(pd) : pd <- obj_proc_defs] & rep_seq(4, "");
-    print "Function declarations generated";
+    // print "Function declarations generated";
 
     type_checking_fns = join([compile_to_c(d) & ["", ""] : d <- bool_proc_defs]) & rep_seq(4, "");
-    print "Type checking functions generated";
+    // print "Type checking functions generated";
 
     closures = join([compile_to_c(d, i) & ["", ""] : d @ i <- cls_defs]) & rep_seq(4, "");
-    print "Closures generated";
+    // print "Closures generated";
 
     functions = join([compile_to_c(d) & ["", ""] : d <- obj_proc_defs]);
-    print "Functions generated";
+    // print "Functions generated";
 
     body = join([type_checking_fn_decls, closure_decls, fn_decls, type_checking_fns, closures, functions]);
 
