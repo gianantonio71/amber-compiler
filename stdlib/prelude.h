@@ -1036,3 +1036,19 @@ Nat ascii_tilde             = 126;
     return if has_cr then subseq(line, 0, length(line)-1) else line end;
   }
 }
+
+
+[String] split(String str)
+{
+  len = length(str);
+  frags = [];
+  start = 0;
+  for (ch @ i : _obj_(str))
+    if (is_space(ch))
+      frags = [frags | substr(str, start, i-start)] if start /= i;
+      start = i + 1;
+    ;
+  ;
+  frags = [frags | substr(str, start, len-start)] if start < len;
+  return frags;
+}
