@@ -129,13 +129,13 @@ Maybe[CCodeOutput] Compile((String => [Nat]) src_files, Bool print_intermediate,
 }
 
 
-Main([String] args)
+Int Main([String] args)
 {
   argc = length(args);
 
   if (argc < 1)
     Print("Usage: amberc <project file>\n");
-    return;
+    return 1;
   ;
 
   fname = last(args);
@@ -154,14 +154,14 @@ Main([String] args)
       wait_for_key = true;
     else
       Print("Unknown option: " & o & "\n");
-      return;
+      return 1;
     ;
   ;
 
   read_res = FileRead(fname);
   if (read_res == nil)
     Print("File not found: " & fname & "\n");
-    return;
+    return 1;
   ;
   prj_file = value(read_res);
 
@@ -174,7 +174,7 @@ Main([String] args)
     fc = FileRead(fn);
     if (fc == nil)
       Print("Can't read file: " & fn & "\n");
-      return;
+      return 1;
     ;
     src_files = src_files & (fn => value(fc));
   ;
@@ -192,5 +192,5 @@ Main([String] args)
     GetChar();
   ;
 
-  //## TODO: I SHOULD SET THE RETURN VALUE TO SOMETHING OTHER THAN 0 IF THE PROGRAM DOES NOT COMPILE
+  return if output /= nil then 0 else 1 end;
 }
