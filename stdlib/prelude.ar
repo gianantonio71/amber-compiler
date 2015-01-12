@@ -607,22 +607,17 @@ using Bool condition(Any)
 }
 
 
-using Bool condition(Any), Any eval(Any)
-{
-  Any replace_expr_fn(Any obj)
-  {
-    return eval(obj) if condition(obj);
-
-    return match (obj)
-             +          = obj,
-             *          = obj, //## BAD
-             {...}      = {replace_expr_fn(x) : x <- obj},
-             [...]      = [replace_expr_fn(x) : x <- obj],
-             (...)      = (replace_expr_fn(k) => replace_expr_fn(v) : k => v <- obj),
-             tag @ iobj = tag @ replace_expr_fn(iobj); //## SHOULD I EXTEND THE REPLACEMENT TO THE TAG AS WELL?
-           ;
-  }
-}
+Any replace(Any obj, (Any -> Bool) cond, (Any -> Any) eval) =
+  if cond(obj)
+    then eval(obj)
+    else match(obj)
+      +          = obj,
+      *          = obj, //## BAD
+      {...}      = {replace(x, cond, eval) : x <- obj},
+      [...]      = [replace(x, cond, eval) : x <- obj],
+      (...)      = (replace(k, cond, eval) => replace(v, cond, eval) : k => v <- obj),
+      tag @ iobj = tag @ replace(iobj, cond, eval); //## SHOULD I EXTEND THE REPLACEMENT TO THE TAG AS WELL?
+  end;
 
 
 [T] intermix([T] seq, T obj) = join([[obj if i /= 0, e] : e @ i <- seq]);

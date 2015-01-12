@@ -244,7 +244,6 @@ using
     do_expr(ss?)    = [execute_block(gen_code(ss, res_var))],
 
     select_expr()   = gen_eval_code(simplify(expr), res_var), //## BAD
-    replace_expr()  = gen_eval_code(simplify(expr), res_var), //## BAD
 
 
     //## HERE WE CAN SLIGHTLY IMPROVE PERFORMANCE BY USING GEN_EVAL_INFO FOR THE FIRST EXPRESSION
@@ -917,76 +916,8 @@ using
 
 Expr simplify(Expr expr)
 {
-  return match (expr)
-           select_expr()  = make_sel_expr(expr.src_expr, expr.type),
-           replace_expr() = make_repl_expr(expr.src_expr, expr.type, expr.var, expr.expr);
-         ;
-
-  Expr make_sel_expr(Expr src_expr, UserType type)
-  {
-    cond_expr = if_expr(membership(fn_par(0), type), obj_true, obj_false);
-    cond_cls  = cls_expr([nil], cond_expr);  //## FIX THIS
-    named_ps  = (named_par(:condition) => cond_cls);
-    return fn_call(fn_symbol(:select_expr_fn), [src_expr], named_ps);
-  }
-
-  Expr make_repl_expr(Expr src_expr, UserType type, <var(Atom)> var, Expr res_expr)
-  {
-    cond_expr = if_expr(membership(fn_par(0), type), obj_true, obj_false);
-    cond_cls  = cls_expr([nil], cond_expr);  //## FIX THIS
-    eval_cls  = cls_expr([var], res_expr);
-    named_ps  = (named_par(:condition) => cond_cls, named_par(:eval) => eval_cls);
-    return fn_call(fn_symbol(:replace_expr_fn), [src_expr], named_ps);
-  }
+  cond_expr = if_expr(membership(fn_par(0), expr.type), obj_true, obj_false);
+  cond_cls  = cls_expr([nil], cond_expr);
+  named_ps  = (named_par(:condition) => cond_cls);
+  return fn_call(fn_symbol(:select_expr_fn), [expr.src_expr], named_ps);
 }
-
-
-// ClsExpr cls_expr([<var(Atom), nil>^] params, Expr expr) = cls_expr(params: params, expr: expr);
-
-// select_expr(expr: Expr, ptrn: Pattern, src_expr: Expr, cond: Expr?),
-// replace_expr(expr: Expr, src_expr: Expr, ptrn: Pattern);
-
-// fn_call(name: FnSymbol, params: [ExtExpr], named_params: (<var(Atom)> => ExtExpr)), //## NEW BAD BAD
-
-// type ClsExpr  = cls_expr(params: [<var(Atom)>^], expr: Expr);
-
-
-// select_expr(type: UserType, src_expr: Expr),
-// replace_expr(expr: Expr, src_expr: Expr, type: UserType, var: Var);
-
-
-
-
-// membership(obj: Expr, type: UserType)
-// if_expr(cond: Expr, then: Expr, else: Expr)
-
-
-
-//     cond_expr = match_expr(
-//                    exprs: [fn_par(0)],
-//                    cases: [
-//                      (ptrns: [ptrn],        expr: sel_expr),
-//                      (ptrns: [:ptrn_any],   expr: obj_false)
-//                    ]
-//                  );
-
-// return make(expr);
-
-// Expr make(Expr expr):
-//   select_expr()   = make(:select_expr_fn,  expr.src_expr, expr.type, expr.expr),
-//   replace_expr()  = make(:replace_expr_fn, expr.src_expr, expr.type, expr.expr);
-
-// Expr make(Atom fn_name, Expr src_expr, UserType type, Expr expr)
-// {
-
-//   eval_expr = match_expr(
-//                  exprs: [fn_par(0)],
-//                  cases: [(ptrns: [ptrn], expr: expr)]
-//                );
-
-//   eval_cls  = cls_expr(params: [nil], expr: eval_expr);  //## FIX THIS
-
-//   nps = (:named_par(:condition) => cond_cls, :named_par(:eval) => eval_cls);
-
-//   return fn_call(name: :fn_symbol(fn_name), params: [src_expr], named_params: nps);
-// }
