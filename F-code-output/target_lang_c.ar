@@ -3,7 +3,7 @@ type CCodeOutput = (body: [String], header: [String]);
 CCodeOutput compile_to_c(ProcDef* prg)
 {
   // tss = retrieve ts from memb_test(ts) in prg end;
-  tss = {_obj_(mt) : mt <- select <memb_test(Any)> in prg end}; //## THE VERSION WITH RETRIEVE WAS LESS UGLY
+  tss = {_obj_(mt) : mt <- select(prg, $ :: <memb_test(Any)>)}; //## THE VERSION WITH RETRIEVE WAS LESS UGLY
 
   btss = {ts : type_symbol()     ts <- tss};
   ptss = {ts : par_type_symbol() ts <- tss};
@@ -16,7 +16,7 @@ CCodeOutput compile_to_c(ProcDef* prg)
 
   // symbs = (select SymbObj in prg end - {obj_true, obj_false}) & {:object(:string)};
   // symbs = [obj_true, obj_false] & sort_set(symbs; is_strictly_ordered(s1, s2) = s1 < s2);
-  symbs = select SymbObj in prg end & {obj_true, obj_false, :object(:string)};
+  symbs = select(prg, $ :: SymbObj) & {obj_true, obj_false, :object(:string)};
   symbs = sort_set(symbs, is_strictly_ordered(s1, s2) = s1 < s2);
 
   symb_decls = ["const Obj " & to_c_expr(s, typesymb2name(ts) = typesymb2str(ts, ptss)) & " = symb(" & to_str(i) & ");" : s @ i <- symbs] & rep_seq(4, "");
@@ -32,12 +32,13 @@ CCodeOutput compile_to_c(ProcDef* prg)
   
   // print "Symbol declarations generated";
 
-  cls_defs = select ClsDef in prg end;
-  loop
-    new_cls_defs = select ClsDef in {cd.body : cd <- cls_defs} end;
-    break if subset(new_cls_defs, cls_defs); //## WHY BREAK WHEN IT'S A SUBSET AND NOT WHEN IT'S EMPTY?
-    cls_defs = cls_defs & new_cls_defs;
-  ;
+  // cls_defs = select ClsDef in prg end;
+  // loop
+  //   new_cls_defs = select ClsDef in {cd.body : cd <- cls_defs} end;
+  //   break if subset(new_cls_defs, cls_defs); //## WHY BREAK WHEN IT'S A SUBSET AND NOT WHEN IT'S EMPTY?
+  //   cls_defs = cls_defs & new_cls_defs;
+  // ;
+  cls_defs = select_rec(prg, $ :: ClsDef); //## TODO: THIS SHOULD BE TESTED
 
   all_named_pars = merge_values(set([p.named_params : p <- obj_proc_defs]));
   all_param_arity_pairs = rand_sort({(var: v, arity: a) : v => ars <- all_named_pars, a <- ars});
@@ -244,10 +245,16 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
   }
 
 
-  AnyVar* vars_to_declare([Instr] instrs) = {
-    x : x <- select <AnyVar, ClsDef> in instrs end,
-        not x :: <fn_par(Nat), named_par(Atom), cls_ext_par(Nat), evar(id: Nat, idx: <Nat, IntVar>), ClsDef>
-  };
+  //## BAD: THIS THING IS INCREDIBLY MESSY. I MUST IMPLEMENT A VERSION OF SELECT WITH A <STOP> GUARD
+  // AnyVar* vars_to_declare([Instr] instrs) = {
+  //   x : x <- select <AnyVar, ClsDef> in instrs end,
+  //       not x :: <fn_par(Nat), named_par(Atom), cls_ext_par(Nat), evar(id: Nat, idx: <Nat, IntVar>), ClsDef>
+  // };
+  AnyVar* vars_to_declare([Instr] instrs) =
+    select(
+      instrs,
+      $ :: <AnyVar, ClsDef> and not $ :: <fn_par(Nat), named_par(Atom), cls_ext_par(Nat), evar(id: Nat, idx: <Nat, IntVar>), ClsDef>
+    );
 
 
   String var_decl(AnyVar v):

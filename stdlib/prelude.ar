@@ -589,28 +589,37 @@ T2* values((T1 => T2) map) = {v : _ => v <- map};
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
-using Bool condition(Any)
-{
-  Any* select_expr_fn(Any obj)
-  {
-    return {obj} if condition(obj);
+//## HERE I NEED A VERSION OF SELECT WITH A STOP GUARD, AND ALSO NEED A SEARCH FUNCTION
 
-    return match (obj)
-             +          = {},
-             *          = {},
-             {...}      = union({select_expr_fn(x) : x <- obj}),
-             [...]      = union({select_expr_fn(x) : x <- set(obj)}),
-             (...)      = union({select_expr_fn(k) & select_expr_fn(v) : k => v <- obj}),
-             tag @ iobj = select_expr_fn(iobj); //## SHOULD I EXTEND THE SEARCH TO THE TAG AS WELL?
-           ;
-  }
-}
+Any select(Any obj, (Any -> Bool) cond) =
+  if cond(obj)
+    then {obj}
+    else match (obj)
+      +          = {},
+      *          = {},
+      {...}      = union({select(x, cond) : x <- obj}),
+      [...]      = union({select(x, cond) : x <- set(obj)}),
+      (...)      = union({select(k, cond) & select(v, cond) : k => v <- obj}),
+      tag @ iobj = select(iobj, cond); //## SHOULD I EXTEND THE SEARCH TO THE TAG AS WELL?
+  end;
+
+
+Any select_rec(Any obj, (Any -> Bool) cond) =
+  {obj if cond(obj)} &
+  match (obj)
+      +          = {},
+      *          = {},
+      {...}      = union({select_rec(x, cond) : x <- obj}),
+      [...]      = union({select_rec(x, cond) : x <- set(obj)}),
+      (...)      = union({select_rec(k, cond) & select_rec(v, cond) : k => v <- obj}),
+      tag @ iobj = select_rec(iobj, cond); //## SHOULD I EXTEND THE SEARCH TO THE TAG AS WELL?
+  ;
 
 
 Any replace(Any obj, (Any -> Bool) cond, (Any -> Any) eval) =
   if cond(obj)
     then eval(obj)
-    else match(obj)
+    else match (obj)
       +          = obj,
       *          = obj, //## BAD
       {...}      = {replace(x, cond, eval) : x <- obj},
