@@ -907,23 +907,41 @@ SynStmt build_for_stmt_ast(RuleMatch mtc)
 
   SynIter build_iter_ast(RuleMatch mtc)
   {
+    if (mtc.name == :repeat)
+      expr = build_expr_ast(mtc.match);
+      return range_iter(start_val: object(0), end_val: expr, end_val_incl: false);
+    ;
+
     nodes = rule_seq_nodes(mtc.match);
+
     if (mtc.name == :foreach)
       vars = [var(get_lowercase_id(n)) : n <- rep_rule_nodes(nodes[0])];
       expr = build_expr_ast(nodes[2]);
       return syn_seq_iter(vars, expr);
-    elif (mtc.name == :foreach_idx)
+    ;
+
+    if (mtc.name == :foreach_idx)
       vars = [var(get_lowercase_id(n)) : n <- rep_rule_nodes(nodes[0])];
       idx_var = var(get_lowercase_id(nodes[2]));
       expr = build_expr_ast(nodes[4]);
       return syn_seq_iter(vars, idx_var, expr);
-    else
-      var = var(get_lowercase_id(nodes[0]));
-      assert mtc.name == :for;
-      start_expr = build_expr_ast(nodes[2]);
-      end_expr = build_expr_ast(nodes[4]);
-      return syn_range_iter(var, start_expr, end_expr);
     ;
+
+    if (mtc.name == :for_upper)
+      var = var(get_lowercase_id(nodes[0]));
+      op = get_token(nodes[1]);
+      assert op == lower or op == lower_eq;
+      expr = build_expr_ast(nodes[2]);
+      return range_iter(var: var, start_val: object(0), end_val: expr, end_val_incl: op == lower_eq);
+    ;
+
+    assert mtc.name == :for_range;
+    var = var(get_lowercase_id(nodes[0]));
+    start_expr = build_expr_ast(nodes[2]);
+    range_type = get_token(nodes[3]);
+    assert range_type == double_dot or range_type == triple_dot;
+    end_expr = build_expr_ast(nodes[4]);
+    return range_iter(var: var, start_val: start_expr, end_val: end_expr, end_val_incl: range_type == triple_dot);
   }
 }
 
