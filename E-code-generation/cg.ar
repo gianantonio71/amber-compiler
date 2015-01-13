@@ -49,7 +49,7 @@ ObjProcDef gen_proc_code(ProcDef2 proc_def)
   ;
 
   debug_code = [push_call_info(proc_def.name, [just(fn_par(i)) : p @ i <- proc_def.params])];
-  ret_val = if proc_def.res_type /= nil then fn_res_var else object(nil) end; //## BAD: HERE I'M CHEATING...
+  ret_val = if proc_def.res_type /= nil then fn_res_var else object(nil); //## BAD: HERE I'M CHEATING...
   body = debug_code & body & [pop_call_info, ret_val(ret_val)];
 
   return obj_proc_def(proc_def.name, arity(proc_def) * [:obj], (), body);
@@ -93,7 +93,7 @@ ObjProcDef gen_fn_code(FnDef fndef)
 
   ObjProcPar low_level_param(FnFrmPar p):
     scalar_par()      = :obj,
-    non_scalar_par()  = if p.var? then cls(p.var, p.arity) else cls(p.arity) end;
+    non_scalar_par()  = if p.var? then cls(p.var, p.arity) else cls(p.arity);
 
   params = [low_level_param(p) : p <- fndef.params];
 
@@ -156,7 +156,7 @@ FnDef+ generate_dispatch_function(FnDef+ fds, (TypeName => AnonType) typedefs)
   candidates = [];
   for (i : scalar_pars)
     params = [fd.params[i] : fd <- rand_sort(fds)];
-    ptypes = [if p.type? then pseudotype(p.type, typedefs) else pseudotype_any end : p <- params];
+    ptypes = [if p.type? then pseudotype(p.type, typedefs) else pseudotype_any : p <- params];
     good = all([all([are_disjoint(p1, p2) : p2 <- right_subseq(ptypes, j+1)]) : p1 @ j <- ptypes]); //## BAD: INEFFICIENT. ALSO A BIT UGLY...
     candidates = candidates & [i] if good;
   ;
@@ -171,15 +171,14 @@ FnDef+ generate_dispatch_function(FnDef+ fds, (TypeName => AnonType) typedefs)
   //## ALSO, THE PARAMETERS THAT ARE NOT CHECKED AND THAT DO NOT DEFINE ANY VARIABLES
   //## SHOULD NOT BE INCLUDED IN THE MATCH AT ALL (ALTHOUGH THIS WOULD MAKE A DIFFERENCE
   //## ONLY WHEN AT LEAST ONE PARAMETER IS NOT NAMED IN ANY OF THE FUNCTIONS)
-  is_checked = if candidates == [] then bit_map(scalar_pars, arity) else [i == candidates[0] : i < arity] end;
+  is_checked = if candidates == [] then bit_map(scalar_pars, arity) else [i == candidates[0] : i < arity];
 
-  dispatch_call_params = [if is_scalar_par(p) then fn_par(i) else cls_var(i) end : p @ i <- rand_fd.params];
+  dispatch_call_params = [if is_scalar_par(p) then fn_par(i) else cls_var(i) : p @ i <- rand_fd.params];
 
   Pattern mk_ptrn(<(var: var(Atom)?, type: UserExtType?)> param, (TypeName => AnonType) typedefs, Bool is_checked) =
     if param.type? and is_checked
       then user_type_to_pseudotype_pattern(param.type, typedefs)
-      else ptrn_any
-    end;
+      else ptrn_any;
 
   cases = [];
   for (fd : unique_fds)
@@ -193,7 +192,7 @@ FnDef+ generate_dispatch_function(FnDef+ fds, (TypeName => AnonType) typedefs)
     cases: cases
   );
 
-  params = [if is_scalar_par(p) then :scalar_par(()) else non_scalar_par(p.arity) end : p @ i <- rand_fd.params];
+  params = [if is_scalar_par(p) then :scalar_par(()) else non_scalar_par(p.arity) : p @ i <- rand_fd.params];
 
   dispatch_fn = fn_def(
     name:          name,

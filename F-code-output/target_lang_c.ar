@@ -166,7 +166,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
   String gen_c_decl(ObjProcDef pd)
   {
-    par_types = [if p == :obj then "Obj" else "CLS" & to_str(p.arity) & " &" end : p <- pd.params];
+    par_types = [if p == :obj then "Obj" else "CLS" & to_str(p.arity) & " &" : p <- pd.params];
     par_list = append(intermix(par_types & ["Env &"], ", "));
     return "Obj " & to_c_fn_name(pd.name) & "(" & par_list & ");";
   }
@@ -221,7 +221,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
     String gen_fn_par(ObjProcPar par, Nat pos):
       obj   = "Obj p" & to_str(pos),
-      cls() = "CLS" & to_str(par.arity) & " &" & if par.name? then to_c_var_name(par.name) else "c_" & to_str(pos) end;
+      cls() = "CLS" & to_str(par.arity) & " &" & if par.name? then to_c_var_name(par.name) else "c_" & to_str(pos);
 
     String gen_fn_pars(ProcDef pd):
       ObjProcDef  = [gen_fn_par(p, i) : p @ i <- pd.params] & ["Env &env"],
@@ -311,16 +311,14 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     lookup()              = mk_call(
                               instr.var,
                               "lookup",
-                              [instr.map, instr.key] & //## BAD BAD
-                              if instr.success_var? then [instr.success_var] else [] end
+                              [instr.map, instr.key, instr.success_var if instr.success_var?]
                             ),
     
     //## BAD BAD IT'S ALMOST THE SAME AS THE EXPRESSION ABOVE
     ext_lookup()          = mk_call(
                               instr.var,
                               "ext_lookup",
-                              [instr.map, instr.key] & //## BAD BAD
-                              if instr.success_var? then [instr.success_var] else [] end
+                              [instr.map, instr.key, instr.success_var if instr.success_var?]
                             ),
     
     merge_sets()          = mk_call(instr.var, "merge_sets", [instr.sets]),
@@ -367,12 +365,12 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
                               return ["goto block_" & to_str(block_id) & "_end;"];
                             },
 
-    call_proc()           = compile_call_proc_to_c(if instr.var? then just(instr.var) else nil end, instr.name, instr.params, block_id),
+    call_proc()           = compile_call_proc_to_c(if instr.var? then just(instr.var) else nil, instr.name, instr.params, block_id),
 
     call_cls()            = mk_cls_call(instr.cls_var, instr.var, instr.params), //## INLINE THE FUNCTION
 
     push_call_info()      = { fn_name = [quote(fn_name_to_str(instr.fn_name))];
-                              params = [if p == nil then :null_obj else value(p) end : p <- instr.params];
+                              params = [if p == nil then :null_obj else value(p) : p <- instr.params];
                               return [mk_gen_call("push_call_info_wrapper", fn_name, params, [])];
                             },
 
@@ -382,7 +380,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
     branch()              = compile_branch_to_c(instr.cond, instr.when_true, instr.when_false, block_id),
 
-    symbol_switch()       = compile_symbol_switch_to_c(instr.val, instr.cases, if instr.else? then instr.else else [] end, block_id),
+    symbol_switch()       = compile_symbol_switch_to_c(instr.val, instr.cases, if instr.else? then instr.else else [], block_id),
 
     var_scope()           = compile_var_scope_to_c(instr.var, instr.new_value, instr.body, block_id),
 
@@ -396,8 +394,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     code_frags, args = unzip(pars_info);
     call_code = if var /= nil
       then mk_fn_call(value(var), to_c_fn_name(name), args)
-      else mk_fn_call(to_c_fn_name(name), args)
-    end;
+      else mk_fn_call(to_c_fn_name(name), args);
     return join(code_frags) & call_code;
 
 
@@ -534,7 +531,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
     code = code & [
       fn_var & " = cls_" & to_str(cls2id(cls)) & ";",
-      data_var & " = " & if env_size > 0 then new_data_var else "0" end & ";"
+      data_var & " = " & (if env_size > 0 then new_data_var else "0") & ";"
     ];
 
     code = code & compile_to_c(body, block_id);
