@@ -2,7 +2,7 @@
 
 using
 {
-  BasicUntypedSgn*            clss_in_scope,
+  ClsVar*                     closures,
   <named_par(Atom)>*          named_params,
   BasicUntypedSgn*            local_fns,
   FnSymbol                    curr_outer_fn,
@@ -46,6 +46,7 @@ using
 
     const_or_var(a?)  = { return :var(a) if in(:var(a), def_vars);
                           return :named_par(a) if in(:named_par(a), named_params);
+                          return cls_var(a) if in(cls_var(a), closures);
                           sgn = untyped_sgn(name: :fn_symbol(a), arity: 0);
                           //## THIS IS A STRANGE LIMITATION
                           //## IS IT HERE FOR A REASON, OR IS IT ONLY TEMPORARY?
@@ -67,12 +68,13 @@ using
                         ps  = [desugar_expr(e, def_vars) : e <- expr.params];
                         sgn = untyped_sgn(name: expr.name, arity: length(expr.params));
                         nps = syn_fn_defs_to_named_params(expr.named_params, def_vars);
+                        cls_var = cls_var(_obj_(expr.name));
 
                         // Closures first
-                        if (in(sgn, clss_in_scope))
+                        if (in(cls_var, closures))
                           assert nps == ();
                           ps = [desugar_expr(e, def_vars) : e <- expr.params];
-                          return cls_call(name: cls_var(_obj_(expr.name)), params: ps);
+                          return cls_call(name: cls_var, params: ps);
                         ;
 
                         // Then local functions
@@ -110,11 +112,11 @@ using
                             if (is_loc_var or is_named_par or is_glob_const)
                               fp = cls_expr(a, dp);
                             else
-                              sgn = untyped_sgn(fn_symbol(symb), a);
-                              if (in(sgn, clss_in_scope))
-                                fp = cls_var(symb);
+                              cls_var = cls_var(symb);
+                              if (in(cls_var, closures))
+                                fp = cls_var;
                               else
-                                // assert in(sgn, fns_in_scope);
+                                // assert in(untyped_sgn(fn_symbol(symb), a), fns_in_scope);
                                 fp = fn_ptr(fn_symbol(symb), a);
                               ;
                             ;
