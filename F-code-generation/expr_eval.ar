@@ -56,8 +56,8 @@ using
                 ),
 
     _         = { eval_code    = gen_eval_code(expr, var);
-                  
-                  return ( 
+
+                  return (
                     eval_code:         eval_code,
                     cleanup_code:      [release(var)],
                     add_ref_eval_code: eval_code,
@@ -95,7 +95,7 @@ using
     add_ref_eval_code = [];
     res_exprs         = [];
     next_var_id       = next_obj_var_id;
-    
+
     for (e : exprs)
       info = gen_eval_info(e, next_obj_var_id = next_var_id);
       eval_code         = eval_code & info.eval_code;
@@ -114,14 +114,14 @@ using
     );
   }
 
-  
+
   //## THIS IS ALL WRONG (WHY?)
   (code: [Instr], vect_var: VecVar, count_var: IntVar)
   gen_vector_eval_info([SubExpr] exprs)
   {
     elems_var = vvar(next_vector_var_id, length(exprs));
     count_var = ivar(next_int_var_id);
-    
+
     code = gen_vector_eval_code(
               exprs,
               elems_var,
@@ -129,7 +129,7 @@ using
               next_vector_var_id = next_vector_var_id + 1,
               next_int_var_id    = next_int_var_id + 1
             );
-    
+
     return (code: code, vect_var: elems_var, count_var: count_var);
 
 
@@ -137,21 +137,21 @@ using
     {
       curr_slot_var = evar(elems_var.id, count_var);
       cond_var      = lvar(next_obj_var_id);
-      
+
       code = [set_ivar(count_var, 0)];
-      
+
       for (e : exprs)
         if (e :: Expr)
           new_code = gen_eval_code(e, curr_slot_var) & [increment(count_var)];
-          
+
         else
           assert e :: CondExpr;
-          
+
           cond_eval_info = gen_eval_info(e.cond, cond_var, next_obj_var_id = next_obj_var_id + 1);
-          
+
           // No need to change next_obj_var_id, as cond_var is not used anymore when running this code
           expr_eval_code = gen_eval_code(e.expr, curr_slot_var);
-          
+
           new_code = cond_eval_info.eval_code &
                       [ check(is_bool(cond_eval_info.expr)),
                         do_if(
@@ -160,7 +160,7 @@ using
                         )
                       ];
         ;
-        
+
         code = code & new_code;
       ;
 
@@ -175,7 +175,7 @@ using
     cond_exprs = exprs - pure_exprs;
     return rand_sort(pure_exprs) & rand_sort(cond_exprs);
   }
-   
+
 
   [Instr] gen_eval_code(BuiltIn name, [AtomicExpr] params, ObjVar res_var)
   {
@@ -212,7 +212,7 @@ using
       ceiling       = ceiling_op(res_var, ps[0]),
       float         = int_to_float(res_var, ps[0]),
       _             = set_var(res_var, gen_eval_expr(name, ps));
-    
+
     ObjExpr gen_eval_expr(BuiltIn name, [AtomicExpr] ps):
       str         = to_str(ps[0]),
       symb        = to_symb(ps[0]),
@@ -235,8 +235,8 @@ using
       counter     = to_obj(unique_nat),
       ticks       = to_obj(ticks);
   }
-  
-  
+
+
   [Instr^] gen_eval_code(Expr expr, ObjVar res_var):
 
     object()        = [set_var(res_var, expr)],
@@ -264,11 +264,11 @@ using
                           gen_eval_code(expr.right, res_var) & [check(is_bool(res_var))]
                         )
                       ],
-    
+
                       //## BAD BAD BAD
     not_expr(e?)    = gen_eval_code(e, res_var) & [set_var(res_var, obj_neg(res_var))],
 
-    
+
     set_expr(es?) =
     {
       return [set_var(res_var, empty_set)] if es == {};
@@ -312,7 +312,7 @@ using
 
       curr_key_slot_var   = evar(keys_var.id, count_var);
       curr_value_slot_var = evar(values_var.id, count_var);
-      
+
       code = [set_ivar(count_var, 0)];
 
       let (next_int_var_id = next_int_var_id + 1, next_vector_var_id = next_vector_var_id + 2)
@@ -320,20 +320,20 @@ using
           key_code   = gen_eval_code(e.key, curr_key_slot_var);
           value_code = gen_eval_code(e.value, curr_value_slot_var);
           entry_code = key_code & value_code & [increment(count_var)];
-                        
+
           if (e.cond?)
             cond_info = gen_eval_info(e.cond, cond_var, next_obj_var_id = next_obj_var_id + 1);
-            
+
             entry_code = cond_info.eval_code &
                           [ check(is_bool(cond_info.expr)),
                             do_if(is_true(cond_info.expr), entry_code)
                           ];
           ;
-          
+
           code = code & entry_code;
         ;
       ;
-      
+
       return code & [mk_map(res_var, keys_var, values_var, count_var)];
     },
 
@@ -392,7 +392,7 @@ using
       bool_var = bvar(next_bool_var_id);
 
       info = gen_eval_info(expr.obj);
-      
+
       code = gen_type_checking_code(
                 expr.type,
                 info.expr,
@@ -411,7 +411,7 @@ using
       code = [ ext_lookup(res_var, info.expr, expr.field),
                 add_ref(res_var)
               ];
-      return info.eval_code & code & info.cleanup_code;  
+      return info.eval_code & code & info.cleanup_code;
     },
 
 
@@ -471,9 +471,9 @@ using
     {
       action = set_found_var_and_leave(res_var);
       action = action(expr.sel_expr, action) if expr.sel_expr?;
-      
+
       code = gen_iter_code(expr.source, {}, action);
-      
+
       return [set_var(res_var, obj_false), execute_block(code)];
     },
 
@@ -484,9 +484,9 @@ using
 
       action = eval_expr_and_add_to_set(expr.expr, strm_var);
       action = action(expr.sel_expr, action) if expr.sel_expr?;
-      
+
       code = gen_iter_code(expr.source, {}, action, next_stream_var_id = next_stream_var_id + 1);
-      
+
       return [init_stream(strm_var)] & code & [mk_set_from_stream(res_var, strm_var)];
     },
 
@@ -498,7 +498,7 @@ using
 
       action = eval_exprs_and_add_to_map(expr.key_expr, expr.value_expr, key_strm_var, value_strm_var);
       action = action(expr.sel_expr, action) if expr.sel_expr?;
-      
+
       code = gen_iter_code(expr.source, {}, action, next_stream_var_id = next_stream_var_id + 2);
 
       return [init_stream(key_strm_var), init_stream(value_strm_var)] & code &
@@ -526,14 +526,14 @@ using
         item_info = gen_eval_info(expr.expr, item_var);
         sel_info  = if expr.sel_expr? then gen_eval_info(expr.sel_expr, sel_var) else nil; //## BUG BUG BUG
       ;
-            
+
       knows_size = not expr.sel_expr?;
-      
+
       eval_and_assign_code = item_info.add_ref_eval_code &
                               if knows_size
                                 then [set_at(res_var, idx_var, item_info.expr)]
                                 else [append(strm_var, item_info.expr)];
-      
+
       core_loop_code = eval_and_assign_code;
       if (expr.sel_expr?)
         core_loop_code = sel_info.eval_code &
@@ -541,7 +541,7 @@ using
                             do_if(is_true(sel_info.expr), core_loop_code)
                           ];
       ;
-      
+
 
       if (expr.src_expr_type == :sequence)
         needs_idx_var = not expr.sel_expr? or expr.idx_var?;
@@ -603,7 +603,7 @@ using
     //    //## A NOTATION TO ACCESS THE fn_par() DIRECTLY, I WOULD STILL BE ABLE TO ACCESS SOME
     //    //## OF THE fn_par() VARIABLES OF THE PARENT FUNCTION IF THIS HAS MORE ARGUMENTS THAN
     //    //## THE CLOSURE. I SHOULD CHECK AND STOP THIS DURING THE WELL-FORMEDNESS CHECK.
-    //    loc_vs   = set([v : v <- cls.vars, v /= nil] & [:fn_par(i) : i <- inc_seq(length(cls.vars))]);
+    //    loc_vs   = set([v : v <- cls.vars, v /= nil] & [:fn_par(i) : i < length(cls.vars)]);
     //    ext_vs   = rand_sort(extern_vars(cls.body) - loc_vs);
     //    cls_body = [set_var(v, fn_par(i)) : v @ i <- cls.vars, v /= nil]    &
     //                [set_var(v, cls_ext_par(i)) : v @ i <- ext_vs] &
@@ -653,9 +653,9 @@ using
 
     var  = left(asgnms[0]);
     expr = right(asgnms[0]);
-    
+
     rem_asgnms = subseq(asgnms, 1, length(asgnms)-1);
-    
+
     if (expr :: Expr)
       info = gen_eval_info(expr);
       body = make_scopes(rem_asgnms, body_gen_info, next_obj_var_id = info.next_var_id);
@@ -701,27 +701,27 @@ using
   //
   // surv_vars:     Vars that are defined in the current scope, but that survive to it.
   //                Disjoint from both all_rel_vars and break_vars
-  
+
   [Instr] gen_code([Statement] stmts, ObjVar res_var, ObjVar* all_rel_vars, ObjVar* break_vars, ObjVar* surv_vars)
   {
     assert subset(break_vars, all_rel_vars);
     assert not in(res_var, all_rel_vars); //## THINK ABOUT THIS ONE
     assert disjoint(all_rel_vars, surv_vars);
-    
+
     vs   = {};
     code = [];
     for (s : stmts)
       code = code & gen_code(s, res_var, all_rel_vars & vs, break_vars & vs);
       vs   = vs & (new_vars(s) - all_rel_vars); //## BUG? BUG? BUG?
     ;
-    
+
     if (may_fall_through(stmts))
       code = code & [release(v) : v <- rand_sort(vs - surv_vars)];
     //## Try to reenable it if there are memory leaks
     //## else
     //##   code = code & [terminate];
     ;
-    
+
     return code;
   }
 
@@ -729,7 +729,7 @@ using
   //                They have to be released before a return statement, or before being reassigned.
   //
   // break_vars:    Vars that have to be released before a break statement. It's a subset of all_rel_vars
-  
+
   [Instr^] gen_code(Statement stmt, ObjVar res_var, ObjVar* all_rel_vars, ObjVar* break_vars):
 
     break_stmt      = [release(v) : v <- rand_sort(break_vars)] & [break_loop],
@@ -750,7 +750,7 @@ using
     return_stmt     = [release(v) : v <- rand_sort(all_rel_vars)] & [exit_block],
 
     return_stmt(e?) = { assert not in(res_var, all_rel_vars);
-                        
+
                         return gen_eval_code(e, res_var)               &
                                [release(v) : v <- rand_sort(all_rel_vars)] &
                                [exit_block];
@@ -763,7 +763,7 @@ using
       //## THIS SHOULD BE CHECKED IN THE PROPER PLACE, BOTH IN LAYER 1 AND 2
       //## IT'S A TEMPORARY LIMITATION THAT SHOULD BE REMOVED
       assert subset(outcomes(stmt.body), {:fails, :falls_through});
-      
+
       surv_vars = new_vars(stmt.body) - all_rel_vars;
       return make_scopes(rand_sort_pairs(stmt.asgnms), (body: stmt.body, res_var: res_var, all_rel_vars: all_rel_vars, break_vars: break_vars, surv_vars: surv_vars));
 
@@ -818,18 +818,18 @@ using
     if_stmt() =
     {
       cond_info = gen_eval_info(stmt.cond);
-      
+
       surv_vars = new_vars(stmt) - all_rel_vars;
-      
+
       // The variable used to store the value of the condition is not
       // needed anymore here, so there's no need to update next_obj_var_id
       if_code   = gen_code(stmt.body, res_var, all_rel_vars, break_vars, surv_vars);
       else_code = gen_code(stmt.else, res_var, all_rel_vars, break_vars, surv_vars);
-      
+
       branch_code = [ check(is_bool(cond_info.expr)),
                       branch(is_true(cond_info.expr), if_code, else_code)
                     ];
-      
+
       return cond_info.eval_code & branch_code;
     },
 
@@ -840,11 +840,11 @@ using
       start_var = ivar(next_int_var_id);
       end_var   = ivar(next_int_var_id + 1);
       idx_var   = ivar(next_int_var_id + 2);
-      
+
       let (next_obj_var_id = next_obj_var_id + 1)
         start_eval_code = gen_eval_code(stmt.start_val, tmp_var);
         end_eval_code   = gen_eval_code(stmt.end_val, tmp_var);
-        
+
         body_code = gen_code(stmt.body, res_var, all_rel_vars, {}, {}, next_int_var_id = next_int_var_id + 3);
       ;
 
@@ -856,13 +856,13 @@ using
           [increment(idx_var)]
         )
       ];
-      
+
       return start_eval_code & [set_ivar(idx_var, get_int_val(tmp_var))] &
              end_eval_code   & [set_ivar(end_var, get_int_val(tmp_var))] &
              loop_code;
     },
 
-    
+
     foreach_stmt() =
     {
       src_var = lvar(next_obj_var_id);
@@ -904,7 +904,7 @@ using
                        ]
                      )
                    ];
-      
+
       return src_info.eval_code & loop_code & src_info.cleanup_code;
     },
 

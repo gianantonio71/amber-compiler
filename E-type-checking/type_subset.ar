@@ -1,8 +1,14 @@
-Bool is_subset(AnonType t1, AnonType t2) = is_subset_if(t1, t2; inst_type_vars=false) == {};
+// Exported functions:
+//   Bool is_subset(AnonType t1, AnonType t2);
+//   (TypeVar => AnonType*) subset_conds(AnonType t1, AnonType t2);
+
+
+
+Bool is_subset(AnonType t1, AnonType t2) = is_subset_if(t1, t2, inst_type_vars=false) == {};
 
 (TypeVar => AnonType*) subset_conds(AnonType t1, AnonType t2)
 {
-  cs = is_subset_if(t1, t2; inst_type_vars=true);
+  cs = is_subset_if(t1, t2, inst_type_vars=true);
   assert cs :: <<subset_when(type_var: TypeVar, inst_type: AnonType)>*>;
   return merge_values({(c.type_var => c.inst_type) : c <- cs});
 }
@@ -34,37 +40,52 @@ using Bool inst_type_vars
   {
     tested_supertypes   = {};
     untested_supertypes = {t2};
+    type_var_conds = {};
 
     loop
+      // Trying all the untested supertypes and merging all conditions
       new_hypotheses = all_conds({is_subset_if(_obj_(t1), t) : t <- untested_supertypes});
+
+      // If at least one of the types cannot possibly be a supertype, then we are done
       return not_a_subset if new_hypotheses == not_a_subset;
-      assert not (? h <- new_hypotheses : h.subset /= self);
+
+      // Separating hypotheses about recursion from the ones about type variables
+      new_rec_hypotheses = {h : subset_if() h <- new_hypotheses};
+      new_var_hypotheses = {h : subset_when() h <- new_hypotheses};
+
+      assert new_hypotheses == new_rec_hypotheses & new_var_hypotheses;
+      assert not (? h <- new_rec_hypotheses : h.subset /= self);
+
+      // Generating the next round of candidate supertypes to test
       tested_supertypes = tested_supertypes & untested_supertypes;
-      untested_supertypes = {h.superset : h <- new_hypotheses} - tested_supertypes;
-      return {} if untested_supertypes == {};
+      untested_supertypes = {h.superset : h <- new_rec_hypotheses} - tested_supertypes;
+
+      // Adding the new hypotheses about type variables to the previous ones
+      type_var_conds = type_var_conds & new_var_hypotheses;
+
+      // If there are no new candidate supertypes to test, we just return the constraints on the type variable
+      return type_var_conds if untested_supertypes == {};
     ;
   }
 
 
   IsSubset is_mut_rec_subset_if(MutRecType[AnonType] t1, AnonType t2)
   {
-    tested_hypotheses   = {};
-    untested_hypotheses = {(subtype: t1, supertype: t2)};
+    fail;
+    // tested_hypotheses   = {};
+    // untested_hypotheses = {(subtype: t1, supertype: t2)};
 
-    loop
-      new_hypotheses = all_conds({is_subset_if(h.subtype.types[h.subtype.index], h.type) : h <- untested_hypotheses});
-      return not_a_subset if new_hypotheses == not_a_subset;
-      tested_hypotheses = tested_hypotheses & untested_hypotheses;
-      // untested_hypotheses = {(subtype: )}
-      return {} if untested_hypotheses == {};
-    ;
+    // loop
+    //   new_hypotheses = all_conds({is_subset_if(h.subtype.types[h.subtype.index], h.type) : h <- untested_hypotheses});
+    //   return not_a_subset if new_hypotheses == not_a_subset;
+    //   tested_hypotheses = tested_hypotheses & untested_hypotheses;
+    //   // untested_hypotheses = {(subtype: )}
+    //   return {} if untested_hypotheses == {};
+    // ;
   }
 
 
   IsSubset is_subset_if(AnonType t1, AnonType t2):
-    tuple_type(),         _                   = {fail;}, //## HAVENT FIGURED OUT YET WHERE THESE SHOULD GO
-    _,                    tuple_type()        = {fail;},
-
     // Type vars only match themselves or type any
     // _,                    type_var()          = if inst_type_vars then subset_when(t2, t1) else if t1 == t2 then {} else not_a_subset end end,
     _,                    type_var()          = if inst_type_vars then subset_when(t2, t1), t1 == t2 then {} else not_a_subset,
@@ -90,6 +111,7 @@ using Bool inst_type_vars
     atom_type,            _                   = if t1 == t2 then {} else not_a_subset,
     IntType,              IntType             = if is_integer_subset(t1, t2) then {} else not_a_subset,
     IntType,              _                   = not_a_subset,
+    float_type,           _                   = if t1 == t2 then {} else not_a_subset,
 
     // Sequence types
     empty_seq_type,       empty_seq_type      = {},
@@ -118,6 +140,13 @@ using Bool inst_type_vars
     record_type(fs1?),    record_type(fs2?)   = is_record_subset_if(fs1, fs2),
     record_type(fs?),     ne_map_type()       = is_record_map_subset_if(fs, t2),
     record_type(),        _                   = not_a_subset,
+
+    // Tuple types
+    tuple_type(fts1?),    tuple_type(fts2?)   = if length(fts1) == length(fts2)
+                                                  then all_conds(set([is_subset_if(ft1, ft2) : ft1, ft2 <- zip(fts1, fts2)]))
+                                                  else not_a_subset,
+    tuple_type(fts?),     ne_seq_type()       = all_conds({is_subset_if(ft, t2.elem_type) : ft <- set(fts)}),
+    tuple_type(),         _                   = not_a_subset,
 
     // Tagged types
     tag_obj_type(),       tag_obj_type()      = all_conds({is_subset_if(t1.tag_type, t2.tag_type), is_subset_if(t1.obj_type, t2.obj_type)}),
@@ -199,63 +228,6 @@ Bool is_integer_subset(IntType t1, IntType t2):
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-AnonType unfold(AnonType type, (SelfPretype => AnonType) sub_map):
-  LeafType          = type,
-  TypeVar           = type,
-  SelfPretype       = sub_map[type],
-  ne_seq_type()     = ne_seq_type(unfold(type.elem_type, sub_map)),
-  ne_set_type()     = ne_set_type(unfold(type.elem_type, sub_map)),
-  ne_map_type()     = ne_map_type(unfold(type.key_type, sub_map), unfold(type.value_type, sub_map)),
-  record_type(fs?)  = record_type((l => (type: unfold(f.type, sub_map), optional: f.optional) : l => f <- fs)),
-  tuple_type(ts?)   = {fail;},
-  tag_obj_type()    = tag_obj_type(type.tag_type, unfold(type.obj_type, sub_map)),
-  union_type(ts?)   = union_type({unfold(t, sub_map) : t <- ts}),
-  self_rec_type()   = type,
-  mut_rec_type()    = type;
-
-
-AnonType unfold(AnonType type):
-  self_rec_type(t?) = unfold(t, (self => type)),
-  mut_rec_type()    = unfold(type.types[type.index], (self(i) => mut_rec_type(i, type.types) : i <- index_set(type.types))),
-  _                 = type;
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 Bool is_type_any(AnonType type) = is_subset(type_any, type);
-
-AnonType type_bool = union_type({symb_type(true), symb_type(false)});
-
-AnonType type_nat = high_ints(0);
-
-AnonType type_seq = type_seq(type_any);
-AnonType type_set = type_set(type_any);
-AnonType type_map = type_map(type_any, type_any);
-
-AnonType type_tagged_obj = tag_obj_type(atom_type, type_any);
-
-AnonType type_seq(AnonType elem_type)  = union_type({empty_seq_type, ne_seq_type(elem_type)});
-AnonType type_set(AnonType elem_type)  = union_type({empty_set_type, ne_set_type(elem_type)});
-AnonType type_mset(AnonType elem_type) = union_type({empty_map_type, ne_map_type(elem_type, high_ints(1))});
-
-AnonType type_map(AnonType key_type, AnonType value_type)  = union_type({empty_map_type, ne_map_type(key_type, value_type)});
-
-AnonType type_string = tag_obj_type(symb_type(:string), union_type({empty_seq_type, ne_seq_type(type_nat)}));
-
-AnonType type_any =
-  self_rec_type(
-    union_type({
-      atom_type,
-      integer,
-      empty_seq_type,
-      empty_set_type,
-      empty_map_type,
-      ne_seq_type(self),
-      ne_set_type(self),
-      ne_map_type(self, self),
-      tag_obj_type(atom_type, self)
-    })
-  );
-
 
 Bool includes_symbol(AnonType type, SymbObj symb) = is_subset(symb_type(symb), type);

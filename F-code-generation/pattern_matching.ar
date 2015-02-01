@@ -20,15 +20,21 @@ using
       else gen_ptrn_matching_code(ptrn, obj, res_var, loc_bound_vars) & [do_if(res_var, set_var(var, obj))];
 
 
-  [Instr^] gen_ptrn_tag_obj_matching_code(TagPtrn tag, Pattern obj_ptrn, AtomicExpr obj, BoolVar res_var, Var* loc_bound_vars)
+  [Instr^] gen_ptrn_tag_obj_matching_code(TagPtrn tag_ptrn, Pattern obj_ptrn, AtomicExpr obj, BoolVar res_var, Var* loc_bound_vars)
   {
+    //## DO WE ACTUALLY NEED THIS?
+    if (tag_ptrn == ptrn_symbol and obj_ptrn == ptrn_any)
+      // Optimizing for the special case of a catch-all pattern
+      return [set_bvar(res_var, is_tagged_obj(obj))];
+    ;
+
     var  = lvar(next_obj_var_id);
 
     let (next_obj_var_id = next_obj_var_id + 1)
       code = [ block_failure_if_not(is_tagged_obj(obj), res_var),
                 set_var(var, get_tag(obj))
               ] &
-              gen_ptrn_matching_code(tag, var, res_var, loc_bound_vars) &
+              gen_ptrn_matching_code(tag_ptrn, var, res_var, loc_bound_vars) &
               [ exit_block_if_not(res_var),
                 set_var(var, get_inner_obj(obj))
               ] &
@@ -53,7 +59,6 @@ using
 
 BoolExpr gen_ptrn_matching_expr(Pattern ptrn, AtomicExpr obj):
   ptrn_symbol                   = is_symb(obj),
-  ptrn_integer                  = is_int(obj),
   ptrn_float                    = is_float(obj),
   ptrn_empty_set                = is_eq(obj, empty_set),
   ptrn_ne_set                   = is_ne_set(obj),
@@ -61,7 +66,6 @@ BoolExpr gen_ptrn_matching_expr(Pattern ptrn, AtomicExpr obj):
   ptrn_ne_seq                   = is_ne_seq(obj),
   ptrn_empty_map                = is_eq(obj, empty_map),
   ptrn_ne_map                   = is_ne_map(obj),
-  ptrn_tag_obj                  = is_tagged_obj(obj),
   ptrn_any                      = true,
   ptrn_symbol(s?)               = is_eq(obj, s),
   ptrn_integer(integer)         = is_int(obj),

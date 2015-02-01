@@ -28,7 +28,7 @@ ProcDef apply_cheats(ProcDef pd)
 }
 
 
-Maybe[CCodeOutput] Compile((String => [Nat]) src_files, Bool print_intermediate, Bool print_times)
+Maybe[CCodeOutput] Compile((String => [Nat]) src_files, Bool run_typechecking, Bool print_intermediate, Bool print_times)
 {
   t0 = _ticks_(nil);
 
@@ -72,8 +72,17 @@ Maybe[CCodeOutput] Compile((String => [Nat]) src_files, Bool print_intermediate,
     FileWrite("dump_prg.txt", false, _obj_(to_text(prg, 100, 1)));
   ;
 
-  code = gen_prg_code(prg);
+  if (run_typechecking)
+    if (typechecks(prg))
+      Print("The programs typechecks\n");
+    else
+      Print("Error: the program does not typecheck\n");
+    ;
+  ;
   t4 = _ticks_(nil);
+
+  code = gen_prg_code(prg);
+  t5 = _ticks_(nil);
   Print("Code generated\n");
 
   if (print_intermediate)
@@ -83,7 +92,7 @@ Maybe[CCodeOutput] Compile((String => [Nat]) src_files, Bool print_intermediate,
   code = {apply_cheats(d) : d <- code};
 
   c_code  = compile_to_c(code);
-  t5 = _ticks_(nil);
+  t6 = _ticks_(nil);
   Print("C code generated\n");
 
   if (print_times)
@@ -91,8 +100,11 @@ Maybe[CCodeOutput] Compile((String => [Nat]) src_files, Bool print_intermediate,
     Print("Parsing:             " & to_str(t1-t0) & "ms\n");
     Print("Error checking:      " & to_str(t2-t1) & "ms\n");
     Print("Syntax removal:      " & to_str(t3-t2) & "ms\n");
-    Print("Code generation:     " & to_str(t4-t3) & "ms\n");
-    Print("C code generation:   " & to_str(t5-t4) & "ms\n");
+    if (run_typechecking)
+      Print("Type checking:       " & to_str(t4-t3) & "ms\n");
+    ;
+    Print("Code generation:     " & to_str(t5-t4) & "ms\n");
+    Print("C code generation:   " & to_str(t6-t5) & "ms\n");
     Print("Total time elapsed:  " & to_str(t5-t0) & "ms\n");
   ;
 
@@ -141,12 +153,16 @@ Int Main([String] args)
   fname = last(args);
   options = subseq(args, 0, argc-1);
 
+  run_typechecking = false;
+
   print_intermediate = false;
   print_times = false;
   wait_for_key = false;
 
   for (o : options)
-    if (o == "-p")
+    if (o == "-tc")
+      run_typechecking = true;
+    elif (o == "-p")
       print_intermediate = true;
     elif (o == "-t")
       print_times = true;
@@ -179,7 +195,7 @@ Int Main([String] args)
     src_files = src_files & (fn => value(fc));
   ;
 
-  output = Compile(src_files, print_intermediate, print_times);
+  output = Compile(src_files, run_typechecking, print_intermediate, print_times);
   if (output /= nil)
     output = value(output);
     body = append(intermix(output.body, "\n"));
