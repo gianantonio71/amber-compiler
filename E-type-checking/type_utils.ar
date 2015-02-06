@@ -203,13 +203,13 @@ ClosedType type_patterns_intersection_superset(AnonType type, Pattern* ptrns)
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-//## THIS IS TOTALLY UNTESTED. IT SHOULD BE TESTED WITH THE TYPE SUBSET TESTING CODE,
+//## THIS IS PRETTY MUCH UNTESTED. IT SHOULD BE TESTED WITH THE TYPE SUBSET TESTING CODE,
 //## AND MAYBE IT WOULD BE GOOD TO DO SOME MANUAL TESTING, ESPECIALLY FOR TUPLE TYPES
 Bool type_contains_obj(AnonType type, Any obj):
   atom_type,        +           = true,
   atom_type,        _           = false,
 
-  symb_type(s?),    _           = obj == s,
+  symb_type(s?),    _           = obj == _obj_(s),
 
   integer,          *           = true,
   integer,          _           = false,
@@ -255,6 +255,52 @@ Bool type_contains_obj(AnonType type, Any obj):
 
   self_rec_type(),  _           = type_contains_obj(unfold(type), obj),
   mut_rec_type(),   _           = type_contains_obj(unfold(type), obj);
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+//## I COULD ASSERT THAT THE RESULTING TYPE IS A SUBSET OF THE ORIGINAL ONE
+//## THAT WOULD INTRODUCE A CYCLIC DEPENDENCY (ALBEIT ONLY IN DEBUG MODE) BETWEEN
+//## TYPE UTILS AND SUBTYPE CHECKING. ALSO THE SYNTAX WOULD NOT BE GREAT.
+ClosedType subtract_obj_from_type(AnonType type, Any obj):
+  symb_type(object(s?))   = if obj == s then void_type else type,
+
+  low_ints()              = if obj == type.max then low_ints(type.max-1) else type,
+  high_ints()             = if obj == type.min then high_ints(type.min+1) else type,
+  int_range()             = { new_min = type.min + bit(obj == type.min);
+                              new_max = type.max - bit(obj == type.max);
+                              return if new_min <= new_max then int_range(new_min, new_max) else void_type;
+                            },
+
+  empty_seq_type          = if obj == [] then void_type else type,
+  empty_set_type          = if obj == {} then void_type else type,
+  empty_map_type          = if obj == () then void_type else type,
+
+  union_type(ts?)         = { nts = {nt : t <- ts, nt = subtract_obj_from_type(t, obj), nt /= void_type};
+                              return if nts == {} then void_type else union_type(nts);
+                            },
+
+  self_rec_type()         = { unfolded_type = unfold(type);
+                              refined_type = subtract_obj_from_type(unfolded_type, obj);
+                              assert refined_type /= void_type;
+                              assert refined_type == unfolded_type or
+                                     ( type_contains_obj(unfolded_type, obj) and
+                                       not type_contains_obj(refined_type, obj)
+                                     );
+                              return if refined_type /= unfolded_type then refined_type else type;
+                            },
+
+  mut_rec_type()          = { unfolded_type = unfold(type);
+                              refined_type = subtract_obj_from_type(unfolded_type, obj);
+                              assert refined_type /= void_type;
+                              assert refined_type == unfolded_type or
+                                     ( type_contains_obj(unfolded_type, obj) and
+                                       not type_contains_obj(refined_type, obj)
+                                     );
+                              return if refined_type /= unfolded_type then refined_type else type;
+                            },
+
+  _                       = type;
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////

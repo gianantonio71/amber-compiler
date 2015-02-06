@@ -1,6 +1,5 @@
 using
 {
-  Bool                    halt_on_failure_to_typecheck, //## THIS IS A TEMPORARY HACK
   (TypeName => AnonType)  typedefs,
   (FnSymbol => FnType*)   signatures,   //## MAYBE HERE I SHOULD INCLUDE THE ARITY IN THE KEY. UPDATE: I DEFINITELY SHOULD
   (Var => AnonType)       environment,
@@ -94,7 +93,7 @@ using
   }
 
 
-  AnonType fn_call_expr_type(FnSymbol name, [ExtExpr] params, (<named_par(Atom)> => ExtExpr) named_params)
+  AnonType fn_call_expr_type(FnSymbol name, [ExtExpr] params, (NamedPar => ExtExpr) named_params)
   {
     // BUG BUG BUG: THIS IS ALL WRONG. THERE MAY BE MORE THAN JUST ONE TARGET FUNCTION. SHOULD BE:
     // candidate_signatures = {s : s <- signatures[name], length(params) == arity(s) and may_dispatch_to(s, params)};
@@ -252,7 +251,7 @@ using
   }
 
 
-  ClosedType let_stmt_return_type((<named_par(Atom)> => Expr) asgnms, [Statement^] body)
+  ClosedType let_stmt_return_type((NamedPar => Expr) asgnms, [Statement^] body)
   {
     env_delta = (v => expr_type(e) : v => e <- asgnms);
     new_env = update(environment, env_delta);
@@ -353,7 +352,7 @@ using
   }
 
 
-  (Var => AnonType) let_stmt_update_environment((<named_par(Atom)> => Expr) asgnms, [Statement^] body)
+  (Var => AnonType) let_stmt_update_environment((NamedPar => Expr) asgnms, [Statement^] body)
   {
     return () if not may_fall_through(body); //## SEE COMMENT FOR loop_stmt() ABOVE
     env_delta = (v => expr_type(e) : v => e <- asgnms);
@@ -411,9 +410,42 @@ using
         if_true_env = update(if_true_env, (obj => user_type_to_anon_type(cond.type)));
         //## HERE MAYBE I COULD TRY TO REFINE THE FALSE BRANCH AS WELL...
       ;
+
+    elif (cond :: <eq(left: Expr, right: Expr)>)
+      expr1, expr2 = if cond.left :: Var then (cond.left, cond.right) else (cond.right, cond.left);
+      if (expr1 :: Var)
+        type_if_eq, type_if_not_eq = refine_var_type_with_eq(environment[expr1], expr2);
+        if_true_env = update(if_true_env, (expr1 => type_if_eq));
+        if_false_env = update(if_false_env, (expr1 => type_if_not_eq));
+      ;
+
+    elif (cond :: <not(eq(left: Expr, right: Expr))>)
+      rev_cond = _obj_(cond);
+      expr1, expr2 = if rev_cond.left :: Var then (rev_cond.left, rev_cond.right) else (rev_cond.right, rev_cond.left);
+      if (expr1 :: Var)
+        type_if_eq, type_if_not_eq = refine_var_type_with_eq(environment[expr1], expr2);
+        if_true_env = update(if_true_env, (expr1 => type_if_not_eq));
+        if_false_env = update(if_false_env, (expr1 => type_if_eq));
+      ;
     ;
 
     return (if_true_env, if_false_env);
+
+
+    (AnonType, AnonType) refine_var_type_with_eq(AnonType type, Expr obj)
+    {
+      type_if_eq, type_if_not_eq = match (obj)
+        object(+ a?)  = (symb_type(a),    subtract_obj_from_type(type, a)),
+        object(* n?)  = (int_range(n, n), subtract_obj_from_type(type, n)),
+        set_expr(es?)  = if es == {} then (empty_set_type,  subtract_obj_from_type(type, {})) else (type, type),
+        seq_expr(es?)  = if es == [] then (empty_seq_type,  subtract_obj_from_type(type, [])) else (type, type),
+        map_expr(es?)  = if es == () then (empty_map_type,  subtract_obj_from_type(type, ())) else (type, type),
+        _             = (type, type);
+      ;
+      type_if_eq = type if type_if_eq == void_type;
+      type_if_not_eq = type if type_if_not_eq == void_type;
+      return (type_if_eq, type_if_not_eq);
+    }
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -482,7 +514,7 @@ using
   }
 
 
-  AnonType fn_call_type(FnType signature, [ExtExpr] params, (<named_par(Atom)> => ExtExpr) named_params)//## DO I NEED THE THIRD PARAMETER?
+  AnonType fn_call_type(FnType signature, [ExtExpr] params, (NamedPar => ExtExpr) named_params)//## DO I NEED THE THIRD PARAMETER?
   {
     params_are_scalar = [t :: AnonType : t <- signature.params];
     actual_param_types = [expr_type(e) : e @ i <- params, params_are_scalar[i]];
