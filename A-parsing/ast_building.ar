@@ -30,7 +30,7 @@ SynParTypedef build_par_typedef_ast(RuleMatch par_typedef)
   nodes = rule_seq_nodes(par_typedef);
   assert is_annotated_token(nodes[0], lowercase_id(:type));
   name = build_basic_type_symbol_ast(nodes[1]);
-  params = [build_type_var_ast(p) : p <- rep_rule_nodes(nodes[2])];
+  params = [build_type_var_ast(p) : p <- rep_rule_nodes(block_node(nodes[2]))];
   assert is_annotated_token(nodes[3], equals);
   pretypes = [build_pretype_ast(n) : n <- rep_rule_nodes(nodes[4])];
   assert is_annotated_token(nodes[5], semicolon);
@@ -78,7 +78,7 @@ SynType build_tag_obj_type_ast(RuleMatch mtc)
   nodes = rule_seq_nodes(mtc);
   assert length(nodes) == 2;
   tag_type = symb_type(_obj_(annotated_token(nodes[0]).token));
-  obj_type = build_pretype_ast(nodes[1]);
+  obj_type = build_pretype_ast(block_node(nodes[1]));
   return syn_tag_obj_type(tag_type, obj_type);
 }
 
@@ -101,7 +101,7 @@ SynType build_par_type_ref_ast(RuleMatch mtc)
   nodes = rule_seq_nodes(mtc);
   assert length(nodes) == 2;
   ts = type_symbol(_obj_(annotated_token(nodes[0]).token));
-  ps = [build_type_ast(n) : n <- rep_rule_nodes(nodes[1])];
+  ps = [build_type_ast(n) : n <- rep_rule_nodes(block_node(nodes[1]))];
   return syn_type_ref(ts, ps);
 }
 
@@ -117,7 +117,7 @@ SynType build_type_union_ast(RuleMatch mtc)
 
 SynType build_integer_type_ast(RuleMatch mtc)
 {
-  nodes = rule_seq_nodes(mtc);
+  nodes = rule_seq_nodes(block_node(mtc));
   assert length(nodes) == 3;
   assert is_annotated_token(nodes[1], double_dot);
   min_node = nodes[0];
@@ -139,7 +139,7 @@ SynType build_integer_type_ast(RuleMatch mtc)
 
 SynType build_seq_type_ast(RuleMatch mtc)
 {
-  nodes = rule_seq_nodes(mtc);
+  nodes = rule_seq_nodes(block_node(mtc));
   assert length(nodes) == 2;
   elem_type = build_type_ast(nodes[0]);
   return syn_seq_type(elem_type, nodes[1] /= null_match);
@@ -147,7 +147,7 @@ SynType build_seq_type_ast(RuleMatch mtc)
 
 SynType build_map_type_ast(RuleMatch mtc)
 {
-  nodes = rule_seq_nodes(mtc);
+  nodes = rule_seq_nodes(block_node(mtc));
   assert length(nodes) == 3;
   key_type = build_type_ast(nodes[0]);
   value_type = build_type_ast(nodes[2]);
@@ -156,7 +156,7 @@ SynType build_map_type_ast(RuleMatch mtc)
 
 SynRecordType build_record_type_ast(RuleMatch mtc)
 {
-  fields = [build_record_field_ast(n) : n <- rep_rule_nodes(mtc)];
+  fields = [build_record_field_ast(n) : n <- rep_rule_nodes(block_node(mtc))];
   return syn_record_type(fields);
 
   (label: SymbObj, type: SynType, optional: Bool) build_record_field_ast(RuleMatch mtc)
@@ -170,11 +170,11 @@ SynRecordType build_record_type_ast(RuleMatch mtc)
   }
 }
 
-SynTupleType build_tuple_type_ast(RuleMatch mtc) = syn_tuple_type([build_type_ast(n) : n <- rep_rule_nodes(mtc)]);
+SynTupleType build_tuple_type_ast(RuleMatch mtc) = syn_tuple_type([build_type_ast(n) : n <- rep_rule_nodes(block_node(mtc))]);
 
 SynType build_any_tag_obj_type(RuleMatch mtc)
 {
-  nodes = rule_seq_nodes(mtc);
+  nodes = rule_seq_nodes(block_node(mtc));
   assert length(nodes) == 3;
   obj_type = build_type_ast(nodes[2]);
   return syn_any_tag_obj_type(obj_type);
@@ -216,7 +216,7 @@ SynFnDef build_proc_fndef_ast(RuleMatch mtc)
     name:       build_fn_symbol_ast(nodes[1]),
     params:     build_fn_params_ast(nodes[2]),
     res_type:   value(ret_type) if ret_type /= nil,
-    expr:       build_proc_expr_ast(nodes[3]),
+    expr:       build_proc_expr_ast(block_node(nodes[3])),
     local_fns:  []
   );
 }
@@ -243,13 +243,13 @@ SynUsingBlock build_using_block_1_ast(RuleMatch mtc)
 {
   nodes = rule_seq_nodes(mtc);
   assert length(nodes) == 3;
-  return build_using_block_ast(nodes[1], nodes[2]);
+  return build_using_block_ast(nodes[1], block_node(nodes[2]));
 }
 
 SynUsingBlock build_using_block_2_ast(RuleMatch mtc)
 {
   nodes = rule_seq_nodes(mtc);
-  nodes = rule_seq_nodes(nodes[1]);
+  nodes = rule_seq_nodes(block_node(nodes[1]));
   assert length(nodes) == 3;
   return build_using_block_ast(nodes[0], nodes[2]);
 }
@@ -266,7 +266,7 @@ SynSgn build_signature_ast(RuleMatch mtc)
   assert length(nodes) == 3;
   return syn_sgn(
     build_fn_symbol_ast(nodes[1]),
-    [build_type_ast(t) : t <- rep_rule_nodes(nodes[2])],
+    [build_type_ast(t) : t <- rep_rule_nodes(block_node_or_null(nodes[2]))],
     build_type_ast(nodes[0])
   );
 }
@@ -286,8 +286,8 @@ SynProcDef build_proc_def_ast(RuleMatch mtc)
     name = proc_symbol(get_lowercase_id(nodes[0].match));
   ;
 
-  params = [(type: build_type_ast(get_rule_seq_node(ns, 0)), var: var(get_lowercase_id(get_rule_seq_node(ns, 1)))) : ns <- rep_rule_nodes(nodes[1])];
-  body = [build_stmt_ast(n) : n <- rep_rule_nodes(nodes[2])];
+  params = [(type: build_type_ast(get_rule_seq_node(ns, 0)), var: var(get_lowercase_id(get_rule_seq_node(ns, 1)))) : ns <- rep_rule_nodes(block_node(nodes[1]))];
+  body = [build_stmt_ast(n) : n <- rep_rule_nodes(block_node(nodes[2]))];
 
   return proc_def(
     name:     name,
@@ -303,7 +303,7 @@ FnSymbol build_fn_symbol_ast(RuleMatch mtc) =
     operator(op?)     = op_symbol(op);
   ;
 
-[SynFnArg] build_fn_params_ast(RuleMatch mtc) = if mtc /= null_match then [build_fn_arg_ast(m) : m <- rep_rule_nodes(mtc)] else []; //## MAYBE rep_rule_nodes (AND seq_rule_nodes) SHOULD RETURN THE EMPTY SEQUENCE WHEN INVOKED WITH A null_match PARAMETER
+[SynFnArg] build_fn_params_ast(RuleMatch mtc) = if mtc /= null_match then [build_fn_arg_ast(m) : m <- rep_rule_nodes(block_node(mtc))] else []; //## MAYBE rep_rule_nodes (AND seq_rule_nodes) SHOULD RETURN THE EMPTY SEQUENCE WHEN INVOKED WITH A null_match PARAMETER
 
 SynFnArg build_fn_arg_ast(RuleMatch mtc) =
   match (mtc.name)
@@ -323,7 +323,7 @@ SynFnArg build_fn_arg_ast(RuleMatch mtc) =
 
 SynClsType build_cls_type_ast(RuleMatch mtc)
 {
-  nodes = rule_seq_nodes(mtc);
+  nodes = rule_seq_nodes(block_node(mtc));
   assert length(nodes) == 3;
   in_types = [build_type_ast(n) : n <- rep_rule_nodes(nodes[0])];
   out_type = build_type_ast(nodes[2]);
@@ -482,7 +482,7 @@ SynExpr build_expr_1_ast(RuleMatch mtc)
       expr = syn_accessor(expr, field);
     else
       assert r.name == :sub;
-      idx_expr = build_expr_ast(r.match);
+      idx_expr = build_expr_ast(block_node(r.match));
       expr = syn_fn_call(op_symbol(:brackets), [expr, idx_expr]);
     ;
   ;
@@ -503,22 +503,22 @@ SynExpr build_expr_0_ast(RuleMatch mtc) =
     true          = object(true),                               // atomic_rule(keyword(true))
     false         = object(false),                              // atomic_rule(keyword(false))
     nil           = object(nil),                                // atomic_rule(keyword(nil))
-    set           = build_set_expr_ast(mtc.match),              // brace_rule(opt_comma_sep_seq(rule_subexpr))
+    set           = build_set_expr_ast(block_node(mtc.match)),  // brace_rule(opt_comma_sep_seq(rule_subexpr))
     map           = build_map_expr_ast(mtc.match),              // par_rule(opt_comma_sep_seq(rule_map_entry))
     record        = build_record_expr_ast(mtc.match),           // rule_record_expr
     seq           = build_seq_expr_ast(mtc.match),              // rule_seq_expr
     seq_tail      = build_seq_tail_expr_ast(mtc.match),         // rule_seq_tail_expr
     tag_record    = build_tag_record_expr_ast(mtc.match),       // rule_tag_record_expr
     builtin_call  = build_builtin_call_expr_ast(mtc.match),     // rule_seq([atomic_rule(builtin), par_rule(comma_sep_seq(rule_ref_expr))])
-    par_exprs     = build_tuple_or_par_expr_ast(mtc.match),     // par_rule(comma_sep_seq(rule_ref_expr))
+    par_exprs     = build_tuple_or_par_expr_ast(block_node(mtc.match)),   // par_rule(comma_sep_seq(rule_ref_expr))
     ex_qual       = build_ex_qual_expr_ast(mtc.match),          // rule_ex_qual_expr
-    set_cp        = build_set_cp_expr_ast(mtc.match),           // rule_set_cp_expr
+    set_cp        = build_set_cp_expr_ast(block_node(mtc.match)),         // rule_set_cp_expr
     map_cp        = build_map_cp_expr_ast(mtc.match),           // rule_map_cp_expr
     seq_cp        = build_seq_cp_expr_ast(mtc.match),           // rule_seq_cp_expr
     alt_cp        = build_alt_cp_expr_ast(mtc.match),           // rule_alt_cp_expr
     if_else       = build_if_else_expr_ast(mtc.match),          // rule_if_expr
     match_expr    = build_match_expr_ast(mtc.match),            // rule_match_expr
-    proc          = build_proc_expr_ast(mtc.match),             // brace_rule(rep_rule(rule_ref_stmt, true))
+    proc          = build_proc_expr_ast(block_node(mtc.match)), // brace_rule(rep_rule(rule_ref_stmt, true))
     fn_call       = build_fn_call_expr_ast(mtc.match),          // rule_fn_call_expr
     const_or_var  = const_or_var(get_lowercase_id(mtc.match)),  // rule_id
     cls_par       = cls_par(get_cls_par_idx(mtc.match));        // atomic_rule(qual_var))
@@ -528,16 +528,16 @@ SynTagObjExpr build_tag_obj_expr_ast(RuleMatch mtc)
 {
   nodes = rule_seq_nodes(mtc);
   assert length(nodes) == 2;
-  return syn_tag_obj_expr(object(get_qualified_symbol(nodes[0])), build_expr_ast(nodes[1]));
+  return syn_tag_obj_expr(object(get_qualified_symbol(nodes[0])), build_expr_ast(block_node(nodes[1])));
 }
 
 SynSetExpr build_set_expr_ast(RuleMatch mtc) = syn_set_expr([build_subexpr_ast(n) : n <- rep_rule_nodes(mtc)]);
 
-SynSeqExpr build_seq_expr_ast(RuleMatch mtc) = syn_seq_expr([build_subexpr_ast(n) : n <- rep_rule_nodes(mtc)]);
+SynSeqExpr build_seq_expr_ast(RuleMatch mtc) = syn_seq_expr([build_subexpr_ast(n) : n <- rep_rule_nodes(block_node(mtc))]);
 
 SynSeqExpr build_seq_tail_expr_ast(RuleMatch mtc)
 {
-  nodes = rule_seq_nodes(mtc);
+  nodes = rule_seq_nodes(block_node(mtc));
   assert length(nodes) == 2;
   seq_expr = build_expr_ast(nodes[0]);
   tail_exprs = [build_expr_ast(n) : n <- rep_rule_nodes(get_rule_seq_node(nodes[1], 1))];
@@ -551,9 +551,9 @@ SynExpr build_tuple_or_par_expr_ast(RuleMatch mtc)
   return if length(exprs) == 1 then exprs[0] else syn_tuple_expr(exprs);
 }
 
-SynMapExpr build_map_expr_ast(RuleMatch mtc) = syn_map_expr([build_map_entry_ast(n) : n <- rep_rule_nodes(mtc)]);
+SynMapExpr build_map_expr_ast(RuleMatch mtc) = syn_map_expr([build_map_entry_ast(n) : n <- rep_rule_nodes(block_node(mtc))]);
 
-SynMapExpr build_record_expr_ast(RuleMatch mtc) = syn_map_expr([build_record_field_ast(n) : n <- rep_rule_nodes(mtc)]);
+SynMapExpr build_record_expr_ast(RuleMatch mtc) = syn_map_expr([build_record_field_ast(n) : n <- rep_rule_nodes(block_node(mtc))]);
 
 SynTagObjExpr build_tag_record_expr_ast(RuleMatch mtc)
 {
@@ -571,13 +571,13 @@ SynExpr build_builtin_call_expr_ast(RuleMatch mtc)
   nodes = rule_seq_nodes(mtc);
   assert length(nodes) == 2;
   builtin = get_builtin(nodes[0]);
-  params = [build_expr_ast(n) : n <- rep_rule_nodes(nodes[1])];
+  params = [build_expr_ast(n) : n <- rep_rule_nodes(block_node(nodes[1]))];
   return syn_builtin_call(builtin, params);
 }
 
 SynExpr build_ex_qual_expr_ast(RuleMatch mtc)
 {
-  nodes = rule_seq_nodes(mtc);
+  nodes = rule_seq_nodes(block_node(mtc));
   assert length(nodes) == 3;
   clauses = [build_clause_ast(n) : n <- rep_rule_nodes(nodes[1])];
   exprs = build_sel_expr_asts(nodes[2]);
@@ -596,7 +596,7 @@ SynExpr build_set_cp_expr_ast(RuleMatch mtc)
 
 SynExpr build_map_cp_expr_ast(RuleMatch mtc)
 {
-  nodes = rule_seq_nodes(mtc);
+  nodes = rule_seq_nodes(block_node(mtc));
   assert length(nodes) == 6;
   key_expr = build_expr_ast(nodes[0]);
   value_expr = build_expr_ast(nodes[2]);
@@ -607,7 +607,7 @@ SynExpr build_map_cp_expr_ast(RuleMatch mtc)
 
 SynLCExpr build_seq_cp_expr_ast(RuleMatch mtc)
 {
-  nodes = rule_seq_nodes(mtc);
+  nodes = rule_seq_nodes(block_node(mtc));
   assert length(nodes) == 5;
 
   expr     = build_expr_ast(nodes[0]);
@@ -656,9 +656,14 @@ SynExpr build_alt_cp_expr_ast(RuleMatch mtc)
 {
   nodes = rule_seq_nodes(mtc);
   assert length(nodes) == 4;
-  clauses = [build_clause_ast(n) : n <- rep_rule_nodes(nodes[1])];
-  exprs = build_sel_expr_asts(nodes[2]);
-  expr_match = nodes[3].match;
+  clauses = [build_clause_ast(n) : n <- rep_rule_nodes(block_node(nodes[1]))];
+  if (nodes[2] == null_match)
+    exprs = [];
+  else
+    ns = rule_seq_nodes(nodes[2]);
+    exprs = [build_expr_ast(n) : n <- rep_rule_nodes(block_node(ns[1]))];
+  ;
+  expr_match = block_node(nodes[3].match);
   if (nodes[3].name == :set)
     return syn_set_comp(build_expr_ast(expr_match), clauses, exprs);
   else
@@ -690,7 +695,7 @@ SynExpr build_match_expr_ast(RuleMatch mtc)
 {
   nodes = rule_seq_nodes(mtc);
   assert length(nodes) == 4;
-  exprs = [build_expr_ast(n) : n <- rep_rule_nodes(nodes[1])];
+  exprs = [build_expr_ast(n) : n <- rep_rule_nodes(block_node(nodes[1]))];
   cases = [build_switch_case_ast(n) : n <- rep_rule_nodes(nodes[2])];
   return syn_try_expr(exprs, cases);
 }
@@ -703,7 +708,7 @@ SynExpr build_fn_call_expr_ast(RuleMatch mtc)
   assert length(nodes) == 2;
   fn_name = build_fn_symbol_ast(nodes[0]);
 
-  nodes = rule_seq_nodes(nodes[1]);
+  nodes = rule_seq_nodes(block_node(nodes[1]));
   assert length(nodes) == 2;
 
   params = [build_expr_ast(rule_seq_nodes(n)[1]) : n <- rep_rule_nodes(nodes[0])];
@@ -717,7 +722,7 @@ SynExpr build_fn_call_expr_ast(RuleMatch mtc)
     assert length(nodes) == 4;
 
     name = build_fn_symbol_ast(nodes[0]);
-    params = [(var: var(get_lowercase_id(n))) : n <- rep_rule_nodes(nodes[1])];
+    params = [(var: var(get_lowercase_id(n))) : n <- rep_rule_nodes(block_node_or_null(nodes[1]))];
     expr = build_expr_ast(nodes[3]);
 
     return syn_fn_def(
@@ -832,11 +837,11 @@ SynStmt build_if_stmt_ast(RuleMatch mtc)
 {
   nodes = rule_seq_nodes(mtc);
   assert length(nodes) == 6;
-  cond = build_expr_ast(nodes[1]);
+  cond = build_expr_ast(block_node(nodes[1]));
   stmts = build_stmts_ast(nodes[2]);
   branches = [(cond: cond, body: stmts)];
   for (n : rep_rule_nodes(nodes[3]))
-    cond = build_expr_ast(get_rule_seq_node(n, 1));
+    cond = build_expr_ast(block_node(get_rule_seq_node(n, 1)));
     stmts = build_stmts_ast(get_rule_seq_node(n, 2));
     branches = branches & [(cond: cond, body: stmts)];
   ;
@@ -849,14 +854,14 @@ SynStmt build_loop_stmt_ast(RuleMatch mtc)
   nodes = rule_seq_nodes(mtc);
   stmts = build_stmts_ast(nodes[1]);
   return syn_inf_loop_stmt(stmts) if nodes[2] == null_match;
-  cond = build_expr_ast(get_rule_seq_node(nodes[2], 1));
+  cond = build_expr_ast(get_rule_seq_node(block_node(nodes[2]), 1));
   return syn_loop_stmt(cond, stmts, true);
 }
 
 SynStmt build_while_stmt_ast(RuleMatch mtc)
 {
   nodes = rule_seq_nodes(mtc);
-  cond = build_expr_ast(nodes[1]);
+  cond = build_expr_ast(block_node(nodes[1]));
   stmts = build_stmts_ast(nodes[2]);
   return syn_loop_stmt(cond, stmts);
 }
@@ -864,7 +869,7 @@ SynStmt build_while_stmt_ast(RuleMatch mtc)
 SynStmt build_let_stmt_ast(RuleMatch mtc)
 {
   nodes = rule_seq_nodes(mtc);
-  asgnms = [build_let_asgnm_ast(n) : n <- rep_rule_nodes(nodes[1])];
+  asgnms = [build_let_asgnm_ast(n) : n <- rep_rule_nodes(block_node(nodes[1]))];
   stmts = build_stmts_ast(nodes[2]);
   return syn_let_stmt(asgnms, stmts);
 
@@ -887,7 +892,7 @@ SynStmt build_break_stmt_ast(RuleMatch mtc)
 SynStmt build_for_stmt_ast(RuleMatch mtc)
 {
   nodes = rule_seq_nodes(mtc);
-  iters = [build_iter_ast(n) : n <- rep_rule_nodes(nodes[1])];
+  iters = [build_iter_ast(n) : n <- rep_rule_nodes(block_node(nodes[1]))];
   stmts = build_stmts_ast(nodes[2]);
   return syn_for_stmt(iters, stmts);
 
@@ -956,7 +961,7 @@ SynStmt build_imp_update_stmt(RuleMatch mtc)
   nodes = rule_seq_nodes(mtc);
   assert length(nodes) == 5;
   var = var(get_lowercase_id(nodes[0]));
-  idx_expr = build_expr_ast(nodes[1]);
+  idx_expr = build_expr_ast(block_node(nodes[1]));
   value_expr = build_expr_ast(nodes[3]);
   return syn_imp_update_stmt(var, idx_expr, value_expr);
 }
@@ -979,7 +984,7 @@ SynStmt build_proc_call_stmt_ast(RuleMatch mtc)
   nodes = rule_seq_nodes(mtc);
   assert length(nodes) == 4;
   proc_name = proc_symbol(get_lowercase_id(nodes[1]));
-  params = [build_expr_ast(n) : n <- rep_rule_nodes(nodes[2])];
+  params = [build_expr_ast(n) : n <- rep_rule_nodes(block_node(nodes[2]))];
   return proc_call(proc_name, params) if nodes[0] == null_match;
   var = var(get_lowercase_id(get_rule_seq_node(nodes[0], 0)));
   return proc_call(var, proc_name, params);
@@ -1015,10 +1020,18 @@ SynPtrn build_clause_ptrn_ast(RuleMatch mtc) =
     // rule_seq([atomic_rule(lowercase_id), empty_block_rule(parenthesis)])
     tag_only  = syn_ptrn_tag_obj(get_lowercase_id(mtc.match, 0)),
     // rule_seq([atomic_rule(lowercase_id), par_rule(atomic_rule(lowercase_id))])
-    tag_obj   = syn_ptrn_tag_obj(ptrn_symbol(get_lowercase_id(mtc.match, 0)), ptrn_var(var(get_lowercase_id(mtc.match, 1)), ptrn_any)),
+    tag_obj   = build_tag_obj_clause_ptrn_ast(mtc.match),
     // atomic_rule(lowercase_id)
     var       = ptrn_var(var(get_lowercase_id(mtc.match)), ptrn_any);
   ;
+
+SynPtrn build_tag_obj_clause_ptrn_ast(RuleMatch mtc)
+{
+  nodes = rule_seq_nodes(mtc);
+  tag_symb = get_lowercase_id(nodes[0]);
+  var_symb = get_lowercase_id(block_node(nodes[1]));
+  return syn_ptrn_tag_obj(ptrn_symbol(tag_symb), ptrn_var(var(var_symb), ptrn_any));
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -1053,7 +1066,7 @@ SynPtrn build_switch_ptrn_tag_obj_ast(RuleMatch mtc)
   nodes = rule_seq_nodes(mtc);
   assert length(nodes) == 2;
   tag_ptrn = ptrn_symbol(get_lowercase_id(nodes[0]));
-  return syn_ptrn_tag_obj(tag_ptrn, build_switch_ptrn_ast(nodes[1]));
+  return syn_ptrn_tag_obj(tag_ptrn, build_switch_ptrn_ast(block_node(nodes[1])));
 }
 
 SynPtrn build_switch_ptrn_tag_obj_any_ast(RuleMatch mtc)
@@ -1139,3 +1152,18 @@ RuleMatch get_rule_seq_node(RuleMatch, Nat idx):
 [RuleMatch] rep_rule_nodes(RuleMatch):
   null_match          = [],
   rep_rule_match(ns?) = ns;
+
+RuleMatch block_node(RuleMatch mtc)
+{
+  nodes = rule_seq_nodes(mtc);
+  assert length(nodes) == 3;
+  t0 = get_token(nodes[0]);
+  t2 = get_token(nodes[2]);
+  assert
+    (t0 == left_parenthesis and t2 == right_parenthesis) or
+    (t0 == left_bracket     and t2 == right_bracket)     or
+    (t0 == left_brace       and t2 == right_brace);
+  return nodes[1];
+}
+
+RuleMatch block_node_or_null(RuleMatch mtc) = if mtc /= null_match then block_node(mtc) else null_match;

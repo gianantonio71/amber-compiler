@@ -1,5 +1,5 @@
 
-Result[[PrgDecl], <LexerError, PreParseError, ParserError>] lex_and_parse_src_file([Nat] chars)
+Result[[PrgDecl], <LexerError, ParError, ParserError>] lex_and_parse_src_file([Nat] chars)
 {
   lex_res = lex_src_file(chars);
   return lex_res if is_failure(lex_res);
@@ -19,11 +19,10 @@ Result[[PrgDecl], <LexerError, PreParseError, ParserError>] lex_and_parse_src_fi
     fndef_switch: rule_switch_fndef
   );
 
-  pre_parse_res = pre_parse_file(tokens);
-  return pre_parse_res if is_failure(pre_parse_res);
-  pre_ast = get_result(pre_parse_res);
+  maybe_err = parentheses_error(tokens);
+  return failure(value(maybe_err)) if maybe_err /= nil;
 
-  parser_res = parse_all(rule_amber_file, pre_ast, rec_rules);
+  parser_res = parse_all(rule_amber_file, tokens, rec_rules);
   return parser_res if is_failure(parser_res);
   parser_match = get_result(parser_res);
 
@@ -81,44 +80,32 @@ PrgDecl reshuffle_local_fndefs(PrgDecl decl)
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type PreParseError = parenthesis_not_closed(AnnotatedToken),
-                     parenthesis_not_opened(AnnotatedToken),
-                     mismatched_parenthesis(left: AnnotatedToken, right: AnnotatedToken);
-
-type PreParseResult = Result[PreAst, PreParseError];
+type ParError       = parenthesis_not_closed(AnnotatedToken),
+                      parenthesis_not_opened(AnnotatedToken),
+                      mismatched_parenthesis(left: AnnotatedToken, right: AnnotatedToken);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-PreParseError parenthesis_not_closed(AnnotatedToken p)                    = :parenthesis_not_closed(p);
-PreParseError parenthesis_not_opened(AnnotatedToken p)                    = :parenthesis_not_opened(p);
-PreParseError mismatched_parenthesis(AnnotatedToken l, AnnotatedToken r)  = mismatched_parenthesis(left: l, right: r);
+ParError parenthesis_not_closed(AnnotatedToken p)                    = :parenthesis_not_closed(p);
+ParError parenthesis_not_opened(AnnotatedToken p)                    = :parenthesis_not_opened(p);
+ParError mismatched_parenthesis(AnnotatedToken l, AnnotatedToken r)  = mismatched_parenthesis(left: l, right: r);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-PreParseResult pre_parse_file([AnnotatedToken] tokens)
+Maybe[ParError] parentheses_error([AnnotatedToken] tokens)
 {
   par_stack = nil;
-  pre_ast_stack = push(nil, []);
   for (at : tokens)
     t = at.token;
-    new_node = at;
     if (t == left_parenthesis or t == left_bracket or t == left_brace)
       par_stack = push(par_stack, at);
-      pre_ast_stack = push(pre_ast_stack, []);
     elif (t == right_parenthesis or t == right_bracket or t == right_brace)
-      return failure(parenthesis_not_opened(at)) if par_stack == nil;
+      return just(parenthesis_not_opened(at)) if par_stack == nil;
       last_par = peek(par_stack);
       //## SHOULD FIND A WAY TO MAKE THIS SYNTACTLY PALATABLE
-      return failure(mismatched_parenthesis(last_par, at)) if match (last_par.token, t) left(pt1?), right(pt2?) = pt1 /= pt2;;
+      return just(mismatched_parenthesis(last_par, at)) if match (last_par.token, t) left(pt1?), right(pt2?) = pt1 /= pt2;;
       par_stack = pop(par_stack);
-      new_node = peek(pre_ast_stack) & [at];
-      pre_ast_stack = pop(pre_ast_stack);
     ;
-    pre_ast_stack = replace_top(pre_ast_stack, peek(pre_ast_stack) & [new_node]);
   ;
-  return failure(parenthesis_not_closed(peek(par_stack))) if par_stack /= nil;
-  assert pop(pre_ast_stack) == nil;
-  return success(peek(pre_ast_stack));
+  return if par_stack /= nil then just(parenthesis_not_closed(peek(par_stack))) else nil;
 }
-
-////////////////////////////////////////////////////////////////////////////////
