@@ -1,6 +1,6 @@
 
 SymbObj object(Atom a) = :object(a);
-LeafObj object(Int n) = :object(n);
+IntObj  object(Int n)  = :object(n);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -12,11 +12,11 @@ TypeName type_name(BasicTypeSymbol ts, Nat arity) = type_name(symbol: ts, arity:
 
 ////////////////////////////////////////////////////////////////////////////////
 
-void_type = :void_type;
+<void_type> void_type = :void_type;
 
-atom_type = :atom_type;
+<atom_type> atom_type = :atom_type;
 
-float_type = :float_type;
+<float_type> float_type = :float_type;
 
 SymbType symb_type(SymbObj obj) = :symb_type(obj);
 SymbType symb_type(Atom symbol) = :symb_type(:object(symbol));
@@ -24,15 +24,15 @@ SymbType symb_type(Atom symbol) = :symb_type(:object(symbol));
 IntType integer = :integer;
 IntType low_ints(Int max) = low_ints(max: max);
 IntType high_ints(Int min) = high_ints(min: min);
-IntType int_range(Int min, Int max) = int_range(min: min, size: max-min+1); //## BUG: WHAT HAPPENS IF max IS LOWER THAN min?
+IntType int_range(Int min, Int max) = int_range(min: min, size: nz_nat(max-min+1)); //## BUG: WHAT HAPPENS IF max IS LOWER THAN min?
 
 TypeRef type_ref(TypeSymbol s) = :type_ref(s);
 
 TypeVar type_var(<Atom, Nat> n) = :type_var(n);
 
-empty_seq_type = :empty_seq_type;
-empty_set_type = :empty_set_type;
-empty_map_type = :empty_map_type;
+<empty_seq_type> empty_seq_type = :empty_seq_type;
+<empty_set_type> empty_set_type = :empty_set_type;
+<empty_map_type> empty_map_type = :empty_map_type;
 
 NeSeqType[T] ne_seq_type(T elem_type) = ne_seq_type(elem_type: elem_type);
 
@@ -50,25 +50,19 @@ TupleType[T] tuple_type([T^] ts)
 
 TagObjType[T] tag_obj_type(TagType tag_type, T obj_type) = tag_obj_type(tag_type: tag_type, obj_type: obj_type);
 
-AnonType map_type(T key_type, T value_type, Bool may_be_empty)
+AnonType map_type(AnonType key_type, AnonType value_type, Bool may_be_empty)
 {
   type = ne_map_type(key_type, value_type);
   return if may_be_empty then union_type({type, empty_map_type}) else type;
 }
 
-T union_type(T+ types) //## BAD: HERE I SHOULD CONSTRAIN THE TYPE OF T SO THAT IT IS A SUBTYPE OF Type, SelfRecPretype or MutRecPretype
+AnonType union_type(AnonType+ types) //## BAD: HERE I SHOULD CONSTRAIN THE TYPE OF T SO THAT IT IS A SUBTYPE OF Type, SelfRecPretype or MutRecPretype
 {
   norm_types = union({expand_union_types(t) : t <- types});
   assert not (? union_type() <- norm_types);
-  return if size(norm_types) > 1 then :union_type(norm_types) else only_element(norm_types);
+  return if size(norm_types) > 1 then :union_type(nonempty(norm_types)) else only_element(norm_types);
 
-  // res = if size(norm_types) > 1 then :union_type(norm_types) else only_element(norm_types);
-  // if (not anon_type_is_wf(res))
-  //   print "* * * * * * * * * * * * *";
-  //   print res;
-  // ;
-
-  T* expand_union_types(T type):
+  AnonType* expand_union_types(AnonType type):
 		union_type(ts?) = union({expand_union_types(t) : t <- ts}),
 		_								= {type};
 }
@@ -91,7 +85,7 @@ FnType fn_type([ExtType] ps, (NamedPar => ExtType) nps, AnonType rt) = fn_type(p
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Pattern ptrn_symbol                             = :ptrn_symbol;
+TagPtrn ptrn_symbol                             = :ptrn_symbol;
 Pattern ptrn_integer                            = :ptrn_integer(:integer);
 Pattern ptrn_float                              = :ptrn_float;
 
@@ -107,8 +101,8 @@ Pattern ptrn_set                                = ptrn_union({ptrn_empty_set, pt
 Pattern ptrn_map                                = ptrn_union({ptrn_empty_map, ptrn_ne_map});
 
 Pattern ptrn_any                                = :ptrn_any;
-Pattern ptrn_symbol(Atom a)                     = :ptrn_symbol(:object(a));
-Pattern ptrn_symbol(SymbObj s)                  = :ptrn_symbol(s);
+TagPtrn ptrn_symbol(Atom a)                     = :ptrn_symbol(:object(a));
+TagPtrn ptrn_symbol(SymbObj s)                  = :ptrn_symbol(s);
 Pattern ptrn_integer(Int n)                     = ptrn_integer(int_range(n, n));
 Pattern ptrn_integer(IntObj n)                  = ptrn_integer(_obj_(n));
 Pattern ptrn_integer(IntType type)              = :ptrn_integer(type);
@@ -136,9 +130,9 @@ Var named_par(Atom a) = :named_par(a);
 
 ClsVar cls_var(Atom a)  = :cls_var(a);
 
-ClsPar non_scalar_par(ClsVar v, UserClsType t) = non_scalar_par(var: v, arity: arity(t), type: t);
-ClsPar non_scalar_par(ClsVar v, NzNat a)       = non_scalar_par(var: v, arity: a);
-ClsPar non_scalar_par(NzNat a)                 = non_scalar_par(arity: a);
+FnFrmPar non_scalar_par(ClsVar v, UserClsType t) = non_scalar_par(var: v, arity: arity(t), type: t);
+FnFrmPar non_scalar_par(ClsVar v, NzNat a)       = non_scalar_par(var: v, arity: a);
+FnFrmPar non_scalar_par(NzNat a)                 = non_scalar_par(arity: a);
 
 Expr float_lit(Int m, Int e)  = float_lit(mantissa: m, dec_exp: e);
 
@@ -154,7 +148,7 @@ Expr if_expr(Expr cond, Expr true_expr, Expr false_expr) = if_expr(cond: cond, t
 
 ClsExpr fn_ptr(FnSymbol s, NzNat a)              = fn_ptr(name: s, arity: a);
 ClsExpr cls_expr(Nat a, Expr e)                  = cls_expr(a * [nil], e);
-ClsExpr cls_expr([<var(Atom), nil>^] ps, Expr e) = cls_expr(params: ps, expr: e);
+ClsExpr cls_expr([<var(Atom), nil>] ps, Expr e)  = cls_expr(params: nonempty(ps), expr: e);
 
 ////////////////////////////////////////////////////////////////////////////////
 

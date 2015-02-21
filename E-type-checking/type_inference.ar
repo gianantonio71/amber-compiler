@@ -37,7 +37,7 @@ using
     match_expr()      = match_expr_type(expr.exprs, expr.cases),
     do_expr(ss?)      = return_type(ss),
     ex_qual()         = type_bool,
-    set_comp()        = ne_set_type(expr_type(expr.expr, environment=refine_environment(expr.source))),
+    set_comp()        = set_comp_expr_type(expr.expr, expr.source, if expr.sel_expr? then just(expr.sel_expr) else nil),
     map_comp()        = map_comp_expr_type(expr.key_expr, expr.value_expr, expr.source),
     seq_comp()        = if expr.src_expr_type == :sequence
                           then seq_comp_expr_type(expr.expr, expr.vars, if expr.idx_var? then just(expr.idx_var) else nil, expr.src_expr)
@@ -151,6 +151,17 @@ using
   }
 
 
+  AnonType set_comp_expr_type(Expr expr, Clause source, Maybe[Expr] maybe_sel_expr)
+  {
+    new_env = refine_environment(source);
+    if (maybe_sel_expr /= nil)
+      sel_expr = value(maybe_sel_expr);
+      new_env = left(refine_environment(sel_expr, environment=new_env));
+    ;
+    return ne_set_type(expr_type(expr, environment=new_env));
+  }
+
+
   AnonType map_comp_expr_type(Expr key_expr, Expr value_expr, Clause source)
   {
     new_env = refine_environment(source);
@@ -162,10 +173,13 @@ using
 
   AnonType seq_comp_expr_type(Expr expr, [Var^] vars, Maybe[Var] maybe_idx_var, Expr src_expr)
   {
-    elem_type = seq_elem_type(expr_type(src_expr));
+    src_expr_type = expr_type(src_expr);
+    return empty_seq_type if is_subset(src_expr_type, empty_seq_type);
+    elem_type = seq_elem_type(src_expr_type);
     assert elem_type /= void_type;
     env_delta = asgnm_env_updates(vars, elem_type) & (value(maybe_idx_var) => type_nat if maybe_idx_var /= nil);
-    return type_seq(expr_type(expr, environment=update(environment, env_delta)));
+    expr_elem_type = expr_type(expr, environment=update(environment, env_delta));
+    return if is_subset(empty_seq_type, src_expr_type) then type_seq(expr_elem_type) else ne_seq_type(expr_elem_type);
   }
 
 
@@ -414,25 +428,28 @@ using
     elif (cond :: <eq(left: Expr, right: Expr)>)
       expr1, expr2 = if cond.left :: Var then (cond.left, cond.right) else (cond.right, cond.left);
       if (expr1 :: Var)
-        type_if_eq, type_if_not_eq = refine_var_type_with_eq(environment[expr1], expr2);
+        type_if_eq, type_if_not_eq = eq_refine(environment[expr1], expr2);
         if_true_env = update(if_true_env, (expr1 => type_if_eq));
         if_false_env = update(if_false_env, (expr1 => type_if_not_eq));
       ;
 
-    elif (cond :: <not(eq(left: Expr, right: Expr))>)
-      rev_cond = _obj_(cond);
-      expr1, expr2 = if rev_cond.left :: Var then (rev_cond.left, rev_cond.right) else (rev_cond.right, rev_cond.left);
-      if (expr1 :: Var)
-        type_if_eq, type_if_not_eq = refine_var_type_with_eq(environment[expr1], expr2);
-        if_true_env = update(if_true_env, (expr1 => type_if_not_eq));
-        if_false_env = update(if_false_env, (expr1 => type_if_eq));
-      ;
+    elif (cond :: <not_expr(Expr)>)
+      if_false_env, if_true_env = refine_environment(_obj_(cond));
+
+    elif (cond :: <accessor_test(expr: Var, field: SymbObj)>)
+      type_if_true, type_if_false = accessor_test_refine(environment[cond.expr], cond.field);
+      if_true_env = update(if_true_env, (cond.expr => type_if_true)) if type_if_true /= void_type;
+      if_false_env = update(if_false_env, (cond.expr => type_if_false)) if type_if_false /= void_type;
+
+    elif (cond :: <and_expr(left: Expr, right: Expr)>)
+      et, ef = refine_environment(cond.left);
+      if_true_env, ef = refine_environment(cond.right, environment=et);
     ;
 
     return (if_true_env, if_false_env);
 
 
-    (AnonType, AnonType) refine_var_type_with_eq(AnonType type, Expr obj)
+    (AnonType, AnonType) eq_refine(AnonType type, Expr obj)
     {
       type_if_eq, type_if_not_eq = match (obj)
         object(+ a?)  = (symb_type(a),    subtract_obj_from_type(type, a)),
@@ -446,6 +463,46 @@ using
       type_if_not_eq = type if type_if_not_eq == void_type;
       return (type_if_eq, type_if_not_eq);
     }
+
+
+    (AnonType, AnonType) accessor_test_refine(AnonType type, SymbObj field):
+      LeafType                = (void_type, type),
+      SelfPretype             = {fail;},
+      type_var()              = (type, type),
+      ne_seq_type()           = (void_type, type),
+      ne_set_type()           = (void_type, type),
+      ne_map_type()           = (type, type),
+      record_type(fs?)        =
+        if has_key(fs, field)
+          then (record_type((l => (type: f.type, optional: l /= field and f.optional) : l => f <- fs)), type)
+          else (void_type, type),
+      tuple_type()            = (void_type, type),
+      tag_obj_type()          =
+        match (type.obj_type)
+          tag_obj_type()  = (void_type, type),
+          _               = {
+            ref_obj_type_if_true, ref_obj_type_if_false = accessor_test_refine(type.obj_type, field);
+            return (
+              if ref_obj_type_if_true == void_type then void_type else tag_obj_type(type.tag_type, ref_obj_type_if_true),
+              if ref_obj_type_if_false == void_type then void_type else tag_obj_type(type.tag_type, ref_obj_type_if_false)
+            );
+          };,
+      union_type(ts?)         = {
+        rts = {accessor_test_refine(t, field) : t <- ts};
+        rts_if_true = {rtt : rt <- rts, rtt = left(rt), rtt /= void_type};
+        rts_if_false = {rtf : rt <- rts, rtf = right(rt), rtf /= void_type};
+        return (
+          if rts_if_true  == {} then void_type else union_type(rts_if_true),
+          if rts_if_false == {} then void_type else union_type(rts_if_false)
+        );
+      },
+      RecType[AnonType]       = {
+        unfolded_type = unfold(type);
+        type_if_true, type_if_false = accessor_test_refine(unfolded_type, field);
+        type_if_true = type if type_if_true == unfolded_type;
+        type_if_false = type if type_if_false == unfolded_type;
+        return (type_if_true, type_if_false);
+      };
   }
 
   //////////////////////////////////////////////////////////////////////////////

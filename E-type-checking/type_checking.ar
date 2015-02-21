@@ -71,8 +71,8 @@ using
       fn_call()             = typecheck_fn_call(expr.name, expr.params, expr.named_params, exp_type),
       cls_call()            = typecheck_cls_call(expr.params, closures[expr.name], exp_type),
       builtin_call()        = typecheck_builtin_call(expr.name, expr.params, exp_type),
-      and_expr()            = typecheck_bool_op(expr.left, expr.right, exp_type),
-      or_expr()             = typecheck_bool_op(expr.left, expr.right, exp_type),
+      and_expr()            = typecheck_and_expr(expr.left, expr.right, exp_type),
+      or_expr()             = typecheck_or_expr(expr.left, expr.right, exp_type),
       not_expr(e?)          = typecheck_bool_op(e, exp_type),
       eq()                  = typecheck_eq_expr(expr.left, expr.right, exp_type),
       membership()          = invalid_type_if_not_subset(type_bool, exp_type) & typecheck(expr.obj, type_any),
@@ -96,8 +96,13 @@ using
   }
 
 
-  TypeCheckingError* typecheck(CondExpr expr, AnonType exp_type) = typecheck(expr.expr, exp_type) &
-                                                                   typecheck(expr.cond, type_bool);
+  TypeCheckingError* typecheck(CondExpr expr, AnonType exp_type)
+  {
+    errs = typecheck(expr.cond, type_bool);
+    return errs if errs /= {};
+    new_env = left(refine_environment(expr.cond));
+    return typecheck(expr.expr, exp_type, environment=new_env);
+  }
 
 
   TypeCheckingError* typecheck_set_expr(SubExpr* subexprs, AnonType exp_type)
@@ -148,7 +153,7 @@ using
   {
     // If the expression may evaluate to the empty map, we check that the empty map is included in the expected type
     may_be_empty = not (? e <- entries : not e.cond?);
-    errs = {obj_does_not_belong_to_type((), exp_type) if may_be_empty};
+    errs = {obj_does_not_belong_to_type((), exp_type) if may_be_empty and not type_contains_obj(exp_type, ())};
     return errs if entries == {};
     // Inclusion conditions, if they exist, must typecheck as booleans
     errs = errs & union({typecheck(e.cond, type_bool) : e <- entries, e.cond?});
@@ -225,8 +230,12 @@ using
 
     //## BUG: FROM NOW ON IT'S ALL BROKEN, OF COURSE...
 
-    candidate_signatures = {s : s <- signatures[name], length(params) == arity(s), will_dispatch_to(s, params)};
-    return {no_suitable_function_found} if candidate_signatures == {};
+    signatures_by_name_and_arity = {s : s <- signatures[name], length(params) == arity(s)};
+    candidate_signatures = {s : s <- signatures_by_name_and_arity, will_dispatch_to(s, params)};
+    if (candidate_signatures == {})
+      par_types = [if p :: Expr then just(expr_type(p)) else nil : p <- params];
+      return {no_suitable_function_found(signatures_by_name_and_arity, par_types)};
+    ;
 
     assert size(candidate_signatures) == 1;
     target_signature = only_element(candidate_signatures);
@@ -309,10 +318,20 @@ using
     invalid_type_if_not_subset(type_bool, exp_type) & typecheck(expr, type_bool);
 
 
-  TypeCheckingError* typecheck_bool_op(Expr left_expr, Expr right_expr, AnonType exp_type) =
-    invalid_type_if_not_subset(type_bool, exp_type) &
-    typecheck(left_expr, type_bool) &
-    typecheck(right_expr, type_bool);
+  TypeCheckingError* typecheck_and_expr(Expr left_expr, Expr right_expr, AnonType exp_type)
+  {
+    errs = typecheck_bool_op(left_expr, exp_type);
+    right_expr_env = left(refine_environment(left_expr));
+    return errs & typecheck(right_expr, exp_type, environment=right_expr_env);
+  }
+
+
+  TypeCheckingError* typecheck_or_expr(Expr left_expr, Expr right_expr, AnonType exp_type)
+  {
+    errs = typecheck_bool_op(left_expr, exp_type);
+    right_expr_env = right(refine_environment(left_expr));
+    return errs & typecheck(right_expr, exp_type, environment=right_expr_env);
+  }
 
 
   TypeCheckingError* typecheck_eq_expr(Expr left_expr, Expr right_expr, AnonType exp_type) =
@@ -410,7 +429,11 @@ using
     errs = typecheck(source);
     return errs if errs /= {};
     new_env = refine_environment(source);
-    errs = typecheck(value(maybe_sel_expr), type_bool, environment=new_env) if maybe_sel_expr /= nil;
+    if (maybe_sel_expr /= nil)
+      sel_expr = value(maybe_sel_expr);
+      errs = typecheck(sel_expr, type_bool, environment=new_env);
+      new_env = left(refine_environment(sel_expr, environment=new_env));
+    ;
     exp_elem_type = set_elem_type(exp_type);
     return errs & if exp_elem_type /= void_type
       then typecheck(expr, exp_elem_type, environment=new_env)

@@ -44,7 +44,7 @@ using Bool inst_type_vars
 
     loop
       // Trying all the untested supertypes and merging all conditions
-      new_hypotheses = all_conds({is_subset_if(_obj_(t1), t) : t <- untested_supertypes});
+      new_hypotheses = all_conds({is_subset_if(inner_pretype(t1), t) : t <- untested_supertypes});
 
       // If at least one of the types cannot possibly be a supertype, then we are done
       return not_a_subset if new_hypotheses == not_a_subset;
@@ -71,17 +71,46 @@ using Bool inst_type_vars
 
   IsSubset is_mut_rec_subset_if(MutRecType[AnonType] t1, AnonType t2)
   {
-    fail;
-    // tested_hypotheses   = {};
-    // untested_hypotheses = {(subtype: t1, supertype: t2)};
+    tested_hypotheses = {};
+    untested_hypotheses = {(t1, t2)};
+    type_var_conds = {};
 
-    // loop
-    //   new_hypotheses = all_conds({is_subset_if(h.subtype.types[h.subtype.index], h.type) : h <- untested_hypotheses});
-    //   return not_a_subset if new_hypotheses == not_a_subset;
-    //   tested_hypotheses = tested_hypotheses & untested_hypotheses;
-    //   // untested_hypotheses = {(subtype: )}
-    //   return {} if untested_hypotheses == {};
-    // ;
+    loop
+      new_untested_hypotheses = {};
+
+      for (subtype, supertype : rand_sort(untested_hypotheses))
+        // Trying all the untested supertypes and merging all conditions
+        new_conds = is_subset_if(inner_pretype(subtype), supertype);
+
+        // If at least one of the types cannot possibly be a supertype, then we are done
+        return not_a_subset if new_conds == not_a_subset;
+
+        // Separating constraints about recursion from the ones about type variables
+        new_rec_conds = {h : subset_if() h <- new_conds};
+        new_var_conds = {h : subset_when() h <- new_conds};
+
+        assert new_conds == new_rec_conds & new_var_conds;
+
+        // Generating the next round of candidate supertypes to test
+        new_untested_hypotheses = new_untested_hypotheses & {(expand_rec_ref(c.subset, subtype), c.superset) : c <- new_rec_conds};
+
+        // Adding the new hypotheses about type variables to the previous ones
+        type_var_conds = type_var_conds & new_var_conds;
+      ;
+
+      // Removing the hypotheses that have already been tested
+      new_untested_hypotheses = new_untested_hypotheses - tested_hypotheses;
+
+      // If there are no new candidate supertypes to test, we just return the constraints on the type variable
+      return type_var_conds if new_untested_hypotheses == {};
+
+      // Generating the next round of candidate supertypes to test
+      tested_hypotheses = tested_hypotheses & untested_hypotheses;
+      untested_hypotheses = new_untested_hypotheses;
+    ;
+
+    MutRecType[AnonType] expand_rec_ref(SelfPretype ref, MutRecType[AnonType] type):
+      self(n?)  = mut_rec_type(n, type.types);
   }
 
 
@@ -93,13 +122,13 @@ using Bool inst_type_vars
     type_var(),           _                   = if is_type_any(t2) then {} else not_a_subset,
 
     // Dealing with all the recursive stuff
-    SelfPretype,          _                   = subset_if(t1, t2), //## BUG: HERE WE ALSO NEED TO KNOW WHAT THE self/self() TERMS EXPAND TO
+    SelfPretype,          _                   = subset_if(t1, t2),
     _,                    SelfPretype         = {fail;},
 
-    self_rec_type(pt1?),  _                   = is_self_rec_subset_if(t1, t2),
+    self_rec_type(),      _                   = is_self_rec_subset_if(t1, t2),
     _,                    self_rec_type()     = is_subset_if(t1, unfold(t2)),
 
-    mut_rec_type(),       _                   = {fail;},
+    mut_rec_type(),       _                   = is_mut_rec_subset_if(t1, t2),
     _,                    mut_rec_type()      = is_subset_if(t1, unfold(t2)),
 
     // Type unions now
