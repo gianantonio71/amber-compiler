@@ -1,4 +1,4 @@
-AnonType unfold(AnonType type, (SelfPretype => AnonType) sub_map):
+Type unfold(Type type, (SelfPretype => Type) sub_map):
   LeafType          = type,
   TypeVar           = type,
   SelfPretype       = sub_map[type],
@@ -13,7 +13,7 @@ AnonType unfold(AnonType type, (SelfPretype => AnonType) sub_map):
   mut_rec_type()    = type;
 
 
-AnonType unfold(AnonType type):
+Type unfold(Type type):
   self_rec_type(t?) = unfold(t, (self => type)),
   mut_rec_type()    = unfold(type.types[type.index], (self(i) => mut_rec_type(i, type.types) : i <- index_set(type.types))),
   _                 = type;
@@ -21,16 +21,16 @@ AnonType unfold(AnonType type):
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-AnonType replace_type_vars_with_type_any(ExtType type) = replace_type_vars_computed(type, type_any);
+Type replace_type_vars_with_type_any(ExtType type) = replace_type_vars_computed(type, type_any);
 
-AnonType replace_type_vars(ExtType type, (TypeVar => AnonType) substitutions) = replace_type_vars_computed(type, substitutions[$]);
+Type replace_type_vars(ExtType type, (TypeVar => Type) substitutions) = replace_type_vars_computed(type, substitutions[$]);
 
-AnonType replace_known_type_vars(ExtType type, (TypeVar => AnonType) substitutions) =
+Type replace_known_type_vars(ExtType type, (TypeVar => Type) substitutions) =
   replace_type_vars_computed(type, if has_key(substitutions, $) then substitutions[$] else $);
 
 
 //## BAD: FIND DECENT NAME, OR EVEN BETTER, REMOVE THE RESTRICTIONS ABOUT CLOSURE PARAMETERS FOR FUNCTIONS WITH SAME NAME AND ARITY
-AnonType replace_type_vars_computed(AnonType type, (TypeVar -> AnonType) replace):
+Type replace_type_vars_computed(Type type, (TypeVar -> Type) replace):
   LeafType          = type,
   SelfPretype       = type,
   TypeVar           = replace(type),
@@ -45,7 +45,7 @@ AnonType replace_type_vars_computed(AnonType type, (TypeVar -> AnonType) replace
   mut_rec_type()    = mut_rec_type(index: type.index, types: [replace_type_vars_computed(t, replace) : t <- type.types]);
 
 
-ClsType replace_type_vars_computed(ClsType type, (TypeVar -> AnonType) replace) =
+ClsType replace_type_vars_computed(ClsType type, (TypeVar -> Type) replace) =
   cls_type(
     [replace_type_vars_computed(t, replace) : t <- type.in_types],
     replace_type_vars_computed(type.out_type, replace)
@@ -55,13 +55,13 @@ ClsType replace_type_vars_computed(ClsType type, (TypeVar -> AnonType) replace) 
 ////////////////////////////////////////////////////////////////////////////////
 
 //## HOW IS THIS DIFFERENT FROM split_type()?
-// AnonType+ expand_type(AnonType type):
+// Type+ expand_type(Type type):
 //   union_type(ts?)   = union({expand_type(t) : t <- ts}),
 //   self_rec_type(t?) = expand_type(replace_rec_refs(t, (self => type))),
 //   mut_rec_type()    = expand_type(replace_rec_refs(type.types[type.index], (self(i) => mut_rec_type(i, type.types) : i < length(type.types)))),
 //   _                 = {type};
 
-<LeafType, TypeVar, CompType[AnonType]>* split_type(AnonType type):
+<LeafType, TypeVar, CompType>* split_type(Type type):
   LeafType        = {type}, //## BAD: EXACT SAME EXPRESSION REPEATED 8 TIMES
   type_var()      = {type},
   ne_seq_type()   = {type},
@@ -104,13 +104,13 @@ ClsType replace_type_vars_computed(ClsType type, (TypeVar -> AnonType) replace) 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-Bool may_match(Pattern ptrn, AnonType type) = type_pattern_intersection_superset(type, ptrn) /= void_type;
+Bool may_match(Pattern ptrn, Type type) = type_pattern_intersection_superset(type, ptrn) /= void_type;
 
 
 // Rule: the type returned by this function is always a subset of the input one
 // With one exception (record types which include the empty map) the returned
 // type is also a subset of the [type implicitly defined by] the input pattern
-ClosedType type_pattern_intersection_superset(AnonType type, Pattern ptrn):
+ClosedType type_pattern_intersection_superset(Type type, Pattern ptrn):
   _,                  ptrn_any          = type,
   _,                  ptrn_var()        = type_pattern_intersection_superset(type, ptrn.ptrn),
   _,                  ptrn_union(ps?)   = type_patterns_intersection_superset(type, ps),
@@ -167,7 +167,7 @@ ClosedType type_pattern_intersection_superset(AnonType type, Pattern ptrn):
   mut_rec_type(),     _                 = type_pattern_intersection_superset(unfold(type), ptrn);
 
 
-ClosedType type_patterns_intersection_superset(AnonType type, Pattern* ptrns)
+ClosedType type_patterns_intersection_superset(Type type, Pattern* ptrns)
 {
   types = {type_pattern_intersection_superset(type, p) : p <- ptrns} - {void_type};
   return void_type if types == {};
@@ -191,7 +191,7 @@ ClosedType type_patterns_intersection_superset(AnonType type, Pattern* ptrns)
 
 //## THIS IS PRETTY MUCH UNTESTED. IT SHOULD BE TESTED WITH THE TYPE SUBSET TESTING CODE,
 //## AND MAYBE IT WOULD BE GOOD TO DO SOME MANUAL TESTING, ESPECIALLY FOR TUPLE TYPES
-Bool type_contains_obj(AnonType type, Any obj):
+Bool type_contains_obj(Type type, Any obj):
   atom_type,        +           = true,
   atom_type,        _           = false,
 
@@ -248,7 +248,7 @@ Bool type_contains_obj(AnonType type, Any obj):
 //## I COULD ASSERT THAT THE RESULTING TYPE IS A SUBSET OF THE ORIGINAL ONE
 //## THAT WOULD INTRODUCE A CYCLIC DEPENDENCY (ALBEIT ONLY IN DEBUG MODE) BETWEEN
 //## TYPE UTILS AND SUBTYPE CHECKING. ALSO THE SYNTAX WOULD NOT BE GREAT.
-ClosedType subtract_obj_from_type(AnonType type, Any obj):
+ClosedType subtract_obj_from_type(Type type, Any obj):
   symb_type(object(s?))   = if obj == s then void_type else type,
 
   low_ints()              = if obj == type.max then low_ints(type.max-1) else type,
@@ -291,7 +291,7 @@ ClosedType subtract_obj_from_type(AnonType type, Any obj):
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-FnType signature(FnDef fn_def, (TypeName => AnonType) typedefs) =
+FnType signature(FnDef fn_def, (TypeName => Type) typedefs) =
   fn_type(
     params:       [user_type_to_anon_type(p.type, typedefs=typedefs) : p <- fn_def.params],
     named_params: (n => user_type_to_anon_type(t, typedefs=typedefs) : n => t <- fn_def.named_params),
@@ -362,11 +362,11 @@ FnType binary_int_pred  = fn_type([integer, integer], type_bool);
 FnType unary_float_op   = fn_type([float_type], float_type);
 FnType binary_float_op  = fn_type([float_type, float_type], float_type);
 
-AnonType type_seq_t     = type_seq(type_var(:t));
-AnonType type_set_t     = type_set(type_var(:t));
-AnonType type_map_t1_t2 = type_map(type_var(:t1), type_var(:t2));
+Type type_seq_t     = type_seq(type_var(:t));
+Type type_set_t     = type_set(type_var(:t));
+Type type_map_t1_t2 = type_map(type_var(:t1), type_var(:t2));
 
-AnonType type_bare_list(AnonType elem_type) =
+Type type_bare_list(Type elem_type) =
   self_rec_type(
     union_type({
       empty_seq_type,
@@ -377,27 +377,27 @@ AnonType type_bare_list(AnonType elem_type) =
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-AnonType type_bool = union_type({symb_type(true), symb_type(false)});
+Type type_bool = union_type({symb_type(true), symb_type(false)});
 
-AnonType type_nat = high_ints(0);
+Type type_nat = high_ints(0);
 
-AnonType type_seq = type_seq(type_any);
-AnonType type_set = type_set(type_any);
-AnonType type_map = type_map(type_any, type_any);
+Type type_seq = type_seq(type_any);
+Type type_set = type_set(type_any);
+Type type_map = type_map(type_any, type_any);
 
-AnonType type_tagged_obj = tag_obj_type(atom_type, type_any);
+Type type_tagged_obj = tag_obj_type(atom_type, type_any);
 
-AnonType type_seq(AnonType elem_type)  = union_type({empty_seq_type, ne_seq_type(elem_type)});
-AnonType type_set(AnonType elem_type)  = union_type({empty_set_type, ne_set_type(elem_type)});
-AnonType type_mset(AnonType elem_type) = union_type({empty_map_type, ne_map_type(elem_type, high_ints(1))});
+Type type_seq(Type elem_type)  = union_type({empty_seq_type, ne_seq_type(elem_type)});
+Type type_set(Type elem_type)  = union_type({empty_set_type, ne_set_type(elem_type)});
+Type type_mset(Type elem_type) = union_type({empty_map_type, ne_map_type(elem_type, high_ints(1))});
 
-AnonType type_tuple([2..*] size)  = tuple_type(size * [type_any]);
+Type type_tuple([2..*] size)  = tuple_type(size * [type_any]);
 
-AnonType type_map(AnonType key_type, AnonType value_type)  = union_type({empty_map_type, ne_map_type(key_type, value_type)});
+Type type_map(Type key_type, Type value_type)  = union_type({empty_map_type, ne_map_type(key_type, value_type)});
 
-AnonType type_string = tag_obj_type(symb_type(:string), union_type({empty_seq_type, ne_seq_type(type_nat)}));
+Type type_string = tag_obj_type(symb_type(:string), union_type({empty_seq_type, ne_seq_type(type_nat)}));
 
-AnonType type_any =
+Type type_any =
   self_rec_type(
     union_type({
       atom_type,

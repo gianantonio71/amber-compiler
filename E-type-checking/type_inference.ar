@@ -1,18 +1,18 @@
 using
 {
-  (TypeName => AnonType)  typedefs,
+  (TypeName => Type)      typedefs,
   (FnSymbol => FnType*)   signatures,   //## MAYBE HERE I SHOULD INCLUDE THE ARITY IN THE KEY. UPDATE: I DEFINITELY SHOULD
-  (Var => AnonType)       environment,
+  (Var => Type)           environment,
   (Var => ClsType)        closures,
   Var**                   var_aliases;
 
 
   //## HERE I SHOULD REFINE THE ENVIRONMENT BEFORE CALCULATING THE TYPE. SEE ALSO THE TYPECHECKING PART
-  AnonType expr_type(CondExpr expr) = expr_type(expr.expr);
+  Type expr_type(CondExpr expr) = expr_type(expr.expr);
 
 
   // I assume that the expression typechecks
-  AnonType expr_type(Expr expr):
+  Type expr_type(Expr expr):
     SymbObj           = symb_type(expr),
     object(Int n?)    = int_range(min: n, size: 1),
     set_expr(ses?)    = set_expr_type(ses),
@@ -44,7 +44,7 @@ using
                           else int_range_seq_comp_expr_type(expr.expr, expr.vars[0], expr.src_expr, expr.src_expr_type.included);
 
 
-  AnonType set_expr_type(SubExpr* ses)
+  Type set_expr_type(SubExpr* ses)
   {
     return empty_set_type if ses == {};
     type = ne_set_type(union_superset({expr_type(se) : se <- ses}));
@@ -53,7 +53,7 @@ using
   }
 
 
-  AnonType seq_expr_type([SubExpr] ses)
+  Type seq_expr_type([SubExpr] ses)
   {
     return empty_seq_type if ses == [];
     se_set = set(ses);
@@ -63,7 +63,7 @@ using
   }
 
 
-  AnonType seq_tail_expr_type(Expr seq, [Expr^] tail)
+  Type seq_tail_expr_type(Expr seq, [Expr^] tail)
   {
     head_elem_type = seq_elem_type(expr_type(seq));
     tail_elem_types = [expr_type(e) : e <- tail];
@@ -71,7 +71,7 @@ using
   }
 
 
-  AnonType map_expr_type((key: Expr, value: Expr, cond: Expr?)* entries)
+  Type map_expr_type((key: Expr, value: Expr, cond: Expr?)* entries)
   {
     return empty_map_type if entries == {};
     if (not (? e <- entries : not e.key :: SymbObj))
@@ -85,7 +85,7 @@ using
   }
 
 
-  AnonType tag_obj_expr_type(Expr tag_expr, Expr obj_expr)
+  Type tag_obj_expr_type(Expr tag_expr, Expr obj_expr)
   {
     tag_type = expr_type(tag_expr);
     obj_type = expr_type(obj_expr);
@@ -93,7 +93,7 @@ using
   }
 
 
-  AnonType fn_call_expr_type(FnSymbol name, [ExtExpr] params, (NamedPar => ExtExpr) named_params)
+  Type fn_call_expr_type(FnSymbol name, [ExtExpr] params, (NamedPar => ExtExpr) named_params)
   {
     // BUG BUG BUG: THIS IS ALL WRONG. THERE MAY BE MORE THAN JUST ONE TARGET FUNCTION. SHOULD BE:
     // candidate_signatures = {s : s <- signatures[name], length(params) == arity(s) and may_dispatch_to(s, params)};
@@ -104,7 +104,7 @@ using
   }
 
 
-  AnonType builtin_call_expr_type(BuiltIn name, [Expr] params):  //## CAN A BUILTIN HAVE NO ARGUMENTS?
+  Type builtin_call_expr_type(BuiltIn name, [Expr] params):  //## CAN A BUILTIN HAVE NO ARGUMENTS?
     obj   = union_superset({t.obj_type : t <- tagged_obj_types(expr_type(params[0]))}),
     tag   = { tag_types = {t.tag_type : t <- tagged_obj_types(expr_type(params[0]))};
               assert tag_types == {atom_type} or tag_types :: <SymbType+>;
@@ -113,7 +113,7 @@ using
     _     = fn_call_type(builtin_signature(name), params, ());
 
 
-  AnonType accessor_expr_type(Expr expr, SymbObj field)
+  Type accessor_expr_type(Expr expr, SymbObj field)
   {
     types = for (t <- split_type(expr_type(expr))) {
       match (t)
@@ -121,21 +121,21 @@ using
         tag_obj_type()  = match (t.obj_type) record_type() ot? = ot;
       ;
     };
-    assert types :: <RecordType[AnonType]+>;
+    assert types :: <RecordType+>;
     field_types = {mandatory_record_field_type(t, field) : t <- types};
     //## MAYBE union_superset() SHOULD ACCEPT ALSO SETS OF JUST ONE TYPE. WHAT ABOUT THE EMPTY SET?
     return if size(field_types) == 1 then only_element(field_types) else union_superset(field_types);
   }
 
 
-  AnonType if_expr_type(Expr cond, Expr then_expr, Expr else_expr)
+  Type if_expr_type(Expr cond, Expr then_expr, Expr else_expr)
   {
     if_true_env, if_false_env = refine_environment(cond);
     return union_superset(expr_type(then_expr, environment=if_true_env), expr_type(else_expr, environment=if_false_env));
   }
 
 
-  AnonType match_expr_type([Expr^] exprs, [(ptrns: [Pattern^], expr: Expr)^] cases)
+  Type match_expr_type([Expr^] exprs, [(ptrns: [Pattern^], expr: Expr)^] cases)
   {
     ts = [expr_type(e) : e <- exprs];
     res_types = {};
@@ -151,7 +151,7 @@ using
   }
 
 
-  AnonType set_comp_expr_type(Expr expr, Clause source, Maybe[Expr] maybe_sel_expr)
+  Type set_comp_expr_type(Expr expr, Clause source, Maybe[Expr] maybe_sel_expr)
   {
     new_env = refine_environment(source);
     if (maybe_sel_expr /= nil)
@@ -162,7 +162,7 @@ using
   }
 
 
-  AnonType map_comp_expr_type(Expr key_expr, Expr value_expr, Clause source)
+  Type map_comp_expr_type(Expr key_expr, Expr value_expr, Clause source)
   {
     new_env = refine_environment(source);
     key_type = expr_type(key_expr, environment=new_env);
@@ -171,7 +171,7 @@ using
   }
 
 
-  AnonType seq_comp_expr_type(Expr expr, [Var^] vars, Maybe[Var] maybe_idx_var, Expr src_expr)
+  Type seq_comp_expr_type(Expr expr, [Var^] vars, Maybe[Var] maybe_idx_var, Expr src_expr)
   {
     src_expr_type = expr_type(src_expr);
     return empty_seq_type if is_subset(src_expr_type, empty_seq_type);
@@ -183,7 +183,7 @@ using
   }
 
 
-  AnonType int_range_seq_comp_expr_type(Expr expr, Var var, Expr upper_bound_expr, Bool includes_upper_bound)
+  Type int_range_seq_comp_expr_type(Expr expr, Var var, Expr upper_bound_expr, Bool includes_upper_bound)
   {
     //## BAD: WE CAN DO BETTER HERE, IF WE USE THE INFORMATION ON THE TYPE OF THE UPPER BOUND EXPRESSION
     new_env = update(environment, (var => high_ints(0)));
@@ -275,7 +275,7 @@ using
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  (Var => AnonType) update_environment([Statement] stmts)
+  (Var => Type) update_environment([Statement] stmts)
   {
     env = environment;
     for (s : stmts)
@@ -287,7 +287,7 @@ using
 
 
   // Returns the empty map when the statement cannot fall through
-  (Var => AnonType) update_environment(Statement stmt):
+  (Var => Type) update_environment(Statement stmt):
     assignment_stmt()   = update(environment, asgnm_env_updates(stmt.vars, expr_type(stmt.value))),
     return_stmt(e?)     = (),
     if_stmt()           = if_stmt_update_environment(stmt.cond, stmt.body, stmt.else),
@@ -305,7 +305,7 @@ using
     print_stmt()        = environment;
 
 
-  (Var => AnonType) if_stmt_update_environment(Expr cond, [Statement^] body, [Statement] else_body)
+  (Var => Type) if_stmt_update_environment(Expr cond, [Statement^] body, [Statement] else_body)
   {
     if_true_env, if_false_env = refine_environment(cond);
     res_env_true = update_environment(body, environment=if_true_env);
@@ -327,7 +327,7 @@ using
   }
 
 
-  (Var => AnonType) loop_stmt_update_environment([Statement^] body)
+  (Var => Type) loop_stmt_update_environment([Statement^] body)
   {
     //## IS THIS CHECK NECESSARY? IF IT RETURNS OR FAILS (IT CANNOT BREAK) THEN THE RESULT IS MEANINGLESS
     //## ON THE OTHER HAND, RETURNING THE EMPTY MAP MAY BE MORE EFFECTIVE IN DETECTING ERRORS IN
@@ -339,7 +339,7 @@ using
   }
 
 
-  (Var => AnonType) foreach_stmt_update_environment([Var^] vars, Maybe[Var] maybe_idx_var, Expr values, [Statement^] body)
+  (Var => Type) foreach_stmt_update_environment([Var^] vars, Maybe[Var] maybe_idx_var, Expr values, [Statement^] body)
   {
     //## BUG: THE OBJECT HAS BEEN UPDATED: .var (Var) => .vars ([Var^])
     elem_type = seq_elem_type(expr_type(values));
@@ -358,7 +358,7 @@ using
   }
 
 
-  (Var => AnonType) for_stmt_update_environment(Maybe[Var] maybe_var, Expr start_val, Expr end_val, Bool end_val_incl, [Statement^] body)
+  (Var => Type) for_stmt_update_environment(Maybe[Var] maybe_var, Expr start_val, Expr end_val, Bool end_val_incl, [Statement^] body)
   {
     env_0 = environment & (value(maybe_var) => integer if maybe_var /= nil);
     env_1 = update_environment(body, environment=env_0);
@@ -366,7 +366,7 @@ using
   }
 
 
-  (Var => AnonType) let_stmt_update_environment((NamedPar => Expr) asgnms, [Statement^] body)
+  (Var => Type) let_stmt_update_environment((NamedPar => Expr) asgnms, [Statement^] body)
   {
     return () if not may_fall_through(body); //## SEE COMMENT FOR loop_stmt() ABOVE
     env_delta = (v => expr_type(e) : v => e <- asgnms);
@@ -383,8 +383,8 @@ using
 
     for (e, t : zip(params, signature.params))
       //## THIS IS A CHECK THAT SHOULD BE PERFORMED ELSEWHERE.
-      assert (e :: Expr and t :: AnonType) or (e :: ClsExpr and t :: ClsType);
-      if (t :: AnonType)
+      assert (e :: Expr and t :: Type) or (e :: ClsExpr and t :: ClsType);
+      if (t :: Type)
         return false if not is_subset(expr_type(e), replace_type_vars_with_type_any(t));
       ;
     ;
@@ -401,8 +401,8 @@ using
 
     // for (e, t : zip(params, signature.params))
     //   //## THIS IS A CHECK THAT SHOULD BE PERFORMED ELSEWHERE.
-    //   assert (e :: Expr and t :: AnonType) or (e :: ClsExpr and t :: ClsType);
-    //   if (t :: AnonType)
+    //   assert (e :: Expr and t :: Type) or (e :: ClsExpr and t :: ClsType);
+    //   if (t :: Type)
     //     return false if are_disjoint(expr_type(e), replace_type_vars_with_type_any(t));
     //   ;
     // ;
@@ -413,7 +413,7 @@ using
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  ((Var => AnonType), (Var => AnonType)) refine_environment(Expr cond)
+  ((Var => Type), (Var => Type)) refine_environment(Expr cond)
   {
     if_true_env = environment;
     if_false_env = environment;
@@ -449,7 +449,7 @@ using
     return (if_true_env, if_false_env);
 
 
-    (AnonType, AnonType) eq_refine(AnonType type, Expr obj)
+    (Type, Type) eq_refine(Type type, Expr obj)
     {
       type_if_eq, type_if_not_eq = match (obj)
         object(+ a?)  = (symb_type(a),    subtract_obj_from_type(type, a)),
@@ -465,7 +465,7 @@ using
     }
 
 
-    (AnonType, AnonType) accessor_test_refine(AnonType type, SymbObj field):
+    (Type, Type) accessor_test_refine(Type type, SymbObj field):
       LeafType                = (void_type, type),
       SelfPretype             = {fail;},
       type_var()              = (type, type),
@@ -496,7 +496,7 @@ using
           if rts_if_false == {} then void_type else union_type(rts_if_false)
         );
       },
-      RecType[AnonType]       = {
+      RecType             = {
         unfolded_type = unfold(type);
         type_if_true, type_if_false = accessor_test_refine(unfolded_type, field);
         type_if_true = type if type_if_true == unfolded_type;
@@ -509,7 +509,7 @@ using
   //////////////////////////////////////////////////////////////////////////////
 
   // We assume the assignment typechecks
-  (Var => AnonType) asgnm_env_updates([Var^] vars, AnonType value_type)
+  (Var => Type) asgnm_env_updates([Var^] vars, Type value_type)
   {
     if (length(vars) == 1)
       return (vars[0] => value_type);
@@ -520,7 +520,7 @@ using
   }
 
 
-  (Var => AnonType) merge_envs((Var => AnonType) env1, (Var => AnonType) env2)
+  (Var => Type) merge_envs((Var => Type) env1, (Var => Type) env2)
   {
     ks = intersection(keys(env1), keys(env2));
     return (k => union_superset({env1[k], env2[k]}) : k <- ks);
@@ -537,12 +537,12 @@ using
   //## WHAT ABOUT SOMETHING LIKE THIS: x <- xs, x => y <- xys?
   //## BAD: SHOULD CHANGE THE NAME OF THIS FUNCTION, IT DOES A COMPLETELY DIFFERENT
   //## THING FROM refine_environment(Expr)
-  (Var => AnonType) refine_environment(Clause cls) = environment & generated_environment(cls);
+  (Var => Type) refine_environment(Clause cls) = environment & generated_environment(cls);
 
 
   // We assume that the clause typechecks
   //## WOULD BE A GOOD IDEA TO ASSERT IT
-  (Var => AnonType) generated_environment(Clause clause):
+  (Var => Type) generated_environment(Clause clause):
     in_clause()           = generated_environment(clause.ptrn, set_elem_type(expr_type(clause.src))),
     map_in_clause()       = generated_environment(clause.key_ptrn, map_key_type(expr_type(clause.src))) &
                             generated_environment(clause.value_ptrn, map_value_type(expr_type(clause.src))),
@@ -553,7 +553,7 @@ using
     or_clause()           = merge_envs(generated_environment(clause.left), generated_environment(clause.right));
 
 
-  (Var => AnonType) update_environment([Expr^] exprs, [Pattern^] ptrns)
+  (Var => Type) update_environment([Expr^] exprs, [Pattern^] ptrns)
   {
     assert length(exprs) == length(ptrns);
     new_env = environment;
@@ -571,9 +571,9 @@ using
   }
 
 
-  AnonType fn_call_type(FnType signature, [ExtExpr] params, (NamedPar => ExtExpr) named_params)//## DO I NEED THE THIRD PARAMETER?
+  Type fn_call_type(FnType signature, [ExtExpr] params, (NamedPar => ExtExpr) named_params)//## DO I NEED THE THIRD PARAMETER?
   {
-    params_are_scalar = [t :: AnonType : t <- signature.params];
+    params_are_scalar = [t :: Type : t <- signature.params];
     actual_param_types = [expr_type(e) : e @ i <- params, params_are_scalar[i]];
     formal_param_types = [t : t @ i <- signature.params, params_are_scalar[i]];
     type_var_insts = type_var_instantiations_for_subset(actual_param_types, formal_param_types);

@@ -9,7 +9,7 @@
 }
 
 
-TypeCheckingError* typecheck(FnDef fn_def, (TypeName => AnonType) typedefs, (FnSymbol => FnType*) signatures)
+TypeCheckingError* typecheck(FnDef fn_def, (TypeName => Type) typedefs, (FnSymbol => FnType*) signatures)
 {
   errs = set([missing_param_type(p, i) : p @ i <- fn_def.params, not p.type?]) & {missing_res_type if not fn_def.res_type?};
   return errs if errs /= {};
@@ -20,7 +20,7 @@ TypeCheckingError* typecheck(FnDef fn_def, (TypeName => AnonType) typedefs, (FnS
                   (fn_par(i) => user_type_to_anon_type(fn_def.params[i].type) : i <- index_set(fn_def.params), fn_def.params[i].type :: UserType) &
                   (v => user_type_to_anon_type(t) : v => t <- fn_def.named_params, t :: UserType);
 
-    assert scalar_vars :: (Var => AnonType);
+    assert scalar_vars :: (Var => Type);
 
     cls_vars = (p.var => user_type_to_anon_type(p.type) : p <- set(fn_def.params), p.var?, p.type :: UserClsType) &
                (v => user_type_to_anon_type(t) : v => t <- fn_def.named_params, t :: UserClsType);
@@ -39,16 +39,16 @@ TypeCheckingError* typecheck(FnDef fn_def, (TypeName => AnonType) typedefs, (FnS
 
 using
 {
-  (TypeName => AnonType)  typedefs,
+  (TypeName => Type)      typedefs,
   (FnSymbol => FnType*)   signatures,   //## MAYBE HERE I SHOULD INCLUDE THE ARITY IN THE KEY. UPDATE: I DEFINITELY SHOULD
-  (Var => AnonType)       environment,
+  (Var => Type)           environment,
   (ClsVar => ClsType)     closures,
   Var**                   var_aliases;
 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  TypeCheckingError* typecheck(Expr expr, AnonType exp_type)
+  TypeCheckingError* typecheck(Expr expr, Type exp_type)
   {
     errs = typecheck_without_annotations(expr, exp_type);
     return {annotate(err, expr) : err <- errs};
@@ -59,7 +59,7 @@ using
       _                       = annotated_expr_error(err, expr);
 
 
-    TypeCheckingError* typecheck_without_annotations(Expr expr, AnonType exp_type):
+    TypeCheckingError* typecheck_without_annotations(Expr expr, Type exp_type):
       object(obj?)          = {obj_does_not_belong_to_type(obj, exp_type) if not type_contains_obj(exp_type, obj)},
       set_expr(ses?)        = typecheck_set_expr(ses, exp_type),
       seq_expr(ses?)        = typecheck_seq_expr(ses, exp_type),
@@ -96,7 +96,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck(CondExpr expr, AnonType exp_type)
+  TypeCheckingError* typecheck(CondExpr expr, Type exp_type)
   {
     errs = typecheck(expr.cond, type_bool);
     return errs if errs /= {};
@@ -105,7 +105,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_set_expr(SubExpr* subexprs, AnonType exp_type)
+  TypeCheckingError* typecheck_set_expr(SubExpr* subexprs, Type exp_type)
   {
     may_be_empty = subexprs == {} or not (? se <- subexprs : not is_cond_expr(se));
     errs = {obj_does_not_belong_to_type({}, exp_type) if not type_contains_obj(exp_type, {})};
@@ -116,7 +116,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_seq_expr([SubExpr] subexprs, AnonType exp_type)
+  TypeCheckingError* typecheck_seq_expr([SubExpr] subexprs, Type exp_type)
   {
     may_be_empty = subexprs == [] or all([is_cond_expr(se) : se <- subexprs]);
     errs = {obj_does_not_belong_to_type([], exp_type) if not type_contains_obj(exp_type, [])};
@@ -127,7 +127,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_seq_tail_expr(Expr seq, [Expr^] tail, AnonType exp_type)
+  TypeCheckingError* typecheck_seq_tail_expr(Expr seq, [Expr^] tail, Type exp_type)
   {
     exp_elem_type = seq_elem_type(exp_type);
     return {not_a_seq_type} if exp_elem_type == void_type;
@@ -135,7 +135,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_tuple_expr([Expr^] exprs, AnonType exp_type)
+  TypeCheckingError* typecheck_tuple_expr([Expr^] exprs, Type exp_type)
   {
     if (has_tuple_type(exp_type))
       types = tuple_field_types(exp_type);
@@ -149,7 +149,7 @@ using
   }
 
   //## TRY TO REWRITE THIS IN PROLOG-LIKE PSEUDOCODE
-  TypeCheckingError* typecheck_map_expr(<(key: Expr, value: Expr, cond: Expr?)*> entries, AnonType exp_type)
+  TypeCheckingError* typecheck_map_expr(<(key: Expr, value: Expr, cond: Expr?)*> entries, Type exp_type)
   {
     // If the expression may evaluate to the empty map, we check that the empty map is included in the expected type
     may_be_empty = not (? e <- entries : not e.cond?);
@@ -190,7 +190,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_tag_obj_expr(Expr tag_expr, Expr obj_expr, AnonType exp_type)
+  TypeCheckingError* typecheck_tag_obj_expr(Expr tag_expr, Expr obj_expr, Type exp_type)
   {
     tag_errs = typecheck(tag_expr, atom_type);
     return {tag_not_a_symbol(tag_errs)} if tag_errs /= {};
@@ -200,7 +200,7 @@ using
 
     expr_tag_type = expr_type(tag_expr);
 
-    if (expr_tag_type :: UnionType[SymbType])
+    if (expr_tag_type :: <union_type(SymbType+)>)
       //## THIS IS THE TRICKY PART
       fail;
     ;
@@ -221,7 +221,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_fn_call(FnSymbol name, [ExtExpr] params, (NamedPar => ExtExpr) named_params, AnonType exp_type)
+  TypeCheckingError* typecheck_fn_call(FnSymbol name, [ExtExpr] params, (NamedPar => ExtExpr) named_params, Type exp_type)
   {
     // First I check that all scalar positional parameters typecheck. This is something that
     // I need to do before trying to determine the functions this call may dispatch to.
@@ -244,7 +244,7 @@ using
     // the type of the corresponding formal parameter (we already know they typecheck)
     invalid_params = {};
     for (p, t @ i : zip(params, target_signature.params))
-      if (p :: Expr and t :: AnonType)
+      if (p :: Expr and t :: Type)
         actual_type = expr_type(p);
         if (not is_subset(actual_type, replace_type_vars_with_type_any(t))) //## BAD: HERE I SHOULD JUST CALL typecheck()
           invalid_params = invalid_params & {(i, p, actual_type)};
@@ -257,7 +257,7 @@ using
     actual_types = [];
     formal_types = [];
     for (p, t : zip(params, target_signature.params))
-      if (p :: Expr and t :: AnonType)
+      if (p :: Expr and t :: Type)
         actual_types = [actual_types | expr_type(p)];
         formal_types = [formal_types | t];
       ;
@@ -293,7 +293,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_cls_call([Expr] params, ClsType signature, AnonType exp_type)
+  TypeCheckingError* typecheck_cls_call([Expr] params, ClsType signature, Type exp_type)
   {
     assert length(params) == length(signature.in_types);
 
@@ -304,7 +304,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_builtin_call(BuiltIn name, [Expr] params, AnonType exp_type)
+  TypeCheckingError* typecheck_builtin_call(BuiltIn name, [Expr] params, Type exp_type)
   {
     sgn = builtin_signature(name);
     errs = seq_union([typecheck(p, t) : p, t <- zip(params, sgn.params)]);
@@ -314,11 +314,11 @@ using
   }
 
 
-  TypeCheckingError* typecheck_bool_op(Expr expr, AnonType exp_type) =
+  TypeCheckingError* typecheck_bool_op(Expr expr, Type exp_type) =
     invalid_type_if_not_subset(type_bool, exp_type) & typecheck(expr, type_bool);
 
 
-  TypeCheckingError* typecheck_and_expr(Expr left_expr, Expr right_expr, AnonType exp_type)
+  TypeCheckingError* typecheck_and_expr(Expr left_expr, Expr right_expr, Type exp_type)
   {
     errs = typecheck_bool_op(left_expr, exp_type);
     right_expr_env = left(refine_environment(left_expr));
@@ -326,7 +326,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_or_expr(Expr left_expr, Expr right_expr, AnonType exp_type)
+  TypeCheckingError* typecheck_or_expr(Expr left_expr, Expr right_expr, Type exp_type)
   {
     errs = typecheck_bool_op(left_expr, exp_type);
     right_expr_env = right(refine_environment(left_expr));
@@ -334,13 +334,13 @@ using
   }
 
 
-  TypeCheckingError* typecheck_eq_expr(Expr left_expr, Expr right_expr, AnonType exp_type) =
+  TypeCheckingError* typecheck_eq_expr(Expr left_expr, Expr right_expr, Type exp_type) =
     invalid_type_if_not_subset(type_bool, exp_type) &
     typecheck(left_expr, type_any) &
     typecheck(right_expr, type_any);
 
 
-  TypeCheckingError* typecheck_accessor_expr(Expr expr, SymbObj field, AnonType exp_type)
+  TypeCheckingError* typecheck_accessor_expr(Expr expr, SymbObj field, Type exp_type)
   {
     errs = typecheck(expr, type_any);
     return errs if errs /= {};
@@ -349,11 +349,11 @@ using
     ;
     return errs;
 
-    AnonType follow_type(AnonType type):
+    Type follow_type(Type type):
       tag_obj_type()  = type.obj_type,
       _               = type;
 
-    TypeCheckingError* errors(AnonType type, SymbObj field, AnonType exp_type):
+    TypeCheckingError* errors(Type type, SymbObj field, Type exp_type):
       record_type()   = {
         field_type = mandatory_record_field_type(type, field);
         return if field_type == void_type
@@ -364,7 +364,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_accessor_test_expr(Expr expr, SymbObj field, AnonType exp_type)
+  TypeCheckingError* typecheck_accessor_test_expr(Expr expr, SymbObj field, Type exp_type)
   {
     errs = typecheck(expr, type_any);
     return errs if errs /= {};
@@ -375,18 +375,18 @@ using
     ;
     return errs & {never_has_field(type, field)};
 
-    AnonType follow_type(AnonType type):
+    Type follow_type(Type type):
       tag_obj_type()  = type.obj_type,
       _               = type;
 
-    Bool may_have_field(AnonType type, SymbObj field):
+    Bool may_have_field(Type type, SymbObj field):
       record_type(fs?)  = has_key(fs, field),
       ne_map_type()     = type_contains_obj(type.key_type, _obj_(field)),
       _                 = false;
   }
 
 
-  TypeCheckingError* typecheck_if_expr(Expr cond, Expr then_expr, Expr else_expr, AnonType exp_type)
+  TypeCheckingError* typecheck_if_expr(Expr cond, Expr then_expr, Expr else_expr, Type exp_type)
   {
     cond_errs = typecheck(cond, type_bool);
     if_true_env, if_false_env = if cond_errs == {} then refine_environment(cond) else (environment, environment);
@@ -396,7 +396,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_match_expr([Expr^] exprs, [(ptrns: [Pattern^], expr: Expr)^] cases, AnonType exp_type)
+  TypeCheckingError* typecheck_match_expr([Expr^] exprs, [(ptrns: [Pattern^], expr: Expr)^] cases, Type exp_type)
   {
     //## HERE I SHOULD ALSO CHECK THAT THE PATTERNS WILL EVENTUALLY COVER ALL THE POSSIBILITIES...
     errs = seq_union([typecheck(e, type_any) : e <- exprs]);
@@ -414,7 +414,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_ex_qual_expr(Clause source, Maybe[Expr] maybe_sel_expr, AnonType exp_type)
+  TypeCheckingError* typecheck_ex_qual_expr(Clause source, Maybe[Expr] maybe_sel_expr, Type exp_type)
   {
     errs = typecheck(source);
     return errs if errs /= {};
@@ -424,7 +424,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_set_comp_expr(Expr expr, Clause source, Maybe[Expr] maybe_sel_expr, AnonType exp_type)
+  TypeCheckingError* typecheck_set_comp_expr(Expr expr, Clause source, Maybe[Expr] maybe_sel_expr, Type exp_type)
   {
     errs = typecheck(source);
     return errs if errs /= {};
@@ -441,7 +441,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_map_comp_expr(Expr key_expr, Expr value_expr, Clause source, Maybe[Expr] maybe_sel_expr, AnonType exp_type)
+  TypeCheckingError* typecheck_map_comp_expr(Expr key_expr, Expr value_expr, Clause source, Maybe[Expr] maybe_sel_expr, Type exp_type)
   {
     errs = typecheck(source);
     return errs if errs /= {};
@@ -455,7 +455,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_seq_comp(Expr expr, [Var^] vars, Maybe[Var] maybe_idx_var, Expr src_expr, Maybe[Expr] maybe_sel_expr, AnonType exp_type)
+  TypeCheckingError* typecheck_seq_comp(Expr expr, [Var^] vars, Maybe[Var] maybe_idx_var, Expr src_expr, Maybe[Expr] maybe_sel_expr, Type exp_type)
   {
     exp_elem_type = seq_elem_type(exp_type);
     errs = {not_a_seq_type if exp_elem_type == void_type} & typecheck(src_expr, type_seq);
@@ -470,7 +470,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_int_range_seq_comp(Expr expr, Var var, Expr upper_bound_expr, Bool includes_upper_bound, Maybe[Expr] maybe_sel_expr, AnonType exp_type)
+  TypeCheckingError* typecheck_int_range_seq_comp(Expr expr, Var var, Expr upper_bound_expr, Bool includes_upper_bound, Maybe[Expr] maybe_sel_expr, Type exp_type)
   {
     exp_elem_type = seq_elem_type(exp_type);
     errs = {not_a_seq_type if exp_elem_type == void_type} & typecheck(upper_bound_expr, integer);
@@ -493,7 +493,7 @@ using
       assert size(sgns) == 1;
       sgn = only_element(sgns);
       assert sgn.named_params == ();
-      assert not (? p <- sgn.params : not p :: AnonType);
+      assert not (? p <- sgn.params : not p :: Type);
       sgn_cls = cls_type(sgn.params, sgn.ret_type);
       return {unexpected_actual_cls_type(sgn_cls, exp_type) if not is_subset(sgn_cls, exp_type)};
     },
@@ -507,7 +507,7 @@ using
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  TypeCheckingError* typecheck([Statement] stmts, AnonType exp_type)
+  TypeCheckingError* typecheck([Statement] stmts, Type exp_type)
   {
     env = environment;
     for (s : stmts)
@@ -519,7 +519,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck(Statement stmt, AnonType exp_type):
+  TypeCheckingError* typecheck(Statement stmt, Type exp_type):
     assignment_stmt()   = typecheck(stmt.value, type_any),
     return_stmt(e?)     = typecheck(e, exp_type),
     if_stmt()           = typecheck_if_stmt(stmt.cond, stmt.body, stmt.else, exp_type),
@@ -539,7 +539,7 @@ using
     print_stmt(e?)      = typecheck(e, type_any);
 
 
-  TypeCheckingError* typecheck_if_stmt(Expr cond, [Statement^] body, [Statement] else_body, AnonType exp_type)
+  TypeCheckingError* typecheck_if_stmt(Expr cond, [Statement^] body, [Statement] else_body, Type exp_type)
   {
     errs = typecheck(cond, type_bool);
     return errs if errs /= {};
@@ -549,7 +549,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_loop_stmt([Statement^] stmts, AnonType exp_type)
+  TypeCheckingError* typecheck_loop_stmt([Statement^] stmts, Type exp_type)
   {
     errs = {}; //## BAD: THIS SHOULD NOT BE NECESSARY, AS THE BODY OF THE LOOP IS ALWAYS GOING TO BE EXECUTED AT LEAST ONCE
     env = environment;
@@ -564,7 +564,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_foreach_stmt([Var^] vars, Maybe[Var] maybe_idx_var, Expr values, [Statement^] body, AnonType exp_type)
+  TypeCheckingError* typecheck_foreach_stmt([Var^] vars, Maybe[Var] maybe_idx_var, Expr values, [Statement^] body, Type exp_type)
   {
     errs = typecheck(values, type_seq);
     return errs if errs /= {};
@@ -591,7 +591,7 @@ using
 
 
   TypeCheckingError* typecheck_for_stmt(Maybe[Var] maybe_var, Maybe[Var] maybe_idx_var, Expr start_val,
-    Expr end_val, Bool end_val_incl, [Statement^] body, AnonType exp_type)
+    Expr end_val, Bool end_val_incl, [Statement^] body, Type exp_type)
   {
     errs = typecheck(start_val, integer) & typecheck(end_val, integer);
     return errs if errs /= {};
@@ -610,7 +610,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_let_stmt((NamedPar => Expr) asgnms, [Statement^] body, AnonType exp_type)
+  TypeCheckingError* typecheck_let_stmt((NamedPar => Expr) asgnms, [Statement^] body, Type exp_type)
   {
     errs = union({typecheck(e, type_any) : v => e <- asgnms});
     return errs if errs /= {};
@@ -642,7 +642,7 @@ using
 
 
 
-AnonType loop_var_type(AnonType lower_bound_type, AnonType upper_bound_type, Bool upper_bound_included)
+Type loop_var_type(Type lower_bound_type, Type upper_bound_type, Bool upper_bound_included)
 {
   upper_bound_adj = bit(not upper_bound_included);
 
@@ -711,7 +711,7 @@ AnonType loop_var_type(AnonType lower_bound_type, AnonType upper_bound_type, Boo
 
 //     for (p : rand_sort(keys(signature.named_params))) //## WOULD BE GOOD TO USE A ZIP (BY KEY) FUNCION HERE
 //       formal_type = signature.named_params[p];
-//       if (formal_type :: AnonType)
+//       if (formal_type :: Type)
 //         formal_type = replace_type_vars_with_type_any(formal_type);
 //         if (has_key(named_params, p))
 //           expr = named_params[p];
@@ -719,7 +719,7 @@ AnonType loop_var_type(AnonType lower_bound_type, AnonType upper_bound_type, Boo
 //           return false if not is_subset(expr_type(expr), formal_type);
 //         else
 //           actual_type = environment[p];
-//           assert actual_type :: AnonType;
+//           assert actual_type :: Type;
 //           return false if not is_subset(actual_type, formal_type);
 //         ;
 //       else
