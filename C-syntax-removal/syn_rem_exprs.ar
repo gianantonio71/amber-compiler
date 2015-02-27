@@ -1,11 +1,11 @@
 using
 {
-  ClsVar*                     closures,
-  NamedPar*                   named_params,
-  (FnSymbol, NzNat)*          local_fns,
-  FnSymbol                    curr_outer_fn,
-  (TypeName => Type)          typedefs,
-  ((FnSymbol, Nat) => [Nat])  fn_param_arities;
+  ClsVar*                       closures,
+  NamedPar*                     named_params,
+  ((FnSymbol, NzNat) => [Nat^]) local_fns,
+  FnSymbol                      curr_outer_fn, //## BUG: THIS IS NOT ENOUGH TO IDENTIFY THE OUTER FUNCTION...
+  (TypeName => Type)            typedefs,
+  ((FnSymbol, Nat) => [Nat])    fn_param_arities;
 
 
   Expr desugar_expr(SynExpr expr, Var* def_vars):
@@ -66,6 +66,7 @@ using
     //## VARIABLE OR IF IT'S THE NAME OF A FUNCTION. RIGHT NOW IT
     //## SHOULD NOT FAIL, BUT ONLY BECAUSE THE const_or_var() DOESN'T
     //## DO ANY CHECKING AT THE MOMENT
+    fn_id = (name, length(params));
     ps  = [desugar_expr(e, def_vars) : e <- params];
     nps = syn_fn_defs_to_named_params(expl_named_params, def_vars);
     cls_var = cls_var(_obj_(name));
@@ -73,56 +74,48 @@ using
     // Closures first
     if (in(cls_var, closures))
       assert nps == ();
-      ps = [desugar_expr(e, def_vars) : e <- params];
-      return cls_call(name: cls_var, params: ps);
+      return cls_call(cls_var, ps);
     ;
 
-    // Then local functions
-    if (in((name, length(params)), local_fns))
+    // Then local functions. Here we have to deal with closure parameters.
+    if (has_key(local_fns, fn_id))
       fs = nested_fn_symbol(outer: curr_outer_fn, inner: name);
-      ps = [desugar_expr(e, def_vars) : e <- params];
-      return fn_call(name: fs, params: ps, named_params: nps);
+      pas = local_fns[fn_id];
+      eps = [transform_expr_to_cls_expr_if_needed(sp, p, a, def_vars) : sp, p, a <- zip(params, ps, pas)];
+      return fn_call(fs, eps, nps);
     ;
 
     // Then named parameters
     np  = named_par(_obj_(name));
     if (in(np, named_params))
       assert nps == ();
-      return cls_call(name: np, params: ps);
+      return cls_call(np, ps);
     ;
     
-    // And last global functions.
-    // Since here we may have to deal with closure parameters,
-    // we have to transform the plain expressions into closures
-    // if required.
+    // And last global functions. Here too we have to deal with closures.
+    pas = fn_param_arities[fn_id];
+    eps = [transform_expr_to_cls_expr_if_needed(sp, p, a, def_vars) : sp, p, a <- zip(params, ps, pas)];
+    return fn_call(name, eps, nps);
 
-    pas = fn_param_arities[(name, length(params))];
-    // ps = [if a == 0 then p else cls_expr(a, p) : p, a <- zip(ps, pas)];
-    fps = [];
-    for (op, dp, a : zip(params, ps, pas))
-      if (a == 0)
-        fp = dp;
-      elif (not op :: ConstOrVar)
-        fp = cls_expr(a, dp);
+
+    ExtExpr transform_expr_to_cls_expr_if_needed(SynExpr syn_param, Expr param, Nat exp_arity, Var* def_vars)
+    {
+      return param if exp_arity == 0;
+      return cls_expr(exp_arity, param) if not syn_param :: ConstOrVar;
+
+      symb = _obj_(syn_param);
+
+      is_loc_var = in(var(symb), def_vars);
+      is_named_par = in(named_par(symb), named_params);
+      is_glob_const = has_key(fn_param_arities, (fn_symbol(symb), 0));
+
+      if (is_loc_var or is_named_par or is_glob_const)
+        return cls_expr(exp_arity, param);
       else
-        symb = _obj_(op);
-        is_loc_var = in(var(symb), def_vars);
-        is_named_par = in(named_par(symb), named_params);
-        is_glob_const = has_key(fn_param_arities, (fn_symbol(symb), 0));
-        if (is_loc_var or is_named_par or is_glob_const)
-          fp = cls_expr(a, dp);
-        else
-          cls_var = cls_var(symb);
-          if (in(cls_var, closures))
-            fp = cls_var;
-          else
-            fp = fn_ptr(fn_symbol(symb), a);
-          ;
-        ;
+        cls_var = cls_var(symb);
+        return if in(cls_var, closures) then cls_var else fn_ptr(fn_symbol(symb), exp_arity);
       ;
-      fps = fps & [fp];
-    ;
-    return fn_call(name: name, params: fps, named_params: nps);
+    }
   }
 
 
@@ -174,6 +167,7 @@ using
       sel_expr:      desugar_expr(expr.sel_expr, vs) if expr.sel_expr?
     );
   }
+
 
   Expr desugar_if_expr(SynIfExpr expr, Var* def_vars)
   {

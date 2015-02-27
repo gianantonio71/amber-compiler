@@ -39,6 +39,7 @@ Program rem_syntax(SynPrg prg)
   );
 }
 
+
 ((FnSymbol, Nat) => [Nat]) get_fn_param_arities(SynFnDef* fndefs, SynUsingBlock* ublocks)
 {
   all_fds = fndefs & union({set(ub.fn_defs) : ub <- ublocks});
@@ -49,12 +50,11 @@ Program rem_syntax(SynPrg prg)
     ((fd.name, arity(fd)) => [arity(p) : p <- fd.params]);
 }
 
+
 FnDef* syn_fndef_to_fndefs(SynFnDef fndef, SynSgn* named_params,
   (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_param_arities)
 {
-  //named_params = {if arity(np) == 0 then :named_par(np.name) else np : np <- named_params}; //## BAD BAD BAD
-  
-  lfns = {(lfd.name, arity(lfd)) : lfd <- set(fndef.local_fns)};
+  lfns = ((lfd.name, arity(lfd)) => [arity(p) : p <- lfd.params] : lfd <- set(fndef.local_fns));
 
   main_fn = mk_fndef(fndef, fndef.name, fndef.name, named_params, lfns, typedefs, fn_param_arities);
   
@@ -71,6 +71,7 @@ FnDef* syn_fndef_to_fndefs(SynFnDef fndef, SynSgn* named_params,
   };
   
   return {main_fn} & loc_fns;
+
 
   //## BAD BAD BAD TOO MANY PARAMETERS
   FnDef mk_fndef(SynFnDef fndef, FnSymbol fn_name, FnSymbol outer_fn, SynSgn* named_params,
@@ -106,11 +107,11 @@ FnDef* syn_fndef_to_fndefs(SynFnDef fndef, SynSgn* named_params,
   (NamedPar => UserExtType) syn_sgns_to_named_params(SynSgn* syn_sgns) =
     //## THIS FAILS IF THERE ARE TWO IMPLICIT PARAMS WITH THE SAME NAME BUT DIFFERENT ARITIES.
     //## MAKE SURE THIS IS CHECKED IN THE WELL-FORMEDNESS CHECKING PHASE
-    (:named_par(_obj_(ss.name)) => if ss.params == []
-                                     then ss.res_type //##syn_type_to_user_type(ss.res_type)
-                                     else user_cls_type(ss.params, ss.res_type)
-                                     //## else user_cls_type(in_types: [syn_type_to_user_type(p) : p <- ss.params], out_type: syn_type_to_user_type(ss.res_type))
-                                   : ss <- syn_sgns); //## BAD UGLY UGLY UGLY
+    (named_par(_obj_(ss.name)) => if ss.params == []
+                                    then ss.res_type //##syn_type_to_user_type(ss.res_type)
+                                    else user_cls_type(ss.params, ss.res_type)
+                                    //## else user_cls_type(in_types: [syn_type_to_user_type(p) : p <- ss.params], out_type: syn_type_to_user_type(ss.res_type))
+                                  : ss <- syn_sgns); //## BAD UGLY UGLY UGLY
 }
 
 
@@ -121,7 +122,7 @@ ProcDef2 syn_proc_def_to_proc_def(SynProcDef pd, (TypeName => Type) typedefs, ((
     set([p.var : p <- pd.params]),
     closures = {},
     named_params = {},
-    local_fns = {},
+    local_fns = (),
     curr_outer_fn = nil, //## BAD BAD BAD CHEATING. FIX FIX FIX FIX FIX FIX FIX FIX FIX FIX FIX
     typedefs = typedefs,
     fn_param_arities = fn_param_arities
