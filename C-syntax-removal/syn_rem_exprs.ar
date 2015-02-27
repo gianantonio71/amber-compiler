@@ -1,227 +1,205 @@
-//## THIS IS PROBABLY THE CRAPPIEST CODE IN THE WHOLE PROJECT
-
 using
 {
   ClsVar*                     closures,
   NamedPar*                   named_params,
-  BasicUntypedSgn*            local_fns,
+  (FnSymbol, NzNat)*          local_fns,
   FnSymbol                    curr_outer_fn,
   (TypeName => Type)          typedefs,
   ((FnSymbol, Nat) => [Nat])  fn_param_arities;
 
 
   Expr desugar_expr(SynExpr expr, Var* def_vars):
+    object()          = expr,
+    float_lit()       = expr,
+    seq_expr(es?)     = seq_expr([desugar_expr(e, def_vars) : e <- es]),
+    seq_tail_expr()   = seq_tail_expr(desugar_expr(expr.seq, def_vars), [desugar_expr(e, def_vars) : e <- expr.tail]),
+    tuple_expr(es?)   = tuple_expr([desugar_expr(e, def_vars) : e <- es]),
+    set_expr(es?)     = set_expr({desugar_expr(e, def_vars) : e <- es}),
+    map_expr(es?)     = desugar_map_expr(es, def_vars),
+    tag_obj_expr()    = tag_obj_expr(desugar_expr(expr.tag, def_vars), desugar_expr(expr.obj, def_vars)),
+    Var               = expr,
+    cls_par(n?)       = fn_par(n),
+    const_or_var(a?)  = desugar_const_or_var_expr(a, def_vars),
+    fn_call()         = desugar_fn_call_expr(expr.name, expr.params, expr.named_params, def_vars),
+    builtin_call()    = builtin_call(expr.name, [desugar_expr(e, def_vars) : e <- expr.params]),
+    and()             = and_expr(desugar_expr(expr.left, def_vars), desugar_expr(expr.right, def_vars)),
+    or()              = or_expr(desugar_expr(expr.left, def_vars), desugar_expr(expr.right, def_vars)),
+    not(e?)           = not_expr(desugar_expr(e, def_vars)),
+    eq()              = eq(desugar_expr(expr.left, def_vars), desugar_expr(expr.right, def_vars)),
+    neq()             = not_expr(eq(desugar_expr(expr.left, def_vars), desugar_expr(expr.right, def_vars))),
+    membership()      = membership(desugar_expr(expr.obj, def_vars), expr.type),
+    cast_expr()       = cast_expr(desugar_expr(expr.expr, def_vars), expr.type),
+    accessor()        = accessor(desugar_expr(expr.expr, def_vars), expr.field),
+    accessor_test()   = accessor_test(desugar_expr(expr.expr, def_vars), expr.field),
+    ex_qual()         = desugar_ex_qual_expr(expr.source, expr.sel_exprs, def_vars),
+    set_comp()        = desugar_set_comp_expr(expr.expr, expr.source, expr.sel_exprs, def_vars),
+    map_comp()        = desugar_map_comp_expr(expr.key_expr, expr.value_expr, expr.source, expr.sel_exprs, def_vars),
+    seq_comp()        = desugar_seq_comp_expr(expr, def_vars),
+    if_expr()         = desugar_if_expr(expr, def_vars),
+    match_expr()      = desugar_match_expr(expr.exprs, expr.cases, def_vars),
+    do_expr(ss?)      = do_expr(desugar_stmts(ss, def_vars)),
+    let_expr()        = do_expr(desugar_stmts(expr.stmts & [return_stmt(expr.expr)], def_vars));
 
-    object()        = expr,
 
-    float_lit()     = expr,
+  Expr desugar_map_expr(SynMapExprEntry* entries, Var* def_vars) =
+    map_expr(
+      for (e <- entries) {(
+        key:   desugar_expr(e.key, def_vars),
+        value: desugar_expr(e.value, def_vars),
+        cond:  desugar_expr(e.cond, def_vars) if e.cond?
+      )}
+    );
+
+
+  Expr desugar_const_or_var_expr(Atom var_symb, Var* def_vars)
+  {
+    return var(var_symb) if in(var(var_symb), def_vars);
+    return named_par(var_symb) if in(named_par(var_symb), named_params);
+    return cls_var(var_symb) if in(cls_var(var_symb), closures);
+    return fn_call(name: fn_symbol(var_symb), params: [], named_params: ());
+  }
+
+
+  Expr desugar_fn_call_expr(FnSymbol name, [ExtSynExpr^] params, [SynFnDef] expl_named_params, Var* def_vars)
+  {
+    //## BAD (BUG?): THIS IS NOT VALID IF THE PARAMETER IS A CLOSURE
+    //## VARIABLE OR IF IT'S THE NAME OF A FUNCTION. RIGHT NOW IT
+    //## SHOULD NOT FAIL, BUT ONLY BECAUSE THE const_or_var() DOESN'T
+    //## DO ANY CHECKING AT THE MOMENT
+    ps  = [desugar_expr(e, def_vars) : e <- params];
+    nps = syn_fn_defs_to_named_params(expl_named_params, def_vars);
+    cls_var = cls_var(_obj_(name));
+
+    // Closures first
+    if (in(cls_var, closures))
+      assert nps == ();
+      ps = [desugar_expr(e, def_vars) : e <- params];
+      return cls_call(name: cls_var, params: ps);
+    ;
+
+    // Then local functions
+    if (in((name, length(params)), local_fns))
+      fs = nested_fn_symbol(outer: curr_outer_fn, inner: name);
+      ps = [desugar_expr(e, def_vars) : e <- params];
+      return fn_call(name: fs, params: ps, named_params: nps);
+    ;
+
+    // Then named parameters
+    np  = named_par(_obj_(name));
+    if (in(np, named_params))
+      assert nps == ();
+      return cls_call(name: np, params: ps);
+    ;
     
-    seq_expr(es?)   = seq_expr([desugar_expr(e, def_vars) : e <- es]),
+    // And last global functions.
+    // Since here we may have to deal with closure parameters,
+    // we have to transform the plain expressions into closures
+    // if required.
 
-    seq_tail_expr() = seq_tail_expr(
-                        seq:  desugar_expr(expr.seq, def_vars),
-                        tail: [desugar_expr(e, def_vars) : e <- expr.tail]
-                      ),
+    pas = fn_param_arities[(name, length(params))];
+    // ps = [if a == 0 then p else cls_expr(a, p) : p, a <- zip(ps, pas)];
+    fps = [];
+    for (op, dp, a : zip(params, ps, pas))
+      if (a == 0)
+        fp = dp;
+      elif (not op :: ConstOrVar)
+        fp = cls_expr(a, dp);
+      else
+        symb = _obj_(op);
+        is_loc_var = in(var(symb), def_vars);
+        is_named_par = in(named_par(symb), named_params);
+        is_glob_const = has_key(fn_param_arities, (fn_symbol(symb), 0));
+        if (is_loc_var or is_named_par or is_glob_const)
+          fp = cls_expr(a, dp);
+        else
+          cls_var = cls_var(symb);
+          if (in(cls_var, closures))
+            fp = cls_var;
+          else
+            fp = fn_ptr(fn_symbol(symb), a);
+          ;
+        ;
+      ;
+      fps = fps & [fp];
+    ;
+    return fn_call(name: name, params: fps, named_params: nps);
+  }
 
-    tuple_expr(es?) = :tuple_expr([desugar_expr(e, def_vars) : e <- es]),
 
-    set_expr(es?)   = :set_expr({desugar_expr(e, def_vars) : e <- es}),
-    
-    map_expr(es?)   = :map_expr(
-                        for (e <- es) {(
-                          key:   desugar_expr(e.key, def_vars),
-                          value: desugar_expr(e.value, def_vars),
-                          cond:  desugar_expr(e.cond, def_vars) if e.cond?
-                        )}
-                      ),
+  Expr desugar_ex_qual_expr([SynClause^] source, [SynExpr] sel_exprs, Var* def_vars)
+  {
+    vs = def_vars & syn_new_vars(source);
+    se = [desugar_expr(e, vs) : e <- sel_exprs];
+    return ex_qual(
+      source:   mk_and_clause(source, def_vars),
+      sel_expr: mk_and_expr(se) if se /= []
+    );
+  }
 
-    tag_obj_expr()  = tag_obj_expr(
-                        tag: desugar_expr(expr.tag, def_vars),
-                        obj: desugar_expr(expr.obj, def_vars)
-                      ),
 
-    Var             = expr,
-    
-    cls_par(n?)     = fn_par(n),
+  Expr desugar_set_comp_expr(SynExpr expr, [SynClause^] source, [SynExpr] sel_exprs, Var* def_vars)
+  {
+    vs = def_vars & syn_new_vars(source);
+    se = [desugar_expr(e, vs) : e <- sel_exprs];
+    return set_comp(
+      expr:     desugar_expr(expr, vs),
+      source:   mk_and_clause(source, def_vars),
+      sel_expr: mk_and_expr(se) if se /= []
+    );
+  }
 
-    const_or_var(a?)  = { return :var(a) if in(:var(a), def_vars);
-                          return :named_par(a) if in(:named_par(a), named_params);
-                          return cls_var(a) if in(cls_var(a), closures);
-                          sgn = untyped_sgn(name: :fn_symbol(a), arity: 0);
-                          //## THIS IS A STRANGE LIMITATION
-                          //## IS IT HERE FOR A REASON, OR IS IT ONLY TEMPORARY?
-                          assert not in(sgn, local_fns);
-                          return fn_call(name: :fn_symbol(a), params: [], named_params: ());
-                          //if (in(sgn, named_params))
-                          //  return cls_call(name: fn, params: []);
-                          //else
-                          //  return fn_call(name: fn, params: [], named_params: ());
-                          //;
-                        },
 
-    fn_call()       = { assert length(expr.params) > 0;
-    
-                        //## BAD (BUG?): THIS IS NOT VALID IF THE PARAMETER IS A CLOSURE
-                        //## VARIABLE OR IF IT'S THE NAME OF A FUNCTION. RIGHT NOW IT
-                        //## SHOULD NOT FAIL, BUT ONLY BECAUSE THE const_or_var() DOESN'T
-                        //## DO ANY CHECKING AT THE MOMENT
-                        ps  = [desugar_expr(e, def_vars) : e <- expr.params];
-                        sgn = untyped_sgn(name: expr.name, arity: length(expr.params));
-                        nps = syn_fn_defs_to_named_params(expr.named_params, def_vars);
-                        cls_var = cls_var(_obj_(expr.name));
+  Expr desugar_map_comp_expr(SynExpr key_expr, SynExpr value_expr, [SynClause^] source, [SynExpr] sel_exprs, Var* def_vars)
+  {
+    vs = def_vars & syn_new_vars(source);
+    se = [desugar_expr(e, vs) : e <- sel_exprs];
+    return map_comp(
+      key_expr:   desugar_expr(key_expr, vs),
+      value_expr: desugar_expr(value_expr, vs),
+      source:     mk_and_clause(source, def_vars),
+      sel_expr:   mk_and_expr(se) if se /= []
+    );
+  }
 
-                        // Closures first
-                        if (in(cls_var, closures))
-                          assert nps == ();
-                          ps = [desugar_expr(e, def_vars) : e <- expr.params];
-                          return cls_call(name: cls_var, params: ps);
-                        ;
 
-                        // Then local functions
-                        if (in(sgn, local_fns))
-                          fs = nested_fn_symbol(outer: curr_outer_fn, inner: expr.name);
-                          ps = [desugar_expr(e, def_vars) : e <- expr.params];
-                          return fn_call(name: fs, params: ps, named_params: nps);
-                        ;
-                         
-                        // Then named parameters
-                        np  = :named_par(_obj_(expr.name));
-                        if (in(np, named_params))
-                          assert nps == ();
-                          return cls_call(name: np, params: ps);
-                        ;
-                        
-                        // And last global functions.
-                        // Since here we may have to deal with closure parameters,
-                        // we have to transform the plain expressions into closures
-                        // if required.
+  Expr desugar_seq_comp_expr(SynLCExpr expr, Var* def_vars)
+  {
+    vs = def_vars & set(expr.vars) & {expr.idx_var if expr.idx_var?};
+    return seq_comp(
+      expr:          desugar_expr(expr.expr, vs),
+      vars:          expr.vars,
+      idx_var:       expr.idx_var if expr.idx_var?,
+      src_expr:      desugar_expr(expr.src_expr, def_vars),
+      src_expr_type: expr.src_expr_type,
+      sel_expr:      desugar_expr(expr.sel_expr, vs) if expr.sel_expr?
+    );
+  }
 
-                        pas = fn_param_arities[(expr.name, length(expr.params))];
-                        // ps = [if a == 0 then p else cls_expr(a, p) : p, a <- zip(ps, pas)];
-                        fps = [];
-                        for (op, dp, a : zip(expr.params, ps, pas))
-                          if (a == 0)
-                            fp = dp;
-                          elif (not op :: ConstOrVar)
-                            fp = cls_expr(a, dp);
-                          else
-                            symb = _obj_(op);
-                            is_loc_var = in(var(symb), def_vars);
-                            is_named_par = in(named_par(symb), named_params);
-                            is_glob_const = has_key(fn_param_arities, (fn_symbol(symb), 0));
-                            if (is_loc_var or is_named_par or is_glob_const)
-                              fp = cls_expr(a, dp);
-                            else
-                              cls_var = cls_var(symb);
-                              if (in(cls_var, closures))
-                                fp = cls_var;
-                              else
-                                // assert in(untyped_sgn(fn_symbol(symb), a), fns_in_scope);
-                                fp = fn_ptr(fn_symbol(symb), a);
-                              ;
-                            ;
-                          ;
-                          fps = fps & [fp];
-                        ;
-                        return fn_call(name: expr.name, params: fps, named_params: nps);
-                      },
+  Expr desugar_if_expr(SynIfExpr expr, Var* def_vars)
+  {
+    res = desugar_expr(expr.else, def_vars);
+    for (b : reverse(expr.branches))
+      res = if_expr(
+        cond: desugar_expr(b.cond, def_vars),
+        then: desugar_expr(b.expr, def_vars),
+        else: res
+      );
+    ;
+    return res;
+  }
 
-    builtin_call()  = builtin_call(
-                        name: expr.name,
-                        params: [desugar_expr(e, def_vars) : e <- expr.params]
-                      ),
 
-    and()           = and_expr(
-                        left:  desugar_expr(expr.left, def_vars),
-                        right: desugar_expr(expr.right, def_vars)
-                      ),
-
-    or()            = or_expr(
-                        left:  desugar_expr(expr.left, def_vars),
-                        right: desugar_expr(expr.right, def_vars)
-                      ),
-
-    not(e?)         = :not_expr(desugar_expr(e, def_vars)),
-    
-    eq()            = eq(
-                        left:  desugar_expr(expr.left, def_vars),
-                        right: desugar_expr(expr.right, def_vars)
-                      ),
-
-    neq()           = :not_expr(                      
-                        eq(
-                          left:  desugar_expr(expr.left, def_vars),
-                          right: desugar_expr(expr.right, def_vars)
-                        )
-                      ),
-
-    membership()    = membership(obj: desugar_expr(expr.obj, def_vars), type: expr.type),
-    cast_expr()     = cast_expr(expr: desugar_expr(expr.expr, def_vars), type: expr.type),
-
-    accessor()      = accessor(expr: desugar_expr(expr.expr, def_vars), field: expr.field),
-    accessor_test() = accessor_test(expr: desugar_expr(expr.expr, def_vars), field: expr.field),
-
-    ex_qual()       = { vs = def_vars & syn_new_vars(expr.source);
-                        se = [desugar_expr(e, vs) : e <- expr.sel_exprs];
-                        return ex_qual(
-                                 source:   mk_and_clause(expr.source, def_vars),  //## TODO
-                                 sel_expr: mk_and_expr(se) if se /= []
-                               );
-                      },
-
-    set_comp()      = { vs = def_vars & syn_new_vars(expr.source);
-                        se = [desugar_expr(e, vs) : e <- expr.sel_exprs];
-                        return set_comp(
-                                 expr:     desugar_expr(expr.expr, vs),
-                                 source:   mk_and_clause(expr.source, def_vars),
-                                 sel_expr: mk_and_expr(se) if se /= []
-                               );
-                      },
-
-    map_comp()      = { vs = def_vars & syn_new_vars(expr.source);
-                        se = [desugar_expr(e, vs) : e <- expr.sel_exprs];
-                        return map_comp(
-                                 key_expr:   desugar_expr(expr.key_expr, vs),
-                                 value_expr: desugar_expr(expr.value_expr, vs),
-                                 source:     mk_and_clause(expr.source, def_vars),
-                                 sel_expr:   mk_and_expr(se) if se /= []
-                               );
-                      },
-
-    seq_comp()      = { vs = def_vars & set(expr.vars) & {expr.idx_var if expr.idx_var?};
-                        return seq_comp(
-                                 expr:          desugar_expr(expr.expr, vs),
-                                 vars:          expr.vars,
-                                 idx_var:       expr.idx_var if expr.idx_var?,
-                                 src_expr:      desugar_expr(expr.src_expr, def_vars),
-                                 src_expr_type: expr.src_expr_type,
-                                 sel_expr:      desugar_expr(expr.sel_expr, vs) if expr.sel_expr?
-                               );
-                      },
-
-    if_expr()       = { res = desugar_expr(expr.else, def_vars);
-                        for (b : reverse(expr.branches))
-                          res = if_expr(
-                                   cond: desugar_expr(b.cond, def_vars),
-                                   then: desugar_expr(b.expr, def_vars),
-                                   else: res
-                                 );
-                        ;
-                        return res;
-                      },
-
-    match_expr()    = { n  = length(expr.cases[0].patterns);
-                        es = [desugar_expr(e, def_vars) : e <- subseq(expr.exprs, 0, n)];
-                        cs = [{ ps = [desugar_ptrn(p) : p <- c.patterns];
-                                 vs = def_vars & seq_union([new_vars(p) : p <- ps]);
-                                 return (ptrns: ps, expr: desugar_expr(c.expr, vs));
-                               } : c <- expr.cases];
-                        return match_expr(exprs: es, cases: cs);
-                      },
-
-    do_expr(ss?)    = :do_expr(desugar_stmts(ss, def_vars)), //##  IMPLEMENT
-
-    let_expr()      = :do_expr(desugar_stmts(expr.stmts & [:return_stmt(expr.expr)], def_vars));
+  Expr desugar_match_expr([SynExpr^] exprs, [SynCase^] cases, Var* def_vars)
+  {
+    n  = length(cases[0].patterns);
+    es = [desugar_expr(e, def_vars) : e <- subseq(exprs, 0, n)];
+    cs = [{
+      ps = [desugar_ptrn(p) : p <- c.patterns];
+      vs = def_vars & seq_union([new_vars(p) : p <- ps]);
+      return (ptrns: ps, expr: desugar_expr(c.expr, vs));
+    } : c <- cases];
+    return match_expr(exprs: es, cases: cs);
+  }
 
   ////////////////////////////////////////////////////////////////////////////////
 
@@ -266,32 +244,13 @@ using
   //## DON'T HAVE A PATTERN ASSOCIATED WITH THAT VARIABLE
   
   Clause desugar_clause(SynClause clause, Var* def_vars):
-
-    in_clause()         = in_clause(
-                            ptrn: desugar_ptrn(clause.ptrn),
-                            src:  desugar_expr(clause.src, def_vars)
-                          ),
-                      
-    map_in_clause()     = map_in_clause(
-                            key_ptrn:   desugar_ptrn(clause.key_ptrn),
-                            value_ptrn: desugar_ptrn(clause.value_ptrn),
-                            src:        desugar_expr(clause.src, def_vars)
-                          ),
-    
+    in_clause()         = in_clause(desugar_ptrn(clause.ptrn), desugar_expr(clause.src, def_vars)),
+    map_in_clause()     = map_in_clause(desugar_ptrn(clause.key_ptrn), desugar_ptrn(clause.value_ptrn), desugar_expr(clause.src, def_vars)),
     eq_clause()         = { assert not in(clause.var, def_vars);
-                            
-                            return in_clause(
-                                     ptrn: ptrn_var(clause.var, ptrn_any),
-                                     src:  :set_expr({desugar_expr(clause.expr, def_vars)})
-                                   );
+                            return in_clause(ptrn_var(clause.var, ptrn_any), set_expr({desugar_expr(clause.expr, def_vars)}));
                           },
-
     and_clause(cs?)     = mk_and_clause(cs, def_vars),
-    
-    or_clause()         = or_clause(
-                            left:  desugar_clause(clause.left, def_vars),
-                            right: desugar_clause(clause.right, def_vars)
-                          );
+    or_clause()         = or_clause(desugar_clause(clause.left, def_vars), desugar_clause(clause.right, def_vars));
 
   ////////////////////////////////////////////////////////////////////////////////
 
@@ -306,124 +265,108 @@ using
     return ss;
   }
 
+
   Statement desugar_stmt(SynStmt stmt, Var* def_vars):
-
-    assignment_stmt()   = assignment_stmt(vars: stmt.vars, value: desugar_expr(stmt.value, def_vars)),
-
-    imp_update_stmt()   = imp_update_stmt(
-                            stmt.obj,
-                            desugar_expr(stmt.idx, def_vars),
-                            desugar_expr(stmt.value, def_vars)
-                          ),
-
-    return_stmt(e?)     = :return_stmt(desugar_expr(e, def_vars)),
-    
-    break_stmt          = :break_stmt,
-    
-    fail_stmt           = :fail_stmt,
-    
-    assert_stmt(e?)     = :assert_stmt(desugar_expr(e, def_vars)),
-    
-    print_stmt(e?)      = :print_stmt(desugar_expr(e, def_vars)),
-
-    inf_loop_stmt(ss?)  = :loop_stmt(desugar_stmts(ss, def_vars)),
-
-    if_stmt() =
-    {
-      res = desugar_stmts(stmt.else, def_vars);
-      for (b : reverse(stmt.branches))
-        cond = desugar_expr(b.cond, def_vars);
-        body = desugar_stmts(b.body, def_vars);
-        res  = [if_stmt(cond: cond, body: body, else: res)];
-      ;
-      assert res :: Seq and length(res) == 1;
-      return res[0]; //## BAD BAD BAD
-    },
-
-    // let_stmt(asgnms: [SynFnDef^], body: [SynStmt^]), //## NEW
-    // let_stmt(asgnms: (<var(Atom)> => ExtExpr), body: [Statement^]), //## NEW BAD BAD
-    
-    //type SynFnDef       = syn_fn_def(
-    //                        name:       FnSymbol,
-    //                        params:     [(type: SynType?, var: var(Atom)?)],
-    //                        res_type:   SynType?,
-    //                        expr:       SynExpr,
-    //                        local_fns:  [SynFnDef]
-    //                      );
-
-    let_stmt() =
-    {
-      nps    = named_params & set([:named_par(_obj_(fd.name)) : fd <- stmt.asgnms]); //## BAD BAD BAD
-      body   = desugar_stmts(stmt.body, def_vars ,named_params = nps);
-      asgnms = syn_fn_defs_to_named_params(stmt.asgnms, def_vars);
-      return let_stmt(asgnms: asgnms, body: body);
-    },
-    
-    loop_stmt() =
-    {
-      cond      = desugar_expr(stmt.cond, def_vars);
-      exit_stmt = if_stmt(cond: :not_expr(cond), body: [:break_stmt], else: []);
-      body      = desugar_stmts(stmt.body, def_vars);
-      if (stmt.skip_first)
-        body = body & [exit_stmt];
-      else
-        body = [exit_stmt] & body;
-      ;
-      return :loop_stmt(body);
-    },
-
-    for_stmt() =
-    {
-      //## ALSO MAKE SURE SYNTAX CHECK GETS IT RIGHT
-      iters  = stmt.loops;
-      vs     = def_vars;
-      for_vs = [];
-      for (it : iters)
-        ivs  = match (it)
-                 seq_iter()   = set(it.vars),
-                 range_iter() = {it.var if it.var?};
-               ;
-        vs     = vs & ivs & {it.idx_var if it.idx_var?};
-        for_vs = for_vs & [vs];
-      ;
-      res = desugar_stmts(stmt.body, vs);
-      for (it @ i : reverse(iters))
-        vs = rev_at(for_vs, i);
-        if (it :: <seq_iter(Any)>) //## BAD BAD BAD
-          vals = desugar_expr(it.values, vs);
-          res  = [ foreach_stmt(
-                      vars:    it.vars,
-                      idx_var: it.idx_var if it.idx_var?,
-                      values:  vals,
-                      body:    res
-                    )
-                  ];
-        else
-          assert it :: <range_iter(Any)>; //## BAD BAD BAD
-          start_val = desugar_expr(it.start_val, vs);
-          end_val   = desugar_expr(it.end_val, vs);
-          res = [
-            for_stmt(
-              var:          it.var if it.var?,
-              start_val:    start_val,
-              end_val:      end_val,
-              end_val_incl: it.end_val_incl,
-              body:         res
-            )
-          ];
-        ;
-      ;
-      assert res :: Seq and length(res) == 1;
-      return res[0]; //## BAD BAD BAD
-    },
-
-    return_stmt         = :return_stmt,
-
+    assignment_stmt()   = assignment_stmt(stmt.vars, desugar_expr(stmt.value, def_vars)),
+    imp_update_stmt()   = imp_update_stmt(stmt.obj, desugar_expr(stmt.idx, def_vars), desugar_expr(stmt.value, def_vars)),
+    return_stmt(e?)     = return_stmt(desugar_expr(e, def_vars)),
+    break_stmt          = break_stmt,
+    fail_stmt           = fail_stmt,
+    assert_stmt(e?)     = assert_stmt(desugar_expr(e, def_vars)),
+    print_stmt(e?)      = print_stmt(desugar_expr(e, def_vars)),
+    inf_loop_stmt(ss?)  = loop_stmt(desugar_stmts(ss, def_vars)),
+    if_stmt()           = desugar_if_stmt(stmt, def_vars),
+    let_stmt()          = desugar_let_stmt(stmt, def_vars),
+    loop_stmt()         = desugar_loop_stmt(stmt, def_vars),
+    for_stmt()          = desugar_for_stmt(stmt.loops, stmt.body, def_vars),
+    return_stmt         = return_stmt,
     proc_call()         = proc_call(
                             res_var:    stmt.res_var if stmt.res_var?,
                             proc_name:  stmt.proc_name,
                             params:     [desugar_expr(p, def_vars) : p <- stmt.params]
                           );
+
+
+  Statement desugar_if_stmt(SynIfStmt stmt, Var* def_vars)
+  {
+    res = desugar_stmts(stmt.else, def_vars);
+    for (b : reverse(stmt.branches))
+      cond = desugar_expr(b.cond, def_vars);
+      body = desugar_stmts(b.body, def_vars);
+      res  = [if_stmt(cond: cond, body: body, else: res)];
+    ;
+    assert res :: Seq and length(res) == 1;
+    return res[0]; //## BAD BAD BAD
+  }
+
+
+  Statement desugar_let_stmt(SynLetStmt stmt, Var* def_vars)
+  {
+    nps    = named_params & set([named_par(_obj_(fd.name)) : fd <- stmt.asgnms]); //## BAD BAD BAD
+    body   = desugar_stmts(stmt.body, def_vars ,named_params = nps);
+    asgnms = syn_fn_defs_to_named_params(stmt.asgnms, def_vars);
+    return let_stmt(asgnms: asgnms, body: body);
+  }
+
+
+  Statement desugar_loop_stmt(SynLoopStmt stmt, Var* def_vars)
+  {
+    cond      = desugar_expr(stmt.cond, def_vars);
+    exit_stmt = if_stmt(cond: not_expr(cond), body: [break_stmt], else: []);
+    body      = desugar_stmts(stmt.body, def_vars);
+    if (stmt.skip_first)
+      body = body & [exit_stmt];
+    else
+      body = [exit_stmt] & body;
+    ;
+    return loop_stmt(body);
+  }
+
+
+  Statement desugar_for_stmt([SynIter^] loops, [SynStmt^] body, Var* def_vars)
+  {
+    //## ALSO MAKE SURE SYNTAX CHECK GETS IT RIGHT
+    iters  = loops;
+    vs     = def_vars;
+    for_vs = [];
+    for (it : iters)
+      ivs  = match (it)
+               seq_iter()   = set(it.vars),
+               range_iter() = {it.var if it.var?};
+             ;
+      vs     = vs & ivs & {it.idx_var if it.idx_var?};
+      for_vs = for_vs & [vs];
+    ;
+    res = desugar_stmts(body, vs);
+    for (it @ i : reverse(iters))
+      vs = rev_at(for_vs, i);
+      if (it :: <seq_iter(Any)>) //## BAD BAD BAD
+        vals = desugar_expr(it.values, vs);
+        res  = [ foreach_stmt(
+                    vars:    it.vars,
+                    idx_var: it.idx_var if it.idx_var?,
+                    values:  vals,
+                    body:    res
+                  )
+                ];
+      else
+        assert it :: <range_iter(Any)>; //## BAD BAD BAD
+        start_val = desugar_expr(it.start_val, vs);
+        end_val   = desugar_expr(it.end_val, vs);
+        res = [
+          for_stmt(
+            var:          it.var if it.var?,
+            start_val:    start_val,
+            end_val:      end_val,
+            end_val_incl: it.end_val_incl,
+            body:         res
+          )
+        ];
+      ;
+    ;
+    assert res :: Seq and length(res) == 1;
+    return res[0]; //## BAD BAD BAD
+  }
 
   ////////////////////////////////////////////////////////////////////////////////
 
@@ -439,7 +382,7 @@ using
     ptrn_type(type?)        = {
       if (not user_type_can_be_converted_into_pattern(type, typedefs))
         // print type;
-        assert type /= :type_ref(:type_symbol(:set)); //## WHY THIS?
+        assert type /= type_ref(type_symbol(:set)); //## WHY THIS?
       ;
       return user_type_to_pattern(type, typedefs);
     },
@@ -449,7 +392,8 @@ using
 
   //## FIND BETTER NAME
   (NamedPar => ExtExpr) syn_fn_defs_to_named_params([SynFnDef] fds, Var* def_vars) =
-    (:named_par(_obj_(fd.name)) => syn_fn_def_to_expr(fd, def_vars) : fd <- set(fds));
+    (named_par(_obj_(fd.name)) => syn_fn_def_to_expr(fd, def_vars) : fd <- set(fds));
+
 
   ExtExpr syn_fn_def_to_expr(SynFnDef fd, Var* def_vars)
   {
