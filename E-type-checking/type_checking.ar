@@ -48,7 +48,7 @@ using
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  TypeCheckingError* typecheck(Expr expr, Type exp_type)
+  TypeCheckingError* typecheck(Expr expr, ClosedType exp_type)
   {
     errs = typecheck_without_annotations(expr, exp_type);
     return {annotate(err, expr) : err <- errs};
@@ -59,7 +59,7 @@ using
       _                       = annotated_expr_error(err, expr);
 
 
-    TypeCheckingError* typecheck_without_annotations(Expr expr, Type exp_type):
+    TypeCheckingError* typecheck_without_annotations(Expr expr, ClosedType exp_type):
       object(obj?)          = {obj_does_not_belong_to_type(obj, exp_type) if not type_contains_obj(exp_type, obj)},
       set_expr(ses?)        = typecheck_set_expr(ses, exp_type),
       seq_expr(ses?)        = typecheck_seq_expr(ses, exp_type),
@@ -96,7 +96,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck(CondExpr expr, Type exp_type)
+  TypeCheckingError* typecheck(CondExpr expr, ClosedType exp_type)
   {
     errs = typecheck(expr.cond, type_bool);
     return errs if errs /= {};
@@ -105,7 +105,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_set_expr(SubExpr* subexprs, Type exp_type)
+  TypeCheckingError* typecheck_set_expr(SubExpr* subexprs, ClosedType exp_type)
   {
     may_be_empty = subexprs == {} or not (? se <- subexprs : not is_cond_expr(se));
     errs = {obj_does_not_belong_to_type({}, exp_type) if not type_contains_obj(exp_type, {})};
@@ -116,7 +116,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_seq_expr([SubExpr] subexprs, Type exp_type)
+  TypeCheckingError* typecheck_seq_expr([SubExpr] subexprs, ClosedType exp_type)
   {
     may_be_empty = subexprs == [] or all([is_cond_expr(se) : se <- subexprs]);
     errs = {obj_does_not_belong_to_type([], exp_type) if not type_contains_obj(exp_type, [])};
@@ -127,7 +127,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_seq_tail_expr(Expr seq, [Expr^] tail, Type exp_type)
+  TypeCheckingError* typecheck_seq_tail_expr(Expr seq, [Expr^] tail, ClosedType exp_type)
   {
     exp_elem_type = seq_elem_type(exp_type);
     return {not_a_seq_type} if exp_elem_type == void_type;
@@ -135,7 +135,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_tuple_expr([Expr^] exprs, Type exp_type)
+  TypeCheckingError* typecheck_tuple_expr([Expr^] exprs, ClosedType exp_type)
   {
     if (has_tuple_type(exp_type))
       types = tuple_field_types(exp_type);
@@ -149,7 +149,7 @@ using
   }
 
   //## TRY TO REWRITE THIS IN PROLOG-LIKE PSEUDOCODE
-  TypeCheckingError* typecheck_map_expr(<(key: Expr, value: Expr, cond: Expr?)*> entries, Type exp_type)
+  TypeCheckingError* typecheck_map_expr(<(key: Expr, value: Expr, cond: Expr?)*> entries, ClosedType exp_type)
   {
     // If the expression may evaluate to the empty map, we check that the empty map is included in the expected type
     may_be_empty = not (? e <- entries : not e.cond?);
@@ -190,7 +190,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_tag_obj_expr(Expr tag_expr, Expr obj_expr, Type exp_type)
+  TypeCheckingError* typecheck_tag_obj_expr(Expr tag_expr, Expr obj_expr, ClosedType exp_type)
   {
     tag_errs = typecheck(tag_expr, atom_type);
     return {tag_not_a_symbol(tag_errs)} if tag_errs /= {};
@@ -221,7 +221,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_fn_call(FnSymbol name, [ExtExpr] params, (NamedPar => ExtExpr) named_params, Type exp_type)
+  TypeCheckingError* typecheck_fn_call(FnSymbol name, [ExtExpr] params, (NamedPar => ExtExpr) named_params, ClosedType exp_type)
   {
     // First I check that all scalar positional parameters typecheck. This is something that
     // I need to do before trying to determine the functions this call may dispatch to.
@@ -271,7 +271,7 @@ using
     cls_errs = {};
     for (p, t : zip(params, target_signature.params))
       if (p :: ClsExpr and t :: ClsType)
-        cls_errs = cls_errs & typecheck(p, replace_type_vars(t, type_var_insts));
+        cls_errs = cls_errs & typecheck(p, replace_type_vars(t, type_var_insts)); //## BUG: I THINK THIS IS BROKEN...
       ;
     ;
 
@@ -281,11 +281,11 @@ using
       p = if has_key(named_params, n) then named_params[n],
              has_key(environment, n)  then environment[n]
                                       else closures[n];
-      named_par_errs = named_par_errs & typecheck(p, replace_type_vars(t, type_var_insts));
+      named_par_errs = named_par_errs & typecheck(p, replace_type_vars(t, type_var_insts)); //## BUG: THIS IS BROKEN TOO..
     ;
 
     // Now let's see if the type of the result is OK.
-    actual_ret_type = replace_type_vars(target_signature.ret_type, type_var_insts);
+    actual_ret_type = replace_type_vars_with_void_default(target_signature.ret_type, type_var_insts);
     ret_type_errs = {invalid_return_type(actual_ret_type, exp_type) if not is_subset(actual_ret_type, exp_type)};
 
     //## BAD: HERE I SHOULD PROVIDE MORE INFORMATION ABOUT THESE ERRORS
@@ -293,7 +293,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_cls_call([Expr] params, ClsType signature, Type exp_type)
+  TypeCheckingError* typecheck_cls_call([Expr] params, ClsType signature, ClosedType exp_type)
   {
     assert length(params) == length(signature.in_types);
 
@@ -304,7 +304,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_builtin_call(BuiltIn name, [Expr] params, Type exp_type)
+  TypeCheckingError* typecheck_builtin_call(BuiltIn name, [Expr] params, ClosedType exp_type)
   {
     sgn = builtin_signature(name);
     errs = seq_union([typecheck(p, t) : p, t <- zip(params, sgn.params)]);
@@ -314,11 +314,11 @@ using
   }
 
 
-  TypeCheckingError* typecheck_bool_op(Expr expr, Type exp_type) =
+  TypeCheckingError* typecheck_bool_op(Expr expr, ClosedType exp_type) =
     invalid_type_if_not_subset(type_bool, exp_type) & typecheck(expr, type_bool);
 
 
-  TypeCheckingError* typecheck_and_expr(Expr left_expr, Expr right_expr, Type exp_type)
+  TypeCheckingError* typecheck_and_expr(Expr left_expr, Expr right_expr, ClosedType exp_type)
   {
     errs = typecheck_bool_op(left_expr, exp_type);
     right_expr_env = left(refine_environment(left_expr));
@@ -326,7 +326,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_or_expr(Expr left_expr, Expr right_expr, Type exp_type)
+  TypeCheckingError* typecheck_or_expr(Expr left_expr, Expr right_expr, ClosedType exp_type)
   {
     errs = typecheck_bool_op(left_expr, exp_type);
     right_expr_env = right(refine_environment(left_expr));
@@ -334,13 +334,13 @@ using
   }
 
 
-  TypeCheckingError* typecheck_eq_expr(Expr left_expr, Expr right_expr, Type exp_type) =
+  TypeCheckingError* typecheck_eq_expr(Expr left_expr, Expr right_expr, ClosedType exp_type) =
     invalid_type_if_not_subset(type_bool, exp_type) &
     typecheck(left_expr, type_any) &
     typecheck(right_expr, type_any);
 
 
-  TypeCheckingError* typecheck_accessor_expr(Expr expr, SymbObj field, Type exp_type)
+  TypeCheckingError* typecheck_accessor_expr(Expr expr, SymbObj field, ClosedType exp_type)
   {
     errs = typecheck(expr, type_any);
     return errs if errs /= {};
@@ -353,7 +353,7 @@ using
       tag_obj_type()  = type.obj_type,
       _               = type;
 
-    TypeCheckingError* errors(Type type, SymbObj field, Type exp_type):
+    TypeCheckingError* errors(Type type, SymbObj field, ClosedType exp_type):
       record_type()   = {
         field_type = mandatory_record_field_type(type, field);
         return if field_type == void_type
@@ -364,7 +364,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_accessor_test_expr(Expr expr, SymbObj field, Type exp_type)
+  TypeCheckingError* typecheck_accessor_test_expr(Expr expr, SymbObj field, ClosedType exp_type)
   {
     errs = typecheck(expr, type_any);
     return errs if errs /= {};
@@ -386,7 +386,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_if_expr(Expr cond, Expr then_expr, Expr else_expr, Type exp_type)
+  TypeCheckingError* typecheck_if_expr(Expr cond, Expr then_expr, Expr else_expr, ClosedType exp_type)
   {
     cond_errs = typecheck(cond, type_bool);
     if_true_env, if_false_env = if cond_errs == {} then refine_environment(cond) else (environment, environment);
@@ -396,7 +396,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_match_expr([Expr^] exprs, [(ptrns: [Pattern^], expr: Expr)^] cases, Type exp_type)
+  TypeCheckingError* typecheck_match_expr([Expr^] exprs, [(ptrns: [Pattern^], expr: Expr)^] cases, ClosedType exp_type)
   {
     //## HERE I SHOULD ALSO CHECK THAT THE PATTERNS WILL EVENTUALLY COVER ALL THE POSSIBILITIES...
     errs = seq_union([typecheck(e, type_any) : e <- exprs]);
@@ -414,7 +414,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_ex_qual_expr(Clause source, Maybe[Expr] maybe_sel_expr, Type exp_type)
+  TypeCheckingError* typecheck_ex_qual_expr(Clause source, Maybe[Expr] maybe_sel_expr, ClosedType exp_type)
   {
     errs = typecheck(source);
     return errs if errs /= {};
@@ -424,7 +424,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_set_comp_expr(Expr expr, Clause source, Maybe[Expr] maybe_sel_expr, Type exp_type)
+  TypeCheckingError* typecheck_set_comp_expr(Expr expr, Clause source, Maybe[Expr] maybe_sel_expr, ClosedType exp_type)
   {
     errs = typecheck(source);
     return errs if errs /= {};
@@ -441,21 +441,29 @@ using
   }
 
 
-  TypeCheckingError* typecheck_map_comp_expr(Expr key_expr, Expr value_expr, Clause source, Maybe[Expr] maybe_sel_expr, Type exp_type)
+  TypeCheckingError* typecheck_map_comp_expr(Expr key_expr, Expr value_expr, Clause source, Maybe[Expr] maybe_sel_expr, ClosedType exp_type)
   {
     errs = typecheck(source);
     return errs if errs /= {};
     new_env = refine_environment(source);
-    errs = typecheck(value(maybe_sel_expr), type_bool, environment=new_env) if maybe_sel_expr /= nil;
+    if (maybe_sel_expr /= nil)
+      sel_expr = value(maybe_sel_expr);
+      errs = typecheck(sel_expr, type_bool, environment=new_env);
+      new_env = left(refine_environment(sel_expr, environment=new_env));
+    ;
     exp_key_type = map_key_type(exp_type);
     exp_value_type = map_value_type(exp_type);
-    return errs & if exp_key_type /= void_type and exp_value_type/= void_type
-      then typecheck(key_expr, exp_key_type, environment=new_env)
-      else {not_a_map_type}; //## BUG: IT COULD ACTUALLY BE A RECORD TYPE, COULDN'T IT?
+    if (exp_key_type /= void_type and exp_value_type /= void_type)
+      errs = errs & typecheck(key_expr, exp_key_type, environment=new_env);
+      errs = errs & typecheck(value_expr, exp_value_type, environment=new_env);
+    else
+      errs = errs & {not_a_map_type}; //## BUG: IT COULD ACTUALLY BE A RECORD TYPE, COULDN'T IT?
+    ;
+    return errs;
   }
 
 
-  TypeCheckingError* typecheck_seq_comp(Expr expr, [Var^] vars, Maybe[Var] maybe_idx_var, Expr src_expr, Maybe[Expr] maybe_sel_expr, Type exp_type)
+  TypeCheckingError* typecheck_seq_comp(Expr expr, [Var^] vars, Maybe[Var] maybe_idx_var, Expr src_expr, Maybe[Expr] maybe_sel_expr, ClosedType exp_type)
   {
     exp_elem_type = seq_elem_type(exp_type);
     errs = {not_a_seq_type if exp_elem_type == void_type} & typecheck(src_expr, type_seq);
@@ -470,7 +478,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_int_range_seq_comp(Expr expr, Var var, Expr upper_bound_expr, Bool includes_upper_bound, Maybe[Expr] maybe_sel_expr, Type exp_type)
+  TypeCheckingError* typecheck_int_range_seq_comp(Expr expr, Var var, Expr upper_bound_expr, Bool includes_upper_bound, Maybe[Expr] maybe_sel_expr, ClosedType exp_type)
   {
     exp_elem_type = seq_elem_type(exp_type);
     errs = {not_a_seq_type if exp_elem_type == void_type} & typecheck(upper_bound_expr, integer);
@@ -498,16 +506,16 @@ using
       return {unexpected_actual_cls_type(sgn_cls, exp_type) if not is_subset(sgn_cls, exp_type)};
     },
     cls_expr() = {
-      assert all([p == nil : p <- exp_type.params]); //## FOR NOW ALL VARIABLES SHOULD BE ANONYMOUS...
-      delta_env = merge([(fn_par(i) => t, v => t if v /= nil) : v, t @ i <- zip(expr.params, exp_type.in_types)]);
-      new_env = environment & delta_env;
+      assert all([p == nil : p <- expr.params]); //## FOR NOW ALL VARIABLES SHOULD BE ANONYMOUS...
+      delta_env = merge(set([(fn_par(i) => t, v => t if v /= nil) : v, t @ i <- zip(expr.params, exp_type.in_types)]));
+      new_env = update(environment, delta_env);
       return typecheck(expr.expr, exp_type.out_type, environment=new_env); //## BAD: HERE I SHOULD PROVIDE MORE INFORMATION
     };
 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  TypeCheckingError* typecheck([Statement] stmts, Type exp_type)
+  TypeCheckingError* typecheck([Statement] stmts, ClosedType exp_type)
   {
     env = environment;
     for (s : stmts)
@@ -519,7 +527,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck(Statement stmt, Type exp_type):
+  TypeCheckingError* typecheck(Statement stmt, ClosedType exp_type):
     assignment_stmt()   = typecheck(stmt.value, type_any),
     return_stmt(e?)     = typecheck(e, exp_type),
     if_stmt()           = typecheck_if_stmt(stmt.cond, stmt.body, stmt.else, exp_type),
@@ -539,7 +547,7 @@ using
     print_stmt(e?)      = typecheck(e, type_any);
 
 
-  TypeCheckingError* typecheck_if_stmt(Expr cond, [Statement^] body, [Statement] else_body, Type exp_type)
+  TypeCheckingError* typecheck_if_stmt(Expr cond, [Statement^] body, [Statement] else_body, ClosedType exp_type)
   {
     errs = typecheck(cond, type_bool);
     return errs if errs /= {};
@@ -549,7 +557,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_loop_stmt([Statement^] stmts, Type exp_type)
+  TypeCheckingError* typecheck_loop_stmt([Statement^] stmts, ClosedType exp_type)
   {
     errs = {}; //## BAD: THIS SHOULD NOT BE NECESSARY, AS THE BODY OF THE LOOP IS ALWAYS GOING TO BE EXECUTED AT LEAST ONCE
     env = environment;
@@ -564,7 +572,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_foreach_stmt([Var^] vars, Maybe[Var] maybe_idx_var, Expr values, [Statement^] body, Type exp_type)
+  TypeCheckingError* typecheck_foreach_stmt([Var^] vars, Maybe[Var] maybe_idx_var, Expr values, [Statement^] body, ClosedType exp_type)
   {
     errs = typecheck(values, type_seq);
     return errs if errs /= {};
@@ -591,7 +599,7 @@ using
 
 
   TypeCheckingError* typecheck_for_stmt(Maybe[Var] maybe_var, Maybe[Var] maybe_idx_var, Expr start_val,
-    Expr end_val, Bool end_val_incl, [Statement^] body, Type exp_type)
+    Expr end_val, Bool end_val_incl, [Statement^] body, ClosedType exp_type)
   {
     errs = typecheck(start_val, integer) & typecheck(end_val, integer);
     return errs if errs /= {};
@@ -610,7 +618,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_let_stmt((NamedPar => Expr) asgnms, [Statement^] body, Type exp_type)
+  TypeCheckingError* typecheck_let_stmt((NamedPar => Expr) asgnms, [Statement^] body, ClosedType exp_type)
   {
     errs = union({typecheck(e, type_any) : v => e <- asgnms});
     return errs if errs /= {};

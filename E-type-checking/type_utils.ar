@@ -54,6 +54,28 @@ ClsType replace_type_vars_computed(ClsType type, (TypeVar -> Type) replace) =
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
+ClosedType replace_type_vars_with_void_default(Type type, (TypeVar => ClosedType) substitutions) =
+  closed_replace_type_vars(type, if has_key(substitutions, $) then substitutions[$] else void_type);
+
+
+//## BAD: FIND BETTER NAME
+ClosedType closed_replace_type_vars(Type type, (TypeVar -> ClosedType) replace):
+  LeafType          = type,
+  SelfPretype       = type,
+  TypeVar           = replace(type),
+  ne_seq_type()     = closed_ne_seq_type(closed_replace_type_vars(type.elem_type, replace)),
+  ne_set_type()     = closed_ne_set_type(closed_replace_type_vars(type.elem_type, replace)),
+  ne_map_type()     = closed_ne_map_type(closed_replace_type_vars(type.key_type, replace), closed_replace_type_vars(type.value_type, replace)),
+  record_type(fs?)  = closed_record_type((l => (type: closed_replace_type_vars(f.type, replace), optional: f.optional) : l => f <- fs)), //## BAD: WOULD BE GOOD TO HAVE A "DECLARATIVE" UPDATE OPERATION
+  tuple_type(ts?)   = closed_tuple_type([closed_replace_type_vars(t, replace) : t <- ts]),
+  tag_obj_type()    = closed_tag_obj_type(type.tag_type, closed_replace_type_vars(type.obj_type, replace)),
+  union_type(ts?)   = closed_union_type({closed_replace_type_vars(t, replace) : t <- ts}),
+  self_rec_type(t?) = closed_self_rec_type(closed_replace_type_vars(t, replace)),
+  mut_rec_type()    = closed_mut_rec_type(type.index, [closed_replace_type_vars(t, replace) : t <- type.types]);
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
 //## HOW IS THIS DIFFERENT FROM split_type()?
 // Type+ expand_type(Type type):
 //   union_type(ts?)   = union({expand_type(t) : t <- ts}),

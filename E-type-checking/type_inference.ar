@@ -38,7 +38,7 @@ using
     do_expr(ss?)      = return_type(ss),
     ex_qual()         = type_bool,
     set_comp()        = set_comp_expr_type(expr.expr, expr.source, if expr.sel_expr? then just(expr.sel_expr) else nil),
-    map_comp()        = map_comp_expr_type(expr.key_expr, expr.value_expr, expr.source),
+    map_comp()        = map_comp_expr_type(expr.key_expr, expr.value_expr, expr.source, if expr.sel_expr? then just(expr.sel_expr) else nil),
     seq_comp()        = if expr.src_expr_type == :sequence
                           then seq_comp_expr_type(expr.expr, expr.vars, if expr.idx_var? then just(expr.idx_var) else nil, expr.src_expr)
                           else int_range_seq_comp_expr_type(expr.expr, expr.vars[0], expr.src_expr, expr.src_expr_type.included);
@@ -162,9 +162,13 @@ using
   }
 
 
-  Type map_comp_expr_type(Expr key_expr, Expr value_expr, Clause source)
+  Type map_comp_expr_type(Expr key_expr, Expr value_expr, Clause source, Maybe[Expr] maybe_sel_expr)
   {
     new_env = refine_environment(source);
+    if (maybe_sel_expr /= nil)
+      sel_expr = value(maybe_sel_expr);
+      new_env = left(refine_environment(sel_expr, environment=new_env));
+    ;
     key_type = expr_type(key_expr, environment=new_env);
     value_type = expr_type(value_expr, environment=new_env);
     return ne_map_type(key_type, value_type);
@@ -428,7 +432,7 @@ using
     elif (cond :: <eq(left: Expr, right: Expr)>)
       expr1, expr2 = if cond.left :: Var then (cond.left, cond.right) else (cond.right, cond.left);
       if (expr1 :: Var)
-        type_if_eq, type_if_not_eq = eq_refine(environment[expr1], expr2);
+        type_if_eq, type_if_not_eq = eq_refine(environment[expr1], expr_type(expr2));
         if_true_env = update(if_true_env, (expr1 => type_if_eq));
         if_false_env = update(if_false_env, (expr1 => type_if_not_eq));
       ;
@@ -449,18 +453,20 @@ using
     return (if_true_env, if_false_env);
 
 
-    (Type, Type) eq_refine(Type type, Expr obj)
+    (Type, Type) eq_refine(Type var_type, Type expr_type)
     {
-      type_if_eq, type_if_not_eq = match (obj)
-        object(+ a?)  = (symb_type(a),    subtract_obj_from_type(type, a)),
-        object(* n?)  = (int_range(n, n), subtract_obj_from_type(type, n)),
-        set_expr(es?)  = if es == {} then (empty_set_type,  subtract_obj_from_type(type, {})) else (type, type),
-        seq_expr(es?)  = if es == [] then (empty_seq_type,  subtract_obj_from_type(type, [])) else (type, type),
-        map_expr(es?)  = if es == () then (empty_map_type,  subtract_obj_from_type(type, ())) else (type, type),
-        _             = (type, type);
+      type_if_eq, type_if_not_eq = match (expr_type)
+        symb_type(object(a?))   = (expr_type,       subtract_obj_from_type(var_type, a)),
+        empty_set_type          = (empty_set_type,  subtract_obj_from_type(var_type, {})),
+        empty_seq_type          = (empty_seq_type,  subtract_obj_from_type(var_type, [])),
+        empty_map_type          = (empty_map_type,  subtract_obj_from_type(var_type, ())),
+        int_range()             = (expr_type,       if expr_type.size == 1
+                                                      then subtract_obj_from_type(var_type, expr_type.min)
+                                                      else var_type),
+        _                       = (var_type,        var_type);
       ;
-      type_if_eq = type if type_if_eq == void_type;
-      type_if_not_eq = type if type_if_not_eq == void_type;
+      type_if_eq = var_type if type_if_eq == void_type;
+      type_if_not_eq = var_type if type_if_not_eq == void_type;
       return (type_if_eq, type_if_not_eq);
     }
 

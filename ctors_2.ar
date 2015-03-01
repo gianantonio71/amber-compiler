@@ -76,6 +76,108 @@ MutRecType mut_rec_type(Nat index, [Type^] pretypes) = mut_rec_type(index: index
 
 ////////////////////////////////////////////////////////////////////////////////
 
+ClosedType closed_ne_seq_type(ClosedType elem_type) = if elem_type /= void_type then ne_seq_type(elem_type) else void_type;
+ClosedType closed_ne_set_type(ClosedType elem_type) = if elem_type /= void_type then ne_set_type(elem_type) else void_type;
+
+ClosedType closed_ne_map_type(ClosedType key_type, ClosedType value_type) =
+  if key_type /= void_type and value_type /= void_type then ne_map_type(key_type, value_type) else void_type;
+
+ClosedType closed_record_type((SymbObj => (type: ClosedType, optional: Bool)) fs)
+{
+  return void_type if (? l => f <- fs : f.type == void_type and not f.optional);
+  rfs = (l => (type: t, optional: f.optional) : l => f <- fs, t = f.type, t /= void_type);
+  return record_type(rfs);
+}
+
+ClosedType closed_tuple_type([ClosedType^] ts)
+{
+  nv_ts = [];
+  for (t : ts)
+    return void_type if t == void_type;
+    nv_ts = [nv_ts | t];
+  ;
+  return tuple_type(nonempty(nv_ts));
+}
+
+ClosedType closed_tag_obj_type(TagType tag_type, ClosedType obj_type) = if obj_type /= void_type then tag_obj_type(tag_type, obj_type) else void_type;
+
+ClosedType closed_union_type(ClosedType+ types)
+{
+  nv_ts = {t : t <- types, t /= void_type};
+  return if nv_ts /= {} then union_type(nv_ts) else void_type;
+}
+
+ClosedType closed_self_rec_type(ClosedType pretype) = if pretype /= void_type then self_rec_type(pretype) else void_type;
+
+ClosedType closed_mut_rec_type(Nat index, [ClosedType^] pretypes)
+{
+  self_refs_to_void = set([self(i) : t @ i <- pretypes, t == void_type]);
+  pts = pretypes;
+  while (self_refs_to_void /= {})
+    new_pts = [repl_self_refs(pt, if in($, self_refs_to_void) then void_type else $) : pt <- pts];
+    self_refs_to_void = set([self(i) : ot, nt @ i <- zip(pts, new_pts), ot /= void_type and nt == void_type]);
+    pts = new_pts;
+  ;
+  return void_type if pts[index] == void_type;
+
+  rem_self_ref_idxs = {index};
+  loop
+    rem_self_refs = union({self_refs(pts[i]) : i <- rem_self_ref_idxs});
+    new_rem_self_ref_idxs = {self_ref_index(r) : r <- rem_self_refs};
+    break if new_rem_self_ref_idxs == rem_self_ref_idxs;
+    rem_self_ref_idxs = new_rem_self_ref_idxs;
+  ;
+
+  if (size(rem_self_ref_idxs) == 1)
+    assert only_element(rem_self_ref_idxs) == index;
+    pt = repl_self_refs(pts[index], self);
+    fail if pt == void_type; // Shutting up the type checker
+    return self_rec_type(pt);
+  ;
+
+  rem_self_ref_idxs_placed = sort_set(rem_self_ref_idxs, $a < $b);
+  self_ref_subst_map = merge(set([(self(old_i) => self(new_i)) : old_i @ new_i <- rem_self_ref_idxs_placed]));
+  final_pts = [repl_self_refs(pts[i], self_ref_subst_map[$]) : i <- rem_self_ref_idxs_placed];
+  final_idx = index_first(index, rem_self_ref_idxs_placed);
+  final_pts = nonempty([if pt /= void_type then pt else {fail;} : pt <- final_pts]); // Shutting up the type checker
+  return mut_rec_type(final_idx, final_pts);
+
+
+  Nat self_ref_index(SelfPretype):
+    self(i?)  = i;
+
+  ClosedType repl_self_refs(ClosedType type, (SelfPretype -> ClosedType) repl_self_ref):
+    LeafType          = type,
+    SelfPretype       = repl_self_ref(type),
+    TypeVar           = type,
+    ne_seq_type()     = closed_ne_seq_type(repl_self_refs(type.elem_type, repl_self_ref)),
+    ne_set_type()     = closed_ne_set_type(repl_self_refs(type.elem_type, repl_self_ref)),
+    ne_map_type()     = closed_ne_map_type(repl_self_refs(type.key_type, repl_self_ref), repl_self_refs(type.value_type, repl_self_ref)),
+    record_type(fs?)  = closed_record_type((l => (type: repl_self_refs(f.type, repl_self_ref), optional: f.optional) : l => f <- fs)), //## BAD: WOULD BE GOOD TO HAVE A "DECLARATIVE" UPDATE OPERATION
+    tuple_type(ts?)   = closed_tuple_type([repl_self_refs(t, repl_self_ref) : t <- ts]),
+    tag_obj_type()    = closed_tag_obj_type(type.tag_type, repl_self_refs(type.obj_type, repl_self_ref)),
+    union_type(ts?)   = closed_union_type({repl_self_refs(t, repl_self_ref) : t <- ts}),
+    self_rec_type()   = type,
+    mut_rec_type()    = type;
+
+  SelfPretype* self_refs(ClosedType type):
+    LeafType          = {},
+    SelfPretype       = {type},
+    TypeVar           = {},
+    ne_seq_type()     = self_refs(type.elem_type),
+    ne_set_type()     = self_refs(type.elem_type),
+    ne_map_type()     = self_refs(type.key_type) & self_refs(type.value_type),
+    record_type(fs?)  = union({self_refs(f.type) : l => f <- fs}),
+    tuple_type(ts?)   = seq_union([self_refs(t) : t <- ts]),
+    tag_obj_type()    = self_refs(type.obj_type),
+    union_type(ts?)   = union({self_refs(t) : t <- ts}),
+    self_rec_type()   = {},
+    mut_rec_type()    = {},
+    void_type         = {fail;}; // Shutting up the type checker
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 ClsType cls_type([Type^] its, Type ot)          = cls_type(in_types: its, out_type: ot);
 
 UserClsType user_cls_type([UserType^] its, UserType ot) = cls_type(in_types: its, out_type: ot);
