@@ -1,21 +1,62 @@
+//## BUG: I ALSO HAVE TO CHECK THAT FOR ALL FUNCTIONS WITH THE SAME
+//## NAME AND ARITY ALL NAMED PARAMETERS HAVE THE SAME TYPE, AND
+//## THAT ALL CLOSURE PARAMETERS HAVE EXACTLY THE SAME TYPE.
 
 
 ((FnSymbol, [FnFrmPar]) => TypeCheckingError+) typecheck(Program prg)
 {
   typedefs = prg.anon_tdefs;
-  signatures = merge_values({(fd.name => signature(fd, typedefs)) : fd <- prg.fndefs});
-  errors = ((fd.name, fd.params) => typecheck(fd, typedefs, signatures) : fd <- prg.fndefs);
+  signatures = merge_values({((fd.name, arity(fd)) => signature(fd, typedefs)) : fd <- prg.fndefs});
+  aggregated_signatures = (n => build_aggregated_signatures(ss) : n => ss <- signatures);
+  errors = ((fd.name, fd.params) => typecheck(fd, typedefs, signatures, aggregated_signatures) : fd <- prg.fndefs);
   return (f => es : f => es <- errors, es /= {});
 }
 
 
-TypeCheckingError* typecheck(FnDef fn_def, (TypeName => Type) typedefs, (FnSymbol => FnType*) signatures)
+FnType* build_aggregated_signatures(FnType+ signatures)
+{
+  a_sgn = an_elem(signatures);
+  sgns = signatures;
+  for (i < arity(a_sgn))
+    sgns = merge_comp_sgns(sgns, i);
+  ;
+  return sgns - signatures;
+
+  FnType+ merge_comp_sgns(FnType+ signatures, Nat par_idx)
+  {
+    new_sgns = {};
+    sgns = signatures;
+    while (sgns /= {})
+      sgn = an_elem(sgns);
+      comp_sgns = {s : s <- sgns, other_params_are_eq(sgn, s, par_idx)};
+      new_sgn = if size(comp_sgns) > 1 then merge_all_sgns(comp_sgns, par_idx) else only_element(comp_sgns);
+      new_sgns = new_sgns & {new_sgn};
+      sgns = sgns - comp_sgns;
+    ;
+    return new_sgns;
+  }
+
+  FnType merge_all_sgns(FnType+ signatures, Nat par_idx)
+  {
+    merged_par_type = union_type({s.params[par_idx] : s <- signatures});
+    merged_ret_type = union_superset({s.ret_type : s <- signatures});
+    a_sgn = an_elem(signatures);
+    params = [if i == par_idx then merged_par_type else p : p @ i <- an_elem(signatures).params];
+    return fn_type(params, a_sgn.named_params, merged_ret_type);
+  }
+
+  Bool other_params_are_eq(FnType sgn1, FnType sgn2, Nat par_idx) =
+    all([is_eq(p1, p2) : p1, p2 @ i <- zip(sgn1.params, sgn2.params), i /= par_idx]);
+}
+
+
+TypeCheckingError* typecheck(FnDef fn_def, (TypeName => Type) typedefs, ((FnSymbol, Nat) => FnType+) signatures, (FnSymbol => FnType) aggregated_signatures)
 {
   errs = set([missing_param_type(p, i) : p @ i <- fn_def.params, not p.type?]) & {missing_res_type if not fn_def.res_type?};
   return errs if errs /= {};
 
   var_aliases=set([{fn_par(i), p.var} : p @ i <- fn_def.params, p.var?]);
-  let (typedefs=typedefs, signatures=signatures, var_aliases=var_aliases)
+  let (typedefs=typedefs, signatures=signatures, aggregated_signatures=aggregated_signatures, var_aliases=var_aliases)
     scalar_vars = (p.var => user_type_to_anon_type(p.type) : p <- set(fn_def.params), p.var?, p.type :: UserType) &
                   (fn_par(i) => user_type_to_anon_type(fn_def.params[i].type) : i <- index_set(fn_def.params), fn_def.params[i].type :: UserType) &
                   (v => user_type_to_anon_type(t) : v => t <- fn_def.named_params, t :: UserType);
@@ -39,11 +80,12 @@ TypeCheckingError* typecheck(FnDef fn_def, (TypeName => Type) typedefs, (FnSymbo
 
 using
 {
-  (TypeName => Type)      typedefs,
-  (FnSymbol => FnType*)   signatures,   //## MAYBE HERE I SHOULD INCLUDE THE ARITY IN THE KEY. UPDATE: I DEFINITELY SHOULD
-  (Var => Type)           environment,
-  (ClsVar => ClsType)     closures,
-  Var**                   var_aliases;
+  (TypeName => Type)            typedefs,
+  ((FnSymbol, Nat) => FnType+)  signatures,
+  ((FnSymbol, Nat) => FnType*)  aggregated_signatures,
+  (Var => Type)                 environment,
+  (ClsVar => ClsType)           closures,
+  Var**                         var_aliases;
 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
@@ -108,7 +150,7 @@ using
   TypeCheckingError* typecheck_set_expr(SubExpr* subexprs, ClosedType exp_type)
   {
     may_be_empty = subexprs == {} or not (? se <- subexprs : not is_cond_expr(se));
-    errs = {obj_does_not_belong_to_type({}, exp_type) if not type_contains_obj(exp_type, {})};
+    errs = {obj_does_not_belong_to_type({}, exp_type) if may_be_empty and not type_contains_obj(exp_type, {})};
     return errs if subexprs == {};
     elem_type = set_elem_type(exp_type);
     return errs & {not_a_set_type} if elem_type == void_type;
@@ -119,7 +161,7 @@ using
   TypeCheckingError* typecheck_seq_expr([SubExpr] subexprs, ClosedType exp_type)
   {
     may_be_empty = subexprs == [] or all([is_cond_expr(se) : se <- subexprs]);
-    errs = {obj_does_not_belong_to_type([], exp_type) if not type_contains_obj(exp_type, [])};
+    errs = {obj_does_not_belong_to_type([], exp_type) if may_be_empty and not type_contains_obj(exp_type, [])};
     return errs if subexprs == [];
     exp_elem_type = seq_elem_type(exp_type);
     return errs & {not_a_seq_type} if exp_elem_type == void_type;
@@ -230,14 +272,15 @@ using
 
     //## BUG: FROM NOW ON IT'S ALL BROKEN, OF COURSE...
 
-    signatures_by_name_and_arity = {s : s <- signatures[name], length(params) == arity(s)};
-    candidate_signatures = {s : s <- signatures_by_name_and_arity, will_dispatch_to(s, params)};
+    fn_key = (name, length(params));
+    candidate_signatures = {s : s <- signatures[fn_key], will_dispatch_to(s, params)};
     if (candidate_signatures == {})
-      par_types = [if p :: Expr then just(expr_type(p)) else nil : p <- params];
-      return {no_suitable_function_found(signatures_by_name_and_arity, par_types)};
+      candidate_signatures = {s : s <- aggregated_signatures[fn_key], will_dispatch_to(s, params)};
+      if (candidate_signatures == {})
+        par_types = [if p :: Expr then just(expr_type(p)) else nil : p <- params];
+        return {no_suitable_function_found(signatures[fn_key], par_types)};
+      ;
     ;
-
-    assert size(candidate_signatures) == 1;
     target_signature = only_element(candidate_signatures);
 
     // We first check that all scalar positional parameters (and those parameters only) match
@@ -277,12 +320,24 @@ using
 
     // Now named parameters
     named_par_errs = {};
+    invalid_pos_params = {};
     for (n, t : rand_sort_pairs(target_signature.named_params))
-      p = if has_key(named_params, n) then named_params[n],
-             has_key(environment, n)  then environment[n]
-                                      else closures[n];
-      named_par_errs = named_par_errs & typecheck(p, replace_type_vars(t, type_var_insts)); //## BUG: THIS IS BROKEN TOO..
+      inst_type = replace_type_vars(t, type_var_insts);
+      if (has_key(named_params, n))
+        named_par_errs = named_par_errs & typecheck(named_params[n], inst_type);
+      elif (has_key(environment, n))
+        actual_type = environment[n];
+        if (not is_subset(actual_type, inst_type))
+          invalid_pos_params = invalid_pos_params & {(n, t, inst_type)};
+        ;
+      else
+        actual_cls_type = environment[n];
+        if (not is_subset(actual_cls_type, inst_type))
+          invalid_pos_params = invalid_pos_params & {(n, t, inst_type)};
+        ;
+      ;
     ;
+    named_par_errs = named_par_errs & {invalid_named_par_type(target_signature, invalid_pos_params)} if invalid_pos_params /= {};
 
     // Now let's see if the type of the result is OK.
     actual_ret_type = replace_type_vars_with_void_default(target_signature.ret_type, type_var_insts);
@@ -473,7 +528,11 @@ using
     assert elem_type /= void_type; //## BUG: WHAT IF src_type IS THE EMPTY SEQUENCE TYPE?
     env_delta = asgnm_env_updates(vars, elem_type) & (value(maybe_idx_var) => type_nat if maybe_idx_var /= nil);
     new_env = update(environment, env_delta);
-    errs = typecheck(value(maybe_sel_expr), type_bool, environment=new_env) if maybe_sel_expr /= nil;
+    if (maybe_sel_expr /= nil)
+      sel_expr = value(maybe_sel_expr);
+      errs = typecheck(sel_expr, type_bool, environment=new_env);
+      new_env = left(refine_environment(sel_expr, environment=new_env));
+    ;
     return errs & typecheck(expr, exp_elem_type, environment=new_env);
   }
 

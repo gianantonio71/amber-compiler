@@ -1,20 +1,21 @@
 using
 {
-  (TypeName => Type)      typedefs,
-  (FnSymbol => FnType*)   signatures,   //## MAYBE HERE I SHOULD INCLUDE THE ARITY IN THE KEY. UPDATE: I DEFINITELY SHOULD
-  (Var => Type)           environment,
-  (Var => ClsType)        closures,
-  Var**                   var_aliases;
+  (TypeName => Type)            typedefs,
+  ((FnSymbol, Nat) => FnType+)  signatures,
+  ((FnSymbol, Nat) => FnType*)  aggregated_signatures,
+  (Var => Type)                 environment,
+  (Var => ClsType)              closures,
+  Var**                         var_aliases;
 
 
   //## HERE I SHOULD REFINE THE ENVIRONMENT BEFORE CALCULATING THE TYPE. SEE ALSO THE TYPECHECKING PART
-  Type expr_type(CondExpr expr) = expr_type(expr.expr);
+  ClosedType expr_type(CondExpr expr) = expr_type(expr.expr);
 
 
   // I assume that the expression typechecks
-  Type expr_type(Expr expr):
-    SymbObj           = symb_type(expr),
-    object(Int n?)    = int_range(min: n, size: 1),
+  ClosedType expr_type(Expr expr):
+    object(+)         = symb_type(expr),
+    object(* n?)      = int_range(min: n, size: 1),
     set_expr(ses?)    = set_expr_type(ses),
     seq_expr(ses?)    = seq_expr_type(ses),
     tuple_expr(es?)   = tuple_type([expr_type(e) : e <- es]),
@@ -40,15 +41,15 @@ using
     set_comp()        = set_comp_expr_type(expr.expr, expr.source, if expr.sel_expr? then just(expr.sel_expr) else nil),
     map_comp()        = map_comp_expr_type(expr.key_expr, expr.value_expr, expr.source, if expr.sel_expr? then just(expr.sel_expr) else nil),
     seq_comp()        = if expr.src_expr_type == :sequence
-                          then seq_comp_expr_type(expr.expr, expr.vars, if expr.idx_var? then just(expr.idx_var) else nil, expr.src_expr)
+                          then seq_comp_expr_type(expr.expr, expr.vars, if expr.idx_var? then just(expr.idx_var) else nil, expr.src_expr, if expr.sel_expr? then just(expr.sel_expr) else nil)
                           else int_range_seq_comp_expr_type(expr.expr, expr.vars[0], expr.src_expr, expr.src_expr_type.included);
 
 
   Type set_expr_type(SubExpr* ses)
   {
     return empty_set_type if ses == {};
-    type = ne_set_type(union_superset({expr_type(se) : se <- ses}));
-    type = union_type({type, empty_set_type}) if (? se <- ses : se :: CondExpr);
+    type = closed_ne_set_type(union_superset({expr_type(se) : se <- ses}));
+    type = closed_union_type({type, empty_set_type}) if (? se <- ses : se :: CondExpr);
     return type;
   }
 
@@ -59,7 +60,7 @@ using
     se_set = set(ses);
     elem_type = union_superset({expr_type(se) : se <- se_set});
     may_be_empty = not (? se <- se_set : not se :: CondExpr);
-    return if may_be_empty then type_seq(elem_type) else ne_seq_type(elem_type);
+    return if may_be_empty then type_seq(elem_type) else closed_ne_seq_type(elem_type);
   }
 
 
@@ -67,7 +68,7 @@ using
   {
     head_elem_type = seq_elem_type(expr_type(seq));
     tail_elem_types = [expr_type(e) : e <- tail];
-    return ne_seq_type(union_superset({head_elem_type if head_elem_type /= void_type} & set(tail_elem_types)));
+    return closed_ne_seq_type(union_superset({head_elem_type if head_elem_type /= void_type} & set(tail_elem_types)));
   }
 
 
@@ -89,16 +90,20 @@ using
   {
     tag_type = expr_type(tag_expr);
     obj_type = expr_type(obj_expr);
-    return tag_obj_type(tag_type, obj_type);
+    return closed_tag_obj_type(tag_type, obj_type);
   }
 
 
   Type fn_call_expr_type(FnSymbol name, [ExtExpr] params, (NamedPar => ExtExpr) named_params)
   {
     // BUG BUG BUG: THIS IS ALL WRONG. THERE MAY BE MORE THAN JUST ONE TARGET FUNCTION. SHOULD BE:
-    // candidate_signatures = {s : s <- signatures[name], length(params) == arity(s) and may_dispatch_to(s, params)};
+    // candidate_signatures = {s : s <- signatures[(name, length(params))], may_dispatch_to(s, params)};
     // return union_superset({fn_call_type(s, params, named_params) : s <- candidate_signatures});
-    canditate_signatures = {s : s <- signatures[name], length(params) == arity(s) and will_dispatch_to(s, params)};
+    fn_key = (name, length(params));
+    canditate_signatures = {s : s <- signatures[fn_key], will_dispatch_to(s, params)};
+    if (canditate_signatures == {})
+      canditate_signatures = {s : s <- aggregated_signatures[fn_key], will_dispatch_to(s, params)};
+    ;
     signature = only_element(canditate_signatures);
     return fn_call_type(signature, params, named_params);
   }
@@ -158,7 +163,7 @@ using
       sel_expr = value(maybe_sel_expr);
       new_env = left(refine_environment(sel_expr, environment=new_env));
     ;
-    return ne_set_type(expr_type(expr, environment=new_env));
+    return closed_ne_set_type(expr_type(expr, environment=new_env));
   }
 
 
@@ -171,19 +176,24 @@ using
     ;
     key_type = expr_type(key_expr, environment=new_env);
     value_type = expr_type(value_expr, environment=new_env);
-    return ne_map_type(key_type, value_type);
+    return closed_ne_map_type(key_type, value_type);
   }
 
 
-  Type seq_comp_expr_type(Expr expr, [Var^] vars, Maybe[Var] maybe_idx_var, Expr src_expr)
+  Type seq_comp_expr_type(Expr expr, [Var^] vars, Maybe[Var] maybe_idx_var, Expr src_expr, Maybe[Expr] maybe_sel_expr)
   {
     src_expr_type = expr_type(src_expr);
     return empty_seq_type if is_subset(src_expr_type, empty_seq_type);
     elem_type = seq_elem_type(src_expr_type);
     assert elem_type /= void_type;
     env_delta = asgnm_env_updates(vars, elem_type) & (value(maybe_idx_var) => type_nat if maybe_idx_var /= nil);
-    expr_elem_type = expr_type(expr, environment=update(environment, env_delta));
-    return if is_subset(empty_seq_type, src_expr_type) then type_seq(expr_elem_type) else ne_seq_type(expr_elem_type);
+    new_env = update(environment, env_delta);
+    if (maybe_sel_expr /= nil)
+      sel_expr = value(maybe_sel_expr);
+      new_env = left(refine_environment(sel_expr, environment=new_env));
+    ;
+    expr_elem_type = expr_type(expr, environment=new_env);
+    return if is_subset(empty_seq_type, src_expr_type) then type_seq(expr_elem_type) else closed_ne_seq_type(expr_elem_type);
   }
 
 
@@ -489,6 +499,7 @@ using
           _               = {
             ref_obj_type_if_true, ref_obj_type_if_false = accessor_test_refine(type.obj_type, field);
             return (
+              //## SHOULD THE FOLLOWING TWO INSTANCES OF tag_obj_type BE REPLACED BY closed_tag_obj_type?
               if ref_obj_type_if_true == void_type then void_type else tag_obj_type(type.tag_type, ref_obj_type_if_true),
               if ref_obj_type_if_false == void_type then void_type else tag_obj_type(type.tag_type, ref_obj_type_if_false)
             );

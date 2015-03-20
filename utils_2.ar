@@ -1,3 +1,25 @@
+Type unfold(Type type, (SelfPretype => Type) sub_map):
+  LeafType          = type,
+  TypeVar           = type,
+  SelfPretype       = sub_map[type],
+  ne_seq_type()     = ne_seq_type(unfold(type.elem_type, sub_map)),
+  ne_set_type()     = ne_set_type(unfold(type.elem_type, sub_map)),
+  ne_map_type()     = ne_map_type(unfold(type.key_type, sub_map), unfold(type.value_type, sub_map)),
+  record_type(fs?)  = record_type((l => (type: unfold(f.type, sub_map), optional: f.optional) : l => f <- fs)),
+  tuple_type(ts?)   = tuple_type([unfold(t, sub_map) : t <- ts]),
+  tag_obj_type()    = tag_obj_type(type.tag_type, unfold(type.obj_type, sub_map)),
+  union_type(ts?)   = union_type({unfold(t, sub_map) : t <- ts}),
+  self_rec_type()   = type,
+  mut_rec_type()    = type;
+
+
+Type unfold(Type type):
+  self_rec_type(t?) = unfold(t, (self => type)),
+  mut_rec_type()    = unfold(type.types[type.index], (self(i) => mut_rec_type(i, type.types) : i <- index_set(type.types))),
+  _                 = type;
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 
 Expr* ordinary_subexprs(Expr expr):
   object()        = {},
@@ -8,7 +30,7 @@ Expr* ordinary_subexprs(Expr expr):
   map_expr(es?)   = union({{e.key, e.value, e.cond if e.cond?} : e <- es}),
   tag_obj_expr()  = {expr.tag, expr.obj},
   Var             = {},
-  fn_call()       = set(expr.params),
+  fn_call()       = {},
   cls_call()      = set(expr.params), //## BAD
   builtin_call()  = set(expr.params), //## BAD
   and_expr()      = {expr.left, expr.right},
@@ -82,9 +104,9 @@ Var* extern_vars(Expr expr)
 
   return ord_expr_evs & spec_expr_evs & spec_case_evs;
 
-  special_cases(expr):
+  Var* special_cases(Expr expr):
       Var            = {expr},
-      fn_call()      = union({extern_vars(e) : k => e <- expr.named_params}),
+      fn_call()      = union({extern_vars(e) : e <- set(expr.params)} & {extern_vars(e) : k => e <- expr.named_params}),
       ex_qual()      = extern_vars(expr.source),
       set_comp()     = extern_vars(expr.source), //## BAD
       map_comp()     = extern_vars(expr.source), //## BAD
@@ -128,7 +150,7 @@ Var* extern_vars(Statement s):
   if_stmt()         = extern_vars(s.cond) & extern_vars(s.body) & extern_vars(s.else),
   loop_stmt(ss?)    = extern_vars(ss),
   foreach_stmt()    = extern_vars(s.values) & (extern_vars(s.body) - (set(s.vars) & {s.idx_var if s.idx_var?})),
-  for_stmt()        = extern_vars(s.start_val) & extern_vars(s.end_val) & (extern_vars(s.body) - {s.var}),
+  for_stmt()        = extern_vars(s.start_val) & extern_vars(s.end_val) & (extern_vars(s.body) - {s.var if s.var?}),
   break_stmt        = {},
   fail_stmt         = {},
   assert_stmt(e?)   = extern_vars(e),
@@ -154,7 +176,7 @@ StmtOutcome+ outcomes([Statement] stmts)
     outcomes = (outcomes - {:falls_through}) & outcomes(s);
     break if not in(:falls_through, outcomes);
   ;
-  return outcomes;
+  return nonempty(outcomes);
 }
 
 
@@ -162,7 +184,7 @@ StmtOutcome+ outcomes(Statement stmt):
   assignment_stmt() = {:fails, :falls_through},
   return_stmt       = {:returns},
   return_stmt()     = {:fails, :returns},
-  if_stmt()         = {:fails} & outcomes(stmt.body) & outcomes(stmt.else),
+  if_stmt()         = nonempty({:fails} & outcomes(stmt.body) & outcomes(stmt.else)), // Shutting up the type checker
   loop_stmt(body?)  = {
     outcomes = outcomes(body);
     // Failures and returns in the body are transferred to the loop.
@@ -171,11 +193,11 @@ StmtOutcome+ outcomes(Statement stmt):
     outcomes = (outcomes - {:falls_through}) & {:fails} if in(:falls_through, outcomes);
     // A break in the body becomes a fall through for the loop itself
     outcomes = (outcomes - {:breaks}) & {:falls_through} if in(:breaks, outcomes);
-    return outcomes;
+    return nonempty(outcomes); // Shutting up the type checker
   },
-  foreach_stmt()    = {:fails, :falls_through} & outcomes(stmt.body) - {:breaks},
-  for_stmt()        = {:fails, :falls_through} & outcomes(stmt.body) - {:breaks}, //## BAD: SAME AS ABOVE
-  let_stmt()        = {:fails} & outcomes(stmt.body),
+  foreach_stmt()    = nonempty({:fails, :falls_through} & outcomes(stmt.body) - {:breaks}), // Shutting up the type checker
+  for_stmt()        = nonempty({:fails, :falls_through} & outcomes(stmt.body) - {:breaks}), // Shutting up the type checker //## BAD: SAME AS ABOVE
+  let_stmt()        = nonempty({:fails} & outcomes(stmt.body)), // Shutting up the type checker
   break_stmt        = {:breaks},
   fail_stmt         = {:fails},
   assert_stmt()     = {:falls_through, :fails},
