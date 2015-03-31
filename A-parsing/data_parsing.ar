@@ -1,0 +1,76 @@
+ParsingRule rule_ref_data = rule_ref(:data);
+
+
+ParsingRule rule_data =
+  rule_choice([
+    (:tag_obj,  rule_seq([atomic_rule(lowercase_id), par_rule(rule_ref_data)])),
+    (:tag_rec,  rule_seq([atomic_rule(lowercase_id), rule_data_record])),
+
+    (:symbol,   atomic_rule(lowercase_id)),
+    (:integer,  atomic_rule(integer)),
+    (:float,    atomic_rule(float)),
+
+    (:string,   atomic_rule(string)),
+
+    (:set,      brace_rule(opt_comma_sep_seq(rule_ref_data))),
+
+    (:map,      par_rule(opt_comma_sep_seq(rule_seq([rule_ref_data, atomic_rule(double_right_arrow), rule_ref_data])))),
+    (:record,   rule_data_record),
+
+    (:seq,      bracket_rule(opt_comma_sep_seq(rule_ref_data))),
+    (:tuple,    par_rule(comma_sep_seq(rule_ref_data)))
+  ]);
+
+
+ParsingRule rule_data_record = par_rule(comma_sep_seq(rule_seq([atomic_rule(label), rule_ref_data])));
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+Any build_data_ast(RuleMatch mtc) =
+  match (mtc.name)
+    tag_obj   = get_lowercase_id(mtc.match, 0) @ build_data_ast(block_node(rule_seq_node(mtc.match, 1))),
+    tag_rec   = get_lowercase_id(mtc.match, 0) @ build_data_record_ast(rule_seq_node(mtc.match, 1)),
+
+    symbol    = get_lowercase_id(mtc.match),
+    integer   = get_integer(mtc.match),
+    float     = {fail;}, //## IMPLEMENT
+
+    string    = get_string(mtc.match),
+
+    set       = set(build_data_seq_ast(mtc.match)),
+    map       = (build_data_ast(n, 0) => build_data_ast(n, 2) : n <- set(rep_rule_nodes(block_node(mtc.match)))),
+    record    = build_data_record_ast(mtc.match),
+    seq       = build_data_seq_ast(mtc.match),
+    tuple     = build_data_seq_ast(mtc.match);
+  ;
+
+
+Any build_data_ast(RuleMatch mtc, Nat idx) = build_data_ast(rule_seq_node(mtc, idx));
+
+[Any] build_data_seq_ast(RuleMatch mtc) = [build_data_ast(n) : n <- rep_rule_nodes(block_node(mtc))];
+
+Any build_data_record_ast(RuleMatch mtc) = (get_label(n, 0) => build_data_ast(n, 1) : n <- set(rep_rule_nodes(block_node(mtc))));
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+Result[Any, <LexerError, ParError, ParserError>] parse_data_file([Nat] chars)
+{
+  lex_res = lex_src_file(chars);
+  return lex_res if is_failure(lex_res);
+  tokens = get_result(lex_res);
+
+  return success([]) if tokens == [];
+
+  rec_rules = (data: rule_data);
+
+  maybe_err = parentheses_error(tokens);
+  return failure(value(maybe_err)) if maybe_err /= nil;
+
+  parser_res = parse_all(rule_data, tokens, rec_rules);
+  return parser_res if is_failure(parser_res);
+  parser_match = get_result(parser_res);
+
+  return success(build_data_ast(parser_match.rule_match));
+}
