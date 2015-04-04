@@ -1,310 +1,156 @@
+ClosedType union_superset(ClosedType t1, ClosedType t2)
+{
+  return t2 if t1 == void_type;
+  return t1 if t2 == void_type;
 
-ClosedType union_superset(ClosedType t1, ClosedType t2) = union_superset({t1, t2});
+  ut = union_superset_impl(t1, t2);
+  //## TODO: HERE WE SHOULD ALSO CHECK THAT THE UNION TYPE IS WELL-FORMED
+  assert is_subset(t1, ut) and is_subset(t2, ut);
+  return ut;
+}
 
 
 ClosedType union_superset(ClosedType+ types)
 {
-  non_void_types = {t : t <- types, t /= void_type};
-  if (non_void_types == {})
-    return void_type;
-  else
-    return union_superset_impl(non_void_types, allow_incompatible_groups=false);
-  ;
+  non_empty_types = types - {void_type};
+  return void_type if non_empty_types == {};
+  ut = union_superset_impl(non_empty_types);
+  assert not (? t <- types : not is_subset(t, ut));
+  return ut;
 }
 
 
-type Pretype = LeafType, TypeVar, SelfPretype, CompType, UnionType, RecType, UnionPretype;
+Type union_superset_impl(Type t1, Type t2):
+  type_var(),             _                   = if t1 == t2 then t1 else type_any,
+  _,                      type_var()          = type_any,
 
-type UnionPretype = union_pretype(Type+);
+  self,                   _                   = {fail;},
+  _,                      self                = {fail;},
 
+  self(n?),               _                   = {fail;},
+  _,                      self(n?)            = {fail;},
 
-UnionPretype union_pretype(Type+ types)
+  self_rec_type(pt?),     _                   = emergency_union_superset(t1, t2),
+  _,                      self_rec_type()     = emergency_union_superset(t1, t2),
+
+  mut_rec_type(),         _                   = emergency_union_superset(t1, t2),
+  _,                      mut_rec_type()      = emergency_union_superset(t1, t2),
+
+  union_type(ts1?),       union_type(ts2?)    = union_superset_impl(ts1 & ts2),
+  union_type(ts?),        _                   = union_superset_impl(ts & {t2}),
+  _,                      union_type(ts?)     = union_superset_impl({t1} & ts),
+
+  symb_type(),            atom_type           = atom_type,
+
+  IntType,                IntType             = int_type_union(t1, t2),
+
+  ne_set_type(),          ne_set_type()       = ne_set_type(union_superset_impl(t1.elem_type, t2.elem_type)),
+
+  ne_seq_type(),          ne_seq_type()       = ne_seq_type(union_superset_impl(t1.elem_type, t2.elem_type)),
+  ne_seq_type(),          tuple_type(ts?)     = ne_seq_type(union_superset_impl({t1.elem_type} & set(ts))),
+  tuple_type(),           ne_seq_type()       = union_superset_impl(t2, t1),
+  tuple_type(ts1?),       tuple_type(ts2?)    = if length(ts1) /= length(ts2)
+                                                  then ne_seq_type(union_superset_impl(set(ts1 & ts2)))
+                                                  else tuple_type([union_superset_impl(ft1, ft2) : ft1, ft2 <- zip(ts1, ts2)]),
+
+  empty_map_type,         record_type()       = if type_contains_obj(t2, ()) then t2 else union_type({t1, t2}),
+  record_type(fs?),       empty_map_type      = union_superset_impl(t2, t1),
+  ne_map_type(),          ne_map_type()       = ne_map_type(
+                                                  union_superset_impl(t1.key_type, t2.key_type),
+                                                  union_superset_impl(t1.value_type, t2.value_type)
+                                                ),
+  ne_map_type(),          record_type(fs?)    = map_record_types_union_superset(t1.key_type, t1.value_type, fs),
+  record_type(fs?),       ne_map_type()       = map_record_types_union_superset(t2.key_type, t2.value_type, fs),
+  record_type(fs1?),      record_type(fs2?)   = record_types_union_superset(fs1, fs2),
+
+  tag_obj_type(),         tag_obj_type()      = tag_obj_types_union_superset(t1, t2),
+
+  _,                      _                   = union_type({t1, t2});
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+Type emergency_union_superset(Type t1, Type t2)
 {
-  assert size(types) > 1;
-  return :union_pretype(types);
+  return union_type({t1, t2}) if not pseudotypes_overlap(t1, t2);
+  return t1 if is_subset(t2, t1);
+  return t2 if is_subset(t1, t2);
+  return type_any;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+Type union_superset_impl(Type+ types)
+{
+  curr_types = {};
+  for (type : rand_sort(types))
+    curr_independent_types = {t : t <- curr_types, not pseudotypes_overlap(t, type)};
+    curr_overlapping_types = curr_types - curr_independent_types;
+    merged_type = type;
+    for (t : rand_sort(curr_overlapping_types))
+      merged_type = union_superset_impl(merged_type, t);
+    ;
+    //## CHECK THAT merged_type IS NOT A UNION TYPE AND THAT IT DOESN'T OVERLAP
+    //## WITH ANY OF THE TYPES IN curr_types
+    curr_types = curr_independent_types & {merged_type};
+  ;
+  return union_type(curr_types);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+IntType int_type_union(IntType t1, IntType t2):
+  integer,      _             = integer,
+  low_ints(),   low_ints()    = low_ints(max(t1.max, t2.max)),
+  low_ints(),   high_ints()   = integer,
+  low_ints(),   int_range()   = low_ints(max(t1.max, max(t2))),
+  high_ints(),  high_ints()   = high_ints(min(t1.min, t2.min)),
+  high_ints(),  int_range()   = high_ints(min(t1.min, t2.min)),
+  int_range(),  int_range()   = int_range(min(t1.min, t2.min), max(max(t1), max(t2))),
+  _,            _             = int_type_union(t2, t1);
+
+
+Type map_record_types_union_superset(Type key_type, Type value_type, (SymbObj => (type: Type, optional: Bool)) fields)
+{
+  kt = union_superset_impl({key_type} & {symb_type(l) : l => _ <- fields});
+  vt = union_superset_impl({value_type} & {f.type : _ => f <- fields});
+  return union_type({ne_map_type(kt, vt), empty_map_type if not (? _ => f <- fields : not f.optional)});
 }
 
 
-Type rec_type_union_superset(Type* types)
+RecordType record_types_union_superset((SymbObj => (type: Type, optional: Bool)) fs1, (SymbObj => (type: Type, optional: Bool)) fs2)
 {
-  pre_unions = ();
-  type_sets_to_do = {types};
+  ls1 = keys(fs1);
+  ls2 = keys(fs2);
 
-  while (type_sets_to_do /= {})
-    pre_unions = pre_unions & (ts => union_superset_impl({unfold(t) : t <- ts}, allow_incompatible_groups=true) : ts <- type_sets_to_do);
-    type_sets_to_do = union({illegal_unions(pu) : _ => pu <- pre_unions}) - keys(pre_unions);
+  cls = intersection(ls1, ls2);
+  ls1o = ls1 - cls;
+  ls2o = ls2 - cls;
 
+  cfs = (l => (type: union_superset_impl(f1.type, f2.type), optional: f1.optional or f2.optional) : l <- cls, f1 = fs1[l], f2 = fs2[l]);
+  fs1o = (l => (type: fs1[l].type, optional: true) : l <- ls1o);
+  fs2o = (l => (type: fs2[l].type, optional: true) : l <- ls2o);
+
+  return record_type(cfs & fs1o & fs2o);
+}
+
+
+TagObjType tag_obj_types_union_superset(TagObjType t1, TagObjType t2)
+{
+  if (t1.tag_type == atom_type or t2.tag_type == atom_type)
+    return tag_obj_type(atom_type, union_superset_impl(t1.obj_type, t2.obj_type));
   ;
 
-  final_unions = ();
-  pre_unions_left = pre_unions;
-  types_left = keys(pre_unions);
-  while (types_left /= {})
-    cs = clusters(pre_unions_left);
-    ncs = {normalize(c, pre_unions_left) : c <- cs};
-    new_final_unions = merge(ncs);
-    final_unions = final_unions & new_final_unions;
-    types_left = types_left - keys(new_final_unions);
-    pre_unions_left = (ts => replace_final_preunions(pre_unions_left[ts], final_unions) : ts <- types_left);
+  if (t1.tag_type == t2.tag_type)
+    return tag_obj_type(t1.tag_type, union_superset_impl(t1.obj_type, t2.obj_type));
   ;
 
-  return final_unions[types];
-
-
-  (Type+ => Type) normalize(Type++ cluster, (Type+ => Pretype) pre_unions)
-  {
-    if (size(cluster) == 1)
-      ts = only_element(cluster);
-      type = replace_preunions(pre_unions[ts], (ts => self));
-      type = self_rec_type(type) if has_rec_branches(type);
-      return (ts => type);
-    ;
-
-    sort_type_sets = rand_sort(cluster);
-    rec_map = (sort_type_sets[i] => self(i) : i <- index_set(sort_type_sets));
-    types = [replace_preunions(pre_unions[ts], rec_map) : ts <- sort_type_sets];
-    return (sort_type_sets[i] => mut_rec_type(i, types) : i <- index_set(sort_type_sets));
-  }
-
-
-  // Type replace_preunions(Pretype pretype, (Type+ => SelfPretype) rec_map) = repl-ace union_pretype(ts) in pretype with rec_map[ts] end;
-
-  //## replace_preunions() AND replace_final_unions() ARE SO SIMILAR. ISN'T THERE A WAY OF MERGING THEM?
-
-  //## THERE MUST BE A BETTER WAY EVEN WITHOUT A REPLACE INSTRUCTION...
-  Type replace_preunions(Pretype pretype, (Type+ => SelfPretype) rec_map):
-    LeafType            = pretype,
-    TypeVar             = pretype,
-    SelfPretype         = pretype,
-    ne_seq_type()       = ne_seq_type(replace_preunions(pretype.elem_type, rec_map)),
-    ne_set_type()       = ne_set_type(replace_preunions(pretype.elem_type, rec_map)),
-    ne_map_type()       = ne_map_type(replace_preunions(pretype.key_type, rec_map), replace_preunions(pretype.value_type, rec_map)),
-    record_type(fs?)    = record_type((l => (type: replace_preunions(f.type, rec_map), optional: f.optional) : l => f <- fs)),
-    tuple_type(ts?)     = {fail;},
-    tag_obj_type()      = tag_obj_type(pretype.tag_type, replace_preunions(pretype.obj_type, rec_map)),
-    union_type(ts?)     = union_type({replace_preunions(t, rec_map) : t <- ts}),
-    union_pretype(ts?)  = rec_map[ts],
-    self_rec_type(t?)   = self_rec_type(replace_preunions(t, rec_map)),
-    mut_rec_type()      = mut_rec_type(pretype.index, [replace_preunions(t, rec_map) : t <- pretype.types]);
-
-  // Pretype replace_final_preunions(Pretype pretype, (Type+ => Type) final_unions) =
-  //   rep-lace union_pretype(ts) pt
-  //   in pretype
-  //   with lookup(final_unions, ts, pt) end; //## WHY DO WE HAVE TO PROVIDE A DEFAULT HERE? I CAN'T REMEMBER...
-
-  //## THERE MUST BE A BETTER WAY EVEN WITHOUT A REPLACE INSTRUCTION...
-  Pretype replace_final_preunions(Pretype pretype, (Type+ => Type) final_unions):
-    LeafType            = pretype,
-    TypeVar             = pretype,
-    SelfPretype         = pretype,
-    ne_seq_type()       = ne_seq_type(replace_final_preunions(pretype.elem_type, final_unions)),
-    ne_set_type()       = ne_set_type(replace_final_preunions(pretype.elem_type, final_unions)),
-    ne_map_type()       = ne_map_type(replace_final_preunions(pretype.key_type, final_unions), replace_final_preunions(pretype.value_type, final_unions)),
-    record_type(fs?)    = record_type((l => (type: replace_final_preunions(f.type, final_unions), optional: f.optional) : l => f <- fs)),
-    tuple_type(ts?)     = {fail;},
-    tag_obj_type()      = tag_obj_type(pretype.tag_type, replace_final_preunions(pretype.obj_type, final_unions)),
-    union_type(ts?)     = union_type({replace_final_preunions(t, final_unions) : t <- ts}),
-    union_pretype(ts?)  = lookup(final_unions, ts, pretype), //## WHY DO WE HAVE TO PROVIDE A DEFAULT HERE? I CAN'T REMEMBER...
-    self_rec_type(t?)   = self_rec_type(replace_final_preunions(t, final_unions)),
-    mut_rec_type()      = mut_rec_type(pretype.index, [replace_final_preunions(t, final_unions) : t <- pretype.types]);
-
-  Type+** clusters((Type+ => Pretype) pre_unions)
-  {
-    ref_map        = (ts => illegal_unions(pu) : ts => pu <- pre_unions);
-    deep_ref_map   = transitive_closure(ref_map);
-    conn_comps     = {{s} & ss : s => ss <- deep_ref_map};
-    min_conn_comps = {c1 : c1 <- conn_comps, not (? c2 <- conn_comps : c1 /= c2, subset(c2, c1))};
-    return min_conn_comps;
-  }
-
-  // Type+* illegal_unions(Pretype pretype) = retrieve ts from union_pretype(ts) in pretype end;
-  Type+* illegal_unions(Pretype pretype) = {_obj_(pt) : pt <- select(pretype, $ :: UnionPretype)}; //## THE ABOVE VERSION WITH RETRIEVE WAS LESS UGLY
+  return union_type({t1, t2});
 }
 
-using Bool allow_incompatible_groups
-{
-  Pretype union_superset_impl(Type+ types)
-  {
-    exp_types = union({expand_union_type(t) : t <- types});
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 
-    //## TODO: DEAL WITH RECURSIVE TYPES, RECURSIVE REFERENCES AND TYPE VARIABLES HERE
-    assert not (? union_type() <- exp_types);
-
-    return only_element(exp_types, type_any) if (? t <- exp_types : t :: TypeVar);
-
-    self_rec_types = {t : self_rec_type() t <- exp_types};
-    mut_rec_types = {t : mut_rec_type() t <- exp_types};
-    rec_types = self_rec_types & mut_rec_types;
-
-    exp_types = exp_types - rec_types;
-
-    // assert exp_types :: <<LeafType, CompType>+>; //## WHY WAS IT NON-EMPTY?
-    assert exp_types :: <LeafType, CompType>*;
-
-    types_by_group = merge_values({(type_group(t) => t) : t <- exp_types});
-
-    res_types = union({
-      {atom_type}                                                     if types_by_group.atom?,
-      types_by_group.symb                                             if types_by_group.symb? and not types_by_group.atom?,
-      {int_types_union_superset(types_by_group.int)}                  if types_by_group.int?,
-      {float_type}                                                    if types_by_group.float?,
-      {empty_seq_type}                                                if types_by_group.empty_seq?,
-      {ne_seq_and_tuple_types_union_superset(types_by_group.ne_seq)}  if types_by_group.ne_seq?,
-      {empty_set_type}                                                if types_by_group.empty_set?,
-      {set_types_union_superset(types_by_group.ne_set)}               if types_by_group.ne_set?,
-      tag_obj_types_union_superset(types_by_group.tag_obj)            if types_by_group.tag_obj?
-    });
-
-    if (types_by_group.ne_map?)
-      res_ne_map_type = map_types_union_superset(types_by_group.ne_map);
-      if (types_by_group.record?)
-        res_record_type = record_types_union_superset(types_by_group.record);
-        res_map_types = map_record_union_superset(res_ne_map_type, res_record_type, types_by_group.empty_map?);
-      else
-        res_map_types = {res_ne_map_type, empty_map_type if types_by_group.empty_map?};
-      ;
-    else
-      if (types_by_group.record?)
-        res_record_type = record_types_union_superset(types_by_group.record);
-        if (types_by_group.empty_map?)
-          res_record_type = record_type((l => (type: f.type, optional: true) : l => f <- _obj_(res_record_type)));
-        ;
-        res_map_types = {res_record_type};
-      else
-        res_map_types = {empty_map_type if types_by_group.empty_map?};
-      ;
-    ;
-
-    res_types = res_types & res_map_types;
-
-    // assert not (? t <- res_types : not anon_type_is_wf(t));
-    // assert not (? t1 <- res_types, t2 <- res_types : t1 /= t2 and not anon_types_are_compatible(t1, t2));
-
-    type_groups = group_types_by_incompatibility(res_types & rec_types);
-
-    standalone_types = {only_element(g) : g <- type_groups, size(g) == 1};  //## BAD: DOING MULTIPLE PASSES OVER THE SET IN ORDER TO PARTITION IT
-    incompatible_groups = {g : g <- type_groups, size(g) > 1};              //## BAD: DITTO
-
-    if (allow_incompatible_groups)
-      illegal_unions = {union_pretype(g) : g <- incompatible_groups};
-      return union_type(standalone_types & illegal_unions);
-    ;
-
-    reformed_unions = {rec_type_union_superset(g) : g <- incompatible_groups};
-    return union_type(standalone_types & reformed_unions);
-
-
-    Type+ expand_union_type(type):
-      union_type(ts?) = union({expand_union_type(t) : t <- ts}),
-      _               = {type};
-
-
-    type_group(Type type):
-      atom_type         = :atom,
-      SymbType          = :symb,
-      IntType           = :int,
-      float_type        = :float,
-      empty_seq_type    = :empty_seq,
-      empty_set_type    = :empty_set,
-      empty_map_type    = :empty_map,
-      ne_seq_type()     = :ne_seq,
-      tuple_type()      = :ne_seq,
-      ne_set_type()     = :ne_set,
-      ne_map_type()     = :ne_map,
-      record_type()     = :record,
-      tag_obj_type()    = :tag_obj;
-
-
-    Type** group_types_by_incompatibility(Type* types)
-    {
-      inc_map = (t1 => {t2 : t2 <- types, not anon_types_are_compatible(t1, t2)} : t1 <- types);
-      return values(transitive_closure(inc_map));
-    }
-  }
-
-
-  IntType int_types_union_superset(IntType+ int_types)
-  {
-    if (in(:integer, int_types) or (? low_ints() <- int_types, high_ints() <- int_types)) //## NOT SURE ABOUT THIS ONE
-      return :integer;
-    elif ((? low_ints() <- int_types))
-      max_val = max({max(t) : t <- int_types});
-      return low_ints(max: max_val);
-    elif ((? high_ints() <- int_types))
-      min_val = min({t.min : t <- int_types});
-      return high_ints(min: min_val);
-    else
-      max_val = max({max(t) : t <- int_types});  //## IMPLEMENT max(Int+)
-      min_val = min({t.min  : t <- int_types});  //## IMPLEMENT min(Int+)
-      return int_range(min_val, max_val);
-    ;
-  }
-
-
-  NeSetType set_types_union_superset(NeSetType+ types) = ne_set_type(union_superset_impl({t.elem_type : t <- types}));
-
-  NeMapType map_types_union_superset(NeMapType+ types) = ne_map_type(union_superset_impl({t.key_type : t <- types}), union_superset_impl({t.value_type : t <- types}));
-
-
-  RecordType record_types_union_superset(RecordType+ record_types)
-  {
-    fields_by_label = merge_values({fm : record_type(fm) <- record_types});
-    res_fields = for (l => fs <- fields_by_label) (
-      l => (type: union_superset_impl({f.type : f <- fs}), optional: (? f <- fs : f.optional) or (? record_type(fm) <- record_types : not has_key(fm, l)))
-    );
-    return record_type(res_fields);
-  }
-
-
-  <NeSeqType, TupleType> ne_seq_and_tuple_types_union_superset(<NeSeqType, TupleType>+ types)
-  {
-    assert types /= {};
-
-    return only_element(types) if size(types) == 1;
-
-    Bool is_ne_seq_type(<NeSeqType, TupleType>): //## BAD: THIS IS DEFINITELY OVERKILL FOR WHAT IT DOES...
-      ne_seq_type()   = true,
-      tuple_type()    = false;
-
-    if (not (? t <- types : is_ne_seq_type(t)))
-      lengths = {length(_obj_(t)) : t <- types};
-      if (size(lengths) == 1)
-        len = only_element(lengths);
-        res_field_types = [union({fts[i] : tuple_type(fts) <- types}) : i < len];
-        return tuple_type(res_field_types);
-      ;
-    ;
-
-    Type+ elem_types(<NeSeqType, TupleType> type):
-      ne_seq_type()   = {type.elem_type},
-      tuple_type(ts?) = set(ts);
-
-    all_elem_types = union({elem_types(t) : t <- types});
-    res_seq_elem_type = union_superset(all_elem_types);
-    return ne_seq_type(res_seq_elem_type);
-  }
-
-
-  Type+ map_record_union_superset(MapType map_type, RecordType record_type, Bool includes_empty_map)
-  {
-    fields = _obj_(record_type);
-    res_key_type = union_superset_impl({map_type.key_type, union_type({symb_type(l) : l => f <- fields})});
-    res_value_type = union_superset_impl({map_type.value_type} & {f.type : l => f <- fields});
-    res_map_type = ne_map_type(res_key_type, res_value_type);
-    needs_empty_map = includes_empty_map or not (? l => f <- fields : not f.optional);
-    return if needs_empty_map then {empty_map_type, res_map_type} else {res_map_type};
-  }
-
-
-  TagObjType+ tag_obj_types_union_superset(TagObjType+ tagged_types)
-  {
-    tag_types = {t.tag_type : t <- tagged_types};
-    if (in(atom_type, tag_types))
-      return {tag_obj_type(atom_type, union_superset_impl({t.obj_type : t <- tagged_types}))};
-    else
-      assert tag_types :: <SymbType+>;
-      tag_to_obj_types = merge_values({(t.tag_type => t.obj_type) : t <- tagged_types});
-      return {tag_obj_type(tt, union_superset_impl(ots)) : tt => ots <- tag_to_obj_types};
-    ;
-  }
-}
+Bool pseudotypes_overlap(Type t1, Type t2) = not are_disjoint(pseudotype(t1), pseudotype(t2));

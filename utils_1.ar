@@ -43,16 +43,91 @@ UserType syn_type_to_user_type(SynType type):
   TypeVar                 = type,
   type_ref(ts?)           = type_ref(syn_type_symbol_to_type_symbol(ts)),
   syn_int_range()         = int_range(type.min, type.max),
-  ne_seq_type()           = ne_seq_type(syn_type_to_user_type(type.elem_type)),
-  ne_set_type()           = ne_set_type(syn_type_to_user_type(type.elem_type)),
-  ne_map_type()           = ne_map_type(syn_type_to_user_type(type.key_type), syn_type_to_user_type(type.value_type)),
-  record_type([...] fs?)  = record_type((f.label => (type: syn_type_to_user_type(f.type), optional: f.optional) : f <- set(fs))),
-  record_type((...))      = type,
-  tuple_type(ts?)         = tuple_type([syn_type_to_user_type(t) : t <- ts]),
-  tag_obj_type()          = tag_obj_type(type.tag_type, syn_type_to_user_type(type.obj_type)),
-  union_type(ts?)         = union_type({syn_type_to_user_type(t) : t <- ts}),
-  syn_union_type(ts?)     = union_type({syn_type_to_user_type(t) : t <- set(ts)});
+  ne_seq_type()           = user_ne_seq_type(syn_type_to_user_type(type.elem_type)),
+  ne_set_type()           = user_ne_set_type(syn_type_to_user_type(type.elem_type)),
+  ne_map_type()           = user_ne_map_type(syn_type_to_user_type(type.key_type), syn_type_to_user_type(type.value_type)),
+  record_type([...] fs?)  = user_record_type((f.label => (type: syn_type_to_user_type(f.type), optional: f.optional) : f <- set(fs))),
+  record_type((...) fs?)  = type,
+  tuple_type(ts?)         = user_tuple_type([syn_type_to_user_type(t) : t <- ts]),
+  tag_obj_type()          = { tag_type = type.tag_type;
+                              fail if not tag_type :: TagType; //## BAD: HANDLE THE ERROR
+                              return user_tag_obj_type(tag_type, syn_type_to_user_type(type.obj_type));
+                            },
+  union_type(ts?)         = user_union_type({syn_type_to_user_type(t) : t <- ts}),
+  syn_union_type(ts?)     = user_union_type({syn_type_to_user_type(t) : t <- set(ts)});
 
 
 UserExtType syn_type_to_user_type(SynClsType type) =
   user_cls_type([syn_type_to_user_type(t) : t <- type.in_types], syn_type_to_user_type(type.out_type));
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+Bool syn_is_last_for_sure(SynStmt stmt):
+  return_stmt()       = true,
+  fail_stmt           = true,
+  if_stmt()           = all([at_least_one([syn_is_last_for_sure(s) : s <- b.body]) : b <- stmt.branches])
+                        and at_least_one([syn_is_last_for_sure(s) : s <- stmt.else]),
+  inf_loop_stmt(ss?)  = none([syn_can_break_loop(s) : s <- ss]),
+  //:break_stmt         = //## NOT SURE HERE
+  let_stmt()          = at_least_one([syn_is_last_for_sure(s) : s <- stmt.body]),
+  _                   = false;
+
+
+Bool syn_can_break_loop(SynStmt stmt):
+  break_stmt  = true,
+  if_stmt()   = at_least_one([at_least_one([syn_can_break_loop(s) : s <- b.body]) : b <- stmt.branches])
+                or at_least_one([syn_can_break_loop(s) : s <- stmt.else]),
+  _           = false;
+
+
+Bool has_top_level_break([SynStmt] stmts)
+{
+  for (s : stmts)
+    return true if s == :break_stmt;
+
+    if (s :: SynIfStmt) //## BAD BAD BAD
+      //## BAD BAD BAD A LOOP SHOULD NOT BE NECESSARY HERE
+      for (b : s.branches)
+        return true if has_top_level_break(b.body);
+      ;
+      return true if has_top_level_break(s.else);
+    ;
+  ;
+
+  return false;
+}
+
+//## BUG BUG BUG IF THE RETURN STATEMENT IS INSIDE A NESTED,
+//## DO EXPRESSION IT EXITS THAT AND NOT THE MAIN ONE
+Bool has_return([SynStmt] stmts) = select(stmts, $ :: <return_stmt(Any)>) /= {}; //## BAD: HERE I NEED A SEARCH FUNCTION, NOT A SELECT ONE
+
+Bool never_falls_through(SynStmt stmt):
+  return_stmt()       = true,
+  fail_stmt           = true,
+
+  inf_loop_stmt(ss?)  = not has_top_level_break(ss),
+
+  if_stmt()           = { for (b : stmt.branches) //## BAD BAD BAD A LOOP SHOULDN'T BE NEEDED
+                            return false if not never_falls_through(b.body);
+                          ;
+                          return never_falls_through(stmt.else);
+                        },
+
+  let_stmt()          = never_falls_through(stmt.body),
+
+  //## WHY DID I DO THIS? IT MAKES NO SENSE...
+  //loop_stmt()       = never_falls_through(stmt.body),
+  //for_stmt()        = never_falls_through(stmt.body), //## BAD
+
+  _                   = false;
+
+
+//## BAD BAD BAD A LOOP SHOULDN'T BE NEEDED
+Bool never_falls_through([SynStmt] stmts)
+{
+  for (s : stmts)
+    return true if never_falls_through(s);
+  ;
+  return false;
+}
