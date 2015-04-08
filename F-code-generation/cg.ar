@@ -2,16 +2,36 @@
 ProcDef* gen_prg_code(Program prg)
 {
   simpl_prg  = generate_dispatch_functions(prg);
-
-  memb_tests = {mk_named_type_memb_test_fn(tn, prg.tdefs) : tn <- keys(simpl_prg.tdefs)}; // where type_map = simpl_prg.tdefs;;
-
-  // fndefs     = {gen_fn_code(fd; type_map = simpl_prg.tdefs) : fd <- simpl_prg.fndefs};
+  memb_tests = gen_needed_memb_test_fns(simpl_prg);
   fndefs     = {gen_fn_code(fd) : fd <- simpl_prg.fndefs};
-
   proc_defs  = {gen_proc_code(pd) : pd <- simpl_prg.proc_defs};
-
   return memb_tests & fndefs & proc_defs;
-  //return {normalize_var_numbers(pd) : pd <- memb_tests & fndefs};
+}
+
+
+BoolProcDef* gen_needed_memb_test_fns(Program prg)
+{
+  init_types = union({retrieve_types(fd.expr) : fd <- prg.fndefs}) &
+               union({retrieve_from_nested_exprs(pd.body, retrieve_types) : pd <- prg.proc_defs});
+
+  type_symbs = union({retrieve_type_symbs(t) : t <- init_types});
+  new_type_symbs = type_symbs;
+  while (new_type_symbs /= {})
+    new_types = {expand_type_ref(ts, prg.typedefs) : ts <- new_type_symbs};
+    new_type_symbs = union({retrieve_type_symbs(t) : t <- new_types}) - type_symbs;
+    type_symbs = type_symbs & new_type_symbs;
+  ;
+
+  return {mk_named_type_memb_test_fn(ts, prg.typedefs) : ts <- type_symbs};
+
+
+  TypeSymbol* retrieve_type_symbs(Type type):
+    type_ref(ts?) = {ts} & retrieve_from_nested_types(ts, retrieve_type_symbs),
+    _             = retrieve_from_nested_types(type, retrieve_type_symbs);
+
+  Type* retrieve_types(Expr expr):
+    membership()  = {expr.type} & retrieve_from_nested_exprs(expr, retrieve_types),
+    _             = retrieve_from_nested_exprs(expr, retrieve_types);
 }
 
 
@@ -115,13 +135,12 @@ Program generate_dispatch_functions(Program prg)
                        fd : fd <- prg.fndefs, [fd.name, arity(fd)] == na
                      }};
 
-  dispatched_fns = union({generate_dispatch_function(fns, prg.anon_tdefs) : fns <- overloaded_fns});
+  dispatched_fns = union({generate_dispatch_function(fns, prg.typedefs) : fns <- overloaded_fns});
 
   new_fns = dispatched_fns & (prg.fndefs - union(overloaded_fns));
 
   return program(
-    tdefs:          prg.tdefs,
-    anon_tdefs:     prg.anon_tdefs,
+    typedefs:       prg.typedefs,
     proc_defs:      prg.proc_defs,
     subtype_decls:  prg.subtype_decls,
     fndefs:         new_fns
@@ -175,9 +194,9 @@ FnDef+ generate_dispatch_function(FnDef+ fds, (TypeName => Type) typedefs)
 
   dispatch_call_params = [if is_scalar_par(p) then fn_par(i) else cls_var(i) : p @ i <- rand_fd.params];
 
-  Pattern mk_ptrn(<(var: var(Atom)?, type: UserExtType?)> param, (TypeName => Type) typedefs, Bool is_checked) =
+  Pattern mk_ptrn(<(var: var(Atom)?, type: ExtType?)> param, (TypeName => Type) typedefs, Bool is_checked) =
     if param.type? and is_checked
-      then user_type_to_pseudotype_pattern(param.type, typedefs)
+      then type_to_pseudotype_pattern(param.type, typedefs)
       else ptrn_any;
 
   cases = [];

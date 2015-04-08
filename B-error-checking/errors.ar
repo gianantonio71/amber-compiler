@@ -96,7 +96,7 @@ UserErr* wf_errors(SynPrg prg)
                    untyped_sgn(fd, set(ub.signatures))
                  };
 
-  inst_tdefs  = create_type_map(prg);
+  inst_tdefs  = create_syn_type_map(prg);
   
   dup_tdef_errs = for (td1 <- tdefs, td2 <- tdefs)
                      if (td1 /= td2 and td1.name == td2.name)
@@ -310,28 +310,12 @@ type UntypedSgn       = untyped_sgn(
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-//BasicUntypedSgn untyped_sgn(Signature d) = untyped_sgn(
-//                                             name:  d.name,
-//                                             arity: arity(d)
-//                                           );
-
-//BasicUntypedSgn untyped_sgn(Var v, UserExtType t):
-//  var(a), Type      = untyped_sgn(name: :fn_symbol(a), arity: 0),
-//  var(a), UserClsType   = untyped_sgn(name: :fn_symbol(a), arity: length(t.in_types));
-
-
-// BasicUntypedSgn untyped_sgn(NamedPar var, UserExtType type):
-//   named_par(a), UserType  = untyped_sgn(name: :fn_symbol(a), arity: 0),
-//   named_par(a), UserClsType   = untyped_sgn(name: :fn_symbol(a), arity: length(type.in_types));
-
 BasicUntypedSgn untyped_sgn(FnSymbol n, Nat a) = untyped_sgn(name: n, arity: a);
 
-BasicUntypedSgn untyped_sgn(NamedPar var, UserType type)    = untyped_sgn(name: :fn_symbol(_obj_(var)), arity: 0);
-BasicUntypedSgn untyped_sgn(NamedPar var, UserClsType type) = untyped_sgn(name: :fn_symbol(_obj_(var)), arity: length(type.in_types));
+BasicUntypedSgn untyped_sgn(NamedPar var, Type type)    = untyped_sgn(name: :fn_symbol(_obj_(var)), arity: 0);
+BasicUntypedSgn untyped_sgn(NamedPar var, ClsType type) = untyped_sgn(name: :fn_symbol(_obj_(var)), arity: length(type.in_types));
 
 BasicUntypedSgn untyped_sgn(ClsVar var, SynClsType type) = untyped_sgn(name: :fn_symbol(_obj_(var)), arity: length(type.in_types));
-
-//BasicUntypedSgn* untyped_sgns((NamedPar => UserExtType) nps) = {untyped_sgn(v, t) : v => t <- nps};
 
 UntypedSgn untyped_sgn(FnDef fd) =
   untyped_sgn(
@@ -341,15 +325,10 @@ UntypedSgn untyped_sgn(FnDef fd) =
   );
 
 
-// BasicUntypedSgn untyped_sgn(Var v, ExtExpr e):
-//   var(a), Expr    = untyped_sgn(name: :fn_symbol(a), arity: 0),
-//   var(a), ClsExpr = untyped_sgn(name: :fn_symbol(a), arity: length(e.params));
-
 BasicUntypedSgn untyped_sgn(Var v, Expr e)    = untyped_sgn(name: :fn_symbol(_obj_(v)), arity: 0);
 BasicUntypedSgn untyped_sgn(Var v, ClsExpr e) = untyped_sgn(name: :fn_symbol(_obj_(v)), arity: length(e.params));
 
-//BasicUntypedSgn* untyped_sgns((NamedPar => ExtExpr) nps) = {untyped_sgn(v, e) : v => e <- nps};
-BasicUntypedSgn* untyped_sgns((NamedPar => <UserExtType, ExtExpr>) nps) = {untyped_sgn(v, type_or_expr) : v => type_or_expr <- nps};
+BasicUntypedSgn* untyped_sgns((NamedPar => <ExtType, ExtExpr>) nps) = {untyped_sgn(v, type_or_expr) : v => type_or_expr <- nps};
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -395,15 +374,15 @@ Bool is_almost_def(FnSymbol name, Nat arity, UntypedSgn* env) = (? s <- env : s.
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-// PseudoType syn_pseudotype(SynType type, (TypeName => Type) typedefs) = pseudotype(syn_type_to_user_type(type), typedefs);
-// PseudoType syn_pseudotype(SynType type, (TypeName => Type) typedefs) = pseudotype(UserType(type), typedefs);
+// PseudoType syn_pseudotype(SynType type, (TypeName => AType) typedefs) = pseudotype(syn_type_to_type(type), typedefs);
+// PseudoType syn_pseudotype(SynType type, (TypeName => AType) typedefs) = pseudotype(Type(type), typedefs);
 
 //## BAD: THIS SHOULD BE IMPLEMENTED AS SHOWN ABOVE. IT IS STILL IN USE ONLY BECAUSE ALL THE LEVEL 1 ERROR
 //## CHECKING CODE HAS TO BE REWRITTEN FROM SCRATCH AND IT DOESN'T MAKE ANY SENSE TO CHANGE IT NOW
 using (SynTypeSymbol => SynType) typedefs
 {
   PseudoType syn_pseudotype(SynType type):
-    LeafType                = pseudotype(type),
+    LeafType                = pseudotype(type, ()),
     syn_int_range()         = pseudotype_integers,
     //## BUG BUG BUG ASSUMING THERE ARE NO DIRECT CYCLES IN TYPEDEFS
     //## BUG BUG BUG ALSO ASSUMING NO TYPE REFERENCE IS "DANGLING"
@@ -412,13 +391,77 @@ using (SynTypeSymbol => SynType) typedefs
     ne_set_type()           = pseudotype_ne_seqs,
     ne_seq_type()           = pseudotype_ne_sets,
     ne_map_type()           = pseudotype_ne_maps,
-    record_type((...) fs?)  = pseudotype_union({pseudotype_ne_maps, pseudotype_empty_map if (? l => f <- fs : not f.optional)}),
-    record_type()           = syn_pseudotype(syn_type_to_user_type(type)),
+    record_type()           = pseudotype_maps, //## THIS IS WRONG BUT WHO CARES...
     tuple_type()            = pseudotype_ne_seqs,
-    union_type(ts?)         = pseudotype_union({syn_pseudotype(t) : t <- ts}),
-    syn_union_type(ts?)     = pseudotype_union({syn_pseudotype(t) : t <- set(ts)}),
+    union_type(ts?)         = pseudotype_union({syn_pseudotype(t) : t <- set(ts)}),
     tag_obj_type()          = match (type.tag_type)
                                 symb_type(object(a?)) = pseudotype_tag_obj(a),
                                 atom_type             = pseudotype_tag_objs;
                               ;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+//## DOES IT MAKE SENSE TO MAKE INSTANTIATIONS CONTAINING TYPE VARIABLES?
+//## ARE THEY REALLY NEEDEED? AND WOULD IT BE ANY USEFUL TO CREATE THE
+//## SAME INSTANTIATIONS BUT WITH THE TYPE VARIABLES REPLACED BY ANY?
+
+(SynTypeSymbol => SynType) create_syn_type_map(SynPrg prg)
+{
+  tdef_map     = (td.name => td.type : typedef() td <- set(_obj_(prg)));
+  par_tdef_map = inst_req_par_types(prg);
+  
+  return tdef_map & par_tdef_map;
+}
+
+
+(SynParTypeSymbol => SynType) inst_req_par_types(SynPrg prg)
+{
+  decls     = set(_obj_(prg));
+  par_tdefs = {d : par_typedef() d <- decls};
+
+  symbs_to_inst     = get_type_symbols_to_instantiate(decls) & {par_type_symbol(ptd.name, ptd.params) : ptd <- par_tdefs};
+  inst_symbs_so_far = {};
+  inst_par_tdefs    = ();
+
+  while (symbs_to_inst /= {})
+  
+    new_insts = (s => inst_par_type(s, par_tdefs) : s <- symbs_to_inst);
+    
+    inst_symbs_so_far = inst_symbs_so_far & symbs_to_inst;
+    inst_par_tdefs    = inst_par_tdefs & new_insts;
+    
+    symbs_to_inst     = get_type_symbols_to_instantiate({t : s => t <- new_insts}) - inst_symbs_so_far;
+  ;
+
+  return inst_par_tdefs;
+}
+
+
+SynParTypeSymbol* get_type_symbols_to_instantiate(Any obj)
+{
+  src        = obj;
+  type_symbs = {};
+
+  loop
+    new_type_symbs = select(obj, $ :: SynParTypeSymbol) - type_symbs;
+    fail if not new_type_symbs :: SynParTypeSymbol*; //## BAD: THIS IS HERE ONLY TO SHUT UP THE TYPE CHECKER
+    return type_symbs if new_type_symbs == {};
+    type_symbs = type_symbs & new_type_symbs;
+    src = {ts.params : ts <- new_type_symbs};
+  ;
+} 
+
+
+SynType inst_par_type(SynParTypeSymbol symb, SynParTypedef* par_tdefs)
+{
+  arity = length(symb.params);
+  //## BUG BUG: CAN THIS POSSIBLY FAIL?
+  par_tdef = only_element({d : d <- par_tdefs, d.name == symb.symbol, length(d.params) == arity});
+  res = replace(par_tdef.type, $ :: TypeVar, symb.params[index_first($, par_tdef.params)]);
+  fail if not res :: SynType; //## BAD: THIS IS HERE ONLY TO SHUT UP THE TYPE CHECKER
+  return res;
 }

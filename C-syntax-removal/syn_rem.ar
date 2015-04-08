@@ -1,9 +1,7 @@
 
 Program rem_syntax(SynPrg prg)
 {
-  norm_prg = replace(prg, $ :: SynExtType, syn_type_to_user_type($));
-
-  decls    = set(_obj_(norm_prg));
+  decls = set(_obj_(prg));
   
   tdefs         = {d : typedef()       d <- decls};
   par_tdefs     = {d : par_typedef()   d <- decls};
@@ -14,20 +12,18 @@ Program rem_syntax(SynPrg prg)
 
   assert tdefs & par_tdefs & fndefs & proc_defs & ublocks & subtype_decls == decls;
 
-  inst_tdefs = create_type_map(norm_prg);
-  anon_tdefs = normalize_and_anonymize_types(inst_tdefs);
+  typedefs = create_type_map(tdefs, par_tdefs);
   fn_param_arities = get_fn_param_arities(fndefs, ublocks);
-  desugared_fndefs = union({syn_fndef_to_fndefs(fd, {}, anon_tdefs, fn_param_arities) : fd <- fndefs});
-  desugared_proc_defs = {syn_proc_def_to_proc_def(pd, anon_tdefs, fn_param_arities) : pd <- proc_defs};
+  desugared_fndefs = union({syn_fndef_to_fndefs(fd, {}, typedefs, fn_param_arities) : fd <- fndefs});
+  desugared_proc_defs = {syn_proc_def_to_proc_def(pd, typedefs, fn_param_arities) : pd <- proc_defs};
   desugared_block_fndefs = union(
     for (ub <- ublocks, fd <- set(ub.fn_defs), sgns = set(ub.signatures)) {
-      syn_fndef_to_fndefs(fd, sgns, anon_tdefs, fn_param_arities)
+      syn_fndef_to_fndefs(fd, sgns, typedefs, fn_param_arities)
     }
   );
 
   return program(
-    tdefs:          inst_tdefs,
-    anon_tdefs:     anon_tdefs,
+    typedefs:       typedefs,
     subtype_decls:  subtype_decls,
     fndefs:         desugared_fndefs & desugared_block_fndefs,
     proc_defs:      desugared_proc_defs
@@ -63,9 +59,9 @@ FnDef* syn_fndef_to_fndefs(SynFnDef fndef, SynSgn* named_params, (TypeName => Ty
   {
     pars = [desugar_fn_par(p) : p <- fndef.params];
     npars = for (ss <- named_params) (
-      named_par(_obj_(ss.name)) => if ss.params == [] then ss.res_type else user_cls_type(ss.params, ss.res_type)
+      named_par(_obj_(ss.name)) => if ss.params == [] then ss.res_type else cls_type(ss.params, ss.res_type)
     );
-    maybe_res_type = if fndef.res_type? then just(fndef.res_type) else nil;
+    maybe_res_type = if fndef.res_type? then just(syn_type_to_type(fndef.res_type, nil)) else nil;
     expr = desugar_expr(
       fndef.expr,
       {p.var : p <- set(fndef.params), p.var? and (not p.type? or p.type :: SynType)},
@@ -81,12 +77,12 @@ FnDef* syn_fndef_to_fndefs(SynFnDef fndef, SynSgn* named_params, (TypeName => Ty
 
   FnFrmPar desugar_fn_par(SynFnArg arg)
   {
-    if (arg.type? and arg.type :: UserClsType)
+    if (arg.type? and is_syn_cls_type(arg.type))
       assert arg.var?;
       var = cls_var(_obj_(arg.var));
-      return non_scalar_par(var, arg.type);
+      return non_scalar_par(var, syn_type_to_type(arg.type, nil));
     ;
-    return scalar_par(var: arg.var if arg.var?, type: arg.type if arg.type?);
+    return scalar_par(var: arg.var if arg.var?, type: syn_type_to_type(arg.type, nil) if arg.type?);
   }
 }
 
@@ -105,4 +101,18 @@ ProcDef2 syn_proc_def_to_proc_def(SynProcDef pd, (TypeName => Type) typedefs, ((
   );
 
   return proc_def(pd.name, pd.params, pd.res_type, body);
+}
+
+// type TypeName         = type_name(symbol: BasicTypeSymbol, arity: Nat);
+
+
+// type SynTypedef    = typedef(name: BasicTypeSymbol, type: SynType);
+
+// type SynParTypedef = par_typedef(name: BasicTypeSymbol, params: [TypeVar^], type: SynType);
+
+(TypeName => Type) create_type_map(SynTypedef* tdefs, SynParTypedef* par_tdefs)
+{
+  type_map = (type_name(td.name, 0) => syn_type_to_type(td.type, just([])) : td <- tdefs);
+  par_type_map = (type_name(td.name, length(td.params)) => syn_type_to_type(td.type, just(td.params)) : td <- par_tdefs);
+  return type_map & par_type_map;
 }

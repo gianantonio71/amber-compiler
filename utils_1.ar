@@ -33,32 +33,34 @@ Var* syn_new_vars(SynIter iter):
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-TypeSymbol syn_type_symbol_to_type_symbol(SynTypeSymbol ts):
+TypeSymbol syn_type_symbol_to_type_symbol(SynTypeSymbol ts, Maybe[[TypeVar]] type_vars):
   BasicTypeSymbol   = ts,
-  par_type_symbol() = par_type_symbol(ts.symbol, [syn_type_to_user_type(p) : p <- ts.params]);
+  par_type_symbol() = par_type_symbol(ts.symbol, [syn_type_to_type(p, type_vars) : p <- ts.params]);
 
 
-UserType syn_type_to_user_type(SynType type):
-  LeafType                = type,
-  TypeVar                 = type,
-  type_ref(ts?)           = type_ref(syn_type_symbol_to_type_symbol(ts)),
-  syn_int_range()         = int_range(type.min, type.max),
-  ne_seq_type()           = user_ne_seq_type(syn_type_to_user_type(type.elem_type)),
-  ne_set_type()           = user_ne_set_type(syn_type_to_user_type(type.elem_type)),
-  ne_map_type()           = user_ne_map_type(syn_type_to_user_type(type.key_type), syn_type_to_user_type(type.value_type)),
-  record_type([...] fs?)  = user_record_type((f.label => (type: syn_type_to_user_type(f.type), optional: f.optional) : f <- set(fs))),
-  record_type((...) fs?)  = type,
-  tuple_type(ts?)         = user_tuple_type([syn_type_to_user_type(t) : t <- ts]),
-  tag_obj_type()          = { tag_type = type.tag_type;
-                              fail if not tag_type :: TagType; //## BAD: HANDLE THE ERROR
-                              return user_tag_obj_type(tag_type, syn_type_to_user_type(type.obj_type));
-                            },
-  union_type(ts?)         = user_union_type({syn_type_to_user_type(t) : t <- ts}),
-  syn_union_type(ts?)     = user_union_type({syn_type_to_user_type(t) : t <- set(ts)});
+Type syn_type_to_type(SynType type, Maybe[[TypeVar]] type_vars):
+  LeafType            = type,
+  type_var(+)         = if type_vars /= nil then type_var(index_first(type, value(type_vars))) else type,
+  type_var(*)         = type,
+  type_ref(ts?)       = type_ref(syn_type_symbol_to_type_symbol(ts, type_vars)),
+  syn_int_range()     = int_range(type.min, type.max),
+  ne_seq_type()       = ne_seq_type(syn_type_to_type(type.elem_type, type_vars)),
+  ne_set_type()       = ne_set_type(syn_type_to_type(type.elem_type, type_vars)),
+  ne_map_type()       = ne_map_type(syn_type_to_type(type.key_type, type_vars), syn_type_to_type(type.value_type, type_vars)),
+  record_type(fs?)    = record_type((f.label => (type: syn_type_to_type(f.type, type_vars), optional: f.optional) : f <- set(fs))),
+  tuple_type(ts?)     = tuple_type([syn_type_to_type(t, type_vars) : t <- ts]),
+  tag_obj_type()      = { tag_type = type.tag_type;
+                          fail if not tag_type :: TagType; //## BAD: HANDLE THE ERROR
+                          return tag_obj_type(tag_type, syn_type_to_type(type.obj_type, type_vars));
+                        },
+  union_type(ts?)     = union_type({syn_type_to_type(t, type_vars) : t <- set(ts)});
 
 
-UserExtType syn_type_to_user_type(SynClsType type) =
-  user_cls_type([syn_type_to_user_type(t) : t <- type.in_types], syn_type_to_user_type(type.out_type));
+ClsType syn_type_to_type(SynClsType type, Maybe[[TypeVar]] type_vars) =
+  cls_type(
+    [syn_type_to_type(t, type_vars) : t <- type.in_types],
+    syn_type_to_type(type.out_type, type_vars)
+  );
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////

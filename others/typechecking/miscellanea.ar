@@ -1,0 +1,295 @@
+//## MAYBE THIS (AND ALL THE FUNCTIONS IT DEPENDS ON) SHOULD GO IN THE SAME FILE AS is_subset(Type, Type)
+Bool is_subset(ClsType t1, ClsType t2)
+{
+  // for (pt1, pt2 : zip(t1.in_types, t2.in_types))
+  //   return false if not is_subset(pt2, replace_type_vars_with_type_any(pt1));
+  // ;
+  // return is_subset(cls_call_type(t1, t2.in_types), t2.out_type);
+
+  assert length(t1.in_types) == length(t2.in_types);
+
+  for (i < length(t1.in_types))
+    return false if not is_subset(t2.in_types[i], replace_type_vars_with_type_any(t1.in_types[i]));
+  ;
+  return is_subset(cls_call_type(t1, t2.in_types), t2.out_type);
+}
+
+
+Bool is_eq(ExtType t1, ExtType t2) = is_subset(t1, t2) and is_subset(t2, t1);
+
+
+(TypeVar => Type) type_var_instantiations_for_subset([Type^] actual_types, [Type^] formal_types)
+{
+  cs = merge_value_sets(set([subset_conds(at, ft) : at, ft <- zip(actual_types, formal_types)]));
+  return (v => union_superset(ts) : v => ts <- cs);
+}
+
+
+Type cls_call_type(ClsType signature, [Type^] actual_types) //## FIND BETTER NAME
+{
+  type_var_insts = type_var_instantiations_for_subset(actual_types, signature.in_types);
+  return replace_known_type_vars(signature.out_type, type_var_insts);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////
+
+// Here I just assume that the pattern can actually match objects of the specified type
+// If it cannot, the function is free to fail or return garbage.
+//## WOULD BE GOOD TO ADD AN ASSERTION THAT CHECKS THAT THE PATTERN CAN ACTUALLY MATCH THE TYPE
+(Var => Type) generated_environment(Pattern ptrn, Type type):
+  ptrn_symbol         = (),
+  ptrn_float          = (),
+  ptrn_empty_set      = (),
+  ptrn_ne_set         = (),
+  ptrn_empty_seq      = (),
+  ptrn_ne_seq         = (),
+  ptrn_empty_map      = (),
+  ptrn_ne_map         = (),
+  ptrn_any            = (),
+  ptrn_symbol(s?)     = (),
+  ptrn_integer(t?)    = (),
+  ptrn_tag_obj()      = ptrn_tag_obj_gen_env(ptrn.tag, ptrn.obj, type),
+  ptrn_var()          = ptrn_var_gen_env(ptrn.var, ptrn.ptrn, type),
+  ptrn_union(ps?)     = ptrn_union_gen_env(ps, type);
+
+
+(Var => Type) ptrn_tag_obj_gen_env(TagPtrn tag_ptrn, Pattern obj_ptrn, Type type)
+{
+  tag_types = match (type)
+    type_var()  = {type_tagged_obj},
+    _           = tagged_obj_types(type);
+  ;
+
+  envs = for (t <- tag_types)
+    if (may_match(tag_ptrn, t.tag_type) and may_match(obj_ptrn, t.obj_type)) {
+      generated_environment(tag_ptrn, t.tag_type) & generated_environment(obj_ptrn, t.obj_type)
+    };
+
+  return (v => union_superset(ts) : v => ts <- merge_values(envs));
+}
+
+
+(Var => Type) ptrn_var_gen_env(Var var, Pattern ptrn, Type type)
+{
+  return () if not may_match(ptrn, type);
+  return (var => type_pattern_intersection_superset(type, ptrn)) & generated_environment(ptrn, type);
+}
+
+
+(Var => Type) ptrn_union_gen_env(Pattern+ ptrns, type)
+{
+  matching_ptrns = {p : p <- ptrns, may_match(p, type)};
+  return (v => union_superset(ts) : v => ts <- merge_values({generated_environment(p, type) : p <- matching_ptrns}));
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////
+
+ClosedType mandatory_record_field_type(RecordType type, SymbObj label)
+{
+  mfs = {f : l => f <- _obj_(type), l == label};
+  assert size(mfs) >= 0;
+  return void_type if mfs == {};
+  mf = only_element(mfs);
+  return if mf.optional then void_type else mf.type;
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////
+
+// // The result must be a subset of the first type but not necessarily of the second.
+// ClosedType intersection_superset(ClosedType type1, ClosedType type2) = intersection_superset_implementation(type1, type2, already_expanded_rec_types={});
+
+// using Type* already_expanded_rec_types
+// {
+//   ClosedType intersection_superset_implementation(ClosedType type1, ClosedType type2) //## FIND BETTER NAME
+//   {
+//     return type1 if type1 == type2;
+
+//     return void_type if type1 == void_type or type2 == void_type;
+
+//     // Type vars can be instantiated to match any type, so in order to be safe, we must consider the worst case
+//     //## CAN WE IMPROVE ON THIS SOMEHOW?
+//     return type1 if is_type_var(type1) or is_type_var(type2);
+
+//     nu_types_1 = match (type1)
+//                     union_type(ts?) = ts,
+//                     _               = {type1};
+//                   ;
+//     rec_types_1 = {t : self_rec_type() t <- nu_types_1} & {t : mut_rec_type() t <- nu_types_1}; //## BAD: WE SHOULD USE A PATTERN UNION HERE, ONCE IT IS IMPLEMENTED
+//     return type1 if not disjoint(rec_types_1, already_expanded_rec_types);
+
+//     let (already_expanded_rec_types = already_expanded_rec_types & rec_types_1)
+//       res = {};
+
+//       // Symbols
+//       if (includes_atom_type(type1))
+//         if (includes_atom_type(type2))
+//           res = res & {atom_type};
+//         else
+//           res = res & symb_types(type2);
+//         ;
+//       else
+//         if (includes_atom_type(type2))
+//           res = res & symb_types(type1);
+//         else
+//           res = res & intersection(symb_types(type1), symb_types(type2));
+//         ;
+//       ;
+
+//       // Integers
+//       int_type_1 = int_type(type1);
+//       int_type_2 = int_type(type2);
+//       res = res & {int_types_intersection(int_type_1, int_type_2)} if int_type_1 /= void_type and int_type_2 /= void_type;
+
+//       // Sequences
+//       res = res & {empty_seq_type} if includes_empty_seq(type1) and includes_empty_seq(type2);
+
+//       seq_elem_type_1 = seq_elem_type(type1);
+//       seq_elem_type_2 = seq_elem_type(type2);
+//       res = res & {ne_seq_type_or_void(intersection_superset_implementation(seq_elem_type_1, seq_elem_type_2))} if seq_elem_type_1 /= void_type and seq_elem_type_2 /= void_type;
+
+//       // Sets
+//       res = res & {empty_set_type} if includes_empty_set(type1) and includes_empty_set(type2);
+
+//       set_elem_type_1 = set_elem_type(type1);
+//       set_elem_type_2 = set_elem_type(type2);
+//       res = res & {ne_set_type_or_void(intersection_superset_implementation(set_elem_type_1, set_elem_type_2))} if set_elem_type_1 /= void_type and set_elem_type_2 /= void_type;
+
+//       // Maps and records
+//       res = res & {empty_map_type} if includes_empty_map(type1) and includes_empty_map(type2);
+
+//       key_type_1    = map_key_type(type1);
+//       value_type_1  = map_value_type(type1);
+//       record_type_1 = record_type(type1);
+//       key_type_2    = map_key_type(type2);
+//       value_type_2  = map_value_type(type2);
+//       record_type_2 = record_type(type2);
+//       if (key_type_1 /= void_type and value_type_1 /= void_type)
+//         if (key_type_2 /= void_type and value_type_2 /= void_type)
+//           res = res & {ne_map_type_or_void(intersection_superset_implementation(key_type_1, key_type_2), intersection_superset_implementation(value_type_1, value_type_2))};
+//         else
+//           res = res & {map_record_intersection_superset(key_type_1, value_type_1, _obj_(record_type_2))} if record_type_2 /= void_type;
+//         ;
+//       else
+//         if (key_type_2 /= void_type and value_type_2 /= void_type)
+//           res = res & {map_record_intersection_superset(key_type_2, value_type_2, _obj_(record_type_1))} if record_type_1 /= void_type;
+//         else
+//           res = {record_types_intersection(_obj_(record_type_1), _obj_(record_type_2))} if record_type_1 /= void_type and record_type_2 /= void_type;
+//         ;
+//       ;
+
+//       // Tagged objects
+//       tag_obj_types_1 = tagged_obj_types(type1);
+//       tag_obj_types_2 = tagged_obj_types(type2);
+
+//       if (tag_obj_types_1 /= {} and tag_obj_types_2 /= {})
+//         tag_types_1 = {t.tag_type : t <- tag_obj_types_1};
+//         tag_types_2 = {t.tag_type : t <- tag_obj_types_2};
+
+//         // Type vars in the tag are treated just like the atom_type //## TYPE VARS ARE NOT ALLOWED IN THE TAG ANYMORE...
+//         if (may_include_all_symbols(tag_types_1))
+//           obj_type_1 = only_element(tag_obj_types_1).obj_type;
+//           if (may_include_all_symbols(tag_types_2))
+//             obj_type_2 = only_element(tag_obj_types_2).obj_type;
+//             res = res & {tag_obj_type_or_void(atom_type, intersection_superset_implementation(obj_type_1, obj_type_2))};
+//           else
+//             tag_to_obj_2 = (t.tag_type => t.obj_type : t <- tag_obj_types_2);
+//             res = res & {tag_obj_type_or_void(t, intersection_superset_implementation(obj_type_1, tag_to_obj_2[t])) : t <- tag_types_2};
+//           ;
+//         else
+//           assert tag_types_1 :: <SymbType+>;
+//           tag_to_obj_1 = (t.tag_type => t.obj_type : t <- tag_obj_types_1);
+//           if (may_include_all_symbols(tag_types_2))
+//             obj_type_2 = only_element(tag_obj_types_2).obj_type;
+//             res = res & {tag_obj_type_or_void(t, intersection_superset_implementation(tag_to_obj_1[t], obj_type_2)) : t <- tag_types_1};
+//           else
+//             tag_to_obj_2 = (t.tag_type => t.obj_type : t <- tag_obj_types_2);
+//             common_tags =  intersection(tag_types_1, tag_types_2);
+//             res = res & {tag_obj_type_or_void(t, intersection_superset_implementation(tag_to_obj_1[t], tag_to_obj_2[t])) : t <- common_tags};
+//           ;
+//         ;
+//       ;
+//     ;
+
+//     res = res - {void_type};
+//     return if res /= {} then union_type(res) else void_type;
+
+
+//     ClosedType ne_seq_type_or_void(ClosedType elem_type) = type_or_void(ne_seq_type(elem_type), {elem_type});
+//     ClosedType ne_set_type_or_void(ClosedType elem_type) = type_or_void(ne_set_type(elem_type), {elem_type});
+//     ClosedType ne_map_type_or_void(ClosedType key_type, ClosedType value_type) = type_or_void(ne_map_type(key_type, value_type), {key_type, value_type});
+//     ClosedType tag_obj_type_or_void(TagType tag_type, ClosedType obj_type) = type_or_void(tag_obj_type(tag_type, obj_type), {obj_type});
+
+//     ClosedType type_or_void(ClosedType type, ClosedType+ basic_types) = if in(void_type, basic_types) then void_type else type;
+//   }
+
+//   Bool may_include_all_symbols(TagType+ types) //= in(atom_type, types) or (? TypeVar <- types); //## THIS IS THE VERSION WITHOUT ALL THE CHECKS
+//   {
+//     assert not (in(atom_type, types) and (? t <- types : t :: TypeVar));
+//     if (in(atom_type, types))
+//       assert types == {atom_type};
+//       return true;
+//     elif ((? t <- types : t :: TypeVar))
+//       assert size(types) == 1 and only_element(types) :: TypeVar;
+//       return true;
+//     else
+//       assert types :: <SymbType+>;
+//       return false;
+//     ;
+//   }
+
+
+//   <RecordType, void_type> map_record_intersection_superset(Type key_type, Type value_type, (SymbObj => (type: Type, optional: Bool)) record_fields)
+//   {
+//     res_fs = ();
+//     for (l : rand_sort(keys(record_fields)))
+//       f = record_fields[l];
+//       intersection_type = intersection_superset_implementation(value_type, f.type);
+//       if (f.optional)
+//         if (includes_symbol(key_type, l) and intersection_type /= void_type)
+//           res_fs = res_fs & (l => (type: intersection_type, optional: true));
+//         ;
+//       else
+//         return void_type if not includes_symbol(key_type, l) or intersection_type == void_type;
+//         res_fs = res_fs & (l => (type: intersection_type, optional: false));
+//       ;
+//     ;
+
+//     //## WHAT CAN BE DONE TO EXCLUDE THE EMPTY MAP WHEN ALL THE FIELDS ARE OPTIONAL?
+
+//     return if res_fs /= () then record_type(res_fs) else void_type;
+//   }
+
+//   <RecordType, empty_map_type, void_type> record_types_intersection((SymbObj => (type: Type, optional: Bool)) fields1, (SymbObj => (type: Type, optional: Bool)) fields2)
+//   {
+//     labels1 = keys(fields1);
+//     labels2 = keys(fields2);
+
+//     common_labels = intersection(labels1, labels2);
+//     exclusive_labels_1 = labels1 - common_labels;
+//     exclusive_labels_2 = labels2 - common_labels;
+
+//     return void_type if (? l <- exclusive_labels_1 : not fields1[l].optional) or (? l <- exclusive_labels_2 : not fields2[l].optional);
+
+//     res_fields = ();
+//     for (l : common_labels)
+//       field1 = fields1[l];
+//       field2 = fields2[l];
+
+//       res_type = intersection_superset_implementation(field1.type, field2.type);
+//       if (res_type == void_type)
+//         return void_type if not field1.optional or not field2.optional;
+//       else
+//         res_fields = res_fields & (l => (type: res_type, optional: field1.optional and field2.optional));
+//       ;
+//     ;
+
+//     if (res_fields /= ())
+//       return record_type(res_fields);
+//     else
+//       return empty_map_type;
+//     ;
+//   }
+// }

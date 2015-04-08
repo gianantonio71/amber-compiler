@@ -1,0 +1,156 @@
+ClosedType union_superset(ClosedType t1, ClosedType t2)
+{
+  return t2 if t1 == void_type;
+  return t1 if t2 == void_type;
+
+  ut = union_superset_impl(t1, t2);
+  //## TODO: HERE WE SHOULD ALSO CHECK THAT THE UNION TYPE IS WELL-FORMED
+  assert is_subset(t1, ut) and is_subset(t2, ut);
+  return ut;
+}
+
+
+ClosedType union_superset(ClosedType+ types)
+{
+  non_empty_types = types - {void_type};
+  return void_type if non_empty_types == {};
+  ut = union_superset_impl(non_empty_types);
+  assert not (? t <- types : not is_subset(t, ut));
+  return ut;
+}
+
+
+Type union_superset_impl(Type t1, Type t2):
+  type_var(),             _                   = if t1 == t2 then t1 else type_any,
+  _,                      type_var()          = type_any,
+
+  self,                   _                   = {fail;},
+  _,                      self                = {fail;},
+
+  self(n?),               _                   = {fail;},
+  _,                      self(n?)            = {fail;},
+
+  self_rec_type(pt?),     _                   = emergency_union_superset(t1, t2),
+  _,                      self_rec_type()     = emergency_union_superset(t1, t2),
+
+  mut_rec_type(),         _                   = emergency_union_superset(t1, t2),
+  _,                      mut_rec_type()      = emergency_union_superset(t1, t2),
+
+  union_type(ts1?),       union_type(ts2?)    = union_superset_impl(ts1 & ts2),
+  union_type(ts?),        _                   = union_superset_impl(ts & {t2}),
+  _,                      union_type(ts?)     = union_superset_impl({t1} & ts),
+
+  symb_type(),            atom_type           = atom_type,
+
+  IntType,                IntType             = int_type_union(t1, t2),
+
+  ne_set_type(),          ne_set_type()       = ne_set_type(union_superset_impl(t1.elem_type, t2.elem_type)),
+
+  ne_seq_type(),          ne_seq_type()       = ne_seq_type(union_superset_impl(t1.elem_type, t2.elem_type)),
+  ne_seq_type(),          tuple_type(ts?)     = ne_seq_type(union_superset_impl({t1.elem_type} & set(ts))),
+  tuple_type(),           ne_seq_type()       = union_superset_impl(t2, t1),
+  tuple_type(ts1?),       tuple_type(ts2?)    = if length(ts1) /= length(ts2)
+                                                  then ne_seq_type(union_superset_impl(set(ts1 & ts2)))
+                                                  else tuple_type([union_superset_impl(ft1, ft2) : ft1, ft2 <- zip(ts1, ts2)]),
+
+  empty_map_type,         record_type()       = if type_contains_obj(t2, ()) then t2 else union_type({t1, t2}),
+  record_type(fs?),       empty_map_type      = union_superset_impl(t2, t1),
+  ne_map_type(),          ne_map_type()       = ne_map_type(
+                                                  union_superset_impl(t1.key_type, t2.key_type),
+                                                  union_superset_impl(t1.value_type, t2.value_type)
+                                                ),
+  ne_map_type(),          record_type(fs?)    = map_record_types_union_superset(t1.key_type, t1.value_type, fs),
+  record_type(fs?),       ne_map_type()       = map_record_types_union_superset(t2.key_type, t2.value_type, fs),
+  record_type(fs1?),      record_type(fs2?)   = record_types_union_superset(fs1, fs2),
+
+  tag_obj_type(),         tag_obj_type()      = tag_obj_types_union_superset(t1, t2),
+
+  _,                      _                   = union_type({t1, t2});
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+Type emergency_union_superset(Type t1, Type t2)
+{
+  return union_type({t1, t2}) if not pseudotypes_overlap(t1, t2);
+  return t1 if is_subset(t2, t1);
+  return t2 if is_subset(t1, t2);
+  return type_any;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+Type union_superset_impl(Type+ types)
+{
+  curr_types = {};
+  for (type : rand_sort(types))
+    curr_independent_types = {t : t <- curr_types, not pseudotypes_overlap(t, type)};
+    curr_overlapping_types = curr_types - curr_independent_types;
+    merged_type = type;
+    for (t : rand_sort(curr_overlapping_types))
+      merged_type = union_superset_impl(merged_type, t);
+    ;
+    //## CHECK THAT merged_type IS NOT A UNION TYPE AND THAT IT DOESN'T OVERLAP
+    //## WITH ANY OF THE TYPES IN curr_types
+    curr_types = curr_independent_types & {merged_type};
+  ;
+  return union_type(curr_types);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+IntType int_type_union(IntType t1, IntType t2):
+  integer,      _             = integer,
+  low_ints(),   low_ints()    = low_ints(max(t1.max, t2.max)),
+  low_ints(),   high_ints()   = integer,
+  low_ints(),   int_range()   = low_ints(max(t1.max, max(t2))),
+  high_ints(),  high_ints()   = high_ints(min(t1.min, t2.min)),
+  high_ints(),  int_range()   = high_ints(min(t1.min, t2.min)),
+  int_range(),  int_range()   = int_range(min(t1.min, t2.min), max(max(t1), max(t2))),
+  _,            _             = int_type_union(t2, t1);
+
+
+Type map_record_types_union_superset(Type key_type, Type value_type, (SymbObj => (type: Type, optional: Bool)) fields)
+{
+  kt = union_superset_impl({key_type} & {symb_type(l) : l => _ <- fields});
+  vt = union_superset_impl({value_type} & {f.type : _ => f <- fields});
+  return union_type({ne_map_type(kt, vt), empty_map_type if not (? _ => f <- fields : not f.optional)});
+}
+
+
+RecordType record_types_union_superset((SymbObj => (type: Type, optional: Bool)) fs1, (SymbObj => (type: Type, optional: Bool)) fs2)
+{
+  ls1 = keys(fs1);
+  ls2 = keys(fs2);
+
+  cls = intersection(ls1, ls2);
+  ls1o = ls1 - cls;
+  ls2o = ls2 - cls;
+
+  cfs = (l => (type: union_superset_impl(f1.type, f2.type), optional: f1.optional or f2.optional) : l <- cls, f1 = fs1[l], f2 = fs2[l]);
+  fs1o = (l => (type: fs1[l].type, optional: true) : l <- ls1o);
+  fs2o = (l => (type: fs2[l].type, optional: true) : l <- ls2o);
+
+  return record_type(cfs & fs1o & fs2o);
+}
+
+
+TagObjType tag_obj_types_union_superset(TagObjType t1, TagObjType t2)
+{
+  if (t1.tag_type == atom_type or t2.tag_type == atom_type)
+    return tag_obj_type(atom_type, union_superset_impl(t1.obj_type, t2.obj_type));
+  ;
+
+  if (t1.tag_type == t2.tag_type)
+    return tag_obj_type(t1.tag_type, union_superset_impl(t1.obj_type, t2.obj_type));
+  ;
+
+  return union_type({t1, t2});
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+Bool pseudotypes_overlap(Type t1, Type t2) = not are_disjoint(pseudotype(t1), pseudotype(t2));

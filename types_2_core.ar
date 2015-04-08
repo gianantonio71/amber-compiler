@@ -8,55 +8,40 @@ type LeafObj    = object(<Atom, Int>);
 ///////////////////////////////////////////////////////////////////////////////
 
 type BasicTypeSymbol  = type_symbol(Atom);
-type ParTypeSymbol    = par_type_symbol(symbol: BasicTypeSymbol, params: [UserType^]);
+type ParTypeSymbol    = par_type_symbol(symbol: BasicTypeSymbol, params: [Type^]);
 type TypeSymbol       = BasicTypeSymbol, ParTypeSymbol;
 
 type TypeName         = type_name(symbol: BasicTypeSymbol, arity: Nat);
 
 ///////////////////////////////////////////////////////////////////////////////
 
-type Type           = LeafType, TypeVar, SelfPretype, CompType, UnionType, RecType;
+// type VoidType       = void_type;
+// type ClosedType     = void_type, Type; //## FIND BETTER NAME
 
-type VoidType       = void_type;
-type ClosedType     = void_type, Type; //## FIND BETTER NAME
+type SymbType   = symb_type(SymbObj);
 
-type SymbType       = symb_type(SymbObj);
+type IntType    = integer, low_ints(max: Int), high_ints(min: Int), int_range(min: Int, size: NzNat);
 
-type IntType        = integer, low_ints(max: Int), high_ints(min: Int), int_range(min: Int, size: NzNat);
+type FloatType  = float_type;
 
-type FloatType      = float_type;
+type LeafType   = atom_type, SymbType, IntType, FloatType, empty_seq_type, empty_set_type, empty_map_type;
 
-type LeafType       = atom_type, SymbType, IntType, FloatType, empty_seq_type, empty_set_type, empty_map_type;
+type TypeVar    = type_var(<Atom, Nat>);
 
-type SelfPretype    = self, self(Nat);
+type TypeRef    = type_ref(TypeSymbol);
 
-type TypeVar        = type_var(<Atom, Nat>);
+type Type       = LeafType,
+                  TypeRef,
+                  TypeVar,
+                  ne_seq_type(elem_type: Type),
+                  ne_set_type(elem_type: Type),
+                  ne_map_type(key_type: Type, value_type: Type),
+                  record_type((SymbObj => (type: Type, optional: Bool))),
+                  tuple_type([Type^]),
+                  tag_obj_type(tag_type: TagType, obj_type: Type),
+                  union_type(Type+);
 
-type NeSeqType      = ne_seq_type(elem_type: Type);
-type SeqType        = empty_seq_type, NeSeqType;
-
-type NeSetType      = ne_set_type(elem_type: Type);
-type SetType        = empty_set_type, NeSetType;
-
-type NeMapType      = ne_map_type(key_type: Type, value_type: Type);
-type MapType        = empty_map_type, NeMapType;
-
-type RecordType     = record_type((SymbObj => (type: Type, optional: Bool))); //## THE EMPTY MAP SHOULD NOT BE INCLUDED. OR SHOULD IT?
-
-type TupleType      = tuple_type([Type^]);
-
-type TagType        = SymbType, atom_type; //, TypeVar; //## THE CODE HASN'T BEEN UPDATED YET
-type TagObjType     = tag_obj_type(tag_type: TagType, obj_type: Type);
-
-type CompType       = NeSeqType, NeSetType, NeMapType, RecordType, TupleType, TagObjType; //## FIND BETTER NAME
-
-type UnionType      = union_type(Type+);
-
-type SelfRecType    = self_rec_type(Type);
-
-type MutRecType     = mut_rec_type(index: Nat, types: [Type^]);
-
-type RecType        = SelfRecType, MutRecType;
+type TagType    = SymbType, atom_type;
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -71,27 +56,7 @@ type FnType   = fn_type(
 
 ///////////////////////////////////////////////////////////////////////////////
 
-type TypeRef  = type_ref(TypeSymbol);
-
-type UserType = LeafType,
-                TypeRef,
-                TypeVar, 
-                ne_seq_type(elem_type: UserType),
-                ne_set_type(elem_type: UserType),
-                ne_map_type(key_type: UserType, value_type: UserType),
-                record_type((SymbObj => (type: UserType, optional: Bool))),
-                tuple_type([UserType^]),
-                tag_obj_type(tag_type: TagType, obj_type: UserType),
-                union_type(UserType+);
-
-///////////////////////////////////////////////////////////////////////////////
-
-type UserClsType  = cls_type(in_types: [UserType^], out_type: UserType);
-type UserExtType  = UserType, UserClsType;
-
-///////////////////////////////////////////////////////////////////////////////
-
-type SubtypeDecl  = subtype_decl(subtype: UserType, supertype: UserType);
+type SubtypeDecl  = subtype_decl(subtype: Type, supertype: Type);
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -124,7 +89,7 @@ type Expr     = LeafObj, //## UPDATE ALL REFERENCES
 
                 FloatLit,
 
-                nat_range_expr(upper_bound: Expr, bound_included: Bool),
+                // nat_range_expr(upper_bound: Expr, bound_included: Bool),
 
                 set_expr(SubExpr*),
                 seq_expr([SubExpr]),
@@ -148,8 +113,8 @@ type Expr     = LeafObj, //## UPDATE ALL REFERENCES
                 
                 eq(left: Expr, right: Expr),
                 
-                membership(obj: Expr, type: UserType),
-                cast_expr(expr: Expr, type: UserType),
+                membership(obj: Expr, type: Type),
+                cast_expr(expr: Expr, type: Type),
 
                 accessor(expr: Expr, field: SymbObj),      //## SHOULD <field> BE AN OBJECT OR JUST A PLAIN SYMBOL?
                 accessor_test(expr: Expr, field: SymbObj), //## DITTO
@@ -240,14 +205,14 @@ type Statement  = assignment_stmt(vars: [Var^], value: Expr),
 //                    res_type: Type
 //                  );
 
-type FnFrmPar   = scalar_par(var: var(Atom)?, type: UserType?),
-                  non_scalar_par(var: ClsVar?, arity: NzNat, type: UserClsType?); //## BAD: THE VAR AND TYPE FIELDS HERE ARE OPTIONAL ONLY TO ALLOW MERGING OF FUNCTIONS WITH DIFFERENT ARITIES. ALSO, ARITY IS REDUNDANT WHEN TYPE IS PRESENT. CHECK THIS IN THE WELL-FORMEDNESS CHECKING LAYER. ALSO, REALLY BAD NAME.
+type FnFrmPar   = scalar_par(var: var(Atom)?, type: Type?),
+                  non_scalar_par(var: ClsVar?, arity: NzNat, type: ClsType?); //## BAD: THE VAR AND TYPE FIELDS HERE ARE OPTIONAL ONLY TO ALLOW MERGING OF FUNCTIONS WITH DIFFERENT ARITIES. ALSO, ARITY IS REDUNDANT WHEN TYPE IS PRESENT. CHECK THIS IN THE WELL-FORMEDNESS CHECKING LAYER. ALSO, REALLY BAD NAME.
 
 type FnDef      = fn_def(
                     name:         FnSymbol,
                     params:       [FnFrmPar], //## BAD BAD
-                    named_params: (NamedPar => UserExtType), //## BAD: THE TYPE IS TOO LOOSE. INCLUDE A CHECK IN THE WELL-FORMEDNESS CHECKING LAYER
-                    res_type:     UserType?,
+                    named_params: (NamedPar => ExtType), //## BAD: THE TYPE IS TOO LOOSE. INCLUDE A CHECK IN THE WELL-FORMEDNESS CHECKING LAYER
+                    res_type:     Type?,
                     expr:         Expr
                     //impl_env: Signature*,
                   );
@@ -257,14 +222,13 @@ type ProcSymbol = proc_symbol(Atom);
 //## SERIOUSLY, FIND BETTER NAME...
 type ProcDef2   = proc_def(
                     name:       ProcSymbol,
-                    params:     [(var: Var, type: UserType)],
-                    res_type:   Maybe[UserType],
+                    params:     [(var: Var, type: Type)],
+                    res_type:   Maybe[Type],
                     body:       [Statement]
                   );
 
 type Program    = program(
-                    tdefs:          (TypeSymbol => UserType),
-                    anon_tdefs:     (TypeName => Type),
+                    typedefs:       (TypeName => Type),
                     subtype_decls:  SubtypeDecl*,
                     fndefs:         FnDef*,
                     proc_defs:      ProcDef2*

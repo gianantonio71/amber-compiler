@@ -6,20 +6,9 @@ IntObj  object(Int n)  = :object(n);
 
 BasicTypeSymbol type_symbol(Atom a) = :type_symbol(a);
 
-ParTypeSymbol par_type_symbol(BasicTypeSymbol s, [UserType^] ps) = par_type_symbol(symbol: s, params: ps);
+ParTypeSymbol par_type_symbol(BasicTypeSymbol s, [Type^] ps) = par_type_symbol(symbol: s, params: ps);
 
 TypeName type_name(BasicTypeSymbol ts, Nat arity) = type_name(symbol: ts, arity: arity);
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
-UserType user_ne_seq_type(UserType t)                   = ne_seq_type(elem_type: t);
-UserType user_ne_set_type(UserType t)                   = ne_set_type(elem_type: t);
-UserType user_ne_map_type(UserType kt, UserType vt)     = ne_map_type(key_type: kt, value_type: vt);
-UserType user_record_type((SymbObj => (type: UserType, optional: Bool)) fs) = :record_type(fs);
-UserType user_tuple_type([UserType^] ts)                = :tuple_type(ts);
-UserType user_tag_obj_type(TagType tt, UserType ot)     = tag_obj_type(tag_type: tt, obj_type: ot);
-UserType user_union_type(UserType+ ts)                  = if size(ts) > 1 then :union_type(ts) else only_element(ts);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -46,192 +35,15 @@ TypeVar type_var(<Atom, Nat> n) = :type_var(n);
 <empty_set_type> empty_set_type = :empty_set_type;
 <empty_map_type> empty_map_type = :empty_map_type;
 
-// NeSeqType ne_seq_type(Type elem_type) = ne_seq_type(elem_type: elem_type);
-NeSeqType ne_seq_type(Type elem_type)
-{
-  assert elem_type /= void_type;
-  return ne_seq_type(elem_type: elem_type);
-}
+Type ne_seq_type(Type t)                    = ne_seq_type(elem_type: t);
+Type ne_set_type(Type t)                    = ne_set_type(elem_type: t);
+Type ne_map_type(Type kt, Type vt)          = ne_map_type(key_type: kt, value_type: vt);
+Type record_type((SymbObj => (type: Type, optional: Bool)) fs)  = :record_type(fs);
+Type tuple_type([Type^] ts)                 = :tuple_type(ts);
+Type tag_obj_type(TagType tt, Type ot)      = tag_obj_type(tag_type: tt, obj_type: ot);
+Type union_type(Type+ ts)                   = if size(ts) > 1 then :union_type(ts) else only_element(ts);
 
-
-// NeSetType ne_set_type(Type elem_type) = ne_set_type(elem_type: elem_type);
-NeSetType ne_set_type(Type elem_type)
-{
-  assert elem_type /= void_type;
-  return ne_set_type(elem_type: elem_type);
-}
-
-// NeMapType ne_map_type(Type key_type, Type value_type) = ne_map_type(key_type: key_type, value_type: value_type);
-NeMapType ne_map_type(Type key_type, Type value_type)
-{
-  assert key_type /= void_type and value_type /= void_type;
-  return ne_map_type(key_type: key_type, value_type: value_type);
-}
-
-// RecordType record_type((SymbObj => (type: Type, optional: Bool)) fs) = :record_type(fs);
-RecordType record_type((SymbObj => (type: Type, optional: Bool)) fs)
-{
-  assert not (? l => f <- fs : f.type == void_type);
-  return :record_type(fs);
-}
-
-TupleType tuple_type([Type^] ts)
-{
-  assert length(ts) > 1 and none([t == void_type : t <- ts]);
-  return :tuple_type(ts);
-}
-
-// TagObjType tag_obj_type(TagType tag_type, Type obj_type) = tag_obj_type(tag_type: tag_type, obj_type: obj_type);
-TagObjType tag_obj_type(TagType tag_type, Type obj_type)
-{
-  assert tag_type /= void_type and obj_type /= void_type;
-  return tag_obj_type(tag_type: tag_type, obj_type: obj_type);
-}
-
-Type map_type(Type key_type, Type value_type, Bool may_be_empty)
-{
-  assert key_type /= void_type and value_type /= void_type;
-  type = ne_map_type(key_type, value_type);
-  return if may_be_empty then union_type({type, empty_map_type}) else type;
-}
-
-Type union_type(Type+ types) //## BAD: HERE I SHOULD CONSTRAIN THE TYPE OF T SO THAT IT IS A SUBTYPE OF Type, SelfRecPretype or MutRecPretype
-{
-  assert not (? t <- types : t == void_type);
-
-  norm_types = union({expand_union_types(t) : t <- types});
-  assert not (? union_type() <- norm_types);
-  return if size(norm_types) > 1 then :union_type(nonempty(norm_types)) else only_element(norm_types);
-
-  Type* expand_union_types(Type type):
-		union_type(ts?) = union({expand_union_types(t) : t <- ts}),
-		_								= {type};
-}
-
-SelfPretype self        = :self;
-SelfPretype self(Nat n) = :self(n);
-
-// SelfRecType self_rec_type(Type pretype)              = :self_rec_type(pretype);
-SelfRecType self_rec_type(Type pretype)
-{
-  assert pretype /= void_type;
-  return :self_rec_type(pretype);
-}
-
-// MutRecType mut_rec_type(Nat index, [Type^] pretypes) = mut_rec_type(index: index, types: pretypes);
-MutRecType mut_rec_type(Nat index, [Type^] pretypes)
-{
-  assert none([t == void_type : t <- pretypes]);
-  return mut_rec_type(index: index, types: pretypes);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-ClosedType closed_ne_seq_type(ClosedType elem_type) = if elem_type /= void_type then ne_seq_type(elem_type) else void_type;
-ClosedType closed_ne_set_type(ClosedType elem_type) = if elem_type /= void_type then ne_set_type(elem_type) else void_type;
-
-ClosedType closed_ne_map_type(ClosedType key_type, ClosedType value_type) =
-  if key_type /= void_type and value_type /= void_type then ne_map_type(key_type, value_type) else void_type;
-
-ClosedType closed_record_type((SymbObj => (type: ClosedType, optional: Bool)) fs)
-{
-  return void_type if (? l => f <- fs : f.type == void_type and not f.optional);
-  rfs = (l => (type: t, optional: f.optional) : l => f <- fs, t = f.type, t /= void_type);
-  return record_type(rfs);
-}
-
-ClosedType closed_tuple_type([ClosedType^] ts)
-{
-  nv_ts = [];
-  for (t : ts)
-    return void_type if t == void_type;
-    nv_ts = [nv_ts | t];
-  ;
-  return tuple_type(nonempty(nv_ts));
-}
-
-ClosedType closed_tag_obj_type(TagType tag_type, ClosedType obj_type) = if obj_type /= void_type then tag_obj_type(tag_type, obj_type) else void_type;
-
-ClosedType closed_union_type(ClosedType+ types)
-{
-  nv_ts = {t : t <- types, t /= void_type};
-  return if nv_ts /= {} then union_type(nv_ts) else void_type;
-}
-
-ClosedType closed_self_rec_type(ClosedType pretype) = if pretype /= void_type then self_rec_type(pretype) else void_type;
-
-ClosedType closed_mut_rec_type(Nat index, [ClosedType^] pretypes)
-{
-  self_refs_to_void = set([self(i) : t @ i <- pretypes, t == void_type]);
-  pts = pretypes;
-  while (self_refs_to_void /= {})
-    new_pts = [repl_self_refs(pt, if in($, self_refs_to_void) then void_type else $) : pt <- pts];
-    self_refs_to_void = set([self(i) : ot, nt @ i <- zip(pts, new_pts), ot /= void_type and nt == void_type]);
-    pts = new_pts;
-  ;
-  return void_type if pts[index] == void_type;
-
-  rem_self_ref_idxs = {index};
-  loop
-    rem_self_refs = union({self_refs(pts[i]) : i <- rem_self_ref_idxs});
-    new_rem_self_ref_idxs = {self_ref_index(r) : r <- rem_self_refs};
-    break if new_rem_self_ref_idxs == rem_self_ref_idxs;
-    rem_self_ref_idxs = new_rem_self_ref_idxs;
-  ;
-
-  if (size(rem_self_ref_idxs) == 1)
-    assert only_element(rem_self_ref_idxs) == index;
-    pt = repl_self_refs(pts[index], self);
-    fail if pt == void_type; // Shutting up the type checker
-    return self_rec_type(pt);
-  ;
-
-  rem_self_ref_idxs_placed = sort_set(rem_self_ref_idxs, $a < $b);
-  self_ref_subst_map = merge(set([(self(old_i) => self(new_i)) : old_i @ new_i <- rem_self_ref_idxs_placed]));
-  final_pts = [repl_self_refs(pts[i], self_ref_subst_map[$]) : i <- rem_self_ref_idxs_placed];
-  final_idx = index_first(index, rem_self_ref_idxs_placed);
-  final_pts = nonempty([if pt /= void_type then pt else {fail;} : pt <- final_pts]); // Shutting up the type checker
-  return mut_rec_type(final_idx, final_pts);
-
-
-  Nat self_ref_index(SelfPretype):
-    self(i?)  = i;
-
-  ClosedType repl_self_refs(ClosedType type, (SelfPretype -> ClosedType) repl_self_ref):
-    LeafType          = type,
-    SelfPretype       = repl_self_ref(type),
-    TypeVar           = type,
-    ne_seq_type()     = closed_ne_seq_type(repl_self_refs(type.elem_type, repl_self_ref)),
-    ne_set_type()     = closed_ne_set_type(repl_self_refs(type.elem_type, repl_self_ref)),
-    ne_map_type()     = closed_ne_map_type(repl_self_refs(type.key_type, repl_self_ref), repl_self_refs(type.value_type, repl_self_ref)),
-    record_type(fs?)  = closed_record_type((l => (type: repl_self_refs(f.type, repl_self_ref), optional: f.optional) : l => f <- fs)), //## BAD: WOULD BE GOOD TO HAVE A "DECLARATIVE" UPDATE OPERATION
-    tuple_type(ts?)   = closed_tuple_type([repl_self_refs(t, repl_self_ref) : t <- ts]),
-    tag_obj_type()    = closed_tag_obj_type(type.tag_type, repl_self_refs(type.obj_type, repl_self_ref)),
-    union_type(ts?)   = closed_union_type({repl_self_refs(t, repl_self_ref) : t <- ts}),
-    self_rec_type()   = type,
-    mut_rec_type()    = type;
-
-  SelfPretype* self_refs(ClosedType type):
-    LeafType          = {},
-    SelfPretype       = {type},
-    TypeVar           = {},
-    ne_seq_type()     = self_refs(type.elem_type),
-    ne_set_type()     = self_refs(type.elem_type),
-    ne_map_type()     = self_refs(type.key_type) & self_refs(type.value_type),
-    record_type(fs?)  = union({self_refs(f.type) : l => f <- fs}),
-    tuple_type(ts?)   = seq_union([self_refs(t) : t <- ts]),
-    tag_obj_type()    = self_refs(type.obj_type),
-    union_type(ts?)   = union({self_refs(t) : t <- ts}),
-    self_rec_type()   = {},
-    mut_rec_type()    = {},
-    void_type         = {fail;}; // Shutting up the type checker
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-ClsType cls_type([Type^] its, Type ot)          = cls_type(in_types: its, out_type: ot);
-
-UserClsType user_cls_type([UserType^] its, UserType ot) = cls_type(in_types: its, out_type: ot);
+ClsType cls_type([Type^] its, Type ot) = cls_type(in_types: its, out_type: ot);
 
 FnType fn_type([ExtType] ps, Type rt) = fn_type(ps, (), rt);
 FnType fn_type([ExtType] ps, (NamedPar => ExtType) nps, Type rt) = fn_type(params: ps, named_params: nps, ret_type: rt);
@@ -276,9 +88,9 @@ Var named_par(Atom a) = :named_par(a);
 
 ClsVar cls_var(Atom a)  = :cls_var(a);
 
-FnFrmPar non_scalar_par(ClsVar v, UserClsType t) = non_scalar_par(var: v, arity: arity(t), type: t);
-FnFrmPar non_scalar_par(ClsVar v, NzNat a)       = non_scalar_par(var: v, arity: a);
-FnFrmPar non_scalar_par(NzNat a)                 = non_scalar_par(arity: a);
+FnFrmPar non_scalar_par(ClsVar v, ClsType t)  = non_scalar_par(var: v, arity: arity(t), type: t);
+FnFrmPar non_scalar_par(ClsVar v, NzNat a)	  = non_scalar_par(var: v, arity: a);
+FnFrmPar non_scalar_par(NzNat a)              = non_scalar_par(arity: a);
 
 Expr float_lit(Int m, Int e)  = float_lit(mantissa: m, dec_exp: e);
 
@@ -308,8 +120,8 @@ Expr eq(Expr l, Expr r) = eq(left: l, right: r);
 Expr accessor(Expr e, SymbObj f) = accessor(expr: e, field: f);
 Expr accessor_test(Expr e, SymbObj f) = accessor_test(expr: e, field: f);
 
-Expr cast_expr(Expr e, UserType t) = cast_expr(expr: e, type: t);
-Expr membership(Expr obj, UserType type) = membership(obj: obj, type: type);
+Expr cast_expr(Expr e, Type t) = cast_expr(expr: e, type: t);
+Expr membership(Expr obj, Type type) = membership(obj: obj, type: type);
 
 Expr if_expr(Expr cond, Expr true_expr, Expr false_expr) = if_expr(cond: cond, then: true_expr, else: false_expr);
 
@@ -347,8 +159,8 @@ ProcSymbol proc_symbol(Atom a) = :proc_symbol(a);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-FnDef fn_def(FnSymbol n, [FnFrmPar] ps, (NamedPar => UserExtType) nps, Maybe[UserType] mrt, Expr e) =
+FnDef fn_def(FnSymbol n, [FnFrmPar] ps, (NamedPar => ExtType) nps, Maybe[Type] mrt, Expr e) =
   fn_def(name: n, params: ps, named_params: nps, res_type: value(mrt) if mrt /= nil, expr: e);
 
-ProcDef2 proc_def(ProcSymbol n, [(var: Var, type: UserType)] ps, Maybe[UserType] rt, [Statement] b) =
+ProcDef2 proc_def(ProcSymbol n, [(var: Var, type: Type)] ps, Maybe[Type] rt, [Statement] b) =
   proc_def(name: n, params: ps, res_type: rt, body: b);
