@@ -5,72 +5,77 @@
 
 ((FnSymbol, [FnFrmPar]) => TypeCheckingError+) typecheck(Program prg)
 {
-  typedefs = prg.anon_tdefs;
-  signatures = merge_values({((fd.name, arity(fd)) => signature(fd, typedefs)) : fd <- prg.fndefs});
-  aggregated_signatures = (n => build_aggregated_signatures(ss) : n => ss <- signatures);
+  typedefs = prg.typedefs & builtin_typedefs;
+  signatures = merge_values({((fd.name, arity(fd)) => signature(fd)) : fd <- prg.fndefs});
+  aggregated_signatures = (n => build_aggregated_signatures(ss, typedefs) : n => ss <- signatures);
   errors = ((fd.name, fd.params) => typecheck(fd, typedefs, signatures, aggregated_signatures) : fd <- prg.fndefs);
   return (f => es : f => es <- errors, es /= {});
 }
 
 
-FnType* build_aggregated_signatures(FnType+ signatures)
+FnType* build_aggregated_signatures(FnType+ signatures, (TypeName => Type) tdefs)
 {
   a_sgn = an_elem(signatures);
   sgns = signatures;
   for (i < arity(a_sgn))
-    sgns = merge_comp_sgns(sgns, i);
+    sgns = merge_comp_sgns(sgns, i, tdefs);
   ;
   return sgns - signatures;
 
-  FnType+ merge_comp_sgns(FnType+ signatures, Nat par_idx)
+  FnType+ merge_comp_sgns(FnType+ signatures, Nat par_idx, (TypeName => Type) tdefs)
   {
     new_sgns = {};
     sgns = signatures;
     while (sgns /= {})
       sgn = an_elem(sgns);
-      comp_sgns = {s : s <- sgns, other_params_are_eq(sgn, s, par_idx)};
-      new_sgn = if size(comp_sgns) > 1 then merge_all_sgns(comp_sgns, par_idx) else only_element(comp_sgns);
+      comp_sgns = {s : s <- sgns, other_params_are_eq(sgn, s, par_idx, tdefs)};
+      new_sgn = if size(comp_sgns) > 1 then merge_all_sgns(comp_sgns, par_idx, tdefs) else only_element(comp_sgns);
       new_sgns = new_sgns & {new_sgn};
       sgns = sgns - comp_sgns;
     ;
-    return new_sgns;
+    return nonempty(new_sgns);
   }
 
-  FnType merge_all_sgns(FnType+ signatures, Nat par_idx)
+  FnType merge_all_sgns(FnType+ signatures, Nat par_idx, (TypeName => Type) tdefs)
   {
-    merged_par_type = union_type({s.params[par_idx] : s <- signatures});
-    merged_ret_type = union_superset({s.ret_type : s <- signatures});
+    //## BUG BUG BUG: THERE'S PROBABLY A BUG WITH CLOSURE PARAMETERS HERE. INVESTIGATE
+    merged_par_type = union_type({cast_as_type(s.params[par_idx]) : s <- signatures});
+    merged_ret_type = union_superset({s.ret_type : s <- signatures}, typedefs=tdefs);
     a_sgn = an_elem(signatures);
     params = [if i == par_idx then merged_par_type else p : p @ i <- an_elem(signatures).params];
     return fn_type(params, a_sgn.named_params, merged_ret_type);
   }
 
-  Bool other_params_are_eq(FnType sgn1, FnType sgn2, Nat par_idx) =
-    all([is_eq(p1, p2) : p1, p2 @ i <- zip(sgn1.params, sgn2.params), i /= par_idx]);
+  Bool other_params_are_eq(FnType sgn1, FnType sgn2, Nat par_idx, (TypeName => Type) tdefs) =
+    all([types_or_cls_types_are_eq(p1, p2, tdefs) : p1, p2 @ i <- zip(sgn1.params, sgn2.params), i /= par_idx]);
+
+  Bool types_or_cls_types_are_eq(AnyType t1, AnyType t2, (TypeName => Type) tdefs):
+    Type,     Type      = is_eq(t1, t2, typedefs=tdefs),
+    ClsType,  ClsType   = is_eq(t1, t2, typedefs=tdefs);
 }
 
 
-TypeCheckingError* typecheck(FnDef fn_def, (TypeName => Type) typedefs, ((FnSymbol, Nat) => FnType+) signatures, (FnSymbol => FnType) aggregated_signatures)
+TypeCheckingError* typecheck(FnDef fn_def, (TypeName => Type) typedefs, ((FnSymbol, Nat) => FnType+) signatures, ((FnSymbol, Nat) => FnType*) aggregated_signatures)
 {
   errs = set([missing_param_type(p, i) : p @ i <- fn_def.params, not p.type?]) & {missing_res_type if not fn_def.res_type?};
   return errs if errs /= {};
 
-  var_aliases=set([{fn_par(i), p.var} : p @ i <- fn_def.params, p.var?]);
+  var_aliases = set([{fn_par(i), p.var} : p @ i <- fn_def.params, p :: ScalarFrmParam and p.var?]);
   let (typedefs=typedefs, signatures=signatures, aggregated_signatures=aggregated_signatures, var_aliases=var_aliases)
-    scalar_vars = (p.var => user_type_to_anon_type(p.type) : p <- set(fn_def.params), p.var?, p.type :: UserType) &
-                  (fn_par(i) => user_type_to_anon_type(fn_def.params[i].type) : i <- index_set(fn_def.params), fn_def.params[i].type :: UserType) &
-                  (v => user_type_to_anon_type(t) : v => t <- fn_def.named_params, t :: UserType);
+    scalar_vars = (scalar_var(p) => scalar_param_type(p) : p <- set(fn_def.params), is_scalar_par(p), p.var?) &
+                  (fn_par(i) => scalar_param_type(p) : i <- index_set(fn_def.params), p = fn_def.params[i], is_scalar_par(p)) &
+                  (v => t : v => t <- fn_def.named_params, t :: Type);
 
     assert scalar_vars :: (Var => Type);
 
-    cls_vars = (p.var => user_type_to_anon_type(p.type) : p <- set(fn_def.params), p.var?, p.type :: UserClsType) &
-               (v => user_type_to_anon_type(t) : v => t <- fn_def.named_params, t :: UserClsType);
+    cls_vars = (cls_var(p) => cls_param_type(p) : p <- set(fn_def.params), not is_scalar_par(p), p.var?) &
+               (v => t : v => t <- fn_def.named_params, t :: ClsType);
 
     assert cls_vars :: (ClsVar => ClsType);
 
-    // return typecheck(fn_def.expr, user_type_to_anon_type(fn_def.res_type), environment=scalar_vars, closures=cls_vars);
+    // return typecheck(fn_def.expr, fn_def.res_type, environment=scalar_vars, closures=cls_vars);
     //## THIS IS A TEMPORARY HACK TO WORK AROUND AN UNIMPLEMENTED FEATURE IN THE CODE GENERATION CODE
-    errs = typecheck(fn_def.expr, user_type_to_anon_type(fn_def.res_type), environment=scalar_vars, closures=cls_vars);
+    errs = typecheck(fn_def.expr, return_type(fn_def), environment=scalar_vars, closures=cls_vars);
   ;
   return errs;
 }
@@ -80,17 +85,17 @@ TypeCheckingError* typecheck(FnDef fn_def, (TypeName => Type) typedefs, ((FnSymb
 
 using
 {
-  (TypeName => Type)            typedefs,
-  ((FnSymbol, Nat) => FnType+)  signatures,
-  ((FnSymbol, Nat) => FnType*)  aggregated_signatures,
-  (Var => Type)                 environment,
-  (ClsVar => ClsType)           closures,
-  Var**                         var_aliases;
+  (TypeName => Type)              typedefs,
+  ((FnSymbol, Nat) => FnType+)    signatures,
+  ((FnSymbol, Nat) => FnType*)    aggregated_signatures,
+  (Var => Type)                   environment,
+  (<ClsVar, NamedPar> => ClsType) closures,
+  Var**                           var_aliases;
 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  TypeCheckingError* typecheck(Expr expr, ClosedType exp_type)
+  TypeCheckingError* typecheck(Expr expr, Type exp_type)
   {
     errs = typecheck_without_annotations(expr, exp_type);
     return {annotate(err, expr) : err <- errs};
@@ -101,7 +106,7 @@ using
       _                       = annotated_expr_error(err, expr);
 
 
-    TypeCheckingError* typecheck_without_annotations(Expr expr, ClosedType exp_type):
+    TypeCheckingError* typecheck_without_annotations(Expr expr, Type exp_type):
       object(obj?)          = {obj_does_not_belong_to_type(obj, exp_type) if not type_contains_obj(exp_type, obj)},
       set_expr(ses?)        = typecheck_set_expr(ses, exp_type),
       seq_expr(ses?)        = typecheck_seq_expr(ses, exp_type),
@@ -119,7 +124,7 @@ using
       eq()                  = typecheck_eq_expr(expr.left, expr.right, exp_type),
       membership()          = invalid_type_if_not_subset(type_bool, exp_type) & typecheck(expr.obj, type_any),
       //## TODO: CHECK THAT THE TWO TYPES ARE NOT DISJOINT?
-      cast_expr()           = invalid_type_if_not_subset(user_type_to_anon_type(expr.type), exp_type) & typecheck(expr.expr, type_any),
+      cast_expr()           = invalid_type_if_not_subset(expr.type, exp_type) & typecheck(expr.expr, type_any),
       accessor()            = typecheck_accessor_expr(expr.expr, expr.field, exp_type),
       accessor_test()       = typecheck_accessor_test_expr(expr.expr, expr.field, exp_type),
       if_expr()             = typecheck_if_expr(expr.cond, expr.then, expr.else, exp_type),
@@ -131,14 +136,47 @@ using
       seq_comp()            = {
         maybe_idx_var = if expr.idx_var? then just(expr.idx_var) else nil;
         maybe_sel_expr = if expr.sel_expr? then just(expr.sel_expr) else nil;
-        return if expr.src_expr_type == :sequence
+        src_expr_type = expr.src_expr_type;
+        return if src_expr_type == :sequence
           then typecheck_seq_comp(expr.expr, expr.vars, maybe_idx_var, expr.src_expr, maybe_sel_expr, exp_type)
-          else typecheck_int_range_seq_comp(expr.expr, expr.vars[0], expr.src_expr, expr.src_expr_type.included, maybe_sel_expr, exp_type);
+          else typecheck_int_range_seq_comp(expr.expr, expr.vars[0], expr.src_expr, src_expr_type.included, maybe_sel_expr, exp_type);
       };
   }
 
 
-  TypeCheckingError* typecheck(CondExpr expr, ClosedType exp_type)
+  TypeCheckingError* typecheck_any(SubExpr* exprs, Type+ exp_types)
+  {
+    all_errs = ();
+    for (exp_type : rand_sort(exp_types))
+      errs = union({typecheck(e, exp_type) : e <- exprs});
+      return {} if errs == {};
+      all_errs = all_errs & (exp_type => errs);
+    ;
+    //## BAD: THIS IS TOTALLY WRONG OF COURSE, BUT IT'LL HAVE TO DO FOR NOW...
+    return an_elem(nonempty(values(all_errs)));
+  }
+
+
+  TypeCheckingError* typecheck_any([SubExpr] exprs, Type+ exp_types) = typecheck_any(set(exprs), exp_types);
+
+
+  TypeCheckingError* typecheck_any(SubExpr expr, Type+ exp_types) = typecheck_any({expr}, exp_types);
+
+
+  TypeCheckingError* typecheck_any_by_pair((Expr, Expr)+ expr_pairs, (Type, Type)+ exp_type_pairs)
+  {
+    all_errs = ();
+    for (type1, type2 : rand_sort(exp_type_pairs))
+      errs = union({typecheck(left(ep), type1) & typecheck(right(ep), type2) : ep <- expr_pairs});
+      return {} if errs == {};
+      all_errs = all_errs & ((type1, type2) => errs);
+    ;
+    //## BAD: THIS IS TOTALLY WRONG OF COURSE, BUT IT'LL HAVE TO DO FOR NOW...
+    return an_elem(nonempty(values(all_errs)));
+  }
+
+
+  TypeCheckingError* typecheck(CondExpr expr, Type exp_type)
   {
     errs = typecheck(expr.cond, type_bool);
     return errs if errs /= {};
@@ -147,92 +185,132 @@ using
   }
 
 
-  TypeCheckingError* typecheck_set_expr(SubExpr* subexprs, ClosedType exp_type)
+  TypeCheckingError* typecheck_set_expr(SubExpr* subexprs, Type exp_type)
   {
     may_be_empty = subexprs == {} or not (? se <- subexprs : not is_cond_expr(se));
     errs = {obj_does_not_belong_to_type({}, exp_type) if may_be_empty and not type_contains_obj(exp_type, {})};
     return errs if subexprs == {};
-    elem_type = set_elem_type(exp_type);
-    return errs & {not_a_set_type} if elem_type == void_type;
-    return errs & union({typecheck(se, elem_type) : se <- subexprs});
+    exp_elem_types = set_elem_types(exp_type);
+    return errs & {not_a_set_type} if exp_elem_types == {};
+    return errs & typecheck_any(subexprs, exp_elem_types);
   }
 
 
-  TypeCheckingError* typecheck_seq_expr([SubExpr] subexprs, ClosedType exp_type)
+  TypeCheckingError* typecheck_seq_expr([SubExpr] subexprs, Type exp_type)
   {
     may_be_empty = subexprs == [] or all([is_cond_expr(se) : se <- subexprs]);
     errs = {obj_does_not_belong_to_type([], exp_type) if may_be_empty and not type_contains_obj(exp_type, [])};
     return errs if subexprs == [];
-    exp_elem_type = seq_elem_type(exp_type);
-    return errs & {not_a_seq_type} if exp_elem_type == void_type;
-    return errs & seq_union([typecheck(es, exp_elem_type) : es <- subexprs]);
+    exp_elem_types = seq_elem_types(exp_type);
+    return errs & if exp_elem_types /= {} then typecheck_any(subexprs, exp_elem_types) else {not_a_seq_type};
   }
 
 
-  TypeCheckingError* typecheck_seq_tail_expr(Expr seq, [Expr^] tail, ClosedType exp_type)
+  TypeCheckingError* typecheck_seq_tail_expr(Expr seq, [Expr^] tail, Type exp_type)
   {
-    exp_elem_type = seq_elem_type(exp_type);
-    return {not_a_seq_type} if exp_elem_type == void_type;
-    return typecheck(seq, type_seq(exp_elem_type)) & seq_union([typecheck(e, exp_elem_type) : e <- tail]);
+    exp_elem_types = seq_elem_types(exp_type);
+    return {not_a_seq_type} if exp_elem_types == {};
+    return typecheck_any(seq, {type_seq(t) : t <- exp_elem_types}) & typecheck_any(tail, exp_elem_types);
   }
 
 
-  TypeCheckingError* typecheck_tuple_expr([Expr^] exprs, ClosedType exp_type)
+  TypeCheckingError* typecheck_tuple_expr([Expr^] exprs, Type exp_type)
   {
-    if (has_tuple_type(exp_type))
-      types = tuple_field_types(exp_type);
-      return {wrong_tuple_type_length(length(exprs), length(types))} if length(exprs) /= length(types);
-      return seq_union([typecheck(e, t) : e, t <- zip(exprs, types)]);
+    types_set = tuple_field_types_set(exp_type);
+    if (types_set /= {})
+      right_sized_types_set = {ts : ts <- types_set, length(ts) == length(exprs)};
+      return {wrong_tuple_type_length(nz_nat(length(exprs)), {nz_nat(length(ts)) : ts <- types_set})} if right_sized_types_set == {};
+      best_errs = nil;
+      for (types : rand_sort(right_sized_types_set))
+        errs = seq_union([typecheck(e, t) : e, t <- zip(exprs, types)]);
+        return {} if errs == {};
+        best_errs = just(errs) if best_errs == nil or size(errs) < size(value(best_errs));
+      ;
+      return value(best_errs);
     else
-      elem_type = seq_elem_type(exp_type);
-      return {not_a_tuple_or_seq_type} if elem_type == void_type;
-      return seq_union([typecheck(e, elem_type) : e <- exprs]);
+      elem_types = seq_elem_types(exp_type);
+      return if elem_types /= {} then typecheck_any(exprs, elem_types) else {not_a_tuple_or_seq_type(exp_type)};
     ;
   }
 
+
   //## TRY TO REWRITE THIS IN PROLOG-LIKE PSEUDOCODE
-  TypeCheckingError* typecheck_map_expr(<(key: Expr, value: Expr, cond: Expr?)*> entries, ClosedType exp_type)
+  TypeCheckingError* typecheck_map_expr(<(key: Expr, value: Expr, cond: Expr?)*> entries, Type exp_type)
   {
     // If the expression may evaluate to the empty map, we check that the empty map is included in the expected type
     may_be_empty = not (? e <- entries : not e.cond?);
     errs = {obj_does_not_belong_to_type((), exp_type) if may_be_empty and not type_contains_obj(exp_type, ())};
     return errs if entries == {};
+
     // Inclusion conditions, if they exist, must typecheck as booleans
     errs = errs & union({typecheck(e.cond, type_bool) : e <- entries, e.cond?});
-    // The expected type could contain either a map or a record type (or none at all).
+
+    // The expected type could contain any number of map or record types.
     // Here we check to see if there's a map type
-    exp_key_type = map_key_type(exp_type);
-    exp_value_type = map_value_type(exp_type);
-    assert (exp_key_type == void_type) == (exp_value_type == void_type);
-    if (exp_key_type /= void_type and exp_value_type /= void_type) // A DOUBLE CHECK SHOULD HELP THE TYPE CHECKER
-      // If the expected type includes a map type, we go for it
-      return errs & union({typecheck(e.key, exp_key_type) & typecheck(e.value, exp_value_type) : e <- entries});
+    exp_key_value_type_pairs = map_key_value_type_pairs(exp_type);
+    exp_record_types = record_types(exp_type);
+
+    // If there are no map nor record types then we are done, the expression does not typecheck
+    return errs & {not_a_map_or_record_type} if exp_key_value_type_pairs == {} and exp_record_types == {};
+
+    // Let's see if it typecheck as one of the map types
+    if (exp_key_value_type_pairs /= {})
+      map_errs = typecheck_any_by_pair({(e.key, e.value) : e <- entries}, exp_key_value_type_pairs);
+      return errs & map_errs if map_errs == {} or exp_record_types == {};
+    else
+      map_errs = {};
     ;
-    // There wasn't a map type. Now we check to see if there is a record type
-    exp_record_type = record_type(exp_type);
-    // If there is no record type we are done, the expression does not typecheck
-    return errs & {not_a_map_or_record_type} if exp_record_type == void_type;
-    // Since we are now left with a record type, we must first make sure that all the keys in the expression are symbols
+
+    // Let's see if it typechecks as one of the record_types
+
+    // Since all we are now left with is record types, we must first
+    // make sure that all the keys in the expression are symbols
     //## IN THEORY WE SHOULD CHECK THAT ALL EXPRESSIONS EVALUATE TO A SYMBOL, BUT WOULD THAT BE ANY USE?
     expr_keys = {e.key : e <- entries};
     non_symbol_keys = {k : k <- expr_keys, not k :: SymbObj};
-    return errs & {non_symbol_keys_with_record_type(non_symbol_keys)} if non_symbol_keys /= {};
-    // Now we make sure that the resulting record will always have all the required fields
-    // and that all fields are allowed by the type.
-    fields = _obj_(exp_record_type);
-    req_labels = {l : l => f <- fields, not f.optional};
-    allowed_labels = keys(fields);
-    sure_labels = {e.key : e <- entries, not e.cond?};
-    all_labels = {e.key : e <- entries};
-    errs = errs & {missing_rec_fields(req_labels - sure_labels)} if not subset(req_labels, sure_labels);
-    errs = errs & {invalid_rec_fields(all_labels - allowed_labels)} if not subset(all_labels, allowed_labels);
-    return errs if errs /= {};
-    // Finally checking that the corresponding types all typecheck to the respective types.
-    return union({typecheck(e.value, fields[e.key].type) : e <- entries});
+    if (non_symbol_keys /= {})
+      if (exp_key_value_type_pairs == {})
+        // If the type does not include map types, we report the record error
+        return errs & {non_symbol_keys_with_record_type(non_symbol_keys)};
+      else
+        // If on the other hand, we also have map types we decide that this wasn't
+        // meant to be a record and we return the map errors
+        assert map_errs /= {};
+        return errs & map_errs;
+      ;
+    ;
+
+    // Here we decide that the intent of the developer was to write a tuple,
+    // so we ignore the errors related to the map type, if there are any
+
+    all_rec_errs = ();
+    for (rec_type : rand_sort(exp_record_types))
+      // Now we make sure that the resulting record will always have all the required fields
+      // and that all fields are allowed by the type.
+      fields = _obj_(rec_type);
+      req_labels = {l : l => f <- fields, not f.optional};
+      allowed_labels = keys(fields);
+      sure_labels = {cast_as_symb_obj(e.key) : e <- entries, not e.cond?};
+      all_labels = {cast_as_symb_obj(e.key) : e <- entries};
+      missing_labels = req_labels - sure_labels;
+      invalid_labels = all_labels - allowed_labels;
+      rec_errs = {
+        missing_rec_fields(missing_labels) if missing_labels /= {},
+        invalid_rec_fields(invalid_labels) if invalid_labels /= {}
+      };
+      rec_errs = rec_errs & union({typecheck(e.value, fields[e.key].type) : e <- entries}) if rec_errs == {};
+      return errs if rec_errs == {};
+      all_rec_errs = all_rec_errs & (rec_type => rec_errs);
+    ;
+
+    //## BAD: THIS IS TOTALLY WRONG OF COURSE, BUT IT'LL HAVE TO DO FOR NOW...
+    return an_elem(nonempty(values(all_rec_errs)));
+
+    SymbObj cast_as_symb_obj(Expr expr) = if expr :: SymbObj then expr else {fail;};
   }
 
 
-  TypeCheckingError* typecheck_tag_obj_expr(Expr tag_expr, Expr obj_expr, ClosedType exp_type)
+  TypeCheckingError* typecheck_tag_obj_expr(Expr tag_expr, Expr obj_expr, Type exp_type)
   {
     tag_errs = typecheck(tag_expr, atom_type);
     return {tag_not_a_symbol(tag_errs)} if tag_errs /= {};
@@ -263,30 +341,39 @@ using
   }
 
 
-  TypeCheckingError* typecheck_fn_call(FnSymbol name, [ExtExpr] params, (NamedPar => ExtExpr) named_params, ClosedType exp_type)
+  TypeCheckingError* typecheck_fn_call(FnSymbol name, [AnyExpr] params, (NamedPar => AnyExpr) named_params, Type exp_type)
   {
     // First I check that all scalar positional parameters typecheck. This is something that
     // I need to do before trying to determine the functions this call may dispatch to.
     errs = seq_union([typecheck(p, type_any) : p <- params, p :: Expr]);
     return errs if errs /= {};
 
-    //## BUG: FROM NOW ON IT'S ALL BROKEN, OF COURSE...
-
+    // Here we try to determine the (possibly aggregated) signature
+    // of the polymorphic functions that may be actually called
     fn_key = (name, length(params));
+    param_types = [if p :: Expr then just(expr_type(p)) else nil : p <- params];
     candidate_signatures = {s : s <- signatures[fn_key], will_dispatch_to(s, params)};
     if (candidate_signatures == {})
       candidate_signatures = {s : s <- aggregated_signatures[fn_key], will_dispatch_to(s, params)};
       if (candidate_signatures == {})
-        par_types = [if p :: Expr then just(expr_type(p)) else nil : p <- params];
-        return {no_suitable_function_found(signatures[fn_key], par_types)};
+        return {no_suitable_function_found(name, nz_nat(length(params)), signatures[fn_key], nonempty(param_types))};
       ;
     ;
-    target_signature = only_element(candidate_signatures);
 
+    // There might be more than one candidate signature
+    // if the type of one or more parameters is the empty type
+    err_sets = {typecheck_fn_call(s, params, named_params, exp_type) : s <- candidate_signatures};
+
+    return if in({}, err_sets) then {} else an_elem(err_sets);
+  }
+
+
+  TypeCheckingError* typecheck_fn_call(FnType signature, [AnyExpr] params, (NamedPar => AnyExpr) named_params, Type exp_type)
+  {
     // We first check that all scalar positional parameters (and those parameters only) match
     // the type of the corresponding formal parameter (we already know they typecheck)
     invalid_params = {};
-    for (p, t @ i : zip(params, target_signature.params))
+    for (p, t @ i : zip(params, signature.params))
       if (p :: Expr and t :: Type)
         actual_type = expr_type(p);
         if (not is_subset(actual_type, replace_type_vars_with_type_any(t))) //## BAD: HERE I SHOULD JUST CALL typecheck()
@@ -294,25 +381,19 @@ using
         ;
       ;
     ;
-    return invalid_param_types(target_signature, invalid_params) if invalid_params /= {};
+    return {invalid_param_types(signature, invalid_params)} if invalid_params /= {};
 
     // Now we can instantiate the concrete type for type variables
-    actual_types = [];
-    formal_types = [];
-    for (p, t : zip(params, target_signature.params))
-      if (p :: Expr and t :: Type)
-        actual_types = [actual_types | expr_type(p)];
-        formal_types = [formal_types | t];
-      ;
-    ;
-    type_var_insts = type_var_instantiations_for_subset(actual_types, formal_types);
+    res = try_to_instantiate_type_vars(params, signature.params);
+    return {invalid_cls_param_types(signature, get_error(res))} if is_failure(res);
+    type_var_insts = get_result(res);
 
     // With the type variables instantiated, we can "instantiate" the formal type
     // of the other parameters and verify the corresponding actual parameters typecheck
 
     // Let's start with positional closure parameters
     cls_errs = {};
-    for (p, t : zip(params, target_signature.params))
+    for (p, t : zip(params, signature.params))
       if (p :: ClsExpr and t :: ClsType)
         cls_errs = cls_errs & typecheck(p, replace_type_vars(t, type_var_insts)); //## BUG: I THINK THIS IS BROKEN...
       ;
@@ -320,27 +401,39 @@ using
 
     // Now named parameters
     named_par_errs = {};
-    invalid_pos_params = {};
-    for (n, t : rand_sort_pairs(target_signature.named_params))
+    // Going through all the named params in the signature
+    for (n, t : rand_sort_pairs(signature.named_params))
+      // Instantiating type variables in the formal type
       inst_type = replace_type_vars(t, type_var_insts);
+      // Checking to see whether the named parameter has been specified as part of the function call
       if (has_key(named_params, n))
-        named_par_errs = named_par_errs & typecheck(named_params[n], inst_type);
-      elif (has_key(environment, n))
-        actual_type = environment[n];
-        if (not is_subset(actual_type, inst_type))
-          invalid_pos_params = invalid_pos_params & {(n, t, inst_type)};
+        // Here the parameter could be either a scalar or a closure
+        par_expr = named_params[n];
+        //## THIS IS REALLY BAD, BUT HOW CAN WE AVOID IT?
+        errs = match (par_expr, inst_type)
+          Expr,     Type      = typecheck(par_expr, inst_type),
+          ClsExpr,  ClsType   = typecheck(par_expr, inst_type);
         ;
+        named_par_errs = named_par_errs & errs;
+      // Now trying among the scalar variables
+      elif (has_key(environment, n))
+        // The actual parameter is a closure, and the formal parameter too
+        // (unless there's a bug in the well-formedness checking code)
+        actual_type = environment[n];
+        if (not is_subset(actual_type, cast_as_type(inst_type)))
+          named_par_errs = named_par_errs & {invalid_implicit_par_type(signature, n, t, inst_type, actual_type)};
+        ;
+      // Now it can only be a closure, and the formal parameter must be a closure as well
       else
-        actual_cls_type = environment[n];
-        if (not is_subset(actual_cls_type, inst_type))
-          invalid_pos_params = invalid_pos_params & {(n, t, inst_type)};
+        actual_cls_type = closures[n];
+        if (not is_subset(actual_cls_type, cast_as_cls_type(inst_type)))
+          named_par_errs = named_par_errs & {invalid_implicit_par_type(signature, n, t, inst_type, actual_cls_type)};
         ;
       ;
     ;
-    named_par_errs = named_par_errs & {invalid_named_par_type(target_signature, invalid_pos_params)} if invalid_pos_params /= {};
 
     // Now let's see if the type of the result is OK.
-    actual_ret_type = replace_type_vars_with_void_default(target_signature.ret_type, type_var_insts);
+    actual_ret_type = replace_type_vars(signature.ret_type, type_var_insts);
     ret_type_errs = {invalid_return_type(actual_ret_type, exp_type) if not is_subset(actual_ret_type, exp_type)};
 
     //## BAD: HERE I SHOULD PROVIDE MORE INFORMATION ABOUT THESE ERRORS
@@ -348,32 +441,31 @@ using
   }
 
 
-  TypeCheckingError* typecheck_cls_call([Expr] params, ClsType signature, ClosedType exp_type)
+  TypeCheckingError* typecheck_cls_call([Expr] params, ClsType signature, Type exp_type)
   {
     assert length(params) == length(signature.in_types);
 
-    errs = seq_union([typecheck(e, replace_type_vars_with_type_any(t)) : e, t <- zip(params, signature.in_types)]);
-    res_type = cls_call_type(signature, [expr_type(p) : p <- params]);
-    errs = errs & invalid_type_if_not_subset(res_type, exp_type);
-    return errs;
+    errs = seq_union([typecheck(e, t) : e, t <- zip(params, signature.in_types)]);
+    return errs if errs /= {};
+    return invalid_type_if_not_subset(signature.out_type, exp_type);
   }
 
 
-  TypeCheckingError* typecheck_builtin_call(BuiltIn name, [Expr] params, ClosedType exp_type)
+  TypeCheckingError* typecheck_builtin_call(BuiltIn name, [Expr] params, Type exp_type)
   {
     sgn = builtin_signature(name);
-    errs = seq_union([typecheck(p, t) : p, t <- zip(params, sgn.params)]);
+    errs = seq_union([typecheck(p, t) : p, t <- zip(params, sgn.param_types)]);
+    return errs if errs /= {};
     res_type = builtin_call_expr_type(name, params);
-    errs = errs & invalid_type_if_not_subset(res_type, exp_type);
-    return errs;
+    return invalid_type_if_not_subset(res_type, exp_type);
   }
 
 
-  TypeCheckingError* typecheck_bool_op(Expr expr, ClosedType exp_type) =
+  TypeCheckingError* typecheck_bool_op(Expr expr, Type exp_type) =
     invalid_type_if_not_subset(type_bool, exp_type) & typecheck(expr, type_bool);
 
 
-  TypeCheckingError* typecheck_and_expr(Expr left_expr, Expr right_expr, ClosedType exp_type)
+  TypeCheckingError* typecheck_and_expr(Expr left_expr, Expr right_expr, Type exp_type)
   {
     errs = typecheck_bool_op(left_expr, exp_type);
     right_expr_env = left(refine_environment(left_expr));
@@ -381,7 +473,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_or_expr(Expr left_expr, Expr right_expr, ClosedType exp_type)
+  TypeCheckingError* typecheck_or_expr(Expr left_expr, Expr right_expr, Type exp_type)
   {
     errs = typecheck_bool_op(left_expr, exp_type);
     right_expr_env = right(refine_environment(left_expr));
@@ -389,13 +481,13 @@ using
   }
 
 
-  TypeCheckingError* typecheck_eq_expr(Expr left_expr, Expr right_expr, ClosedType exp_type) =
+  TypeCheckingError* typecheck_eq_expr(Expr left_expr, Expr right_expr, Type exp_type) =
     invalid_type_if_not_subset(type_bool, exp_type) &
     typecheck(left_expr, type_any) &
     typecheck(right_expr, type_any);
 
 
-  TypeCheckingError* typecheck_accessor_expr(Expr expr, SymbObj field, ClosedType exp_type)
+  TypeCheckingError* typecheck_accessor_expr(Expr expr, SymbObj field, Type exp_type)
   {
     errs = typecheck(expr, type_any);
     return errs if errs /= {};
@@ -408,10 +500,10 @@ using
       tag_obj_type()  = type.obj_type,
       _               = type;
 
-    TypeCheckingError* errors(Type type, SymbObj field, ClosedType exp_type):
+    TypeCheckingError* errors(Type type, SymbObj field, Type exp_type):
       record_type()   = {
         field_type = mandatory_record_field_type(type, field);
-        return if field_type == void_type
+        return if field_type == empty_type
           then {may_not_have_field(type, field)}
           else invalid_type_if_not_subset(field_type, exp_type);
       },
@@ -419,13 +511,13 @@ using
   }
 
 
-  TypeCheckingError* typecheck_accessor_test_expr(Expr expr, SymbObj field, ClosedType exp_type)
+  TypeCheckingError* typecheck_accessor_test_expr(Expr expr, SymbObj field, Type exp_type)
   {
     errs = typecheck(expr, type_any);
     return errs if errs /= {};
     errs = invalid_type_if_not_subset(type_bool, exp_type);
-    type = split_type(expr_type(expr));
-    for (t : rand_sort(type)) //## UGLY UGLY
+    type = expr_type(expr);
+    for (t : rand_sort(split_type(type))) //## UGLY UGLY
       return errs if may_have_field(follow_type(t), field);
     ;
     return errs & {never_has_field(type, field)};
@@ -441,7 +533,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_if_expr(Expr cond, Expr then_expr, Expr else_expr, ClosedType exp_type)
+  TypeCheckingError* typecheck_if_expr(Expr cond, Expr then_expr, Expr else_expr, Type exp_type)
   {
     cond_errs = typecheck(cond, type_bool);
     if_true_env, if_false_env = if cond_errs == {} then refine_environment(cond) else (environment, environment);
@@ -451,7 +543,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_match_expr([Expr^] exprs, [(ptrns: [Pattern^], expr: Expr)^] cases, ClosedType exp_type)
+  TypeCheckingError* typecheck_match_expr([Expr^] exprs, [(ptrns: [Pattern^], expr: Expr)^] cases, Type exp_type)
   {
     //## HERE I SHOULD ALSO CHECK THAT THE PATTERNS WILL EVENTUALLY COVER ALL THE POSSIBILITIES...
     errs = seq_union([typecheck(e, type_any) : e <- exprs]);
@@ -469,7 +561,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_ex_qual_expr(Clause source, Maybe[Expr] maybe_sel_expr, ClosedType exp_type)
+  TypeCheckingError* typecheck_ex_qual_expr(Clause source, Maybe[Expr] maybe_sel_expr, Type exp_type)
   {
     errs = typecheck(source);
     return errs if errs /= {};
@@ -479,7 +571,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_set_comp_expr(Expr expr, Clause source, Maybe[Expr] maybe_sel_expr, ClosedType exp_type)
+  TypeCheckingError* typecheck_set_comp_expr(Expr expr, Clause source, Maybe[Expr] maybe_sel_expr, Type exp_type)
   {
     errs = typecheck(source);
     return errs if errs /= {};
@@ -489,14 +581,14 @@ using
       errs = typecheck(sel_expr, type_bool, environment=new_env);
       new_env = left(refine_environment(sel_expr, environment=new_env));
     ;
-    exp_elem_type = set_elem_type(exp_type);
-    return errs & if exp_elem_type /= void_type
-      then typecheck(expr, exp_elem_type, environment=new_env)
+    exp_elem_types = set_elem_types(exp_type);
+    return errs & if exp_elem_types /= {}
+      then typecheck_any(expr, exp_elem_types, environment=new_env)
       else {not_a_set_type};
   }
 
 
-  TypeCheckingError* typecheck_map_comp_expr(Expr key_expr, Expr value_expr, Clause source, Maybe[Expr] maybe_sel_expr, ClosedType exp_type)
+  TypeCheckingError* typecheck_map_comp_expr(Expr key_expr, Expr value_expr, Clause source, Maybe[Expr] maybe_sel_expr, Type exp_type)
   {
     errs = typecheck(source);
     return errs if errs /= {};
@@ -506,26 +598,23 @@ using
       errs = typecheck(sel_expr, type_bool, environment=new_env);
       new_env = left(refine_environment(sel_expr, environment=new_env));
     ;
-    exp_key_type = map_key_type(exp_type);
-    exp_value_type = map_value_type(exp_type);
-    if (exp_key_type /= void_type and exp_value_type /= void_type)
-      errs = errs & typecheck(key_expr, exp_key_type, environment=new_env);
-      errs = errs & typecheck(value_expr, exp_value_type, environment=new_env);
-    else
-      errs = errs & {not_a_map_type}; //## BUG: IT COULD ACTUALLY BE A RECORD TYPE, COULDN'T IT?
-    ;
+    exp_key_value_type_pairs = map_key_value_type_pairs(exp_type);
+    errs = errs & if exp_key_value_type_pairs /= {}
+      then typecheck_any_by_pair({(key_expr, value_expr)}, exp_key_value_type_pairs, environment=new_env)
+      else {not_a_map_type}; //## BAD: IT COULD ACTUALLY BE A RECORD TYPE, COULDN'T IT?
     return errs;
   }
 
 
-  TypeCheckingError* typecheck_seq_comp(Expr expr, [Var^] vars, Maybe[Var] maybe_idx_var, Expr src_expr, Maybe[Expr] maybe_sel_expr, ClosedType exp_type)
+  TypeCheckingError* typecheck_seq_comp(Expr expr, [Var^] vars, Maybe[Var] maybe_idx_var, Expr src_expr, Maybe[Expr] maybe_sel_expr, Type exp_type)
   {
-    exp_elem_type = seq_elem_type(exp_type);
-    errs = {not_a_seq_type if exp_elem_type == void_type} & typecheck(src_expr, type_seq);
+    errs = typecheck(src_expr, type_seq);
     return errs if errs /= {};
+    exp_elem_types = seq_elem_types(exp_type);
+    return {not_a_seq_type} if exp_elem_types == {};
     src_type = expr_type(src_expr);
-    elem_type = seq_elem_type(src_type);
-    assert elem_type /= void_type; //## BUG: WHAT IF src_type IS THE EMPTY SEQUENCE TYPE?
+    elem_type = seq_elem_supertype(src_type);
+    assert is_subset(src_type, empty_seq_type) or elem_type /= empty_type;
     env_delta = asgnm_env_updates(vars, elem_type) & (value(maybe_idx_var) => type_nat if maybe_idx_var /= nil);
     new_env = update(environment, env_delta);
     if (maybe_sel_expr /= nil)
@@ -533,18 +622,19 @@ using
       errs = typecheck(sel_expr, type_bool, environment=new_env);
       new_env = left(refine_environment(sel_expr, environment=new_env));
     ;
-    return errs & typecheck(expr, exp_elem_type, environment=new_env);
+    return errs & typecheck_any(expr, exp_elem_types, environment=new_env);
   }
 
 
-  TypeCheckingError* typecheck_int_range_seq_comp(Expr expr, Var var, Expr upper_bound_expr, Bool includes_upper_bound, Maybe[Expr] maybe_sel_expr, ClosedType exp_type)
+  TypeCheckingError* typecheck_int_range_seq_comp(Expr expr, Var var, Expr upper_bound_expr, Bool includes_upper_bound, Maybe[Expr] maybe_sel_expr, Type exp_type)
   {
-    exp_elem_type = seq_elem_type(exp_type);
-    errs = {not_a_seq_type if exp_elem_type == void_type} & typecheck(upper_bound_expr, integer);
+    exp_elem_types = seq_elem_types(exp_type);
+    errs = {not_a_seq_type if exp_elem_types == {}} & typecheck(upper_bound_expr, integer);
     new_env = update(environment, (var => type_nat)); //## BAD: HERE WE COULD TAKE ADVANTAGE OF THE KNOWLEDGE ON THE TYPE OF THE UPPER BOUND
     errs = errs & typecheck(value(maybe_sel_expr), type_bool, environment=new_env) if maybe_sel_expr /= nil;
     errs = errs & {obj_does_not_belong_to_type([], exp_type)} if not type_contains_obj(exp_type, []); //## BAD: HERE TOO WE COULD TAKE ADVANTAGE OF THE INFORMATION WE HAVE ABOUT THE UPPER BOUND TYPE
-    return errs & typecheck(expr, exp_elem_type, environment=new_env);
+    errs = errs & typecheck_any(expr, exp_elem_types, environment=new_env) if exp_elem_types /= {};
+    return errs;
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -560,8 +650,8 @@ using
       assert size(sgns) == 1;
       sgn = only_element(sgns);
       assert sgn.named_params == ();
-      assert not (? p <- sgn.params : not p :: Type);
-      sgn_cls = cls_type(sgn.params, sgn.ret_type);
+      assert not (? p <- set(sgn.params) : not p :: Type);
+      sgn_cls = cls_type(cast_as_type_ne_seq(sgn.params), sgn.ret_type);
       return {unexpected_actual_cls_type(sgn_cls, exp_type) if not is_subset(sgn_cls, exp_type)};
     },
     cls_expr() = {
@@ -571,10 +661,12 @@ using
       return typecheck(expr.expr, exp_type.out_type, environment=new_env); //## BAD: HERE I SHOULD PROVIDE MORE INFORMATION
     };
 
+  [Type^] cast_as_type_ne_seq([AnyType] ts) = [cast_as_type(t) : t <- nonempty(ts)];
+
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  TypeCheckingError* typecheck([Statement] stmts, ClosedType exp_type)
+  TypeCheckingError* typecheck([Statement] stmts, Type exp_type)
   {
     env = environment;
     for (s : stmts)
@@ -586,7 +678,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck(Statement stmt, ClosedType exp_type):
+  TypeCheckingError* typecheck(Statement stmt, Type exp_type):
     assignment_stmt()   = typecheck(stmt.value, type_any),
     return_stmt(e?)     = typecheck(e, exp_type),
     if_stmt()           = typecheck_if_stmt(stmt.cond, stmt.body, stmt.else, exp_type),
@@ -595,8 +687,7 @@ using
                             return typecheck_foreach_stmt(stmt.vars, maybe_idx_var, stmt.values, stmt.body, exp_type);
                           },
     for_stmt()          = { maybe_var = if stmt.var? then just(stmt.var) else nil;
-                            maybe_idx_var = if stmt.idx_var? then just(stmt.idx_var) else nil;
-                            return typecheck_for_stmt(maybe_var, maybe_idx_var, stmt.start_val,
+                            return typecheck_for_stmt(maybe_var, stmt.start_val,
                               stmt.end_val, stmt.end_val_incl, stmt.body, exp_type);
                           },
     let_stmt()          = typecheck_let_stmt(stmt.asgnms, stmt.body, exp_type),
@@ -606,7 +697,7 @@ using
     print_stmt(e?)      = typecheck(e, type_any);
 
 
-  TypeCheckingError* typecheck_if_stmt(Expr cond, [Statement^] body, [Statement] else_body, ClosedType exp_type)
+  TypeCheckingError* typecheck_if_stmt(Expr cond, [Statement^] body, [Statement] else_body, Type exp_type)
   {
     errs = typecheck(cond, type_bool);
     return errs if errs /= {};
@@ -616,9 +707,8 @@ using
   }
 
 
-  TypeCheckingError* typecheck_loop_stmt([Statement^] stmts, ClosedType exp_type)
+  TypeCheckingError* typecheck_loop_stmt([Statement^] stmts, Type exp_type)
   {
-    errs = {}; //## BAD: THIS SHOULD NOT BE NECESSARY, AS THE BODY OF THE LOOP IS ALWAYS GOING TO BE EXECUTED AT LEAST ONCE
     env = environment;
     for (5) //## BAD: THIS IS A TOTALLY ARBITRARY NUMBER...
       errs = typecheck(stmts, exp_type, environment=env);
@@ -627,24 +717,25 @@ using
       return {} if new_env == env;
       env = new_env;
     ;
-    return {loop_did_not_converge(5, errs)};
+    return {loop_did_not_converge(5)};
   }
 
 
-  TypeCheckingError* typecheck_foreach_stmt([Var^] vars, Maybe[Var] maybe_idx_var, Expr values, [Statement^] body, ClosedType exp_type)
+  TypeCheckingError* typecheck_foreach_stmt([Var^] vars, Maybe[Var] maybe_idx_var, Expr values, [Statement^] body, Type exp_type)
   {
     errs = typecheck(values, type_seq);
     return errs if errs /= {};
-    elem_type = seq_elem_type(expr_type(values));
-    return {not_a_seq_type} if elem_type == void_type; //## COULD I ACCEPT A TUPLE TYPE HERE ALSO?
-    num_vars = length(vars);
+    elem_type = seq_elem_supertype(expr_type(values));
+    return {not_a_seq_type} if elem_type == empty_type; //## COULD I ACCEPT A TUPLE TYPE HERE ALSO?
+    num_vars = nz_nat(length(vars));
     if (num_vars == 1)
-      loop_vars = (vars[0] => elem_type, value(maybe_idx_var) => type_nat if maybe_idx_var /= nil);
+      loop_vars = (vars[0] => elem_type);
     else
       return {not_a_seq_of_tuples} if not is_subset(elem_type, type_tuple(num_vars));
-      field_types = tuple_field_types(elem_type);
+      field_types = tuple_field_supertypes(elem_type, num_vars);
       loop_vars = merge(set([(v => t) : v, t <- zip(vars, field_types)]));
     ;
+    loop_vars = loop_vars & (value(maybe_idx_var) => type_nat) if maybe_idx_var /= nil;
     env = update(environment, loop_vars);
     for (5)
       errs = typecheck(body, exp_type, environment=env);
@@ -653,18 +744,17 @@ using
       return {} if new_env == env;
       env = new_env;
     ;
-    return {loop_did_not_converge(5, errs)};
+    return {loop_did_not_converge(5)};
   }
 
 
-  TypeCheckingError* typecheck_for_stmt(Maybe[Var] maybe_var, Maybe[Var] maybe_idx_var, Expr start_val,
-    Expr end_val, Bool end_val_incl, [Statement^] body, ClosedType exp_type)
+  TypeCheckingError* typecheck_for_stmt(Maybe[Var] maybe_var, Expr start_val, Expr end_val, Bool end_val_incl,
+    [Statement^] body, Type exp_type)
   {
     errs = typecheck(start_val, integer) & typecheck(end_val, integer);
     return errs if errs /= {};
     env = environment & (
-      value(maybe_var) => loop_var_type(expr_type(start_val), expr_type(end_val), end_val_incl) if maybe_var /= nil,
-      value(maybe_idx_var) => type_nat if maybe_idx_var /= nil
+      value(maybe_var) => loop_var_type(expr_type(start_val), expr_type(end_val), end_val_incl) if maybe_var /= nil
     );
     for (5)
       errs = typecheck(body, exp_type, environment=env);
@@ -673,11 +763,11 @@ using
       return {} if new_env == env;
       env = new_env;
     ;
-    return {loop_did_not_converge(5, errs)};
+    return {loop_did_not_converge(5)};
   }
 
 
-  TypeCheckingError* typecheck_let_stmt((NamedPar => Expr) asgnms, [Statement^] body, ClosedType exp_type)
+  TypeCheckingError* typecheck_let_stmt((NamedPar => Expr) asgnms, [Statement^] body, Type exp_type)
   {
     errs = union({typecheck(e, type_any) : v => e <- asgnms});
     return errs if errs /= {};
@@ -695,113 +785,60 @@ using
     and_clause()          = typecheck(clause.left) & typecheck(clause.right, environment=update(environment, generated_environment(clause.left))),
     or_clause()           = typecheck(clause.left) & typecheck(clause.right);
 
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
 
-  // TypeCheckingError* typecheck(Clause clause, Expr sel_expr)
-  // {
-  //   errs = typecheck(clause);
-  //   return errs if errs /= {};
-  //   new_env = update(environment, generated_environment(clause));
-  //   return typecheck(sel_expr, type_bool, environment=new_env);
-  // }
+  Result[(TypeVar => Type), TypeCheckingError*] try_to_instantiate_type_vars([AnyExpr] params, [AnyType] param_types)
+  {
+    actual_types = [];
+    formal_types = [];
+    for (p, t : zip(params, param_types))
+      if (p :: Expr and t :: Type)
+        actual_types = [actual_types | expr_type(p)];
+        formal_types = [formal_types | t];
+      ;
+    ;
+    type_var_insts = type_var_instantiations_for_subset(actual_types, formal_types);
+
+    // OK, now we have our initial instantiations, based on the type of scalar parameters.
+    // Next we must complete and refine those instantiations by looking at closure parameters
+
+    cls_pars = [(p, t) : p, t <- zip(params, param_types), p :: ClsExpr and t :: ClsType];
+    for (5)
+      new_type_pairs = [];
+      for (p, t : cls_pars)
+        rp = rewrite_cls_expr(p);
+        errs = typecheck_closure_params(rp, t, type_var_insts);
+        return failure(errs) if errs /= {};
+        actual_ret_type = get_return_type(rp, t);
+        if (not is_subset(actual_ret_type, replace_type_vars_with_type_any(t.out_type)))
+          return failure({}); //## BAD: ADD MEANINGFUL ERROR MESSAGE
+        ;
+        new_type_pairs = [new_type_pairs | (actual_ret_type, t.out_type)];
+      ;
+      new_actual_types, new_formal_types = unzip(new_type_pairs);
+      new_type_var_insts = type_var_instantiations_for_subset(new_actual_types, new_formal_types);
+      return success(type_var_insts) if has_reached_fixpoint(type_var_insts, new_type_var_insts);
+      type_var_insts = merge_insts(type_var_insts, new_type_var_insts);
+    ;
+    return failure({}); //## BAD: ADD MEANINGFUL ERROR MESSAGE
+
+
+    TypeCheckingError* typecheck_closure_params(ClsExpr expr, ClsType type, (TypeVar => Type) type_var_insts):
+      ClsVar      = {
+        actual_type = closures[expr];
+        errs = {};
+        for (actual_par_type, formal_par_type : zip(actual_type.in_types, type.in_types))
+          if (not is_subset(replace_type_vars(formal_par_type, type_var_insts), actual_par_type))
+            errs = errs & {invalid_cls_var_type(expr, type, type_var_insts)};
+          ;
+        ;
+        return errs;
+      },
+      fn_ptr()    = {fail;},
+      cls_expr()  = {
+        new_env = get_updated_env(expr.params, expr.expr, type.in_types);
+        return typecheck(expr.expr, replace_type_vars_with_type_any(type.out_type), environment=new_env);
+      };
+  }
 }
-
-
-
-
-
-Type loop_var_type(Type lower_bound_type, Type upper_bound_type, Bool upper_bound_included)
-{
-  upper_bound_adj = bit(not upper_bound_included);
-
-  // lower_bound = match (lower_bound_type)
-  //   integer     = nil,
-  //   low_ints()  = nil,
-  //   high_ints() = just(lower_bound_type.min),
-  //   int_range() = just(lower_bound_type.min);
-  // ;
-
-  // upper_bound = match (upper_bound_type)
-  //   integer     = nil,
-  //   low_ints()  = upper_bound_type.max,
-  //   high_ints() = nil,
-  //   int_range() = max(upper_bound_type);
-  // ;
-
-  dummy_int_range = int_range(1, 1); // BUG BUG BUG: HERE I SHOULD BE USING THE VOID TYPE...
-
-  loop_var_type = match (lower_bound_type, upper_bound_type)
-    integer,      integer       = integer,
-    integer,      low_ints()    = low_ints(upper_bound_type.max - upper_bound_adj),
-    integer,      high_ints()   = integer,
-    integer,      int_range()   = low_ints(max(upper_bound_type) - upper_bound_adj),
-    low_ints(),   integer       = integer,
-    low_ints(),   low_ints()    = low_ints(upper_bound_type.max - upper_bound_adj),
-    low_ints(),   high_ints()   = integer,
-    low_ints(),   int_range()   = low_ints(max(upper_bound_type) - upper_bound_adj),
-    high_ints(),  integer       = lower_bound_type,
-    high_ints(),  low_ints()    = { min = lower_bound_type.min;
-                                    max = upper_bound_type.max - upper_bound_adj;
-                                    return if min <= max then int_range(min, max) else dummy_int_range;
-                                  },
-    high_ints(),  high_ints()   = lower_bound_type,
-    high_ints(),  int_range()   = { min = lower_bound_type.min;
-                                    max = max(upper_bound_type) - upper_bound_adj;
-                                    return if min <= max then int_range(min, max) else dummy_int_range;
-                                  },
-    int_range(),  integer       = high_ints(lower_bound_type.min),
-    int_range(),  low_ints()    = { min = lower_bound_type.min;
-                                    max = upper_bound_type.max - upper_bound_adj;
-                                    return if min <= max then int_range(min, max) else dummy_int_range;
-                                  },
-    int_range(),  high_ints()   = high_ints(lower_bound_type.min),
-    int_range(),  int_range()   = { min = lower_bound_type.min;
-                                    max = max(upper_bound_type) - upper_bound_adj;
-                                    return if min <= max then int_range(min, max) else dummy_int_range;
-                                  };
-  ;
-
-  return loop_var_type;
-}
-
-
-// //## THIS IS ALL A TEMPORARY HACK TO WORK AROUND AN UNFINISHED FEATURE IN CODE GENERATION
-// Bool matches_signature(FnType signature, [ExtExpr] params, (NamedPar => ExtExpr) named_params) =
-//   matches_signature_impl(signature, params, named_params, halt_on_failure_to_typecheck=false);
-
-// Bool matches_signature_impl(FnType signature, [ExtExpr] params, (NamedPar => ExtExpr) named_params)
-// {
-//   // let (halt_on_failure_to_typecheck=false)
-//     return false if length(params) /= length(signature.params);
-//     for (e, t : zip(params, signature.params))
-//       return false if not is_subset(expr_type(e), replace_type_vars_with_type_any(t));
-//     ;
-
-//     for (p : rand_sort(keys(signature.named_params))) //## WOULD BE GOOD TO USE A ZIP (BY KEY) FUNCION HERE
-//       formal_type = signature.named_params[p];
-//       if (formal_type :: Type)
-//         formal_type = replace_type_vars_with_type_any(formal_type);
-//         if (has_key(named_params, p))
-//           expr = named_params[p];
-//           assert expr :: Expr;
-//           return false if not is_subset(expr_type(expr), formal_type);
-//         else
-//           actual_type = environment[p];
-//           assert actual_type :: Type;
-//           return false if not is_subset(actual_type, formal_type);
-//         ;
-//       else
-//         assert formal_type :: ClsType;
-//         if (has_key(named_params, p))
-//           cls_expr = named_params[p];
-//           assert cls_expr :: ClsExpr;
-//           return false if not is_subset(expr_type(cls_expr), formal_type);
-//         else
-//           actual_type = closures[p];
-//           assert actual_type :: ClsType;
-//           return false if not is_subset(actual_type, formal_type);
-//         ;
-//       ;
-//     ;
-//   // ;
-//   return true;
-// }

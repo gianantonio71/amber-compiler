@@ -1,106 +1,91 @@
 // Exported functions:
 //   Bool is_subset(Type t1, Type t2);
-//   (TypeVar => Type*) subset_conds(ClosedType t1, ClosedType t2);
+//   (TypeVar => Type*) subset_conds(Type t1, Type t2);
 
-
-Bool is_subset(ClosedType t1, ClosedType t2):
-  void_type,  _           = true,
-  Type,       void_type   = false,
-  Type,       Type        = is_subset_if(t1, t2, inst_type_vars=false) == {};
-
-
-(TypeVar => Type*) subset_conds(ClosedType t1, ClosedType t2):
-  void_type,  _           = (),
-  Type,       void_type   = {fail;},
-  // Type,       Type        = merge_values({(c.type_var => c.inst_type) : c <- is_subset_if(t1, t2, inst_type_vars=true)});
-  Type,       Type        = { cs = is_subset_if(t1, t2, inst_type_vars=true);
-                              assert cs :: <<subset_when(type_var: TypeVar, inst_type: Type)>*>;
-                              return merge_values({(c.type_var => c.inst_type) : c <- cs});
-                            };
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
-type IsSubset = not_a_subset, <subset_if(subset: SelfPretype, superset: Type), subset_when(type_var: TypeVar, inst_type: Type)>*;
-
-IsSubset not_a_subset = :not_a_subset;
-IsSubset subset_if(SelfPretype self, Type type) = {subset_if(subset: self, superset: type)};
-IsSubset subset_when(TypeVar var, Type type)    = {subset_when(type_var: var, inst_type: type)};
-
-IsSubset all_conds(IsSubset* iss) = if in(not_a_subset, iss) then not_a_subset else union(iss);
-
-IsSubset at_least_one_cond(IsSubset *iss)
+using (TypeName => Type) typedefs
 {
-  red_iss = iss - {not_a_subset};
-  assert size(red_iss) <= 1;
-  return if red_iss == {} then not_a_subset else only_element(red_iss);
+  //## BAD: WHY AM I CHECKING FOR THE EMPTY TYPE HERE?
+  Bool is_subset(Type t1, Type t2):
+    empty_type,  _            = true,
+    _,           empty_type   = false, //## BUG: THIS IS ACTUALLY WRONG. COUNTEREXAMPLE: t1 = f(T), with T being the empty type
+    _,           _            = deep_subset_conds(t1, t2, inst_type_vars=false) == {};
+
+
+  (TypeVar => Type*) subset_conds(Type t1, Type t2)
+  {
+    return () if t1 == empty_type;
+    fail if t2 == empty_type; //## BUG: THIS IS ACTUALLY WRONG. COUNTEREXAMPLE: t1 = f(T), with T being the empty type
+    cs = deep_subset_conds(t1, t2, inst_type_vars=true);
+    // if (not cs :: <<subset_when(type_var: TypeVar, inst_type: Type)>*>)
+    //   print cs;
+    // ;
+    fail if not cs :: <<subset_when(type_var: TypeVar, inst_type: Type)>*>;
+    return merge_values({(c.type_var => c.inst_type) : c <- cs});
+  }
+    // empty_type,   _           = (),
+    // Type,         empty_type  = {fail;},
+    // Type,       Type          = merge_values({(c.type_var => c.inst_type) : c <- shallow_subset_conds(t1, t2, inst_type_vars=true)});
+
+  ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  Bool is_type_any(Type type) = is_subset(type_any, type);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-using Bool inst_type_vars
+type SubsetCond = not_a_subset, <subset_if(subset: TypeSymbol, superset: Type), subset_when(type_var: TypeVar, inst_type: Type)>*;
+
+<not_a_subset> not_a_subset                               = :not_a_subset;
+SubsetCond subset_if(TypeSymbol subtype, Type supertype)  = {subset_if(subset: subtype, superset: supertype)};
+SubsetCond subset_when(TypeVar var, Type type)            = {subset_when(type_var: var, inst_type: type)};
+
+
+SubsetCond all_conds(SubsetCond* iss) = if in(not_a_subset, iss)
+                                          then not_a_subset
+                                          else union({is : is <- iss, is /= not_a_subset}); //## POINTLESS, BUT NEEDED FOR TYPECHECKING
+
+(TypeSymbol, Type)* subtype_conds(SubsetCond conds) = if conds /= not_a_subset then {(c.subset, c.superset) : subset_if() c <- conds} else {fail;};
+
+// (TypeVar, Type)* type_var_inst_conds(SubsetCond conds) = if conds /= not_a_subset then {(c.type_var, c.inst_type) : subset_when() c <- conds} else {fail;};
+SubsetCond type_var_inst_conds(SubsetCond conds) = if conds /= not_a_subset then {c : subset_when() c <- conds} else {fail;};
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+using (TypeName => Type) typedefs, Bool inst_type_vars
 {
-  IsSubset is_self_rec_subset_if(SelfRecType t1, Type t2)
+  SubsetCond deep_subset_conds(Type t1, Type t2)
   {
-    tested_supertypes   = {};
-    untested_supertypes = {t2};
-    type_var_conds = {};
+    starting_conds = shallow_subset_conds(t1, t2);
+    return not_a_subset if starting_conds == not_a_subset;
 
-    loop
-      // Trying all the untested supertypes and merging all conditions
-      new_hypotheses = all_conds({is_subset_if(inner_pretype(t1), t) : t <- untested_supertypes});
-
-      // If at least one of the types cannot possibly be a supertype, then we are done
-      return not_a_subset if new_hypotheses == not_a_subset;
-
-      // Separating hypotheses about recursion from the ones about type variables
-      new_rec_hypotheses = {h : subset_if() h <- new_hypotheses};
-      new_var_hypotheses = {h : subset_when() h <- new_hypotheses};
-
-      assert new_hypotheses == new_rec_hypotheses & new_var_hypotheses;
-      assert not (? h <- new_rec_hypotheses : h.subset /= self);
-
-      // Generating the next round of candidate supertypes to test
-      tested_supertypes = tested_supertypes & untested_supertypes;
-      untested_supertypes = {h.superset : h <- new_rec_hypotheses} - tested_supertypes;
-
-      // Adding the new hypotheses about type variables to the previous ones
-      type_var_conds = type_var_conds & new_var_hypotheses;
-
-      // If there are no new candidate supertypes to test, we just return the constraints on the type variable
-      return type_var_conds if untested_supertypes == {};
-    ;
-  }
-
-
-  IsSubset is_mut_rec_subset_if(MutRecType t1, Type t2)
-  {
-    tested_hypotheses = {};
-    untested_hypotheses = {(t1, t2)};
-    type_var_conds = {};
+    tested_hypotheses   = {};
+    untested_hypotheses = subtype_conds(starting_conds);
+    type_var_conds      = type_var_inst_conds(starting_conds);
 
     loop
       new_untested_hypotheses = {};
 
       for (subtype, supertype : rand_sort(untested_hypotheses))
         // Trying all the untested supertypes and merging all conditions
-        new_conds = is_subset_if(inner_pretype(subtype), supertype);
+        new_conds = shallow_subset_conds(expand_type_ref(subtype, typedefs), supertype);
 
         // If at least one of the types cannot possibly be a supertype, then we are done
         return not_a_subset if new_conds == not_a_subset;
 
         // Separating constraints about recursion from the ones about type variables
-        new_rec_conds = {h : subset_if() h <- new_conds};
-        new_var_conds = {h : subset_when() h <- new_conds};
+        new_subtype_conds = subtype_conds(new_conds);
+        new_var_conds = type_var_inst_conds(new_conds);
 
-        assert new_conds == new_rec_conds & new_var_conds;
+        // assert new_conds == new_rec_conds & new_var_conds;
 
         // Generating the next round of candidate supertypes to test
-        new_untested_hypotheses = new_untested_hypotheses & {(expand_rec_ref(c.subset, subtype), c.superset) : c <- new_rec_conds};
+        new_untested_hypotheses = new_untested_hypotheses & new_subtype_conds;
 
-        // Adding the new hypotheses about type variables to the previous ones
-        type_var_conds = type_var_conds & new_var_conds;
+        // Adding the new conditions about type variables to the previous ones
+        type_var_conds = all_conds({type_var_conds, new_var_conds});
       ;
 
       // Removing the hypotheses that have already been tested
@@ -113,13 +98,13 @@ using Bool inst_type_vars
       tested_hypotheses = tested_hypotheses & untested_hypotheses;
       untested_hypotheses = new_untested_hypotheses;
     ;
-
-    MutRecType expand_rec_ref(SelfPretype ref, MutRecType type):
-      self(n?)  = mut_rec_type(n, type.types);
   }
 
 
-  IsSubset is_subset_if(Type t1, Type t2):
+  SubsetCond shallow_subset_conds(Type t1, Type t2):
+    empty_type,           _                   = {},
+    _,                    empty_type          = {fail;},
+
     // Type vars only match themselves or type any
     // _,                    type_var()          = if inst_type_vars then subset_when(t2, t1) else if t1 == t2 then {} else not_a_subset end end,
     _,                    type_var()          = if inst_type_vars then subset_when(t2, t1), t1 == t2 then {} else not_a_subset,
@@ -127,18 +112,12 @@ using Bool inst_type_vars
     type_var(),           _                   = if is_type_any(t2) then {} else not_a_subset,
 
     // Dealing with all the recursive stuff
-    SelfPretype,          _                   = subset_if(t1, t2),
-    _,                    SelfPretype         = {fail;},
-
-    self_rec_type(),      _                   = is_self_rec_subset_if(t1, t2),
-    _,                    self_rec_type()     = is_subset_if(t1, unfold(t2)),
-
-    mut_rec_type(),       _                   = is_mut_rec_subset_if(t1, t2),
-    _,                    mut_rec_type()      = is_subset_if(t1, unfold(t2)),
+    type_ref(ts1?),       _                   = if t1 /= t2 then subset_if(ts1, t2) else {},
+    _,                    type_ref(ts?)       = shallow_subset_conds(t1, expand_type_ref(ts, typedefs)),
 
     // Type unions now
-    union_type(ts1?),     _                   = all_conds({is_subset_if(t, t2) : t <- ts1}),
-    _,                    union_type(ts2?)    = at_least_one_cond({is_subset_if(t1, t) : t <- ts2}),   //## INEFFICIENT
+    union_type(ts1?),     _                   = all_conds({shallow_subset_conds(t, t2) : t <- ts1}),
+    _,                    union_type(ts2?)    = union_shallow_subset_conds(t1, ts2),
 
     // Leaf types
     symb_type(),          _                   = if t1 == t2 or t2 == atom_type then {} else not_a_subset,
@@ -151,14 +130,14 @@ using Bool inst_type_vars
     empty_seq_type,       empty_seq_type      = {},
     empty_seq_type,       _                   = not_a_subset,
 
-    ne_seq_type(),        ne_seq_type()       = is_subset_if(t1.elem_type, t2.elem_type),
+    ne_seq_type(),        ne_seq_type()       = shallow_subset_conds(t1.elem_type, t2.elem_type),
     ne_seq_type(),        _                   = not_a_subset,
 
     // Set types
     empty_set_type,       empty_set_type      = {},
     empty_set_type,       _                   = not_a_subset,
 
-    ne_set_type(),        ne_set_type()       = is_subset_if(t1.elem_type, t2.elem_type),
+    ne_set_type(),        ne_set_type()       = shallow_subset_conds(t1.elem_type, t2.elem_type),
     ne_set_type(),           _                = not_a_subset,
 
     // Map types
@@ -166,32 +145,44 @@ using Bool inst_type_vars
     empty_map_type,       record_type(fs?)    = if not (? l => f <- fs : not f.optional) then {} else not_a_subset,
     empty_map_type,       _                   = not_a_subset,
 
-    ne_map_type(),        ne_map_type()       = all_conds({is_subset_if(t1.key_type, t2.key_type), is_subset_if(t1.value_type, t2.value_type)}),
-    ne_map_type(),        record_type(fs?)    = is_ne_map_record_subset_if(t1.key_type, t1.value_type, fs),
+    ne_map_type(),        ne_map_type()       = all_conds({shallow_subset_conds(t1.key_type, t2.key_type), shallow_subset_conds(t1.value_type, t2.value_type)}),
+    ne_map_type(),        record_type(fs?)    = map_record_shallow_subset_conds(t1.key_type, t1.value_type, fs),
     ne_map_type(),        _                   = not_a_subset,
 
     // Record types
-    record_type(fs1?),    record_type(fs2?)   = is_record_subset_if(fs1, fs2),
-    record_type(fs?),     ne_map_type()       = is_record_map_subset_if(fs, t2),
+    record_type(fs1?),    record_type(fs2?)   = record_shallow_subset_conds(fs1, fs2),
+    record_type(fs?),     ne_map_type()       = record_map_shallow_subset_conds(fs, t2),
     record_type(),        _                   = not_a_subset,
 
     // Tuple types
     tuple_type(fts1?),    tuple_type(fts2?)   = if length(fts1) == length(fts2)
-                                                  then all_conds(set([is_subset_if(ft1, ft2) : ft1, ft2 <- zip(fts1, fts2)]))
+                                                  then all_conds(set([shallow_subset_conds(ft1, ft2) : ft1, ft2 <- zip(fts1, fts2)]))
                                                   else not_a_subset,
-    tuple_type(fts?),     ne_seq_type()       = all_conds({is_subset_if(ft, t2.elem_type) : ft <- set(fts)}),
+    tuple_type(fts?),     ne_seq_type()       = all_conds({shallow_subset_conds(ft, t2.elem_type) : ft <- set(fts)}),
     tuple_type(),         _                   = not_a_subset,
 
     // Tagged types
-    // tag_obj_type(),       tag_obj_type()      = all_conds({is_subset_if(t1.tag_type, t2.tag_type), is_subset_if(t1.obj_type, t2.obj_type)}),
-    tag_obj_type(),       tag_obj_type()      = { tcs = is_subset_if(t1.tag_type, t2.tag_type);
+    // tag_obj_type(),       tag_obj_type()      = all_conds({shallow_subset_conds(t1.tag_type, t2.tag_type), shallow_subset_conds(t1.obj_type, t2.obj_type)}),
+    tag_obj_type(),       tag_obj_type()      = { tcs = shallow_subset_conds(t1.tag_type, t2.tag_type);
                                                   return not_a_subset if tcs == not_a_subset;
-                                                  return all_conds({tcs, is_subset_if(t1.obj_type, t2.obj_type)});
+                                                  return all_conds({tcs, shallow_subset_conds(t1.obj_type, t2.obj_type)});
                                                 },
     tag_obj_type(),       _                   = not_a_subset;
 
 
-  IsSubset is_record_subset_if((SymbObj => (type: Type, optional: Bool)) fs1, (SymbObj => (type: Type, optional: Bool)) fs2)
+  SubsetCond union_shallow_subset_conds(Type t1, Type+ ts2)
+  {
+    all_conds = {cs : t2 <- ts2, cs = shallow_subset_conds(t1, t2), cs /= not_a_subset};
+    return not_a_subset if all_conds == {};
+    return {} if in({}, all_conds);
+    return only_element(all_conds) if size(all_conds) == 1;
+    var_only_conds = {cs : cs <- all_conds, subtype_conds(cs) == {}};
+    return an_elem(var_only_conds) if var_only_conds /= {}; //## COULD WE IMPROVE ON THIS?
+    return an_elem(all_conds); //## BAD: THIS IS REALLY REALLY BAD.
+  }
+
+
+  SubsetCond record_shallow_subset_conds(RecordTypeFields fs1, RecordTypeFields fs2)
   {
     labels_1 = keys(fs1);
     labels_2 = keys(fs2);
@@ -214,24 +205,25 @@ using Bool inst_type_vars
     label_type_map_1 = (l => f.type : l => f <- fs1);
     label_type_map_2 = (l => f.type : l => f <- fs2);
 
-    return all_conds({is_subset_if(label_type_map_1[l], label_type_map_2[l]) : l <- labels_1});
+    return all_conds({shallow_subset_conds(label_type_map_1[l], label_type_map_2[l]) : l <- labels_1});
   }
 
 
-  IsSubset is_record_map_subset_if((SymbObj => (type: Type, optional: Bool)) record_fields, MapType map_type) =
+  SubsetCond record_map_shallow_subset_conds(RecordTypeFields record_fields, NeMapType map_type) =
     all_conds(
       for (l => f <- record_fields) {
         all_conds(
-          { is_subset_if(symb_type(l), map_type.key_type),
-            is_subset_if(f.type, map_type.value_type)
+          { shallow_subset_conds(symb_type(l), map_type.key_type),
+            shallow_subset_conds(f.type, map_type.value_type)
           }
         )
       }
     );
 
 
-  IsSubset is_ne_map_record_subset_if(Type key_type, Type value_type, (SymbObj => (type: T, optional: Bool)) record_fields)
+  SubsetCond map_record_shallow_subset_conds(Type key_type, Type value_type, RecordTypeFields record_fields)
   {
+    //## BUG: WHY is_subset AND NOT shallow_subset_conds? IS THIS A BUG?
     return not_a_subset if not is_subset(key_type, union_type({symb_type(l) : l => _ <- record_fields}));
 
     if (key_type :: SymbType)
@@ -241,7 +233,7 @@ using Bool inst_type_vars
       return not_a_subset if (? _ => f <- record_fields : not f.optional);
     ;
 
-    return all_conds({is_subset_if(key_type, f.type) : l => f <- record_fields, includes_symbol(key_type, l)});
+    return all_conds({shallow_subset_conds(key_type, f.type) : l => f <- record_fields, type_contains_obj(key_type, _obj_(l))});
   }
 }
 
@@ -261,11 +253,3 @@ Bool is_integer_subset(IntType t1, IntType t2):
   int_range(),  int_range() = t1.min >= t2.min and max(t1) <= max(t2),
   int_range(),  high_ints() = t1.min >= t2.min,
   int_range(),  low_ints()  = max(t1) <= t2.max;
-
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-Bool is_type_any(Type type) = is_subset(type_any, type);
-
-Bool includes_symbol(Type type, SymbObj symb) = is_subset(symb_type(symb), type);

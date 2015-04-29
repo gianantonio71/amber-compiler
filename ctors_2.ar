@@ -4,7 +4,8 @@ IntObj  object(Int n)  = :object(n);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-BasicTypeSymbol type_symbol(Atom a) = :type_symbol(a);
+BasicTypeSymbol type_symbol(Atom a)         = :type_symbol(a);
+BasicTypeSymbol builtin_type_symbol(Atom a) = :builtin_type_symbol(a);
 
 ParTypeSymbol par_type_symbol(BasicTypeSymbol s, [Type^] ps) = par_type_symbol(symbol: s, params: ps);
 
@@ -13,7 +14,7 @@ TypeName type_name(BasicTypeSymbol ts, Nat arity) = type_name(symbol: ts, arity:
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-<void_type> void_type = :void_type;
+<empty_type> empty_type = :empty_type;
 
 <atom_type> atom_type = :atom_type;
 
@@ -35,19 +36,59 @@ TypeVar type_var(<Atom, Nat> n) = :type_var(n);
 <empty_set_type> empty_set_type = :empty_set_type;
 <empty_map_type> empty_map_type = :empty_map_type;
 
-Type ne_seq_type(Type t)                    = ne_seq_type(elem_type: t);
-Type ne_set_type(Type t)                    = ne_set_type(elem_type: t);
-Type ne_map_type(Type kt, Type vt)          = ne_map_type(key_type: kt, value_type: vt);
-Type record_type((SymbObj => (type: Type, optional: Bool)) fs)  = :record_type(fs);
-Type tuple_type([Type^] ts)                 = :tuple_type(ts);
-Type tag_obj_type(TagType tt, Type ot)      = tag_obj_type(tag_type: tt, obj_type: ot);
-Type union_type(Type+ ts)                   = if size(ts) > 1 then :union_type(ts) else only_element(ts);
+Type ne_seq_type(Type t) = if t /= empty_type then ne_seq_type(elem_type: t) else empty_type;
+
+Type ne_set_type(Type t) = if t /= empty_type then ne_set_type(elem_type: t) else empty_type;
+
+Type ne_map_type(Type kt, Type vt) = if kt /= empty_type and vt /= empty_type then ne_map_type(key_type: kt, value_type: vt) else empty_type;
+
+Type record_type((SymbObj => (type: Type, optional: Bool)) fs)
+{
+  return empty_type if (? l => f <- fs : f.type == empty_type and not f.optional);
+  rfs = (l => (type: t, optional: f.optional) : l => f <- fs, t = f.type, t /= empty_type);
+  return :record_type(rfs);
+}
+
+Type tuple_type([Type^] ts)
+{
+  nv_ts = [];
+  for (t : ts)
+    return empty_type if t == empty_type;
+    nv_ts = [nv_ts | t];
+  ;
+  return :tuple_type(nonempty(nv_ts));
+}
+
+<empty_type, TagObjType> tag_obj_type(TagType tt, Type ot) = if ot /= empty_type then tag_obj_type(tag_type: tt, obj_type: ot) else empty_type;
+
+Type union_type(Type* ts)
+{
+  nu_ts = union({nu_types(t) : t <- ts, t /= empty_type});
+  return if nu_ts == {}       then empty_type,
+            size(nu_ts) == 1  then only_element(nu_ts)
+                              else :union_type(nu_ts);
+
+  NeType+ nu_types(NeType type):
+    union_type(ts?)  = nonempty(union({nu_types(t) : t <- ts})),
+    _                = {type};
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 
 ClsType cls_type([Type^] its, Type ot) = cls_type(in_types: its, out_type: ot);
 
-FnType fn_type([ExtType] ps, Type rt) = fn_type(ps, (), rt);
-FnType fn_type([ExtType] ps, (NamedPar => ExtType) nps, Type rt) = fn_type(params: ps, named_params: nps, ret_type: rt);
+FnType fn_type([AnyType] ps, Type rt) = fn_type(ps, (), rt);
+FnType fn_type([AnyType] ps, (NamedPar => AnyType) nps, Type rt) = fn_type(params: ps, named_params: nps, ret_type: rt);
 
+BuiltInType builtin_type([Type^] pts, Type rt) = builtin_type(param_types: pts, ret_type: rt);
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+Type map_type(Type kt, Type vt, Bool may_be_empty) = union_type({empty_map_type if may_be_empty, ne_map_type(kt, vt)});
+
+////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
 TagPtrn ptrn_symbol                             = :ptrn_symbol;
@@ -86,7 +127,7 @@ Var var(Atom a)       = :var(a);
 Var fn_par(Nat n)     = :fn_par(n);
 Var named_par(Atom a) = :named_par(a);
 
-ClsVar cls_var(Atom a)  = :cls_var(a);
+ClsVar cls_var(<Atom, Nat> a)  = :cls_var(a);
 
 FnFrmPar non_scalar_par(ClsVar v, ClsType t)  = non_scalar_par(var: v, arity: arity(t), type: t);
 FnFrmPar non_scalar_par(ClsVar v, NzNat a)	  = non_scalar_par(var: v, arity: a);
@@ -105,8 +146,8 @@ Expr map_expr((key: Expr, value: Expr, cond: Expr?)* es) = :map_expr(es);
 
 Expr tag_obj_expr(Expr t, Expr o)   = tag_obj_expr(tag: t, obj: o);
 
-Expr fn_call(FnSymbol name, [ExtExpr] params) = fn_call(name, params, ());
-Expr fn_call(FnSymbol name, [ExtExpr] params, (NamedPar => ExtExpr) named_params) = fn_call(name: name, params: params, named_params: named_params);
+Expr fn_call(FnSymbol name, [AnyExpr] params) = fn_call(name, params, ());
+Expr fn_call(FnSymbol name, [AnyExpr] params, (NamedPar => AnyExpr) named_params) = fn_call(name: name, params: params, named_params: named_params);
 
 Expr builtin_call(BuiltIn n, [Expr^] ps) = builtin_call(name: n, params: ps);
 Expr cls_call(<ClsVar, NamedPar> n, [Expr^] ps) = cls_call(name: n, params: ps);
@@ -159,7 +200,7 @@ ProcSymbol proc_symbol(Atom a) = :proc_symbol(a);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-FnDef fn_def(FnSymbol n, [FnFrmPar] ps, (NamedPar => ExtType) nps, Maybe[Type] mrt, Expr e) =
+FnDef fn_def(FnSymbol n, [FnFrmPar] ps, (NamedPar => AnyType) nps, Maybe[Type] mrt, Expr e) =
   fn_def(name: n, params: ps, named_params: nps, res_type: value(mrt) if mrt /= nil, expr: e);
 
 ProcDef2 proc_def(ProcSymbol n, [(var: Var, type: Type)] ps, Maybe[Type] rt, [Statement] b) =

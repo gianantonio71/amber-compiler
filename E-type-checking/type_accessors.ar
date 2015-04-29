@@ -1,113 +1,49 @@
-SymbType* symb_types(Type type) = {t : symb_type() t <- split_type(type)};
-
-<IntType, void_type> int_type(Type type) = only_element_or_def_if_empty({t : t <- split_type(type), t :: IntType}, void_type);
-
-ClosedType get_ne_seq_or_tuple_type(Type type)
+using (TypeName => Type) typedefs
 {
-  types = split_type(type);
-  ne_seq_types = {t : ne_seq_type() t <- types};
-  tuple_types = {t : tuple_type() t <- types};
-  return only_element_or_def_if_empty(ne_seq_types & tuple_types, void_type);
+  Type* seq_elem_types(Type type) = {t.elem_type : ne_seq_type() t <- split_type(type)};
+
+  Type seq_elem_supertype(Type type) = union_superset(seq_elem_types(type));
+
+
+  Type* set_elem_types(Type type) = {t.elem_type : ne_set_type() t <- split_type(type)};
+
+  Type set_elem_supertype(Type type) = union_superset(set_elem_types(type));
+
+
+  (Type, Type)* map_key_value_type_pairs(Type type) = {(t.key_type, t.value_type) : ne_map_type() t <- split_type(type)};
+
+  Type map_key_supertype(Type type)   = union_superset({left(p) : p <- map_key_value_type_pairs(type)});
+  Type map_value_supertype(Type type) = union_superset({right(p) : p <- map_key_value_type_pairs(type)});
+
+
+  RecordType* record_types(Type type) = {t : record_type() t <- split_type(type)};
+
+
+  TagObjType* tagged_obj_types(Type type) = {t : tag_obj_type() t <- split_type(type)};
+
+
+  [Type^] tuple_field_supertypes(Type type, [2..*] tuple_length)
+  {
+    ftss = {ts : tuple_type(ts) <- split_type(type), length(ts) == tuple_length};
+    return nonempty([union_superset({fts[i] : fts <- ftss}) : i < tuple_length]);
+  }
+
+
+  [Type^]* tuple_field_types_set(Type type) = {ts : tuple_type(ts) <- split_type(type)};
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  Bool is_ne_seq_type(Type type) = not (? t <- split_type(type) : not t :: <ne_seq_type(Any)>); //## SUPER UGLY
+
+  Bool is_ne_set_type(Type type) = not (? t <- split_type(type) : not t :: <ne_set_type(Any)>); //## DITTO
+
+  Bool is_type_var(Type type)
+  {
+    types = split_type(type);
+    type_vars = {t : type_var() t <- types}; //## SUPER UGLY
+    other_types = types - type_vars;
+    assert type_vars & other_types == types;
+    assert size(type_vars) <= 1;
+    return type_vars /= {} and other_types == {};
+  }
 }
-
-ClosedType get_ne_set_type(Type type) = only_element_or_def_if_empty({t : ne_set_type() t <- split_type(type)}, void_type);
-
-ClosedType get_ne_map_or_record_type(Type type)
-{
-  types = split_type(type);
-  ne_map_types = {t : ne_map_type() t <- types};
-  rec_types = {t : record_type() t <- types};
-  return only_element_or_def_if_empty(ne_map_types & rec_types, void_type);
-}
-
-ClosedType seq_elem_type(Type type)
-{
-  elem_types = {t.elem_type : ne_seq_type() t <- split_type(type)};
-  return if elem_types == {} then void_type else union_type(elem_types);
-}
-
-Bool has_tuple_type(Type type) = (? tuple_type() <- split_type(type));
-
-[Type^] tuple_field_types(Type type)
-{
-  tuple_types = {t : tuple_type() t <- split_type(type)};
-  assert size(tuple_types) <= 1;
-  fail if size(tuple_types) /= 1;
-  return _obj_(only_element(tuple_types));
-}
-
-ClosedType set_elem_type(Type type)
-{
-  elem_types = {t.elem_type : ne_set_type() t <- split_type(type)};
-  return if elem_types == {} then void_type else union_type(elem_types);
-}
-
-ClosedType map_key_type(Type type)            = only_element_or_def_if_empty({t.key_type : ne_map_type() t <- split_type(type)}, void_type);
-
-ClosedType map_value_type(Type type)          = only_element_or_def_if_empty({t.value_type : ne_map_type() t <- split_type(type)}, void_type);
-
-<RecordType, void_type> record_type(Type type)  = only_element_or_def_if_empty({t : record_type() t <- split_type(type)}, void_type);
-
-TagObjType* tagged_obj_types(Type type) = {t : tag_obj_type() t <- split_type(type)};
-
-<SelfRecType, MutRecType>* rec_types(Type type):
-  self_rec_type()     = {type},
-  mut_rec_type()      = {type},
-  union_type(ts?)     = union({rec_types(t) : t <- ts}),
-  _                   = {};
-
-//////////////////////////////////////////////////////////////////////////////
-
-Bool is_ne_seq_type(Type type) = not (? t <- split_type(type) : not t :: <ne_seq_type(Any)>); //## SUPER UGLY
-
-Bool is_ne_set_type(Type type) = not (? t <- split_type(type) : not t :: <ne_set_type(Any)>); //## DITTO
-
-Bool is_type_var(Type type)
-{
-  types = split_type(type);
-  type_vars = {t : type_var() t <- types}; //## SUPER UGLY
-  other_types = types - type_vars;
-  assert type_vars & other_types == types;
-  assert size(type_vars) <= 1;
-  return type_vars /= {} and other_types == {};
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////
-
-// Type+ expand_type(Type type)
-// {
-//   res = expand_type_impl(type);
-
-//   print "expand_type():";
-//   print type;
-//   print res;
-
-//   return res;
-// }
-
-// Type+ expand_type(Type type):
-//   union_type(ts?)   = union({expand_type(t) : t <- ts}),
-//   self_rec_type(t?) = expand_type(replace_rec_refs(t, (self => type))),
-//   mut_rec_type()    = expand_type(replace_rec_refs(type.types[type.index], (self(i) => mut_rec_type(i, type.types) : i < length(type.types)))),
-//   _                 = {type};
-
-// Type replace_rec_refs2(Type type, (SelfPretype => Type) rec_map)
-// {
-//   print "replace_rec_refs():";
-//   print type;
-//   print rec_map;
-//   print replace_rec_refs(type, rec_map);
-//   return replace_rec_refs(type, rec_map);
-// }
-
-// Type replace_rec_refs(Type type, (SelfPretype => Type) rec_map):
-//   SelfPretype       = rec_map[type],
-//   ne_seq_type()     = ne_seq_type(replace_rec_refs(type.elem_type, rec_map)),
-//   ne_set_type()     = ne_set_type(replace_rec_refs(type.elem_type, rec_map)),
-//   ne_map_type()     = ne_map_type(replace_rec_refs(type.key_type, rec_map), replace_rec_refs(type.value_type, rec_map)),
-//   record_type(fs?)  = record_type((l => (type: replace_rec_refs(f.type, rec_map), optional: f.optional) : l => f <- fs)),
-//   tuple_type(ts?)   = {fail;}, //tuple_type([replace_rec_refs(t, rec_map) : t <- ts]),
-//   tag_obj_type()    = tag_obj_type(type.tag_type, replace_rec_refs(type.obj_type, rec_map)),
-//   union_type(ts?)   = union_type({replace_rec_refs(t, rec_map) : t <- ts}),
-//   _                 = type;

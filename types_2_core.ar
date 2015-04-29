@@ -7,7 +7,7 @@ type LeafObj    = object(<Atom, Int>);
 
 ///////////////////////////////////////////////////////////////////////////////
 
-type BasicTypeSymbol  = type_symbol(Atom);
+type BasicTypeSymbol  = type_symbol(Atom), builtin_type_symbol(Atom);
 type ParTypeSymbol    = par_type_symbol(symbol: BasicTypeSymbol, params: [Type^]);
 type TypeSymbol       = BasicTypeSymbol, ParTypeSymbol;
 
@@ -15,44 +15,51 @@ type TypeName         = type_name(symbol: BasicTypeSymbol, arity: Nat);
 
 ///////////////////////////////////////////////////////////////////////////////
 
-// type VoidType       = void_type;
-// type ClosedType     = void_type, Type; //## FIND BETTER NAME
+type SymbType           = symb_type(SymbObj);
 
-type SymbType   = symb_type(SymbObj);
+type IntType            = integer, low_ints(max: Int), high_ints(min: Int), int_range(min: Int, size: NzNat);
 
-type IntType    = integer, low_ints(max: Int), high_ints(min: Int), int_range(min: Int, size: NzNat);
+type FloatType          = float_type;
 
-type FloatType  = float_type;
+type LeafType           = atom_type, SymbType, IntType, FloatType, empty_seq_type, empty_set_type, empty_map_type;
 
-type LeafType   = atom_type, SymbType, IntType, FloatType, empty_seq_type, empty_set_type, empty_map_type;
+type TypeVar            = type_var(<Atom, Nat>);
 
-type TypeVar    = type_var(<Atom, Nat>);
+type TypeRef            = type_ref(TypeSymbol);
 
-type TypeRef    = type_ref(TypeSymbol);
+type NeSeqType          = ne_seq_type(elem_type: NeType);
 
-type Type       = LeafType,
-                  TypeRef,
-                  TypeVar,
-                  ne_seq_type(elem_type: Type),
-                  ne_set_type(elem_type: Type),
-                  ne_map_type(key_type: Type, value_type: Type),
-                  record_type((SymbObj => (type: Type, optional: Bool))),
-                  tuple_type([Type^]),
-                  tag_obj_type(tag_type: TagType, obj_type: Type),
-                  union_type(Type+);
+type NeSetType          = ne_set_type(elem_type: NeType);
 
-type TagType    = SymbType, atom_type;
+type NeMapType          = ne_map_type(key_type: NeType, value_type: NeType);
+
+type RecordTypeFields   = (SymbObj => (type: NeType, optional: Bool));
+type RecordType         = record_type(RecordTypeFields);
+
+type TupleType          = tuple_type([NeType^]);
+
+type TagType            = SymbType, atom_type;
+type TagObjType         = tag_obj_type(tag_type: TagType, obj_type: NeType);
+
+type UnionType          = union_type(NeType+);
+
+type NeType             = LeafType, TypeRef, TypeVar, NeSeqType, NeSetType, NeMapType,
+                          RecordType, TupleType, TagObjType, UnionType;
+
+type Type               = empty_type, NeType;
 
 ///////////////////////////////////////////////////////////////////////////////
 
 type ClsType  = cls_type(in_types: [Type^], out_type: Type);
-type ExtType  = Type, ClsType;
+type AnyType  = Type, ClsType;
 
 type FnType   = fn_type(
-                  params:       [ExtType],
-                  named_params: (NamedPar => ExtType),
+                  params:       [AnyType],
+                  named_params: (NamedPar => AnyType),
                   ret_type:     Type
                 );
+
+type BuiltInType  = builtin_type(param_types: [Type^], ret_type: Type);
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -103,7 +110,7 @@ type Expr     = LeafObj, //## UPDATE ALL REFERENCES
                 //## CAN LOCAL FUNCTIONS HAVE NAMED PARAMETERS? IT WOULDN'T MAKE MUCH SENSE,
                 //## BUT THE DATA STRUCTURE AND THE SYNTAX ALLOW IT. MAKE SURE IT'S CHECHED
                 //## IN THE WELL-FORMEDNESS CHECKING LAYER.
-                fn_call(name: FnSymbol, params: [ExtExpr], named_params: (NamedPar => ExtExpr)),
+                fn_call(name: FnSymbol, params: [AnyExpr], named_params: (NamedPar => AnyExpr)),
                 cls_call(name: <ClsVar, NamedPar>, params: [Expr]),  //## BAD: THERE SHOULD BE A NAMED VERSION OF ClsVar
                 builtin_call(name: BuiltIn, params: [Expr]), //## CAN A BUILTIN HAVE NO ARGUMENTS?
 
@@ -145,7 +152,7 @@ type ClsExpr  = ClsVar,
                 fn_ptr(name: FnSymbol, arity: NzNat),
                 cls_expr(params: [<var(Atom), nil>^], expr: Expr);
 
-type ExtExpr  = Expr, ClsExpr;
+type AnyExpr  = Expr, ClsExpr;
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -199,19 +206,15 @@ type Statement  = assignment_stmt(vars: [Var^], value: Expr),
 
 ///////////////////////////////////////////////////////////////////////////////
 
-//type Signature  = signature(
-//                    name:     FnSymbol,
-//                    params:   [Type],
-//                    res_type: Type
-//                  );
+type ScalarFrmParam = scalar_par(var: var(Atom)?, type: Type?);
+type ClsFrmParam    = non_scalar_par(var: ClsVar?, arity: NzNat, type: ClsType?); //## BAD: THE VAR AND TYPE FIELDS HERE ARE OPTIONAL ONLY TO ALLOW MERGING OF FUNCTIONS WITH DIFFERENT ARITIES. ALSO, ARITY IS REDUNDANT WHEN TYPE IS PRESENT. CHECK THIS IN THE WELL-FORMEDNESS CHECKING LAYER. ALSO, REALLY BAD NAME.
 
-type FnFrmPar   = scalar_par(var: var(Atom)?, type: Type?),
-                  non_scalar_par(var: ClsVar?, arity: NzNat, type: ClsType?); //## BAD: THE VAR AND TYPE FIELDS HERE ARE OPTIONAL ONLY TO ALLOW MERGING OF FUNCTIONS WITH DIFFERENT ARITIES. ALSO, ARITY IS REDUNDANT WHEN TYPE IS PRESENT. CHECK THIS IN THE WELL-FORMEDNESS CHECKING LAYER. ALSO, REALLY BAD NAME.
+type FnFrmPar   = ScalarFrmParam, ClsFrmParam;
 
 type FnDef      = fn_def(
                     name:         FnSymbol,
                     params:       [FnFrmPar], //## BAD BAD
-                    named_params: (NamedPar => ExtType), //## BAD: THE TYPE IS TOO LOOSE. INCLUDE A CHECK IN THE WELL-FORMEDNESS CHECKING LAYER
+                    named_params: (NamedPar => AnyType), //## BAD: THE TYPE IS TOO LOOSE. INCLUDE A CHECK IN THE WELL-FORMEDNESS CHECKING LAYER
                     res_type:     Type?,
                     expr:         Expr
                     //impl_env: Signature*,

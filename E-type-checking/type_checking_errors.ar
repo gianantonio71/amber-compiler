@@ -1,31 +1,41 @@
-type TypeCheckingError  = missing_param_type(param: FnFrmPar, pos: Nat),
-                          missing_res_type,
-                          obj_does_not_belong_to_type(obj: Any, type: Type),
-                          not_a_set_type,
-                          not_a_seq_type,
-                          not_a_seq_of_tuples,
-                          not_a_map_type,
-                          not_a_map_or_record_type,
-                          not_a_record_type(type: Type),
-                          not_a_tag_type,
-                          wrong_tuple_type_length(actual_length: NzNat, expected_lenght: NzNat),
-                          not_symbol_keys_with_record_type(keys: Expr+),
-                          may_not_have_field(type: Type, field: SymbObj),
-                          never_has_field(type: Type, field: SymbObj),
-                          missing_rec_fields(fields: SymbObj+),
-                          invalid_rec_fields(fields: SymbObj+),
-                          tag_not_a_symbol(errors: TypeCheckingError+),
-                          not_a_tag_type_with_any_tag,
-                          invalid_var_type(actual_type: Type, expected_type: Type),
-                          no_suitable_function_found(signatures: (FnSymbol => FnType*), par_types: Maybe[Type]),
-                          invalid_param_types(target_signature: FnType, invalid_params: <(Nat, Expr, Type)>*),
-                          invalid_named_par_type(target_signature: FnType, invalid_params: <(NamedPar, ExtExpr, ExtType)>*),
-                          invalid_return_type(actual_type: Type, expected_type: Type),
-                          unexpected_actual_type(actual_type: Type, expected_type: Type),
-                          unexpected_actual_cls_type(actual_type: ClsType, expected_type: ClsType),
-                          loop_did_not_converge(iteractions: NzNat, errors: TypeCheckingError+),
-                          ptrn_cannot_match_type(pattern: Pattern, type: Type),
-                          annotated_expr_error(error: TypeCheckingError, expr: Expr);
+type TypeCheckingError =
+  missing_param_type(param: FnFrmPar, pos: Nat),
+  missing_res_type,
+  obj_does_not_belong_to_type(obj: Any, type: Type),
+  not_a_set_type,
+  not_a_seq_type,
+  not_a_tuple_or_seq_type(Type),
+  not_a_seq_of_tuples,
+  not_a_map_type,
+  not_a_map_or_record_type,
+  not_a_record_type(type: Type),
+  not_a_tag_type,
+  wrong_tuple_type_length(actual_length: NzNat, expected_lenghts: NzNat+),
+  non_symbol_keys_with_record_type(keys: Expr+),
+  may_not_have_field(type: Type, field: SymbObj),
+  never_has_field(type: Type, field: SymbObj),
+  missing_rec_fields(fields: SymbObj+),
+  invalid_rec_fields(fields: SymbObj+),
+  tag_not_a_symbol(errors: TypeCheckingError+),
+  not_a_tag_type_with_any_tag,
+  invalid_var_type(actual_type: Type, expected_type: Type),
+  no_suitable_function_found(name: FnSymbol, arity: NzNat, signatures: FnType+, par_types: [Maybe[Type]]),
+  invalid_param_types(target_signature: FnType, invalid_params: <(Nat, Expr, Type)>*),
+  invalid_cls_var_type(var: ClsVar, expected_type: ClsType, type_var_insts: (TypeVar => Type)),
+  invalid_cls_param_types(target_signature: FnType, errors: TypeCheckingError*),
+  invalid_implicit_par_type(
+    target_signature:   FnType,
+    param_name:         NamedPar,
+    formal_type:        AnyType,
+    inst_formal_type:   AnyType,
+    actual_type:        AnyType
+  ),
+  invalid_return_type(actual_type: Type, expected_type: Type),
+  unexpected_actual_type(actual_type: Type, expected_type: Type),
+  unexpected_actual_cls_type(actual_type: ClsType, expected_type: ClsType),
+  loop_did_not_converge(iteractions: NzNat),
+  ptrn_cannot_match_type(pattern: Pattern, type: Type),
+  annotated_expr_error(error: TypeCheckingError, expr: Expr);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -36,7 +46,7 @@ TypeCheckingError obj_does_not_belong_to_type(Any o, Type t) = obj_does_not_belo
 
 TypeCheckingError not_a_set_type = :not_a_set_type;
 TypeCheckingError not_a_seq_type = :not_a_seq_type;
-TypeCheckingError not_a_tuple_or_seq_type = :not_a_tuple_or_seq_type;
+TypeCheckingError not_a_tuple_or_seq_type(Type t) = :not_a_tuple_or_seq_type(t);
 TypeCheckingError not_a_seq_of_tuples = :not_a_seq_of_tuples;
 TypeCheckingError not_a_map_type = :not_a_map_type;
 TypeCheckingError not_a_map_or_record_type = :not_a_map_or_record_type;
@@ -44,7 +54,7 @@ TypeCheckingError not_a_record_type(Type t) = not_a_record_type(type: t);
 TypeCheckingError not_a_tag_type = :not_a_tag_type;
 TypeCheckingError not_a_tag_type_with_any_tag = :not_a_tag_type_with_any_tag;
 
-TypeCheckingError wrong_tuple_type_length(NzNat al, NzNat el) = wrong_tuple_type_length(actual_length: al, expected_lenght: el);
+TypeCheckingError wrong_tuple_type_length(NzNat al, NzNat+ els) = wrong_tuple_type_length(actual_length: al, expected_lenghts: els);
 
 TypeCheckingError non_symbol_keys_with_record_type(Expr+ ks) = non_symbol_keys_with_record_type(keys: ks);
 
@@ -55,19 +65,29 @@ TypeCheckingError missing_rec_fields(SymbObj+ fs) = missing_rec_fields(fields: f
 TypeCheckingError invalid_rec_fields(SymbObj+ fs) = invalid_rec_fields(fields: fs);
 
 TypeCheckingError tag_not_a_symbol(TypeCheckingError+ es) = tag_not_a_symbol(errors: es);
-TypeCheckingError no_tag_type_with_any_tag = :no_tag_type_with_any_tag;
 
 TypeCheckingError invalid_var_type(Type at, Type et) = invalid_var_type(actual_type: at, expected_type: et);
 
-TypeCheckingError no_suitable_function_found((FnSymbol => FnType*) ss, Maybe[Type] ts) =
-  no_suitable_function_found(signatures: ss, par_types: ts);
+TypeCheckingError no_suitable_function_found(FnSymbol n, NzNat a, FnType+ ss, [Maybe[Type]^] ts) =
+  no_suitable_function_found(name: n, arity: a, signatures: ss, par_types: ts);
 
 ////////////////////////////////////////////////////////////////////////////////
 
 //## CAN I OMMIT THE ANGLE BRACKETS FOR THE TYPE OF THE SECOND PARAMETER?
 TypeCheckingError invalid_param_types(FnType s, <(Nat, Expr, Type)>* ps) = invalid_param_types(target_signature: s, invalid_params: ps);
 
-TypeCheckingError invalid_named_par_type(FnType s, <(NamedPar, ExtExpr, ExtType)>* ps) = invalid_named_par_type(target_signature: s, invalid_params: ps);
+TypeCheckingError invalid_cls_var_type(ClsVar v, ClsType t, (TypeVar => Type) tvis) = invalid_cls_var_type(var: v, expected_type: t, type_var_insts: tvis);
+
+TypeCheckingError invalid_cls_param_types(FnType s, TypeCheckingError* es) = invalid_cls_param_types(target_signature: s, errors: es);
+
+TypeCheckingError invalid_implicit_par_type(FnType s, NamedPar p, AnyType ft, AnyType ift, AnyType at) =
+  invalid_implicit_par_type(
+    target_signature:   s,
+    param_name:         p,
+    formal_type:        ft,
+    inst_formal_type:   ift,
+    actual_type:        at
+  );
 
 TypeCheckingError invalid_return_type(Type at, Type et) = invalid_return_type(actual_type: at, expected_type: et);
 
@@ -75,7 +95,7 @@ TypeCheckingError unexpected_actual_type(Type at, Type et) = unexpected_actual_t
 
 TypeCheckingError unexpected_actual_cls_type(ClsType at, ClsType et) = unexpected_actual_cls_type(actual_type: at, expected_type: et);
 
-TypeCheckingError loop_did_not_converge(NzNat nis, TypeCheckingError+ es) = loop_did_not_converge(iteractions: nis, errors: es);
+TypeCheckingError loop_did_not_converge(NzNat nis) = loop_did_not_converge(iteractions: nis);
 
 TypeCheckingError ptrn_cannot_match_type(Pattern p, Type t) = ptrn_cannot_match_type(pattern: p, type: t);
 
@@ -84,7 +104,9 @@ TypeCheckingError annotated_expr_error(TypeCheckingError err, Expr expr) = annot
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-TypeCheckingError* invalid_type_if_not_subset(Type at, Type et) = {
-	unexpected_actual_type(at, et) if not is_subset(at, et)
-};
-
+using (TypeName => Type) typedefs
+{
+  TypeCheckingError* invalid_type_if_not_subset(Type at, Type et) = {
+    unexpected_actual_type(at, et) if not is_subset(at, et)
+  };
+}
