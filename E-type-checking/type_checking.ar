@@ -163,19 +163,6 @@ using
   TypeCheckingError* typecheck_any(SubExpr expr, Type+ exp_types) = typecheck_any({expr}, exp_types);
 
 
-  TypeCheckingError* typecheck_any_by_pair((Expr, Expr)+ expr_pairs, (Type, Type)+ exp_type_pairs)
-  {
-    all_errs = ();
-    for (type1, type2 : rand_sort(exp_type_pairs))
-      errs = union({typecheck(left(ep), type1) & typecheck(right(ep), type2) : ep <- expr_pairs});
-      return {} if errs == {};
-      all_errs = all_errs & ((type1, type2) => errs);
-    ;
-    //## BAD: THIS IS TOTALLY WRONG OF COURSE, BUT IT'LL HAVE TO DO FOR NOW...
-    return an_elem(nonempty(values(all_errs)));
-  }
-
-
   TypeCheckingError* typecheck(CondExpr expr, Type exp_type)
   {
     errs = typecheck(expr.cond, type_bool);
@@ -255,7 +242,7 @@ using
 
     // Let's see if it typecheck as one of the map types
     if (exp_key_value_type_pairs /= {})
-      map_errs = typecheck_any_by_pair({(e.key, e.value) : e <- entries}, exp_key_value_type_pairs);
+      map_errs = typecheck_entry_any(entries, exp_key_value_type_pairs);
       return errs & map_errs if map_errs == {} or exp_record_types == {};
     else
       map_errs = {};
@@ -298,13 +285,40 @@ using
         missing_rec_fields(missing_labels) if missing_labels /= {},
         invalid_rec_fields(invalid_labels) if invalid_labels /= {}
       };
-      rec_errs = rec_errs & union({typecheck(e.value, fields[e.key].type) : e <- entries}) if rec_errs == {};
+      rec_errs = rec_errs & union({typecheck_record_field(e, fields): e <- entries}) if rec_errs == {};
       return errs if rec_errs == {};
       all_rec_errs = all_rec_errs & (rec_type => rec_errs);
     ;
 
     //## BAD: THIS IS TOTALLY WRONG OF COURSE, BUT IT'LL HAVE TO DO FOR NOW...
     return an_elem(nonempty(values(all_rec_errs)));
+
+
+    TypeCheckingError* typecheck_entry_any((key: Expr, value: Expr, cond: Expr?)+ entries, (Type, Type)+ exp_entry_types)
+    {
+      all_errs = ();
+      for (key_type, value_type : rand_sort(exp_entry_types))
+        errs = union({typecheck_map_entry(e, key_type, value_type) : e <- entries});
+        return {} if errs == {};
+        all_errs = all_errs & ((key_type, value_type) => errs);
+      ;
+      //## BAD: THIS IS TOTALLY WRONG OF COURSE, BUT IT'LL HAVE TO DO FOR NOW...
+      return an_elem(nonempty(values(all_errs)));
+    }
+
+    TypeCheckingError* typecheck_map_entry((key: Expr, value: Expr, cond: Expr?) entry, Type exp_key_type, Type exp_value_type)
+    {
+      new_env = if entry.cond? then left(refine_environment(entry.cond)) else environment;
+      key_errs = typecheck(entry.key, exp_key_type, environment=new_env);
+      value_errs = typecheck(entry.value, exp_value_type, environment=new_env);
+      return key_errs & value_errs;
+    }
+
+    TypeCheckingError* typecheck_record_field((key: Expr, value: Expr, cond: Expr?) entry, RecordTypeFields fields)
+    {
+      new_env = if entry.cond? then left(refine_environment(entry.cond)) else environment;
+      return typecheck(entry.value, fields[entry.key].type, environment=new_env);
+    }
 
     SymbObj cast_as_symb_obj(Expr expr) = if expr :: SymbObj then expr else {fail;};
   }
@@ -600,9 +614,21 @@ using
     ;
     exp_key_value_type_pairs = map_key_value_type_pairs(exp_type);
     errs = errs & if exp_key_value_type_pairs /= {}
-      then typecheck_any_by_pair({(key_expr, value_expr)}, exp_key_value_type_pairs, environment=new_env)
+      then typecheck_key_value_any(key_expr, value_expr, exp_key_value_type_pairs, environment=new_env)
       else {not_a_map_type}; //## BAD: IT COULD ACTUALLY BE A RECORD TYPE, COULDN'T IT?
     return errs;
+
+    TypeCheckingError* typecheck_key_value_any(Expr key_expr, Expr value_expr, (Type, Type)+ exp_type_pairs)
+    {
+      all_errs = ();
+      for (key_type, value_type : rand_sort(exp_type_pairs))
+        errs = typecheck(key_expr, key_type) & typecheck(value_expr, value_type);
+        return {} if errs == {};
+        all_errs = all_errs & ((key_type, value_type) => errs);
+      ;
+      //## BAD: THIS IS TOTALLY WRONG OF COURSE, BUT IT'LL HAVE TO DO FOR NOW...
+      return an_elem(nonempty(values(all_errs)));
+    }
   }
 
 
@@ -656,7 +682,7 @@ using
     },
     cls_expr() = {
       assert all([p == nil : p <- expr.params]); //## FOR NOW ALL VARIABLES SHOULD BE ANONYMOUS...
-      delta_env = merge(set([(fn_par(i) => t, v => t if v /= nil) : v, t @ i <- zip(expr.params, exp_type.in_types)]));
+      delta_env = merge([(fn_par(i) => t, v => t if v /= nil) : v, t @ i <- zip(expr.params, exp_type.in_types)]);
       new_env = update(environment, delta_env);
       return typecheck(expr.expr, exp_type.out_type, environment=new_env); //## BAD: HERE I SHOULD PROVIDE MORE INFORMATION
     };
@@ -733,7 +759,7 @@ using
     else
       return {not_a_seq_of_tuples} if not is_subset(elem_type, type_tuple(num_vars));
       field_types = tuple_field_supertypes(elem_type, num_vars);
-      loop_vars = merge(set([(v => t) : v, t <- zip(vars, field_types)]));
+      loop_vars = merge([(v => t) : v, t <- zip(vars, field_types)]);
     ;
     loop_vars = loop_vars & (value(maybe_idx_var) => type_nat) if maybe_idx_var /= nil;
     env = update(environment, loop_vars);

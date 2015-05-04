@@ -123,15 +123,18 @@ FnSymbol op_symbol(Operator op)                   = :op_symbol(op);
 FnSymbol nested_fn_symbol(FnSymbol o, FnSymbol i) = nested_fn_symbol(outer: o, inner: i);
 FnSymbol unique_fn_symbol(FnSymbol s, Nat id)     = unique_fn_symbol(symbol: s, id: id);
 
-Var var(Atom a)       = :var(a);
-Var fn_par(Nat n)     = :fn_par(n);
-Var named_par(Atom a) = :named_par(a);
+<var(Atom)> var(Atom a)     = :var(a);
+Var fn_par(Nat n)           = :fn_par(n);
+NamedPar named_par(Atom a)  = :named_par(a);
 
 ClsVar cls_var(<Atom, Nat> a)  = :cls_var(a);
 
-FnFrmPar non_scalar_par(ClsVar v, ClsType t)  = non_scalar_par(var: v, arity: arity(t), type: t);
-FnFrmPar non_scalar_par(ClsVar v, NzNat a)	  = non_scalar_par(var: v, arity: a);
-FnFrmPar non_scalar_par(NzNat a)              = non_scalar_par(arity: a);
+ScalarFrmParam scalar_par(Maybe[Atom] v)         = scalar_par(var: var(value(v)) if v /= nil);
+ScalarFrmParam scalar_par(Maybe[Atom] v, Type t) = scalar_par(var: var(value(v)) if v /= nil, type: t);
+
+ClsFrmParam non_scalar_par(Atom v, ClsType t) = non_scalar_par(var: cls_var(v), arity: arity(t), type: t);
+ClsFrmParam non_scalar_par(Atom v, NzNat a)   = non_scalar_par(var: cls_var(v), arity: a);
+ClsFrmParam non_scalar_par(NzNat a)           = non_scalar_par(arity: a);
 
 Expr float_lit(Int m, Int e)  = float_lit(mantissa: m, dec_exp: e);
 
@@ -166,12 +169,19 @@ Expr membership(Expr obj, Type type) = membership(obj: obj, type: type);
 
 Expr if_expr(Expr cond, Expr true_expr, Expr false_expr) = if_expr(cond: cond, then: true_expr, else: false_expr);
 
+Expr match_expr([Expr^] es, [(ptrns: [Pattern^], expr: Expr)^] cs) = match_expr(exprs: es, cases: cs);
+
 Expr do_expr([Statement^] ss) = :do_expr(ss);
+
+////////////////////////////////////////////////////////////////////////////////
+
+CondExpr cond_expr(Expr e, Expr c) = cond_expr(expr: e, cond: c);
 
 ////////////////////////////////////////////////////////////////////////////////
 
 ClsExpr fn_ptr(FnSymbol s, NzNat a)              = fn_ptr(name: s, arity: a);
 ClsExpr cls_expr(Nat a, Expr e)                  = cls_expr(a * [nil], e);
+//## BAD: THE NONEMPTY CHECK SHOULD BE MOVED TO THE CALL SITES
 ClsExpr cls_expr([<var(Atom), nil>] ps, Expr e)  = cls_expr(params: nonempty(ps), expr: e);
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -186,13 +196,32 @@ Clause or_clause(Clause l, Clause r) = or_clause(left: l, right: r);
 Statement assignment_stmt([Var^] vs, Expr v) = assignment_stmt(vars: vs, value: v);
 Statement return_stmt(Expr e) = :return_stmt(e);
 Statement return_stmt = :return_stmt;
+Statement if_stmt(Expr c, [Statement^] b, [Statement] e) = if_stmt(cond: c, body: b, else: e);
 Statement loop_stmt([Statement^] ss) = :loop_stmt(ss);
+Statement let_stmt((NamedPar => Expr) as, [Statement^] b) = let_stmt(asgnms: as, body: b);
 Statement assert_stmt(Expr e) = :assert_stmt(e);
 Statement print_stmt(Expr e) = :print_stmt(e);
 Statement break_stmt = :break_stmt;
 Statement fail_stmt  = :fail_stmt;
 
 Statement imp_update_stmt(Var o, Expr i, Expr v)  = imp_update_stmt(obj: o, idx: i, value: v);
+
+Statement foreach_stmt([Var^] vs, Maybe[Var] iv, Expr svs, [Statement^] b) =
+  foreach_stmt(
+    vars:     vs,
+    idx_var:  value(iv) if iv /= nil,
+    values:   svs,
+    body:     b
+  );
+
+Statement for_stmt(Maybe[Var] v, Expr sv, Expr ev, Bool evi, [Statement^] b) =
+  for_stmt(
+    var:          value(v) if v /= nil,
+    start_val:    sv,
+    end_val:      ev,
+    end_val_incl: evi,
+    body:         b
+  );
 
 ////////////////////////////////////////////////////////////////////////////////
 

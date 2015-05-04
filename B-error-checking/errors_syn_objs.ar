@@ -14,7 +14,7 @@ using
   SynObjErr* fndef_wf_errors(SynFnDef fn_def, UntypedSgn* global_fns, ((FnSymbol, Nat) => [Nat]) fn_param_arities, TypeVar* type_vars, BasicUntypedSgn* impl_pars)
   {
     vs = set([:fn_par(i) : p @ i <- fn_def.params, not p.type? or p.type :: SynType]); //## BAD BAD BAD
-    clss = set([untyped_sgn(p.var, p.type) : p <- fn_def.params, p.var? and p.type? and p.type :: SynClsType]);
+    clss = set([untyped_sgn(cls_var(p.var_name), p.type) : p <- fn_def.params, p.var_name? and p.type? and p.type :: SynClsType]);
 
     //## WHAT IF THE LOCAL FUNCTIONS ARE INSIDE A USING BLOCK? IT SHOULD NOT MATTER, BUT I'M NOT QUITE SURE
     all_fns = merge_and_override(global_fns, {untyped_sgn(lfd) : lfd <- set(fn_def.local_fns)});
@@ -27,9 +27,9 @@ using
         sgn_errs = sgn_errs & type_wf_errors(p.type, type_vars_in_scope = ts);
       ;
 
-      if (p.var? and (not p.type? or not p.type :: SynClsType))
-        sgn_errs = sgn_errs & {:var_redef(p.var)} if in(p.var, vs);
-        vs       = vs & {p.var};
+      if (p.var_name? and (not p.type? or not p.type :: SynClsType))
+        sgn_errs = sgn_errs & {:var_redef(p.var_name)} if in(var(p.var_name), vs);
+        vs       = vs & {var(p.var_name)};
       ;
     ;
 
@@ -142,9 +142,9 @@ using
     //                        return expr_errs & fndef_errs;
     //                      },
 
-    // fn_call(name: FnSymbol, params: [ExtSynExpr], named_params: [SynFnDef]), //## NEW
+    // fn_call(name: FnSymbol, params: [SynExpr], named_params: [SynFnDef]), //## NEW
 
-    fn_call()           = { ips = impl_params & {untyped_sgn(fd) : fd <- set(expr.named_params)};
+    fn_call()           = { ips = impl_params & set([untyped_sgn(n, ps) : n, ps, e <- expr.named_params]);
 
                             //## I DON'T UNDERSTAND WHAT I HAVE DONE HERE
                             if (not is_def(expr.name, length(expr.params), fns_in_scope & clss_in_scope, ips))
@@ -192,7 +192,11 @@ using
                               errs = exprs_wf_errors(expr.params, def_vars, is_fn_par = true);
                             ;
 
-                            np_errs = fndefs_wf_errors(set(expr.named_params), def_vars);
+                            // np_errs = fndefs_wf_errors(set(expr.named_params), def_vars);
+
+                            def_vars_minus_fn_pars = def_vars - {p : fn_par() p <- def_vars};
+                            np_errs = seq_union([expr_wf_errors(e, def_vars_minus_fn_pars & set(ps)) : n, ps, e <- expr.named_params]);
+
                             //## I SHOULD ALSO CHECK THAT THE NAMED PARAMS THAT I SUPPLY
                             //## ARE ONLY THE ONES THAT ARE REQUIRED BY THE FUNCTION I CALL
                             return errs & np_errs;
@@ -282,9 +286,9 @@ using
     for (p : fndef.params)
       assert not p.type?;
 
-      if (p.var?)
-        sgn_errs = sgn_errs & {:var_redef(p.var)} if in(p.var, vs);
-        vs       = vs & {p.var};
+      if (p.var_name?)
+        sgn_errs = sgn_errs & {:var_redef(p.var_name)} if in(var(p.var_name), vs);
+        vs       = vs & {var(p.var_name)};
       ;
     ;
     
@@ -369,9 +373,9 @@ using
                             return errs & stmts_wf_errors(stmt.body, vs, readonly_vars, true, allow_proc_stmts, req_ret_val);
                           },
 
-    let_stmt()          = { asgnms_errs = fndefs_wf_errors(set(stmt.asgnms), all_def_vars);
+    let_stmt()          = { asgnms_errs = exprs_wf_errors([e : n, e <- stmt.asgnms], all_def_vars);
 
-                            new_impl_params = impl_params & set([untyped_sgn(fd) : fd <- stmt.asgnms]);
+                            new_impl_params = impl_params & set([untyped_sgn(n, []) : n, e <- stmt.asgnms]);
                             stmts_errs  = stmts_wf_errors(
                                              stmt.body,
                                              all_def_vars,

@@ -17,8 +17,8 @@ Program rem_syntax(SynPrg prg)
   desugared_fndefs = union({syn_fndef_to_fndefs(fd, {}, typedefs, fn_param_arities) : fd <- fndefs});
   desugared_proc_defs = {syn_proc_def_to_proc_def(pd, typedefs, fn_param_arities) : pd <- proc_defs};
   desugared_block_fndefs = union(
-    for (ub <- ublocks, fd <- set(ub.fn_defs), sgns = set(ub.signatures)) {
-      syn_fndef_to_fndefs(fd, sgns, typedefs, fn_param_arities)
+    for (ub <- ublocks, fd <- set(ub.fn_defs)) {
+      syn_fndef_to_fndefs(fd, set(ub.signatures), typedefs, fn_param_arities)
     }
   );
 
@@ -43,7 +43,7 @@ Program rem_syntax(SynPrg prg)
 
 FnDef* syn_fndef_to_fndefs(SynFnDef fndef, SynSgn* named_params, (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_param_arities)
 {
-  lfns = ((lfd.name, arity(lfd)) => [arity(p) : p <- lfd.params] : lfd <- set(fndef.local_fns));
+  lfns = ((lfd.name, nz_nat(arity(lfd))) => nonempty([arity(p) : p <- lfd.params]) : lfd <- set(fndef.local_fns));
   main_fn = mk_fndef(fndef, fndef.name, fndef.name, named_params, lfns, typedefs, fn_param_arities);
   loc_fns = [];
   for (fd : fndef.local_fns)
@@ -55,18 +55,18 @@ FnDef* syn_fndef_to_fndefs(SynFnDef fndef, SynSgn* named_params, (TypeName => Ty
 
   //## BAD BAD BAD TOO MANY PARAMETERS
   FnDef mk_fndef(SynFnDef fndef, FnSymbol fn_name, FnSymbol outer_fn, SynSgn* named_params,
-    (FnSymbol, NzNat)* lfns, (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_param_arities)
+    ((FnSymbol, NzNat) => [Nat^]) lfns, (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_param_arities)
   {
     pars = [desugar_fn_par(p) : p <- fndef.params];
-    npars = (named_par(_obj_(ss.name)) => syn_sgn_to_any_expr(ss) : ss <- named_params);
+    npars = (np.name => syn_sgn_to_any_expr(np) : np <- named_params);
     maybe_res_type = if fndef.res_type? then just(syn_type_to_type(fndef.res_type, nil)) else nil;
     expr = desugar_expr(
       fndef.expr,
-      {p.var : p <- set(fndef.params), p.var? and (not p.type? or p.type :: SynType)},
-      closures          = {p.var : p <- set(fndef.params), p.var?, p.type?, p.type :: SynClsType},
-      named_params      = {named_par(_obj_(np.name)) : np <- named_params}, //## BAD BAD BAD
+      {var(p.var_name) : p <- set(fndef.params), p.var_name? and (not p.type? or p.type :: SynType)},
+      closures          = {cls_var(p.var_name) : p <- set(fndef.params), p.var_name?, p.type?, p.type :: SynClsType},
+      named_params      = {np.name : np <- named_params}, //## BAD BAD BAD
       local_fns         = lfns,
-      curr_outer_fn     = outer_fn,
+      curr_outer_fn     = just(outer_fn),
       typedefs          = typedefs,
       fn_param_arities  = fn_param_arities
     );
@@ -75,15 +75,21 @@ FnDef* syn_fndef_to_fndefs(SynFnDef fndef, SynSgn* named_params, (TypeName => Ty
 
   FnFrmPar desugar_fn_par(SynFnArg arg)
   {
-    if (arg.type? and is_syn_cls_type(arg.type))
-      assert arg.var?;
-      var = cls_var(_obj_(arg.var));
-      return non_scalar_par(var, syn_type_to_type(arg.type, nil));
+    maybe_var_name = if arg.var_name? then just(arg.var_name) else nil;
+    if (arg.type?)
+      return desugar_fn_par(maybe_var_name, arg.type);
+    else
+      return scalar_par(maybe_var_name);
     ;
-    return scalar_par(var: arg.var if arg.var?, type: syn_type_to_type(arg.type, nil) if arg.type?);
   }
 
-  AnyExpr syn_sgn_to_any_expr(SynSgn signature)
+  ScalarFrmParam desugar_fn_par(Maybe[Atom] maybe_var_name, SynType type) =
+    scalar_par(maybe_var_name, syn_type_to_type(type, nil));
+
+  ClsFrmParam desugar_fn_par(Maybe[Atom] maybe_var_name, SynClsType type) =
+    non_scalar_par(value(maybe_var_name), syn_type_to_type(type, nil));
+
+  AnyType syn_sgn_to_any_expr(SynSgn signature)
   {
     param_types = [syn_type_to_type(p, nil) : p <- signature.params];
     ret_type = syn_type_to_type(signature.res_type, nil);
@@ -94,26 +100,21 @@ FnDef* syn_fndef_to_fndefs(SynFnDef fndef, SynSgn* named_params, (TypeName => Ty
 
 ProcDef2 syn_proc_def_to_proc_def(SynProcDef pd, (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_param_arities)
 {
+  params = [(var: p.var, type: syn_type_to_type(p.type, nil)) : p <- pd.params];
+  maybe_ret_type = if pd.res_type? then just(syn_type_to_type(value(pd.res_type), nil)) else nil;
   body = desugar_stmts(
     pd.body,
     set([p.var : p <- pd.params]),
     closures = {},
     named_params = {},
     local_fns = (),
-    curr_outer_fn = nil, //## BAD BAD BAD CHEATING. FIX FIX FIX FIX FIX FIX FIX FIX FIX FIX FIX
+    curr_outer_fn = nil,
     typedefs = typedefs,
     fn_param_arities = fn_param_arities
   );
-
-  return proc_def(pd.name, pd.params, pd.res_type, body);
+  return proc_def(pd.name, params, maybe_ret_type, body);
 }
 
-// type TypeName         = type_name(symbol: BasicTypeSymbol, arity: Nat);
-
-
-// type SynTypedef    = typedef(name: BasicTypeSymbol, type: SynType);
-
-// type SynParTypedef = par_typedef(name: BasicTypeSymbol, params: [TypeVar^], type: SynType);
 
 (TypeName => Type) create_type_map(SynTypedef* tdefs, SynParTypedef* par_tdefs)
 {

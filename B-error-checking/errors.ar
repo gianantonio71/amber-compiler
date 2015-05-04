@@ -280,7 +280,7 @@ using
     err        = if block_errs == {} then {} else {ublock_err(errs: block_errs)};
     req_fns    = {untyped_sgn(s) : s <- set(ublock.signatures)};
     all_fns    = merge_and_override(global_fns, {untyped_sgn(s) : s <- set(ublock.signatures)});
-    new_fpas   = ((s.name, arity) => arity * [0] : s <- set(ublock.signatures), arity = length(s.params));
+    new_fpas   = (({assert s.name :: NamedPar; return fn_symbol(_obj_(s.name));}, arity) => arity * [0] : s <- set(ublock.signatures), arity = length(s.params));
     all_fpas   = update(fn_param_arities, new_fpas);
     return err & fn_def_errs(set(ublock.fn_defs), all_fns, all_fpas, req_fns);
   }
@@ -324,6 +324,8 @@ UntypedSgn untyped_sgn(FnDef fd) =
     named_params: untyped_sgns(fd.named_params) if fd.named_params /= ()
   );
 
+UntypedSgn untyped_sgn(NamedPar np, [<var(Atom)>] vs) = untyped_sgn(name: fn_symbol(_obj_(np)), arity: length(vs));
+
 
 BasicUntypedSgn untyped_sgn(Var v, Expr e)    = untyped_sgn(name: :fn_symbol(_obj_(v)), arity: 0);
 BasicUntypedSgn untyped_sgn(Var v, ClsExpr e) = untyped_sgn(name: :fn_symbol(_obj_(v)), arity: length(e.params));
@@ -332,10 +334,9 @@ BasicUntypedSgn* untyped_sgns((NamedPar => <AnyType, AnyExpr>) nps) = {untyped_s
 
 ////////////////////////////////////////////////////////////////////////////////
 
-BasicUntypedSgn untyped_sgn(<SynFnDef, SynSgn> d) = untyped_sgn(
-                                                      name:  d.name,
-                                                      arity: arity(d)
-                                                    );
+BasicUntypedSgn untyped_sgn(SynFnDef fd) = untyped_sgn(fd.name, arity(fd));
+
+BasicUntypedSgn untyped_sgn(SynSgn s) = untyped_sgn(fn_symbol(_obj_(s.name)), arity(s));
 
 UntypedSgn untyped_sgn(SynFnDef fd, SynSgn+ named_params) =
   untyped_sgn(

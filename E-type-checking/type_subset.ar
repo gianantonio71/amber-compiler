@@ -4,27 +4,15 @@
 
 using (TypeName => Type) typedefs
 {
-  //## BAD: WHY AM I CHECKING FOR THE EMPTY TYPE HERE?
-  Bool is_subset(Type t1, Type t2):
-    empty_type,  _            = true,
-    _,           empty_type   = false, //## BUG: THIS IS ACTUALLY WRONG. COUNTEREXAMPLE: t1 = f(T), with T being the empty type
-    _,           _            = deep_subset_conds(t1, t2, inst_type_vars=false) == {};
+  Bool is_subset(Type t1, Type t2) = deep_subset_conds(t1, t2, inst_type_vars=false) == {};
 
 
   (TypeVar => Type*) subset_conds(Type t1, Type t2)
   {
-    return () if t1 == empty_type;
-    fail if t2 == empty_type; //## BUG: THIS IS ACTUALLY WRONG. COUNTEREXAMPLE: t1 = f(T), with T being the empty type
     cs = deep_subset_conds(t1, t2, inst_type_vars=true);
-    // if (not cs :: <<subset_when(type_var: TypeVar, inst_type: Type)>*>)
-    //   print cs;
-    // ;
     fail if not cs :: <<subset_when(type_var: TypeVar, inst_type: Type)>*>;
     return merge_values({(c.type_var => c.inst_type) : c <- cs});
   }
-    // empty_type,   _           = (),
-    // Type,         empty_type  = {fail;},
-    // Type,       Type          = merge_values({(c.type_var => c.inst_type) : c <- shallow_subset_conds(t1, t2, inst_type_vars=true)});
 
   ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
   ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -48,7 +36,6 @@ SubsetCond all_conds(SubsetCond* iss) = if in(not_a_subset, iss)
 
 (TypeSymbol, Type)* subtype_conds(SubsetCond conds) = if conds /= not_a_subset then {(c.subset, c.superset) : subset_if() c <- conds} else {fail;};
 
-// (TypeVar, Type)* type_var_inst_conds(SubsetCond conds) = if conds /= not_a_subset then {(c.type_var, c.inst_type) : subset_when() c <- conds} else {fail;};
 SubsetCond type_var_inst_conds(SubsetCond conds) = if conds /= not_a_subset then {c : subset_when() c <- conds} else {fail;};
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -103,7 +90,7 @@ using (TypeName => Type) typedefs, Bool inst_type_vars
 
   SubsetCond shallow_subset_conds(Type t1, Type t2):
     empty_type,           _                   = {},
-    _,                    empty_type          = {fail;},
+    _,                    empty_type          = {fail;}, //false, //## BUG: THIS IS ACTUALLY WRONG. COUNTEREXAMPLE: t1 = f(T), with T being the empty type
 
     // Type vars only match themselves or type any
     // _,                    type_var()          = if inst_type_vars then subset_when(t2, t1) else if t1 == t2 then {} else not_a_subset end end,
