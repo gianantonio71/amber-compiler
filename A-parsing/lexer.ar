@@ -11,7 +11,7 @@ type ParseTokenResult = Result[TokenLineInfo, Nat];
 
 TokenLineInfo token_line_info(PlainToken token, Nat offset, NzNat length) = token_line_info(token: token, offset: offset, length: length);
 
-AnnotatedToken annotated_token(TokenLineInfo token_info, NzNat line, Nat idx) = annotated_token(token_info.token, line, token_info.offset+1, idx);
+AnnotatedToken annotated_token(TokenLineInfo token_info, NzNat line, Nat idx) = annotated_token(token_info.token, line, nz_nat(token_info.offset+1), idx);
 
 LexerError lexer_error(NzNat line, NzNat col) = lexer_error(line: line, col: col);
 
@@ -21,15 +21,15 @@ Atom symb([Nat] bytes) = _symb_(string(bytes)); //## THIS DOESN'T BELONG HERE
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Bool is_lower([Nat] bytes, Int offset)           = is_lower(at(bytes, offset, 0));
-Bool is_upper([Nat] bytes, Int offset)           = is_upper(at(bytes, offset, 0));
-Bool is_digit([Nat] bytes, Int offset)           = is_digit(at(bytes, offset, 0));
-Bool is_lower_or_digit([Nat] bytes, Int offset)  = is_lower_or_digit(at(bytes, offset, 0));
-Bool is_char([Nat] bytes, Int offset, Nat ch)    = at(bytes, offset, nil) == ch;
-Bool is_str([Nat] bytes, Int offset, String str) = subseq(bytes, offset, min(length(bytes)-offset, length(str))) == _obj_(str);
+Bool is_lower([Nat] bytes, Nat offset)           = is_lower(at(bytes, offset, 0));
+Bool is_upper([Nat] bytes, Nat offset)           = is_upper(at(bytes, offset, 0));
+Bool is_digit([Nat] bytes, Nat offset)           = is_digit(at(bytes, offset, 0));
+Bool is_lower_or_digit([Nat] bytes, Nat offset)  = is_lower_or_digit(at(bytes, offset, 0));
+Bool is_char([Nat] bytes, Nat offset, Nat ch)    = at(bytes, offset, nil) == ch;
+Bool is_str([Nat] bytes, Nat offset, String str) = subseq(bytes, offset, min(length(bytes)-offset, length(str))) == _obj_(str);
 
-Bool is_alphanum([Nat] bytes, Int offset, <upper, lower, any> case)  = is_alpha(bytes, offset, case) or is_digit(bytes, offset);
-Bool is_alpha([Nat] bytes, Int offset, <upper, lower, any> case)     = (case /= :lower and is_upper(bytes, offset)) or
+Bool is_alphanum([Nat] bytes, Nat offset, <upper, lower, any> case)  = is_alpha(bytes, offset, case) or is_digit(bytes, offset);
+Bool is_alpha([Nat] bytes, Nat offset, <upper, lower, any> case)     = (case /= :lower and is_upper(bytes, offset)) or
                                                                         (case /= :upper and is_lower(bytes, offset));
 
 //## THESE TWO FUNCTIONS DO NOT BELONG HERE
@@ -38,14 +38,14 @@ Bool is_alpha(Nat ch, <upper, lower, any> case)     = (case /= :lower and is_upp
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Bool looks_like_a_lowercase_id_or_label([Nat] bytes, Int offset)   = is_lower(bytes, offset);
-Bool looks_like_a_mixed_or_upper_case_id([Nat] bytes, Int offset)  = is_upper(bytes, offset);
-Bool looks_like_a_qualified_symbol([Nat] bytes, Int offset)        = is_char(bytes, offset, ascii_colon) and is_lower(bytes, offset+1);
-Bool looks_like_an_integer_or_float([Nat] bytes, Int offset)       = is_digit(bytes, offset);
-Bool looks_like_a_string([Nat] bytes, Int offset)                  = is_char(bytes, offset, ascii_double_quotes);
-Bool looks_like_a_char([Nat] bytes, Int offset)                    = is_char(bytes, offset, ascii_single_quote);
-Bool looks_like_a_builtin([Nat] bytes, Int offset)                 = is_char(bytes, offset, ascii_underscore) and is_lower(bytes, offset+1);
-Bool looks_like_a_cls_par([Nat] bytes, Int offset)                 = is_char(bytes, offset, ascii_dollar);
+Bool looks_like_a_lowercase_id_or_label([Nat] bytes, Nat offset)   = is_lower(bytes, offset);
+Bool looks_like_a_mixed_or_upper_case_id([Nat] bytes, Nat offset)  = is_upper(bytes, offset);
+Bool looks_like_a_qualified_symbol([Nat] bytes, Nat offset)        = is_char(bytes, offset, ascii_colon) and is_lower(bytes, nat(offset+1));
+Bool looks_like_an_integer_or_float([Nat] bytes, Nat offset)       = is_digit(bytes, offset);
+Bool looks_like_a_string([Nat] bytes, Nat offset)                  = is_char(bytes, offset, ascii_double_quotes);
+Bool looks_like_a_char([Nat] bytes, Nat offset)                    = is_char(bytes, offset, ascii_single_quote);
+Bool looks_like_a_builtin([Nat] bytes, Nat offset)                 = is_char(bytes, offset, ascii_underscore) and is_lower(bytes, nat(offset+1));
+Bool looks_like_a_cls_par([Nat] bytes, Nat offset)                 = is_char(bytes, offset, ascii_dollar);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -57,9 +57,9 @@ LexerResult lex_src_file([Nat] chars)
     res = split_line_into_tokens(l);
     if (is_success(res))
       start_idx = length(tokens);
-      tokens = tokens & [annotated_token(ti, i+1, start_idx+j) : ti @ j <- get_result(res)];
+      tokens = tokens & [annotated_token(ti, nz_nat(i+1), nz_nat(start_idx+j+1)) : ti @ j <- get_result(res)];
     else
-      return failure(lexer_error(i+1, get_error(res)));
+      return failure(lexer_error(nz_nat(i+1), nz_nat(get_error(res)+1)));
     ;
   ;
   return success(tokens);
@@ -79,7 +79,7 @@ ParseLineResult split_line_into_tokens([Nat] bytes)
   tokens = [];
   loop
     while (idx < len and is_space(bytes[idx]))
-      idx = idx + 1;
+      idx = nz_nat(idx + 1);
     ;
     break if idx >= len;
     res = if looks_like_a_lowercase_id_or_label(bytes, idx)  then read_lowercase_id_or_label(bytes, idx),
@@ -91,86 +91,90 @@ ParseLineResult split_line_into_tokens([Nat] bytes)
              looks_like_a_builtin(bytes, idx)                then read_builtin(bytes, idx),
              looks_like_a_cls_par(bytes, idx)                then read_cls_par(bytes, idx)
                                                              else read_symbolic_token(bytes, idx);
-    return res if not is_success(res);
+    return failure(get_error(res)) if not is_success(res); //## IT'S failure(get_error(res)) INSTEAD OF JUST res JUST TO SHUT UP THE TYPECHECKER
     info = get_result(res);
     tokens = tokens & [info];
     assert idx == info.offset;
-    idx = idx + info.length;
+    idx = nz_nat(idx + info.length);
   ;
   return success(tokens); //## SHOULD ALSO RETURN THE OFFSETS OF THE TOKENS
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-ParseTokenResult read_lowercase_id_or_label([Nat] bytes, Int offset)
+ParseTokenResult read_lowercase_id_or_label([Nat] bytes, Nat offset)
 {
   len = identifier_length(bytes, offset, :lower);
-  next_idx = offset + len;
+  fail if len == 0; //## SHUTTING UP THE TYPECHECKER. AN ASSERT WOULD BE NICER HERE
+  next_idx = nat(offset + len);
   next_ch = at(bytes, next_idx, 0);
   return failure(next_idx) if is_upper(next_ch) or next_ch == ascii_underscore;
   id = symb(subseq(bytes, offset, len));
   res = read_symbolic_token(bytes, next_idx);
   if (is_success(res) and get_result(res).token == colon)
-    info = token_line_info(label(id), offset, len+1);
+    info = token_line_info(label(id), offset, nz_nat(len+1));
   else
     info = token_line_info(lowercase_id(id), offset, len);
   ;
   return success(info);
 }
 
-ParseTokenResult read_mixed_or_upper_case_id([Nat] bytes, Int offset)
+ParseTokenResult read_mixed_or_upper_case_id([Nat] bytes, Nat offset)
 {
   mixed_case_res = read_mixedcase_id(bytes, offset);
   return mixed_case_res if is_success(mixed_case_res);
   uppercase_res = read_uppercase_id(bytes, offset);
   return uppercase_res if is_success(uppercase_res);
-  return failure(max(get_error(mixed_case_res), get_error(uppercase_res)));
+  return failure(nat(max(get_error(mixed_case_res), get_error(uppercase_res))));
 }
 
-ParseTokenResult read_mixedcase_id([Nat] bytes, Int offset)
+ParseTokenResult read_mixedcase_id([Nat] bytes, Nat offset)
 {
   assert is_upper(bytes, offset);
   len = alphanum_length(bytes, offset);
-  return failure(offset+len) if is_char(bytes, offset+len, ascii_underscore);
-  return failure(offset) if none([is_lower(bytes, offset+i) : i < len]);
-  symbol = symb(to_lower_with_underscores(subseq(bytes, offset, len)));
+  fail if len == 0; //## SHUTTING UP THE TYPECHECKER. AN ASSERT WOULD BE NICER
+  return failure(nat(offset+len)) if is_char(bytes, nat(offset+len), ascii_underscore);
+  return failure(offset) if none([is_lower(bytes, nat(offset+i)) : i < len]);
+  symbol = symb(to_lower_with_underscores(nonempty(subseq(bytes, offset, len))));
   return success(token_line_info(mixedcase_id(symbol), offset, len));
 }
 
-ParseTokenResult read_uppercase_id([Nat] bytes, Int offset)
+ParseTokenResult read_uppercase_id([Nat] bytes, Nat offset)
 {
   assert is_upper(bytes, offset);
   len = identifier_length(bytes, offset, :upper);
+  fail if len == 0; //## SHUTTING UP THE TYPECHECKER. AN ASSERT WOULD BE NICER
   next_idx = offset + len;
   next_ch = at(bytes, next_idx, 0);
-  return failure(next_idx) if is_lower(next_ch) or next_ch == ascii_underscore;
+  return failure(nat(next_idx)) if is_lower(next_ch) or next_ch == ascii_underscore;
   symbol = symb([lower(ch) : ch <- subseq(bytes, offset, len)]);
   return success(token_line_info(uppercase_id(symbol), offset, len));
 }
 
-ParseTokenResult read_qualified_symbol([Nat] bytes, Int offset)
+ParseTokenResult read_qualified_symbol([Nat] bytes, Nat offset)
 {
   assert is_char(bytes, offset, ascii_colon);
-  len = identifier_length(bytes, offset+1, :lower);
-  next_idx = offset + 1 + len;
+  len = identifier_length(bytes, nat(offset+1), :lower);
+  next_idx = nat(offset + 1 + len);
   next_ch = at(bytes, next_idx, 0);
   return failure(next_idx) if is_upper(next_ch) or next_ch == ascii_underscore;
   symbol = symb(subseq(bytes, offset+1, len));
-  return success(token_line_info(qualified_symbol(symbol), offset, len+1));
+  return success(token_line_info(qualified_symbol(symbol), offset, nz_nat(len+1)));
 }
 
 
-ParseTokenResult read_integer_or_float([Nat] bytes, Int offset)
+ParseTokenResult read_integer_or_float([Nat] bytes, Nat offset)
 {
   assert is_digit(bytes, offset);
   len = digit_length(bytes, offset);
+  fail if len == 0; //## SHUTTING UP THE COMPILER. AN ASSERTION WOULD BE NICER
   //## CHECK THAT THE INTEGER IS NOT TOO BIG (BUT THAT WOULD BE OK FOR A FLOATING POINT NUMBER)
-  next_idx = offset + len;
-  return failure(next_idx) if is_alpha(bytes, next_idx, :any);
+  next_idx = nat(offset + len);
+  return failure(nat(next_idx)) if is_alpha(bytes, next_idx, :any);
   value = to_int(string(subseq(bytes, offset, len)));
-  return success(token_line_info(value, offset, len)) if not is_char(bytes, next_idx, ascii_dot) or is_char(bytes, next_idx+1, ascii_dot);
+  return success(token_line_info(value, offset, len)) if not is_char(bytes, next_idx, ascii_dot) or is_char(bytes, nat(next_idx+1), ascii_dot);
 
-  dec_len = digit_length(bytes, next_idx+1);
+  dec_len = digit_length(bytes, nat(next_idx+1));
   dec_chs = subseq(bytes, next_idx+1, dec_len);
   mantissa = value;
   exp = 0;
@@ -184,11 +188,11 @@ ParseTokenResult read_integer_or_float([Nat] bytes, Int offset)
     exp = exp - 1;
   ;
   float_value = float_lit(mantissa, exp);
-  return success(token_line_info(float_value, offset, len + dec_len + 1));
+  return success(token_line_info(float_value, offset, nz_nat(len+dec_len+1)));
 }
 
 
-ParseTokenResult read_string([Nat] bytes, Int offset)
+ParseTokenResult read_string([Nat] bytes, Nat offset)
 {
   assert is_char(bytes, offset, ascii_double_quotes);
 
@@ -200,7 +204,7 @@ ParseTokenResult read_string([Nat] bytes, Int offset)
     return failure(len) if idx >= len; //## WOULD BE GOOD TO ADD MORE INFORMATION ABOUT THE FAILURE HERE
     ch = bytes[idx];
     i = i + 1;
-    return success(token_line_info(string(chs), offset, i)) if ch == ascii_double_quotes;
+    return success(token_line_info(string(chs), nat(offset), nz_nat(i))) if ch == ascii_double_quotes;
     if (ch == ascii_backslash)
       idx = offset + i;
       i = i + 1;
@@ -211,7 +215,7 @@ ParseTokenResult read_string([Nat] bytes, Int offset)
       elif (ch == ascii_lower_n)
         chs = chs & [ascii_newline];
       else
-        return failure(offset+i); //## WOULD BE GOOD TO ADD MORE INFORMATION ABOUT THE FAILURE HERE
+        return failure(nat(offset+i)); //## WOULD BE GOOD TO ADD MORE INFORMATION ABOUT THE FAILURE HERE
       ;
     else
       chs = chs & [ch];
@@ -220,46 +224,46 @@ ParseTokenResult read_string([Nat] bytes, Int offset)
 }
 
 
-ParseTokenResult read_char([Nat] bytes, Int offset)
+ParseTokenResult read_char([Nat] bytes, Nat offset)
 {
   fail;
 }
 
 
-ParseTokenResult read_builtin([Nat] bytes, Int offset)
+ParseTokenResult read_builtin([Nat] bytes, Nat offset)
 {
   assert is_char(bytes, offset, ascii_underscore);
-  len = identifier_length(bytes, offset+1, :lower);
-  next_idx = offset + 1 + len;
+  len = identifier_length(bytes, nat(offset+1), :lower);
+  next_idx = nat(offset + 1 + len);
   return failure(next_idx) if not is_char(bytes, next_idx, ascii_underscore);
   symbol = symb(subseq(bytes, offset+1, len));
   return failure(offset) if not symbol :: BuiltIn; //## WOULD BE GOOD TO ADD MORE INFORMATION ABOUT THE FAILURE HERE
-  return success(token_line_info(builtin(symbol), offset, len+2));
+  return success(token_line_info(builtin(symbol), offset, nz_nat(len+2)));
 }
 
 
-ParseTokenResult read_cls_par([Nat] bytes, Int offset)
+ParseTokenResult read_cls_par([Nat] bytes, Nat offset)
 {
   assert is_char(bytes, offset, ascii_dollar);
-  return success(token_line_info(qual_var(0), offset, 1)) if not is_lower(bytes, offset+1);
-  return failure(offset+2) if is_lower(bytes, offset+2);
-  return success(token_line_info(qual_var(bytes[offset+1]-ascii_lower_a), offset, 2));
+  return success(token_line_info(qual_var(0), offset, 1)) if not is_lower(bytes, nat(offset+1));
+  return failure(nat(offset+2)) if is_lower(bytes, nat(offset+2));
+  return success(token_line_info(qual_var(nat(bytes[offset+1]-ascii_lower_a)), offset, 2));
 }
 
 
-ParseTokenResult read_symbolic_token([Nat] bytes, Int offset)
+ParseTokenResult read_symbolic_token([Nat] bytes, Nat offset)
 {
   map = string_to_symbol;
   strs = keys(map);
   maybe_best_match = best_match(bytes, offset, strs);
   return failure(offset) if maybe_best_match == nil;
   best_match = value(maybe_best_match);
-  return success(token_line_info(map[best_match], offset, length(best_match)));
+  return success(token_line_info(map[best_match], offset, nz_nat(length(best_match))));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Int identifier_length([Nat] bytes, Int offset, <upper, lower> case)
+Nat identifier_length([Nat] bytes, Nat offset, <upper, lower> case)
 {
   assert is_alpha(bytes, offset, case);
   return 0 if not is_alpha(bytes, offset, case);
@@ -268,15 +272,15 @@ Int identifier_length([Nat] bytes, Int offset, <upper, lower> case)
     idx = offset + len;
     ch = at(bytes, idx, 0);
     if (ch == ascii_underscore)
-      return len if not is_alphanum(bytes, idx+1, case);
+      return len if not is_alphanum(bytes, nat(idx+1), case);
     elif (not is_alphanum(ch, case))
       return len;
     ;
-    len = len + 1;
+    len = nz_nat(len + 1);
   ;
  }
 
-Maybe[String] best_match([Nat] bytes, Int offset, String* strings)
+Maybe[String] best_match([Nat] bytes, Nat offset, String* strings)
 {
   candidates = {s : s <- strings, is_str(bytes, offset, s)};
   return nil if candidates == {};
@@ -287,31 +291,32 @@ Maybe[String] best_match([Nat] bytes, Int offset, String* strings)
 
 //## REENABLE THE COMMENTED OUT IMPLEMENTATION AS SOON AS POSSIBLE
 // [Nat^] to_lower_with_underscores([Nat^] bytes) = join([[ascii_underscore if i > 0 and is_upper(b), lower(b)] : b @ i <- bytes]);
-[Nat^] to_lower_with_underscores([Nat^] bytes) = join([if i > 0 and is_upper(b) then [ascii_underscore, lower(b)] else [lower(b)] : b @ i <- bytes]);
+[Nat^] to_lower_with_underscores([Nat^] bytes) =
+  nonempty(join([if i > 0 and is_upper(b) then [ascii_underscore, lower(b)] else [lower(b)] : b @ i <- bytes]));
 
 //## THINK OF A BETTER WAY TO WRITE ALL THESE FUNCTIONS. THERE MUST BE ONE
 
-Int alphanum_length([Nat] bytes, Int offset)
+Nat alphanum_length([Nat] bytes, Nat offset)
 {
   len = 0;
-  while (is_alphanum(bytes, offset+len, :any))
+  while (is_alphanum(bytes, nat(offset+len), :any))
     len = len + 1;
   ;
-  return len;
+  return nat(len);
 }
 
-Int digit_length([Nat] bytes, Int offset)
+Nat digit_length([Nat] bytes, Nat offset)
 {
   len = 0;
-  while (is_digit(bytes, offset+len))
+  while (is_digit(bytes, nat(offset+len)))
     len = len + 1;
   ;
-  return len;
+  return nat(len);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-(String => AmberSymb) string_to_symbol = (
+(String => PlainToken) string_to_symbol = (
   "("     =>  left_parenthesis,
   ")"     =>  right_parenthesis,
   "["     =>  left_bracket,

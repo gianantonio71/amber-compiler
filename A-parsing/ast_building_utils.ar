@@ -1,0 +1,99 @@
+Bool is_annotated_token(RuleMatch rule, PlainToken token):
+  atomic_rule_match(at?)  = at.token == token,
+  _                       = false;
+
+AnnotatedToken annotated_token(RuleMatch):
+  atomic_rule_match(at?)  = at;
+
+PlainToken get_token(RuleMatch mtc) = annotated_token(mtc).token;
+
+
+Nat get_integer(RuleMatch mtc) =
+  match (get_token(mtc))
+    Nat n?  = n;
+  ;
+
+FloatLit get_float_lit(RuleMatch mtc) =
+  match (get_token(mtc))
+    FloatLit f? = f;
+  ;
+
+Atom get_lowercase_id(RuleMatch mtc) =
+  match (get_token(mtc))
+    lowercase_id(a?)  = a,
+    mixedcase_id(a?)  = a,
+    uppercase_id(a?)  = a;
+  ;
+
+Atom get_qualified_symbol(RuleMatch mtc) =
+  match (get_token(mtc))
+    qualified_symbol(a?)  = a;
+  ;
+
+Atom get_label(RuleMatch mtc) =
+  match (get_token(mtc))
+    label(a?)   = a;
+  ;
+
+BuiltIn get_builtin(RuleMatch mtc) =
+  match (get_token(mtc))
+    builtin(b?)   = b;
+  ;
+
+String get_string(RuleMatch mtc) =
+  match (get_token(mtc))
+    String s?   = s;
+  ;
+
+Nat get_cls_par_idx(RuleMatch mtc) =
+  match (get_token(mtc))
+    qual_var(n?)  = n;
+  ;
+
+RuleMatch subrule_node(RuleMatch, Nat idx):
+  rule_seq_match(ns?)   = ns[idx],
+  rep_rule_match(ns?)   = ns[idx];
+
+AnnotatedToken annotated_token(RuleMatch mtc, Nat idx) = annotated_token(subrule_node(mtc, idx));
+
+PlainToken get_token(RuleMatch mtc, Nat idx) = annotated_token(mtc, idx).token;
+
+Nat get_integer(RuleMatch mtc, Nat idx)            = get_integer(subrule_node(mtc, idx));
+Atom get_lowercase_id(RuleMatch mtc, Nat idx)      = get_lowercase_id(subrule_node(mtc, idx));
+Atom get_qualified_symbol(RuleMatch mtc, Nat idx)  = get_qualified_symbol(subrule_node(mtc, idx));
+Atom get_label(RuleMatch mtc, Nat idx)             = get_label(subrule_node(mtc, idx));
+Atom get_builtin(RuleMatch mtc, Nat idx)           = get_builtin(subrule_node(mtc, idx));
+String get_string(RuleMatch mtc, Nat idx)          = get_string(subrule_node(mtc, idx));
+
+[RuleMatch^] rule_seq_nodes(RuleMatch):
+  rule_seq_match(ns?) = ns;
+
+RuleMatch rule_seq_node(RuleMatch, Nat idx):
+  rule_seq_match(ns?) = ns[idx];
+
+[RuleMatch] rep_rule_nodes(RuleMatch):
+  null_match          = [],
+  rep_rule_match(ns?) = ns;
+
+RuleMatch block_node(RuleMatch mtc)
+{
+  nodes = rule_seq_nodes(mtc);
+  assert length(nodes) == 3;
+  t0 = get_token(nodes[0]);
+  t2 = get_token(nodes[2]);
+  assert
+    (t0 == left_parenthesis and t2 == right_parenthesis) or
+    (t0 == left_bracket     and t2 == right_bracket)     or
+    (t0 == left_brace       and t2 == right_brace);
+  return nodes[1];
+}
+
+RuleMatch block_node_or_null(RuleMatch mtc) = if mtc /= null_match then block_node(mtc) else null_match;
+
+Atom get_rule_name(RuleMatch mtc):
+  rule_choice_match()   = mtc.name,
+  _                     = {fail;};
+
+RuleMatch get_rule_match(RuleMatch mtc):
+  rule_choice_match()   = mtc.match,
+  _                     = {fail;};

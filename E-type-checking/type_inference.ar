@@ -97,10 +97,10 @@ using
 
   Type tag_obj_expr_type(Expr tag_expr, Expr obj_expr)
   {
-    tag_type = expr_type(tag_expr);
-    fail if not tag_type :: TagType; //## BAD: ONLY NEEDED TO KEEP THE TYPECHECKER HAPPY
+    tag_types = split_type(expr_type(tag_expr));
+    fail if not tag_types :: <SymbType, atom_type>*;
     obj_type = expr_type(obj_expr);
-    return tag_obj_type(tag_type, obj_type);
+    return union_type({tag_obj_type(t, obj_type) : t <- tag_types});
   }
 
 
@@ -138,6 +138,7 @@ using
         tag_obj_type()  = match (t.obj_type) record_type() ot? = ot;
       ;
     };
+    return empty_type if types == {};
     assert types :: <RecordType+>;
     field_types = {mandatory_record_field_type(t, field) : t <- types};
     //## MAYBE union_superset() SHOULD ACCEPT ALSO SETS OF JUST ONE TYPE. WHAT ABOUT THE EMPTY SET?
@@ -667,7 +668,11 @@ using
         var_group = only_element_or_def_if_empty({as : as <- var_aliases, in(expr, as)}, {expr});
         new_env = update(new_env, (v => refined_type : v <- var_group));
       ;
-      new_env = new_env & generated_environment(ptrn, type);
+      if (type == empty_type)
+        new_env = new_env & (v => empty_type : v <- pattern_vars(ptrn));
+      else
+        new_env = new_env & generated_environment(ptrn, type);
+      ;
     ;
     return new_env;
   }

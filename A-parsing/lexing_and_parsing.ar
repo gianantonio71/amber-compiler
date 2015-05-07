@@ -2,7 +2,7 @@
 Result[[PrgDecl], <LexerError, ParError, ParserError>] lex_and_parse_src_file([Nat] chars)
 {
   lex_res = lex_src_file(chars);
-  return lex_res if is_failure(lex_res);
+  return failure(get_error(lex_res)) if is_failure(lex_res); //## BAD: TO SHUT UP THE TYPECHECKER IT HAS TO BE failure(get_error(lex_res)) INSTEAD OF JUST lex_res
   tokens = get_result(lex_res);
 
   return success([]) if tokens == [];
@@ -23,7 +23,7 @@ Result[[PrgDecl], <LexerError, ParError, ParserError>] lex_and_parse_src_file([N
   return failure(value(maybe_err)) if maybe_err /= nil;
 
   parser_res = parse_all(rule_amber_file, tokens, rec_rules);
-  return parser_res if is_failure(parser_res);
+  return failure(get_error(parser_res)) if is_failure(parser_res); //## BAD: SEE ABOVE COMMENT
   parser_match = get_result(parser_res);
 
   post_parser_res = [reshuffle_local_fndefs(d) : d <- build_amber_file_ast(parser_match.rule_match)];
@@ -58,8 +58,9 @@ PrgDecl reshuffle_local_fndefs(PrgDecl decl)
     lfds = [];
     rem_stmts = [];
     for (s : stmts)
-      if (is_fn_def(s))
-        lfds = lfds & [_obj_(s)];
+      maybe_fn_def = get_maybe_fn_def(s);
+      if (maybe_fn_def /= nil)
+        lfds = lfds & [value(maybe_fn_def)];
       else
         rem_stmts = rem_stmts & [s];
       ;
@@ -68,14 +69,14 @@ PrgDecl reshuffle_local_fndefs(PrgDecl decl)
       name:       fd.name,
       params:     fd.params,
       res_type:   fd.res_type if fd.res_type?,
-      expr:       syn_do_expr(rem_stmts),
+      expr:       syn_do_expr(nonempty(rem_stmts)),
       local_fns:  lfds
     );
   }
 
-  Bool is_fn_def(SynStmt):
-    fn_def_stmt() = true,
-    _             = false;
+  Maybe[SynFnDef] get_maybe_fn_def(SynStmt):
+    fn_def_stmt(fd?)  = just(fd),
+    _                 = nil;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

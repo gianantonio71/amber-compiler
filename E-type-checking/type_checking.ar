@@ -326,32 +326,20 @@ using
 
   TypeCheckingError* typecheck_tag_obj_expr(Expr tag_expr, Expr obj_expr, Type exp_type)
   {
-    tag_errs = typecheck(tag_expr, atom_type);
-    return {tag_not_a_symbol(tag_errs)} if tag_errs /= {};
-
     tag_types = tagged_obj_types(exp_type);
     return {not_a_tag_type} if tag_types == {};
 
-    expr_tag_type = expr_type(tag_expr);
-
-    if (expr_tag_type :: <union_type(SymbType+)>)
-      //## THIS IS THE TRICKY PART
-      fail;
+    errs = {};
+    for (t : rand_sort(tag_types))
+      tag_errs = typecheck(tag_expr, t.tag_type);
+      if (tag_errs == {})
+        errs = typecheck(obj_expr, t.obj_type);
+        return {} if errs == {};
+      else
+        errs = {invalid_tag_expr(tag_errs)} if errs == {};
+      ;
     ;
-
-    if (expr_tag_type == atom_type)
-      sel_tag_types = {t : t <- tag_types, t.tag_type == atom_type};
-      return {not_a_tag_type_with_any_tag} if sel_tag_types == {};
-      sel_tag_type = only_element(sel_tag_types);
-      return typecheck(obj_expr, sel_tag_type.obj_type);
-    ;
-
-    assert expr_tag_type :: SymbType;
-
-    sel_tag_types = {t : t <- tag_types, is_subset(expr_tag_type, t.tag_type)};
-    return {unexpected_actual_type(expr_tag_type, exp_type)} if sel_tag_types == {};
-    sel_tag_type = only_element(sel_tag_types);
-    return typecheck(obj_expr, sel_tag_type.obj_type);
+    return errs;
   }
 
 
@@ -564,7 +552,7 @@ using
     return errs if errs /= {};
     ts = [expr_type(e) : e <- exprs];
     for (c : cases)
-      case_errs = seq_union([{ptrn_cannot_match_type(p, t) if not may_match(p, t)} : p, t <- zip(c.ptrns, ts)]);
+      case_errs = seq_union([{ptrn_cannot_match_type(p, t) if t /= empty_type and not may_match(p, t)} : p, t <- zip(c.ptrns, ts)]);
       errs = errs & case_errs;
       if (case_errs == {})
         new_env = update_environment(exprs, c.ptrns);

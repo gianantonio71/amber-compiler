@@ -138,7 +138,7 @@ ParserResult parse_rule_seq([ParsingRule^] rs, [AnnotatedToken^] tokens, Nat off
   maybe_furthest_err = nil;
   delta = 0;
   for (r @ i : rs)
-    res = parse(r, tokens, offset+delta, rec_rules);
+    res = parse(r, tokens, nat(offset+delta), rec_rules);
     if (is_failure(res))
       if (maybe_furthest_err /= nil)
         err = get_error(res);
@@ -161,9 +161,9 @@ ParserResult parse_rule_seq([ParsingRule^] rs, [AnnotatedToken^] tokens, Nat off
       ;
       maybe_furthest_err = just(res.failure) if is_furthest;
     ;
-    delta = delta + res.nodes_consumed;
+    delta = nat(delta + res.nodes_consumed);
   ;
-  return success(parser_match(rule_seq_match(matches), delta, maybe_furthest_err));
+  return success(parser_match(rule_seq_match(nonempty(matches)), delta, maybe_furthest_err));
 }
 
 
@@ -172,34 +172,36 @@ ParserResult parse_rep_rule(ParsingRule rep_rule, Nat min_count, ParsingRule sep
   matches = [];
   num_of_matches = 0;
   delta = 0;
-  res = nil; //## BUG: THIS IS HERE ONLY BECAUSE THE COMPILER WOULD OTHERWISE COMPLAIN ABOUT THE VARIABLE res BEING UNDEFINED IN THE LAST LINE
+  parse_res = nil; //## BUG: THIS IS HERE ONLY BECAUSE THE COMPILER WOULD OTHERWISE COMPLAIN ABOUT THE VARIABLE parse_res BEING UNDEFINED IN THE LAST LINE
   maybe_furthest_err = nil;
   loop
     // Matching the separator, if this is not the first match
     sep_nodes = 0;
     if (matches /= [])
-      res = parse(separator, tokens, offset+delta, rec_rules);
-      break if is_failure(res);
-      res = get_result(res);
+      parse_res = parse(separator, tokens, nat(offset+delta), rec_rules);
+      break if is_failure(parse_res);
+      res = get_result(parse_res);
       matches = matches & [res.rule_match] if save_sep;
       sep_nodes = res.nodes_consumed;
       maybe_furthest_err = choose_error(maybe_furthest_err, res.failure, tokens) if res.failure?;
     ;
     // Matching the main rule
-    res = parse(rep_rule, tokens, offset+delta+sep_nodes, rec_rules);
-    break if is_failure(res);
-    res = get_result(res);
+    parse_res = parse(rep_rule, tokens, nat(offset+delta+sep_nodes), rec_rules);
+    break if is_failure(parse_res);
+    res = get_result(parse_res);
     matches = matches & [res.rule_match];
     num_of_matches = num_of_matches + 1;
-    delta = delta + sep_nodes + res.nodes_consumed;
+    delta = nat(delta + sep_nodes + res.nodes_consumed);
     maybe_furthest_err = choose_error(maybe_furthest_err, res.failure, tokens) if res.failure?;
   ;
-  assert res /= nil;
+  // assert res /= nil;
+  fail if parse_res == nil; //## BUG: SEE COMMENT ABOVE
 
-  stop_err = get_error(res);
+  stop_err = get_error(parse_res);
+  // stop_err = res;
   maybe_furthest_err = choose_error(maybe_furthest_err, stop_err, tokens);
 
-  return res if num_of_matches < min_count;
+  return parse_res if num_of_matches < min_count;
   return success(parser_match(rep_rule_match(matches), delta, value(maybe_furthest_err)));
 }
 
@@ -227,7 +229,8 @@ ParserResult parse_rule_choice([RuleAltern^] cs, [AnnotatedToken^] tokens, Nat o
     idx = i if index_of_last_matched_token(e, tokens) > index_of_last_matched_token(errs[idx], tokens);
   ;
   //## BAD: LOSES ERROR INFORMATION HERE
-  res_err = if cs[idx].name? then all_choices_failed(cs[idx].name, errs[idx]) else errs[idx];
+  sc = cs[idx];
+  res_err = if sc.name? then all_choices_failed(sc.name, errs[idx]) else errs[idx];
   return failure(res_err);
 }
 
