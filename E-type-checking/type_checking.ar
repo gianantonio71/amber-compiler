@@ -66,12 +66,8 @@ TypeCheckingError* typecheck(FnDef fn_def, (TypeName => Type) typedefs, ((FnSymb
                   (fn_par(i) => scalar_param_type(p) : i <- index_set(fn_def.params), p = fn_def.params[i], is_scalar_par(p)) &
                   (v => t : v => t <- fn_def.named_params, t :: Type);
 
-    assert scalar_vars :: (Var => Type);
-
     cls_vars = (cls_var(p) => cls_param_type(p) : p <- set(fn_def.params), not is_scalar_par(p), p.var?) &
                (v => t : v => t <- fn_def.named_params, t :: ClsType);
-
-    assert cls_vars :: (ClsVar => ClsType);
 
     // return typecheck(fn_def.expr, fn_def.res_type, environment=scalar_vars, closures=cls_vars);
     //## THIS IS A TEMPORARY HACK TO WORK AROUND AN UNIMPLEMENTED FEATURE IN THE CODE GENERATION CODE
@@ -669,7 +665,6 @@ using
       return {unexpected_actual_cls_type(sgn_cls, exp_type) if not is_subset(sgn_cls, exp_type)};
     },
     cls_expr() = {
-      assert all([p == nil : p <- expr.params]); //## FOR NOW ALL VARIABLES SHOULD BE ANONYMOUS...
       delta_env = merge([(fn_par(i) => t, v => t if v /= nil) : v, t @ i <- zip(expr.params, exp_type.in_types)]);
       new_env = update(environment, delta_env);
       return typecheck(expr.expr, exp_type.out_type, environment=new_env); //## BAD: HERE I SHOULD PROVIDE MORE INFORMATION
@@ -824,7 +819,7 @@ using
         rp = rewrite_cls_expr(p);
         errs = typecheck_closure_params(rp, t, type_var_insts);
         return failure(errs) if errs /= {};
-        actual_ret_type = get_return_type(rp, t);
+        actual_ret_type = get_return_type(rp, t, type_var_insts);
         if (not is_subset(actual_ret_type, replace_type_vars_with_type_any(t.out_type)))
           return failure({}); //## BAD: ADD MEANINGFUL ERROR MESSAGE
         ;
@@ -851,7 +846,8 @@ using
       },
       fn_ptr()    = {fail;},
       cls_expr()  = {
-        new_env = get_updated_env(expr.params, expr.expr, type.in_types);
+        inst_formal_par_types = [replace_type_vars(t, type_var_insts) : t <- type.in_types];
+        new_env = get_updated_env(expr.params, expr.expr, inst_formal_par_types);
         return typecheck(expr.expr, replace_type_vars_with_type_any(type.out_type), environment=new_env);
       };
   }

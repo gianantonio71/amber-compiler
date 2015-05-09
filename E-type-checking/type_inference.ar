@@ -113,7 +113,7 @@ using
       candidate_signatures = {s : s <- aggregated_signatures[fn_key], will_dispatch_to(s, params)};
     ;
 
-    assert size(candidate_signatures) == 1 or at_least_one([is_subset(value(t), empty_type) : t <- param_maybe_types, t /= nil]);
+    // assert size(candidate_signatures) == 1 or at_least_one([is_subset(value(t), empty_type) : t <- param_maybe_types, t /= nil]);
 
     return empty_type if size(candidate_signatures) > 1;
     signature = only_element(candidate_signatures);
@@ -564,7 +564,7 @@ using
       new_type_pairs = [];
       for (p, t : cls_pars)
         rp = rewrite_cls_expr(p);
-        actual_ret_type = get_return_type(rp, t);
+        actual_ret_type = get_return_type(rp, t, type_var_insts);
         assert is_subset(actual_ret_type, replace_type_vars_with_type_any(t.out_type));
         new_type_pairs = [new_type_pairs | (actual_ret_type, t.out_type)];
       ;
@@ -576,10 +576,11 @@ using
   }
 
 
-  Type get_return_type(ClsExpr expr, ClsType type):
+  Type get_return_type(ClsExpr expr, ClsType type, (TypeVar => Type) type_var_insts):
     ClsVar      = closures[expr].out_type,
     fn_ptr()    = {fail;},
-    cls_expr()  = { new_env = get_updated_env(expr.params, expr.expr, type.in_types);
+    cls_expr()  = { inst_formal_par_types = [replace_type_vars(t, type_var_insts) : t <- type.in_types];
+                    new_env = get_updated_env(expr.params, expr.expr, inst_formal_par_types);
                     return expr_type(expr.expr, environment=new_env);
                   };
 

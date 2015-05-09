@@ -2,8 +2,7 @@ type CCodeOutput = (body: [String], header: [String]);
 
 CCodeOutput compile_to_c(ProcDef* prg)
 {
-  // tss = retrieve ts from memb_test(ts) in prg end;
-  tss = {_obj_(mt) : mt <- select(prg, $ :: <memb_test(Any)>)}; //## THE VERSION WITH RETRIEVE WAS LESS UGLY
+  tss = {if mt :: <memb_test(TypeSymbol)> then _obj_(mt) else {fail;} : mt <- select(prg, $ :: <memb_test(TypeSymbol)>)};
 
   btss = {ts : type_symbol()     ts <- tss};
   ptss = {ts : par_type_symbol() ts <- tss};
@@ -17,6 +16,7 @@ CCodeOutput compile_to_c(ProcDef* prg)
   // symbs = (select SymbObj in prg end - {obj_true, obj_false}) & {:object(:string)};
   // symbs = [obj_true, obj_false] & sort_set(symbs, $a < $b);
   symbs = select(prg, $ :: SymbObj) & {obj_true, obj_false, :object(:string)};
+  fail if not symbs :: SymbObj+;
   symbs = sort_set(symbs, $a < $b);
 
   symb_decls = ["const Obj " & to_c_expr(s, typesymb2name(ts) = typesymb2str(ts, ptss)) & " = symb(" & to_str(i) & ");" : s @ i <- symbs] & 4 * [""];
@@ -39,6 +39,7 @@ CCodeOutput compile_to_c(ProcDef* prg)
   //   cls_defs = cls_defs & new_cls_defs;
   // ;
   cls_defs = select_rec(prg, $ :: ClsDef); //## TODO: THIS SHOULD BE TESTED
+  fail if not cls_defs :: ClsDef*;
 
   all_named_pars = merge_values(set([p.named_params : p <- obj_proc_defs]));
   all_param_arity_pairs = rand_sort({(var: v, arity: a) : v => ars <- all_named_pars, a <- ars});
@@ -109,7 +110,7 @@ CCodeOutput compile_to_c(ProcDef* prg)
   return (body: body, header: header);
 
 
-  String typesymb2str(ts, par_types):
+  String typesymb2str(TypeSymbol ts, [ParTypeSymbol] par_types):
     type_symbol(a?)     = upper(_str_(a)),
     par_type_symbol()   = typesymb2str(ts.symbol, par_types) & "__" & to_str(index_first(ts, par_types));
 }
@@ -128,12 +129,12 @@ CCodeOutput compile_to_c(ProcDef* prg)
     ;
     code = code & ["  push_call_info(fn_name, " & to_str(arity) & ", params);"];
   ;
-  return code & ["#endif", "}"];
+  return nonempty(code & ["#endif", "}"]);
 }
 
 
 //## THIS SHOULD NOT GO HERE
-type FnCallParam = null_obj, ObjExpr, VecVar, BoolExpr, IntExpr, ItVar, StreamVar;
+type FnCallParam = null_obj, ObjExpr, VecVar, BoolExpr, IntExpr, ItVar, StreamVar, ClsVar;
 
 
 using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
@@ -200,7 +201,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
     vec_var_ids  = {v.id : v <- vector_vars};
     new_vec_vars = for (id <- vec_var_ids) {
-                      vvar(id, max({v.size : v <- vector_vars, v.id == id}))
+                      vvar(id, nz_nat(max({v.size : v <- vector_vars, v.id == id})))
                     };
 
     vars_to_decl = scalar_vars & new_vec_vars;
@@ -223,7 +224,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
       obj   = "Obj p" & to_str(pos),
       cls() = "CLS" & to_str(par.arity) & " &" & if par.name? then to_c_var_name(par.name) else "c_" & to_str(pos);
 
-    String gen_fn_pars(ProcDef pd):
+    [String] gen_fn_pars(ProcDef pd):
       ObjProcDef  = [gen_fn_par(p, i) : p @ i <- pd.params] & ["Env &env"],
       BoolProcDef = ["Obj p" & to_str(n) : n < arity(pd)];
   }
@@ -250,11 +251,15 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
   //   x : x <- select <AnyVar, ClsDef> in instrs end,
   //       not x :: <fn_par(Nat), named_par(Atom), cls_ext_par(Nat), evar(id: Nat, idx: <Nat, IntVar>), ClsDef>
   // };
-  AnyVar* vars_to_declare([Instr] instrs) =
-    select(
+  AnyVar* vars_to_declare([Instr] instrs)
+  {
+    vars = select(
       instrs,
       $ :: <AnyVar, ClsDef> and not $ :: <fn_par(Nat), named_par(Atom), cls_ext_par(Nat), evar(id: Nat, idx: <Nat, IntVar>), ClsDef>
     );
+    fail if not vars :: AnyVar*;
+    return vars;
+  }
 
 
   String var_decl(AnyVar v):
@@ -361,7 +366,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
                               return body_code & label;
                             },
 
-    exit_block            = { assert block_id /= nil; //## BAD
+    exit_block            = { fail if block_id == nil; //assert block_id /= nil; //## BAD
                               return ["goto block_" & to_str(block_id) & "_end;"];
                             },
 
@@ -384,7 +389,12 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
     var_scope()           = compile_var_scope_to_c(instr.var, instr.new_value, instr.body, block_id),
 
-    cls_scope()           = compile_cls_scope_to_c(instr.var, instr.bound_cls, instr.body, block_id);
+    cls_scope()           = { bound_cls = instr.bound_cls;
+                              return match (bound_cls)
+                                ClsVar      = {fail;}, //## THIS SHOULD NOT BE POSSIBLE FOR NOW
+                                bound_cls() = compile_cls_scope_to_c(instr.var, bound_cls.cls, bound_cls.env, instr.body, block_id);
+                              ;
+                            };
 
   ///////////////////////////////////////////////////////////////////////////////
 
@@ -402,17 +412,17 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
     ([String], FnCallParam) gen_par_info(BoundCls p):
       ClsVar      = ([], p),
-      fn_ref()    = {
-        par_id = _counter_(nil);
-        par_var = cls_var(par_id);
-        par_name = to_c_expr(par_var);
-        code = [
-          "CLS" & to_str(p.arity) & " " & par_name & ";",
-          par_name & ".fn_ptr = " & to_c_fn_name(p.name) & ";",
-          par_name & ".data = 0;"
-        ];
-        return (code, par_var);
-      },
+      // fn_ref()    = {
+      //   par_id = _counter_(nil);
+      //   par_var = cls_var(par_id);
+      //   par_name = to_c_expr(par_var);
+      //   code = [
+      //     "CLS" & to_str(p.arity) & " " & par_name & ";",
+      //     par_name & ".fn_ptr = " & to_c_fn_name(p.name) & ";",
+      //     par_name & ".data = 0;"
+      //   ];
+      //   return (code, par_var);
+      // },
       bound_cls() = {
         //## BAD: THE FIRST LINES OF CODE ARE THE SAME AS ABOVE...
         par_id = _counter_(nil);
@@ -491,13 +501,11 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
   }
 
 
-  [String] compile_cls_scope_to_c(NamedPar var, BoundCls bound_cls, [Instr^] body, <Nat, nil> block_id)
+  [String] compile_cls_scope_to_c(NamedPar var, ClsDef cls, [Var] env, [Instr^] body, <Nat, nil> block_id)
   {
     scope_id = to_str(_counter_(nil));
 
-    cls   = bound_cls.cls;
     arity = cls.arity;
-    env   = bound_cls.env;
     env_size = length(env);
 
     var_str = _str_(_obj_(var)); //## BAD, DUPLICATED LOGIC
@@ -569,8 +577,8 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
   [String] mk_assignment(AnyVar var, AnyTypeExpr value) = [to_c_var_name(var) & " = " & to_c_expr(value) & ";"];
 
 
-  [String] mk_cls_call(Var cls_var, ObjVar var, [ObjExpr] params):
-    cls_var(symb?) = {
+  [String] mk_cls_call(<ClsVar, NamedPar> cls_var, ObjVar var, [ObjExpr] params):
+    cls_var(+ symb?) = { //## NO NEED FOR NOW TO HANDLE THE CASE cls_var(Nat), AS THOSE VARIABLES ARE NEVER "CALLED", ONLY PASSED ON
       name = "c_" & _str_(symb);
       return [mk_gen_call(var, name & ".fn_ptr", [], params, [name & ".data", "env"])];
     },
@@ -770,7 +778,7 @@ String capitalize(String s, Bool keep_underscores)
     if (ch == ascii_underscore)
       first = true;
     else
-      ch  = ch - ascii_lower_a + ascii_upper_a if ch >= ascii_lower_a and ch <= ascii_lower_z and first; //## CREATE PRELUDE FUNCTION is_lower()/is_upper() AND to_lower()/to_upper()
+      ch  = nat(ch - ascii_lower_a + ascii_upper_a) if ch >= ascii_lower_a and ch <= ascii_lower_z and first; //## CREATE PRELUDE FUNCTION is_lower()/is_upper() AND to_lower()/to_upper()
       first = false;
     ;
     res = res & [ch if ch /= ascii_underscore or keep_underscores];
