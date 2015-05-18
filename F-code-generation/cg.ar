@@ -60,7 +60,8 @@ ObjProcDef gen_proc_code(ProcDef2 proc_def)
     body = body & [set_var(p.var, fn_par(i)) : p @ i <- proc_def.params];
 
     // Evaluating the expression
-    body = body & [execute_block(gen_code(proc_def.body, fn_res_var))];
+    proc_body = proc_def.body;
+    body = body & [execute_block(gen_code(proc_body, fn_res_var)) if proc_body /= []];
 
     //// Checking the type of the result
     //if (fndef.res_type?)
@@ -72,7 +73,7 @@ ObjProcDef gen_proc_code(ProcDef2 proc_def)
   ret_val = if proc_def.res_type /= nil then fn_res_var else object(nil); //## BAD: HERE I'M CHEATING...
   body = debug_code & body & [pop_call_info, ret_val(ret_val)];
 
-  return obj_proc_def(proc_def.name, arity(proc_def) * [:obj], (), body);
+  return obj_proc_def(proc_def.name, arity(proc_def) * [:obj], (), nonempty(body));
 }
 
 
@@ -98,7 +99,7 @@ ObjProcDef gen_fn_code(FnDef fndef)
     //;
 
     // Setting named variables for parameters
-    body = body & [set_var(p.var, fn_par(i)) : p @ i <- fndef.params, var_has_to_be_set(p)];
+    body = body & [set_var_if_need_be(p, i) : p @ i <- fndef.params];
 
     // Evaluating the expression
     body = body & gen_eval_code(fndef.expr, fn_res_var);
@@ -117,12 +118,12 @@ ObjProcDef gen_fn_code(FnDef fndef)
 
   params = [low_level_param(p) : p <- fndef.params];
 
-  return obj_proc_def(fndef.name, params, (v => arity(t) : v => t <- fndef.named_params), body);
+  return obj_proc_def(fndef.name, params, (v => arity(t) : v => t <- fndef.named_params), nonempty(body));
 
   //## UGLY: ISNT THERE ANY BETTER WAY? HAVING TO WRITE A FUNCTIONS FOR SOMETHING SO SIMPLE FEELS OVERKILL
-  Bool var_has_to_be_set(FnFrmPar p):
-    scalar_par()      = p.var?,
-    non_scalar_par()  = false;
+  Instr set_var_if_need_be(FnFrmPar p, Nat i):
+    scalar_par()      = if p.var? then set_var(p.var, fn_par(i)) else no_op,
+    non_scalar_par()  = no_op;
 }
 
 
@@ -147,6 +148,7 @@ Program generate_dispatch_functions(Program prg)
   );
 }
 
+
 FnDef+ generate_dispatch_function(FnDef+ fds, (TypeName => Type) typedefs)
 {
   assert size(fds) > 1;
@@ -155,8 +157,9 @@ FnDef+ generate_dispatch_function(FnDef+ fds, (TypeName => Type) typedefs)
   //## I DON'T PARTICULARLY LIKE THIS...
   rand_fd      = an_elem(fds);
   name         = rand_fd.name;
-  scalar_pars  = [i : p @ i <- rand_fd.params, is_scalar_par(p)];
-  arity        = arity(rand_fd);
+  rand_params  = nonempty(rand_fd.params);
+  scalar_pars  = [i : p @ i <- rand_params, is_scalar_par(p)];
+  arity        = nz_nat(arity(rand_fd));
   named_params = rand_fd.named_params;
 
   //## BAD: THIS IS REALLY UGLY. NEED A NON-DESTRUCTIVE OPERATION TO UPDATE THE FIELDS OF A TUPLE
@@ -175,7 +178,7 @@ FnDef+ generate_dispatch_function(FnDef+ fds, (TypeName => Type) typedefs)
   candidates = [];
   for (i : scalar_pars)
     params = [fd.params[i] : fd <- rand_sort(fds)];
-    ptypes = [if p.type? then pseudotype(p.type, typedefs) else pseudotype_any : p <- params];
+    ptypes = [if p.type? then pseudotype(get_scalar_param_type(p), typedefs) else pseudotype_any : p <- params];
     good = all([all([are_disjoint(p1, p2) : p2 <- right_subseq(ptypes, j+1)]) : p1 @ j <- ptypes]); //## BAD: INEFFICIENT. ALSO A BIT UGLY...
     candidates = candidates & [i] if good;
   ;
@@ -192,26 +195,23 @@ FnDef+ generate_dispatch_function(FnDef+ fds, (TypeName => Type) typedefs)
   //## ONLY WHEN AT LEAST ONE PARAMETER IS NOT NAMED IN ANY OF THE FUNCTIONS)
   is_checked = if candidates == [] then bit_map(scalar_pars, arity) else [i == candidates[0] : i < arity];
 
-  dispatch_call_params = [if is_scalar_par(p) then fn_par(i) else cls_var(i) : p @ i <- rand_fd.params];
+  dispatch_call_params = [if is_scalar_par(p) then fn_par(i) else cls_var(i) : p @ i <- rand_params];
 
-  Pattern mk_ptrn(<(var: var(Atom)?, type: AnyType?)> param, (TypeName => Type) typedefs, Bool is_checked) =
+  Pattern mk_ptrn(FnFrmPar param, (TypeName => Type) typedefs, Bool is_checked) =
     if param.type? and is_checked
-      then type_to_pseudotype_pattern(param.type, typedefs)
+      then type_to_pseudotype_pattern(get_scalar_param_type(param), typedefs)
       else ptrn_any;
 
   cases = [];
   for (fd : unique_fds)
-    ptrns = [mk_ptrn(p, typedefs, is_checked[i]) : p @ i <- fd.params];
+    ptrns = [mk_ptrn(p, typedefs, is_checked[i]) : p @ i <- nonempty(fd.params)];
     case  = (ptrns: ptrns, expr: fn_call(fd.name, dispatch_call_params));
     cases = [case] & cases;
   ;
 
-  new_expr = match_expr(
-    exprs: [fn_par(i) : i < arity],
-    cases: cases
-  );
+  new_expr = match_expr(nonempty([fn_par(i) : i < arity]), nonempty(cases));
 
-  params = [if is_scalar_par(p) then :scalar_par(()) else non_scalar_par(p.arity) : p @ i <- rand_fd.params];
+  params = [strip_fn_param(p) : p <- rand_params];
 
   dispatch_fn = fn_def(
     name:          name,
@@ -221,5 +221,14 @@ FnDef+ generate_dispatch_function(FnDef+ fds, (TypeName => Type) typedefs)
     expr:          new_expr
   );
 
-  return set(unique_fds) & {dispatch_fn};
+  return nonempty(set(unique_fds) & {dispatch_fn});
+
+
+  Type get_scalar_param_type(FnFrmPar p):
+    scalar_par()      = if p.type? then p.type else {fail;},
+    non_scalar_par()  = {fail;};
+
+  FnFrmPar strip_fn_param(FnFrmPar p):
+    scalar_par()      = :scalar_par(()),
+    non_scalar_par()  = non_scalar_par(p.arity);
 }
