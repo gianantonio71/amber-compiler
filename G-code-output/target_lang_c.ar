@@ -280,35 +280,6 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     init_stream(v?)       = mk_call("init", [v]),
     append()              = mk_call("append", [instr.stream, instr.obj]),
 
-    mk_set_from_stream()  = mk_call(instr.var, "make_set", [instr.stream]),
-    mk_set()              = mk_call(instr.var, "make_set", [instr.elems, instr.size]),
-
-    mk_seq_from_stream()  = mk_call(instr.var, "make_seq", [instr.stream]),
-    mk_seq()              = mk_call(instr.var, "make_seq", [instr.elems, instr.size]),
-
-    mk_map_from_streams() = mk_call(instr.var, "make_map", [instr.key_stream, instr.value_stream]),
-    mk_map()              = mk_call(instr.var, "make_map", [instr.keys, instr.values, instr.size]),
-
-    mk_tagged_obj()       = mk_call(instr.var, "make_tagged_obj", [instr.tag, instr.obj]),
-
-    mk_float()            = [mk_gen_call(instr.var, "make_float", [float_to_str(instr.mantissa, instr.dec_exp)], [], [])],
-
-    neg_float()           = mk_call(instr.var, "neg_float", [instr.value]),
-    add_floats()          = mk_call(instr.var, "add_floats", instr.values),
-    sub_floats()          = mk_call(instr.var, "sub_floats", instr.values),
-    mult_floats()         = mk_call(instr.var, "mult_floats", instr.values),
-    div_floats()          = mk_call(instr.var, "div_floats", instr.values),
-    square_root()         = mk_call(instr.var, "square_root", [instr.value]),
-    floor_op()            = mk_call(instr.var, "floor", [instr.value]),
-    ceiling_op()          = mk_call(instr.var, "ceiling", [instr.value]),
-    int_to_float()        = mk_call(instr.var, "int_to_float", [instr.value]),
-
-    mk_array()            = mk_call(instr.var, "make_array", [instr.size, instr.value]),
-    get_seq_slice()       = mk_call(instr.var, "get_seq_slice", [instr.seq, instr.idx_first, instr.len]),
-    append_to_seq()       = mk_call(instr.var, "append_to_seq", [instr.seq, instr.new_elem]),
-    join_seqs()           = mk_call(instr.var, "join_seqs", [instr.left, instr.right]),
-    join_mult_seqs()      = mk_call(instr.var, "join_mult_seqs", [instr.seqs]),
-    rev_seq()             = mk_call(instr.var, "rev_seq", [instr.seq]),
     // get_at()              = mk_call(instr.var, "get_at", [instr.seq, instr.idx]),
 
     set_at()              = mk_call("set_at", [instr.var, instr.idx, instr.value]),
@@ -326,14 +297,6 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
                               [instr.map, instr.key, instr.success_var if instr.success_var?]
                             ),
 
-    merge_sets()          = mk_call(instr.var, "merge_sets", [instr.sets]),
-    merge_maps()          = mk_call(instr.var, "merge_maps", [instr.maps]),
-
-    seq_to_set()          = mk_call(instr.var, "seq_to_set", [instr.seq]),
-    seq_to_mset()         = mk_call(instr.var, "seq_to_mset", [instr.seq]),
-    list_to_seq()         = mk_call(instr.var, "list_to_seq", [instr.list]),
-    internal_sort()       = mk_call(instr.var, "internal_sort", [instr.set]),
-
     get_set_iter()        = mk_call("get_set_iter", [instr.var, instr.src]),
     get_seq_iter()        = mk_call("get_seq_iter", [instr.var, instr.src]),
     get_map_iter()        = mk_call("get_map_iter", [instr.var, instr.src]),
@@ -343,6 +306,8 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     set_var()             = mk_assignment(instr.var, instr.value),
     set_bvar()            = mk_assignment(instr.var, instr.value), //## BAD
     set_ivar()            = mk_assignment(instr.var, instr.value), //## BAD
+
+    set_var_ref()         = compile_to_c(instr.value, instr.var),
 
     terminate             = ["fail();"],
 
@@ -395,6 +360,41 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
                                 bound_cls() = compile_cls_scope_to_c(instr.var, bound_cls.cls, bound_cls.env, instr.body, block_id);
                               ;
                             };
+
+
+  [String] compile_to_c(FloatExpr expr, ObjVar var):
+    mk_float()            = [mk_gen_call(var, "make_float", [float_to_str(expr.mantissa, expr.dec_exp)], [], [])],
+    neg_float()           = mk_call(var, "neg_float",     [expr.value]),
+    add_floats()          = mk_call(var, "add_floats",    expr.values),
+    sub_floats()          = mk_call(var, "sub_floats",    expr.values),
+    mult_floats()         = mk_call(var, "mult_floats",   expr.values),
+    div_floats()          = mk_call(var, "div_floats",    expr.values),
+    square_root()         = mk_call(var, "square_root",   [expr.value]),
+    floor_op()            = mk_call(var, "floor",         [expr.value]),
+    ceiling_op()          = mk_call(var, "ceiling",       [expr.value]),
+    int_to_float()        = mk_call(var, "int_to_float",  [expr.value]);
+
+
+  [String] compile_to_c(RefObjExpr expr, ObjVar var):
+    mk_set_from_stream()  = mk_call(var, "make_set",        [expr.stream]),
+    mk_set()              = mk_call(var, "make_set",        [expr.elems, expr.size]),
+    mk_seq_from_stream()  = mk_call(var, "make_seq",        [expr.stream]),
+    mk_seq()              = mk_call(var, "make_seq",        [expr.elems, expr.size]),
+    mk_map_from_streams() = mk_call(var, "make_map",        [expr.key_stream, expr.value_stream]),
+    mk_map()              = mk_call(var, "make_map",        [expr.keys, expr.values, expr.size]),
+    mk_tagged_obj()       = mk_call(var, "make_tagged_obj", [expr.tag, expr.obj]),
+    mk_array()            = mk_call(var, "make_array",      [expr.size, expr.value]),
+    get_seq_slice()       = mk_call(var, "get_seq_slice",   [expr.seq, expr.idx_first, expr.len]),
+    append_to_seq()       = mk_call(var, "append_to_seq",   [expr.seq, expr.new_elem]),
+    join_seqs()           = mk_call(var, "join_seqs",       [expr.left, expr.right]),
+    join_mult_seqs()      = mk_call(var, "join_mult_seqs",  [expr.seqs]),
+    rev_seq()             = mk_call(var, "rev_seq",         [expr.seq]),
+    merge_sets()          = mk_call(var, "merge_sets",      [expr.sets]),
+    merge_maps()          = mk_call(var, "merge_maps",      [expr.maps]),
+    seq_to_set()          = mk_call(var, "seq_to_set",      [expr.seq]),
+    seq_to_mset()         = mk_call(var, "seq_to_mset",     [expr.seq]),
+    list_to_seq()         = mk_call(var, "list_to_seq",     [expr.list]),
+    internal_sort()       = mk_call(var, "internal_sort",   [expr.set]);
 
   ///////////////////////////////////////////////////////////////////////////////
 
