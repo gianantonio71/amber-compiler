@@ -618,7 +618,9 @@ using
 
   TypeCheckingError* typecheck_seq_comp(Expr expr, [Var^] vars, Maybe[Var] maybe_idx_var, Expr src_expr, Maybe[Expr] maybe_sel_expr, Type exp_type)
   {
-    errs = typecheck(src_expr, type_seq);
+    nvars = nz_nat(length(vars));
+    exp_src_type = type_seq(if nvars == 1 then type_any else type_tuple(nvars));
+    errs = typecheck(src_expr, exp_src_type);
     return errs if errs /= {};
     exp_elem_types = seq_elem_types(exp_type);
     return {not_a_seq_type} if exp_elem_types == {};
@@ -690,7 +692,7 @@ using
 
 
   TypeCheckingError* typecheck(Statement stmt, Type exp_type):
-    assignment_stmt()   = typecheck(stmt.value, type_any),
+    assignment_stmt()   = typecheck_assignment_stmt(stmt.vars, stmt.value),
     return_stmt(e?)     = typecheck(e, exp_type),
     if_stmt()           = typecheck_if_stmt(stmt.cond, stmt.body, stmt.else, exp_type),
     loop_stmt(ss?)      = typecheck_loop_stmt(ss, exp_type),
@@ -706,6 +708,14 @@ using
     fail_stmt           = {},
     assert_stmt(e?)     = typecheck(e, type_bool),
     print_stmt(e?)      = typecheck(e, type_any);
+
+
+  TypeCheckingError* typecheck_assignment_stmt([Var^] vars, Expr value)
+  {
+    nvars = nz_nat(length(vars));
+    exp_type = if nvars == 1 then type_any else type_tuple(nvars);
+    return typecheck(value, exp_type);
+  }
 
 
   TypeCheckingError* typecheck_if_stmt(Expr cond, [Statement^] body, [Statement] else_body, Type exp_type)
@@ -734,7 +744,9 @@ using
 
   TypeCheckingError* typecheck_foreach_stmt([Var^] vars, Maybe[Var] maybe_idx_var, Expr values, [Statement^] body, Type exp_type)
   {
-    errs = typecheck(values, type_seq);
+    nvars = nz_nat(length(vars));
+    exp_src_type = type_seq(if nvars == 1 then type_any else type_tuple(nvars));
+    errs = typecheck(values, exp_src_type);
     return errs if errs /= {};
     elem_type = seq_elem_supertype(expr_type(values));
     return {not_a_seq_type} if elem_type == empty_type; //## COULD I ACCEPT A TUPLE TYPE HERE ALSO?
@@ -742,7 +754,6 @@ using
     if (num_vars == 1)
       loop_vars = (vars[0] => elem_type);
     else
-      return {not_a_seq_of_tuples} if not is_subset(elem_type, type_tuple(num_vars));
       field_types = tuple_field_supertypes(elem_type, num_vars);
       loop_vars = merge([(v => t) : v, t <- zip(vars, field_types)]);
     ;
