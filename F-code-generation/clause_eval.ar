@@ -100,7 +100,6 @@ using
   {
     src_var  = lvar(next_obj_var_id);
     tmp_var  = lvar(nat(next_obj_var_id + 1));
-    res_var  = bvar(next_bool_var_id);
     it_var   = set_it_var(next_set_it_var_id);
 
     let (next_obj_var_id = nat(next_obj_var_id + 1))
@@ -111,27 +110,17 @@ using
         // Variables to avoid: src_var, it_var
         next_step_code = gen_code(action, loc_bound_vars & new_vars(ptrn));
 
-        let (next_obj_var_id = nat(next_obj_var_id + 1), next_bool_var_id = nat(next_bool_var_id + 1))
-          // Variables to avoid: src_var, it_var, res_var, tmp_var
-          match_code = gen_ptrn_matching_code(ptrn, tmp_var, res_var, loc_bound_vars);
+        let (next_obj_var_id = nat(next_obj_var_id + 1))
+          // Variables to avoid: src_var, it_var, tmp_var
+          match_code = gen_ptrn_matching_code(ptrn, tmp_var, loc_bound_vars, next_step_code);
         ;
       ;
     ;
 
-    loop_code = [
-      get_iter(it_var, src_info.expr),
-      repeat(
-        nonempty(
-          [ break_if(is_out_of_range(it_var)),
-            set_var(tmp_var, get_curr_obj(it_var))
-          ] &
-          match_code &
-          [ do_if(res_var, next_step_code),
-            move_forward(it_var)
-          ]
-        )
-      )
-    ];
+    body_head = [break_if(is_out_of_range(it_var)), set_var(tmp_var, get_curr_obj(it_var))];
+    body_tail = [move_forward(it_var)];
+    body = body_head & match_code & body_tail;
+    loop_code = [get_iter(it_var, src_info.expr), repeat(nonempty(body))];
 
     return nonempty(src_info.eval_code & loop_code & src_info.cleanup_code);
   }
@@ -141,7 +130,6 @@ using
   {
     src_var  = lvar(next_obj_var_id);
     tmp_var  = lvar(nat(next_obj_var_id + 1));
-    res_var  = bvar(next_bool_var_id);
     it_var   = map_it_var(next_map_it_var_id);
 
     let (next_obj_var_id = nat(next_obj_var_id + 1))
@@ -152,34 +140,18 @@ using
         // Variables to avoid: src_var, it_var
         next_step_code = gen_code(action, loc_bound_vars & new_vars(key_ptrn) & new_vars(value_ptrn));
 
-        let (next_obj_var_id = nat(next_obj_var_id + 1), next_bool_var_id = nat(next_bool_var_id + 1))
-          // Variables to avoid: src_var, it_var, tmp_var, res_var
-          key_ptrn_code = gen_ptrn_matching_code(key_ptrn, tmp_var, res_var, loc_bound_vars);
-
-          // Variables to avoid: src_var, it_var, tmp_var, res_var
-          value_ptrn_code = gen_ptrn_matching_code(value_ptrn, tmp_var, res_var, loc_bound_vars);
+        let (next_obj_var_id = nat(next_obj_var_id + 1))
+          // Variables to avoid: src_var, it_var, tmp_var
+          intermediate_code = gen_ptrn_matching_code(value_ptrn, tmp_var, loc_bound_vars, next_step_code);
+          intermediate_code = [set_var(tmp_var, get_curr_value(it_var))] & intermediate_code;
+          intermediate_code = gen_ptrn_matching_code(key_ptrn, tmp_var, loc_bound_vars, intermediate_code);
+          match_and_action_code = [set_var(tmp_var, get_curr_key(it_var))] & intermediate_code;
         ;
       ;
     ;
 
-    loop_code = [
-      get_iter(it_var, src_info.expr),
-      repeat(
-        nonempty(
-          [ break_if(is_out_of_range(it_var)),
-           set_var(tmp_var, get_curr_key(it_var))
-          ] & key_ptrn_code &
-          [ do_if(
-             res_var,
-             [set_var(tmp_var, get_curr_value(it_var))] &
-             value_ptrn_code &
-             [do_if(res_var,next_step_code)]
-           ),
-           move_forward(it_var)
-          ]
-        )
-      )
-    ];
+    body_code = [break_if(is_out_of_range(it_var))] & match_and_action_code & [move_forward(it_var)];
+    loop_code = [get_iter(it_var, src_info.expr), repeat(nonempty(body_code))];
 
     return nonempty(src_info.eval_code & loop_code & src_info.cleanup_code);
   }
