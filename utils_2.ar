@@ -145,6 +145,195 @@ T* retrieve_from_nested_exprs(Clause cls, (Expr -> T*) retrieve):
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
+Expr replace_nested_exprs(Expr expr, (Expr -> Expr) replace):
+  LeafObj           = expr,
+  FloatLit          = expr,
+  set_expr(ses?)    = set_expr({replace_exprs_in_subexpr(se, replace) : se <- ses}),
+  seq_expr(ses?)    = seq_expr([replace_exprs_in_subexpr(se, replace) : se <- ses]),
+  tuple_expr(es?)   = tuple_expr([replace(e) : e <- es]),
+  seq_tail_expr()   = seq_tail_expr(replace(expr.seq), [replace(e) : e <- expr.tail]),
+  map_expr(es?)     = map_expr({(key: replace(e.key), value: replace(e.value), cond: replace(e.cond) if e.cond?) : e <- es}),
+  tag_obj_expr()    = tag_obj_expr(replace(expr.tag), replace(expr.obj)),
+  Var               = expr,
+  fn_call()         = fn_call(
+                        expr.name,
+                        [replace_exprs_in_any_expr(p, replace) : p <- expr.params],
+                        (n => replace_exprs_in_any_expr(e, replace) : n => e <- expr.named_params)
+                      ),
+  cls_call()        = cls_call(expr.name, [replace(p) : p <- expr.params]),
+  builtin_call()    = builtin_call(expr.name, [replace(p) : p <- expr.params]),
+  and_expr()        = and_expr(replace(expr.left), replace(expr.right)),
+  or_expr()         = or_expr(replace(expr.left), replace(expr.right)),
+  not_expr(e?)      = not_expr(replace(e)),
+  eq()              = eq(replace(expr.left), replace(expr.right)),
+  membership()      = membership(replace(expr.obj), expr.type),
+  cast_expr()       = cast_expr(replace(expr.expr), expr.type),
+  accessor()        = accessor(replace(expr.expr), expr.field),
+  accessor_test()   = accessor_test(replace(expr.expr), expr.field),
+  if_expr()         = if_expr(replace(expr.cond), replace(expr.then), replace(expr.else)),
+  match_expr()      = match_expr([replace(e) : e <- expr.exprs], [(ptrns: c.ptrns, expr: replace(c.expr)) : c <- expr.cases]),
+  do_expr(ss?)      = do_expr(replace_exprs_in_stmts(ss, replace)),
+  ex_qual()         = ex_qual(
+                        source:   replace_exprs_in_clause(expr.source, replace),
+                        sel_expr: replace(expr.sel_expr) if expr.sel_expr?
+                      ),
+  set_comp()        = set_comp(
+                        expr:     replace(expr.expr),
+                        source:   replace_exprs_in_clause(expr.source, replace),
+                        sel_expr: replace(expr.sel_expr) if expr.sel_expr?
+                      ),
+  map_comp()        = map_comp(
+                        key_expr:   replace(expr.key_expr),
+                        value_expr: replace(expr.value_expr),
+                        source:     replace_exprs_in_clause(expr.source, replace),
+                        sel_expr:   replace(expr.sel_expr) if expr.sel_expr?
+                      ),
+  seq_comp()        = seq_comp(
+                        expr:           replace(expr.expr),
+                        vars:           expr.vars,
+                        idx_var:        expr.idx_var if expr.idx_var?,
+                        src_expr:       replace(expr.src_expr),
+                        src_expr_type:  expr.src_expr_type,
+                        sel_expr:       replace(expr.sel_expr) if expr.sel_expr?
+                      );
+
+
+CondExpr replace_exprs_in_cond_expr(CondExpr expr, (Expr -> Expr) replace) = cond_expr(replace(expr.expr), replace(expr.cond));
+
+
+ClsExpr replace_exprs_in_cls_expr(ClsExpr expr, (Expr -> Expr) replace):
+  ClsVar      = expr,
+  fn_ptr()    = expr,
+  cls_expr()  = cls_expr(expr.params, replace(expr.expr));
+
+
+SubExpr replace_exprs_in_subexpr(SubExpr subexpr, (Expr -> Expr) replace):
+  CondExpr  = replace_exprs_in_cond_expr(subexpr, replace),
+  Expr      = replace(subexpr);
+
+
+AnyExpr replace_exprs_in_any_expr(AnyExpr expr, (Expr -> Expr) replace):
+  ClsExpr   = replace_exprs_in_cls_expr(expr, replace),
+  Expr      = replace(expr);
+
+
+Statement replace_exprs_in_stmt(Statement stmt, (Expr -> Expr) replace):
+  assignment_stmt()   = assignment_stmt(stmt.vars, replace(stmt.value)),
+  return_stmt(e?)     = return_stmt(replace(e)),
+  if_stmt()           = if_stmt(
+                          replace(stmt.cond),
+                          replace_exprs_in_stmts(stmt.body, replace),
+                          replace_exprs_in_stmts(stmt.else, replace)
+                        ),
+  loop_stmt(ss?)      = loop_stmt(replace_exprs_in_stmts(ss, replace)),
+  foreach_stmt()      = foreach_stmt(
+                          vars:     stmt.vars,
+                          idx_var:  stmt.idx_var if stmt.idx_var?,
+                          values:   replace(stmt.values),
+                          body:     replace_exprs_in_stmts(stmt.body, replace)
+                        ),
+  for_stmt()          = for_stmt(
+                          var:          stmt.var if stmt.var?,
+                          start_val:    replace(stmt.start_val),
+                          end_val:      replace(stmt.end_val),
+                          end_val_incl: stmt.end_val_incl,
+                          body:         replace_exprs_in_stmts(stmt.body, replace)
+                        ),
+  let_stmt()          = let_stmt((n => replace(e) : n => e <- stmt.asgnms), replace_exprs_in_stmts(stmt.body, replace)),
+  break_stmt          = break_stmt,
+  fail_stmt           = fail_stmt,
+  assert_stmt(e?)     = assert_stmt(replace(e)),
+  print_stmt(e?)      = print_stmt(replace(e)),
+  imp_update_stmt()   = imp_update_stmt(stmt.obj, replace(stmt.idx), replace(stmt.value)),
+  return_stmt         = return_stmt,
+  proc_call()         = proc_call(
+                          res_var:    stmt.res_var if stmt.res_var?,
+                          proc_name:  stmt.proc_name,
+                          params:     [replace(p) : p <- stmt.params]
+                        );
+
+
+<[]> replace_exprs_in_stmts(<[]>, (Expr -> Expr) replace) = [];
+
+[Statement^] replace_exprs_in_stmts([Statement^] stmts, (Expr -> Expr) replace) = [replace_exprs_in_stmt(s, replace) : s <- stmts];
+
+
+Clause replace_exprs_in_clause(Clause cls, (Expr -> Expr) replace):
+  in_clause()       = in_clause(cls.ptrn, replace(cls.src)),
+  map_in_clause()   = map_in_clause(cls.key_ptrn, cls.value_ptrn, replace(cls.src)),
+  and_clause()      = and_clause(replace_exprs_in_clause(cls.left, replace), replace_exprs_in_clause(cls.right, replace)),
+  or_clause()       = or_clause(replace_exprs_in_clause(cls.left, replace), replace_exprs_in_clause(cls.right, replace));
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+Expr replace_external_vars(Expr expr, (Var => Var) subst_map):
+  Var           = lookup(subst_map, expr, expr),
+  fn_call()     = fn_call(
+                    expr.name,
+                    [replace_external_vars(p, subst_map) : p <- expr.params],
+                    (n => replace_external_vars(e, subst_map) : n => e <- expr.named_params)
+                  ),
+  match_expr()  = {fail;}, //## IMPLEMENT
+  // match_expr()  = match_expr(
+  //                   [replace_external_vars(e, subst_map) : e <- expr.exprs],
+  //                   [(ptrns: c.ptrns, expr: replace_external_vars(c.ptrns, c.expr, subst_map)) : c <- expr.cases]
+  //                 ),
+  do_expr()     = {fail;}, //## IMPLEMENT
+  ex_qual()     = {fail;}, //## IMPLEMENT
+  // ex_qual()     = if expr.sel_expr?
+  //                   then ex_qual(
+  //                     replace_external_vars(expr.source, subst_map),
+  //                     replace_external_vars(expr.source, expr.sel_expr, subst_map)
+  //                   )
+  //                   else ex_qual(replace_external_vars(expr.source, subst_map)),
+  set_comp()    = {fail;}, //## IMPLEMENT
+  map_comp()    = {fail;}, //## IMPLEMENT
+  seq_comp()    = {fail;}, //## IMPLEMENT
+  _             = replace_nested_exprs(expr, replace_external_vars($, subst_map));
+
+
+ClsExpr replace_external_vars(ClsExpr expr, (Var => Var) subst_map):
+  ClsVar      = expr,
+  fn_ptr()    = expr,
+  cls_expr()  = replace_external_vars(expr.params, expr.expr, subst_map);
+
+
+ClsExpr replace_external_vars([<var(Atom), nil>^] params, Expr expr, (Var => Var) subst_map)
+{
+  non_anon_params = set([p : p <- params, p /= nil]);
+
+  // We cannot replace variables inside a closure with fn_par(n),
+  // because those names refer to different variables inside the closure.
+  // Same goes for the non-anonymous closure parameters.
+  //## THIS HAS TO BE FIXED SOMEHOW...
+  assert not (? _ => vv <- subst_map : vv :: FnPar or in(vv, non_anon_params));
+
+  new_subst_map = (kv => vv : kv => vv <- subst_map, not in(kv, non_anon_params), not kv :: FnPar);
+  return cls_expr(params, replace_external_vars(expr, new_subst_map));
+}
+
+
+// Expr replace_external_vars([Pattern^] ptrns, Expr expr, (Var => Var) subst_map)
+// {
+//   fail;
+// }
+
+
+// Clause replace_external_vars(Clause clause, (Var => Var) subst_map)
+// {
+//   fail;
+// }
+
+
+// Expr replace_external_vars(Clause clause, Expr expr, (Var => Var) subst_map)
+// {
+//   fail;
+// }
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
 Var* pattern_vars(Pattern ptrn):
   ptrn_tag_obj()    = pattern_vars(ptrn.tag) & pattern_vars(ptrn.obj),
   ptrn_var()        = {ptrn.var} & pattern_vars(ptrn.ptrn),
