@@ -134,7 +134,7 @@ CCodeOutput compile_to_c(ProcDef* prg)
 
 
 //## THIS SHOULD NOT GO HERE
-type FnCallParam = null_obj, ObjExpr, VecVar, BoolExpr, IntExpr, ItVar, StreamVar, ClsVar;
+type FnCallParam = null_obj, ObjExpr, ElemVar, VecVar, BoolExpr, IntExpr, ItVar, StreamVar, ClsVar;
 
 
 using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
@@ -307,7 +307,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     set_bvar()            = mk_assignment(instr.var, instr.value), //## BAD
     set_ivar()            = mk_assignment(instr.var, instr.value), //## BAD
 
-    set_var_ref()         = compile_to_c(instr.value, instr.var),
+    set_rc_var()          = compile_to_c(instr.value, instr.var),
 
     terminate             = ["fail();"],
 
@@ -350,9 +350,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
     branch()              = compile_branch_to_c(instr.cond, instr.when_true, instr.when_false, block_id),
 
-    symbol_switch()       = compile_symbol_switch_to_c(instr.val, instr.cases, if instr.else? then instr.else else [], block_id),
-
-    var_scope()           = compile_var_scope_to_c(instr.var, instr.new_value, instr.body, block_id),
+    // symbol_switch()       = compile_symbol_switch_to_c(instr.val, instr.cases, if instr.else? then instr.else else [], block_id),
 
     cls_scope()           = { bound_cls = instr.bound_cls;
                               return match (bound_cls)
@@ -394,7 +392,9 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     seq_to_set()          = mk_call(var, "seq_to_set",      [expr.seq]),
     seq_to_mset()         = mk_call(var, "seq_to_mset",     [expr.seq]),
     list_to_seq()         = mk_call(var, "list_to_seq",     [expr.list]),
-    internal_sort()       = mk_call(var, "internal_sort",   [expr.set]);
+    internal_sort()       = mk_call(var, "internal_sort",   [expr.set]),
+    symb_to_str(e?)       = mk_call(var, "to_str",          [e]);
+
 
   ///////////////////////////////////////////////////////////////////////////////
 
@@ -463,42 +463,19 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
   //## HUGE BUG HERE: IF THE CODE IN ONE OF THE CASE STATEMENTS CONTAINS A BREAK
   //## THAT AFFECTS A LOOP THAT CONTAINS THE SWITCH STATEMENT, THEN THE BREAK WILL
   //## MISTAKINGLY TERMINATE THE SWITCH, NOT THE LOOP
-  [String] compile_symbol_switch_to_c(ObjExpr val, (vals: SymbObj+, instrs: [Instr])* cases, [Instr] default, <Nat, nil> block_id)
-  {
-    code = ["switch (" & to_c_expr(val) & ")", "{"];
-    for (c : rand_sort(cases))
-      case_code = ["case S_" & _str_(_obj_(s)) & ":" : s <- rand_sort(c.vals)] & //## BAD
-                   indent(compile_to_c(c.instrs, block_id) & ["break;"]);
-      code = code & indent(case_code);
-    ;
-    if (default /= [])
-      code = code & ["default:"] & indent(compile_to_c(default, block_id));
-    ;
-    return code & ["}"];
-  }
-
-
-  [String] compile_var_scope_to_c(NamedPar var, AtomicExpr val, [Instr^] body, <Nat, nil> block_id)
-  {
-    scope_id = to_str(_counter_(nil));
-
-    val_str = to_c_expr(val);
-
-    env_var = to_c_var_name(var);
-    bk_var  = "BK" & scope_id;
-
-    code = [
-      "Obj " & bk_var & " = " & env_var & ";",
-      env_var & " = " & val_str & ";",
-      "add_ref(" & env_var & ");"
-    ];
-
-    code = code & compile_to_c(body, block_id);
-    code = code & ["release(" & env_var & ");", env_var & " = " & bk_var & ";"];
-    code = ["{"] & indent(code) & ["}"];
-
-    return code;
-  }
+  // [String] compile_symbol_switch_to_c(ObjExpr val, (vals: SymbObj+, instrs: [Instr])* cases, [Instr] default, <Nat, nil> block_id)
+  // {
+  //   code = ["switch (" & to_c_expr(val) & ")", "{"];
+  //   for (c : rand_sort(cases))
+  //     case_code = ["case S_" & _str_(_obj_(s)) & ":" : s <- rand_sort(c.vals)] & //## BAD
+  //                  indent(compile_to_c(c.instrs, block_id) & ["break;"]);
+  //     code = code & indent(case_code);
+  //   ;
+  //   if (default /= [])
+  //     code = code & ["default:"] & indent(compile_to_c(default, block_id));
+  //   ;
+  //   return code & ["}"];
+  // }
 
 
   [String] compile_cls_scope_to_c(NamedPar var, ClsDef cls, [Var] env, [Instr^] body, <Nat, nil> block_id)
@@ -606,7 +583,6 @@ using String typesymb2name(TypeSymbol)
     get_inner_obj(e?)   = "get_inner_obj("  & to_c_expr(e)     & ")",
     to_obj(e?)          = "to_obj("         & to_c_expr(e)     & ")",
     obj_neg(e?)         = "obj_neg("        & to_c_expr(e)     & ")",
-    to_str(e?)          = "to_str("         & to_c_expr(e)     & ")",
     to_symb(e?)         = "to_symb("        & to_c_expr(e)     & ")",
     get_curr_obj(v?)    = "get_curr_obj("   & to_c_var_name(v) & ")",
     get_curr_key(v?)    = "get_curr_key("   & to_c_var_name(v) & ")",
@@ -683,7 +659,7 @@ using String typesymb2name(TypeSymbol)
     ticks             = "get_tick_count()";
 
 
-  String to_c_expr(<VecVar, ItVar, StreamVar> var) = to_c_var_name(var);
+  String to_c_expr(<ElemVar, VecVar, ItVar, StreamVar> var) = to_c_var_name(var);
 
   String to_c_expr(<null_obj>) = "null_obj";
 

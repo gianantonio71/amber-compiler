@@ -1,0 +1,78 @@
+ProcDef remove_dead_code(ProcDef pd):
+  BoolProcDef   = pd,
+  ObjProcDef    = obj_proc_def(pd.name, pd.params, pd.named_params, nonempty(remove_dead_code(pd.body)));
+
+////////////////////////////////////////////////////////////////////////////////
+
+[Instr] remove_dead_code([Instr] code)
+{
+  opt_code = [];
+  for (instr : code)
+    opt_instr = remove_dead_code(instr);
+    opt_code = opt_code & opt_instr;
+    break if not in(falls_through, code_outcomes(opt_instr));
+  ;
+  return opt_code;
+}
+
+
+[Instr] remove_dead_code(Instr instr):
+  no_op               = [],
+  branch()            = remove_dead_branch_code(instr.cond, instr.when_true, instr.when_false),
+  repeat(is?)         = remove_dead_loop_code(is),
+  execute_block(is?)  = remove_dead_block_code(is),
+  cls_scope()         = remove_cls_scope_dead_code(instr.var, instr.bound_cls, instr.body),
+  _                   = [instr];
+
+
+[Instr] remove_dead_branch_code(BoolExpr cond, [Instr^] if_body, [Instr] else_body)
+{
+  opt_if_body = remove_dead_code(if_body);
+  opt_else_body = remove_dead_code(else_body);
+  return [branch(cond, opt_if_body, opt_else_body) if if_body /= [] or else_body /= []];
+}
+
+
+[Instr] remove_dead_loop_code([Instr^] body)
+{
+  opt_body = remove_dead_code(body);
+  return [repeat(opt_body) if opt_body /= []];
+}
+
+
+[Instr] remove_dead_block_code([Instr^] body)
+{
+  opt_body = remove_dead_code(body);
+  opt_body = remove_useless_exit_blocks(opt_body);
+  return [] if opt_body == [];
+  return if in(exits_block, code_outcomes(opt_body)) then [execute_block(opt_body)] else opt_body;
+
+  [Instr] remove_useless_exit_blocks([Instr] body) =
+    if body /= []
+      then subseq(body, 0, nil, 1) & remove_useless_exit_blocks(rev_at(body, 0))
+      else [];
+
+  [Instr] remove_useless_exit_blocks(Instr instr):
+    exit_block      = [],
+    branch()        = remove_useless_exit_blocks(instr.cond, instr.when_true, instr.when_false),
+    _               = [instr];
+
+  [Instr] remove_useless_exit_blocks(BoolExpr cond, [Instr^] if_body, [Instr] else_body)
+  {
+    opt_if_body = remove_useless_exit_blocks(if_body);
+    opt_else_body = remove_useless_exit_blocks(else_body);
+    return [branch(cond, opt_if_body, opt_else_body) if opt_if_body /= [] or opt_else_body /= []];
+  }
+}
+
+
+[Instr] remove_cls_scope_dead_code(NamedPar var, BoundCls cls, [Instr^] body)
+{
+  opt_body = nonempty(remove_dead_code(body));
+  opt_cls = remove_cls_body_dead_code(cls);
+  return [cls_scope(var, opt_cls, opt_body)];
+
+  BoundCls remove_cls_body_dead_code(BoundCls cls):
+    ClsVar        = cls,
+    bound_cls()   = bound_cls(cls_def(cls.cls.arity, nonempty(remove_dead_code(cls.cls.body))), cls.env);
+}

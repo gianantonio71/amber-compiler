@@ -1,6 +1,14 @@
-type ObjVar       = Var,
-                    lvar(Nat), //## THIS IS REDUNDANT, WE ALREADY HAVE unique_var(Nat)
-                    evar(id: Nat, idx: <Nat, IntVar>);
+type LocVar       = lvar(Nat);  //## FIND BETTER NAME. ALSO, THIS IS REDUNDANT, WE ALREADY HAVE unique_var(Nat)
+type ElemVar      = evar(id: Nat, idx: <Nat, IntVar>);
+
+type ObjVar       = Var, LocVar, ElemVar;
+
+type ReadOnlyObjVar   = FnPar, CaptVar;
+type WriteObjVar  = RWObjVar, ElemVar;
+type RWObjVar     = StdVar, UniqueVar, LocVar;
+
+type StdObjVar    = RWObjVar, NamedPar, ReadOnlyObjVar;
+
 
 type VecVar       = vvar(id: Nat, size: NzNat);
 
@@ -23,7 +31,9 @@ type BoolFnName   = memb_test(TypeSymbol);
 
 type InlineObj    = LeafObj, empty_set, empty_seq, empty_map;
 
-type AtomicExpr   = InlineObj, ObjVar;
+type AtomicExpr   = InlineObj, StdObjVar;
+
+type AtomicBoolExpr = Bool, BoolVar;
 
 type NatBoolOp    = is_symb(ObjExpr),
                     is_int(ObjExpr),
@@ -65,11 +75,10 @@ type NatObjOp     = at(seq: ObjExpr, idx: IntExpr),
                     //lookup(map: ObjExpr, key: ObjExpr),
                     get_tag(ObjExpr),
                     get_inner_obj(ObjExpr), //## RENAME?
-                    
+
                     to_obj(<BoolExpr, IntExpr>),
                     obj_neg(ObjExpr),
 
-                    to_str(ObjExpr), // For this to be a no-delete operation, the string must be cached
                     to_symb(ObjExpr),
 
                     get_curr_obj(<SetItVar, SeqItVar>),
@@ -78,9 +87,7 @@ type NatObjOp     = at(seq: ObjExpr, idx: IntExpr),
 
                     rand_elem(ObjExpr); // Non-deterministic
 
-type BoolExpr     = true,
-                    false,
-                    BoolVar,
+type BoolExpr     = AtomicBoolExpr,
                     NatBoolOp,
                     neg(BoolExpr),
                     and([BoolExpr^]), //## SEQUENCES OR SETS?
@@ -89,23 +96,22 @@ type BoolExpr     = true,
                     or_else([BoolExpr^]),
                     eval_bool_fn(name: BoolFnName, params: [AnyTypeExpr^]);
 
-type IntExpr      = Int, IntVar, NatIntOp;                    
+type IntExpr      = Int, IntVar, NatIntOp;
 
 type ObjExpr      = AtomicExpr, NatObjOp;
 
 type AnyTypeExpr  = BoolExpr, IntExpr, ObjExpr;
 
-
 type FloatExpr    = mk_float(mantissa: Int, dec_exp: Int),
-                    neg_float(value: ObjExpr),
-                    add_floats(values: (ObjExpr, ObjExpr)),
-                    sub_floats(values: (ObjExpr, ObjExpr)),
-                    mult_floats(values: (ObjExpr, ObjExpr)),
-                    div_floats(values: (ObjExpr, ObjExpr)),
-                    square_root(value: ObjExpr),
-                    floor_op(value: ObjExpr),
-                    ceiling_op(value: ObjExpr),
-                    int_to_float(value: ObjExpr);
+                    neg_float(value: AtomicExpr),
+                    add_floats(values: (AtomicExpr, AtomicExpr)),
+                    sub_floats(values: (AtomicExpr, AtomicExpr)),
+                    mult_floats(values: (AtomicExpr, AtomicExpr)),
+                    div_floats(values: (AtomicExpr, AtomicExpr)),
+                    square_root(value: AtomicExpr),
+                    floor_op(value: AtomicExpr),
+                    ceiling_op(value: AtomicExpr),
+                    int_to_float(value: AtomicExpr);
 
 type RefObjExpr   = mk_set_from_stream(stream: StreamVar),
                     mk_set(elems: VecVar, size: IntExpr),
@@ -113,81 +119,77 @@ type RefObjExpr   = mk_set_from_stream(stream: StreamVar),
                     mk_seq(elems: VecVar, size: IntExpr),
                     mk_map_from_streams(key_stream: StreamVar, value_stream: StreamVar),
                     mk_map(keys: VecVar, values: VecVar, size: IntExpr),
-                    mk_tagged_obj(tag: ObjExpr, obj: ObjExpr),
-                    mk_array(size: IntExpr, value: ObjExpr),
-                    get_seq_slice(seq: ObjExpr, idx_first: IntExpr, len: IntExpr),
-                    // <seq> and <new_elem> must already be reference-counted
-                    append_to_seq(seq: ObjExpr, new_elem: ObjExpr),
-                    join_seqs(left: ObjExpr, right: ObjExpr),
-                    join_mult_seqs(seqs: ObjExpr),
-                    rev_seq(seq: ObjExpr),
-                    merge_sets(sets: ObjExpr),
-                    merge_maps(maps: ObjExpr),
-                    seq_to_set(seq: ObjExpr),
-                    seq_to_mset(seq: ObjExpr),
-                    list_to_seq(list: ObjExpr),
-                    internal_sort(set: ObjExpr);
+                    mk_tagged_obj(tag: AtomicExpr, obj: AtomicExpr),      // Ownership transfer: <obj>
+                    mk_array(size: IntExpr, value: AtomicExpr), //## CURRENTLY ONLY USED WITH <value> = object(nil)
+                    get_seq_slice(seq: AtomicExpr, idx_first: IntExpr, len: IntExpr),
+                    append_to_seq(seq: AtomicExpr, new_elem: AtomicExpr), // Ownership transfer: <seq>, <new_elem>
+                    join_seqs(left: AtomicExpr, right: AtomicExpr),
+                    join_mult_seqs(seqs: AtomicExpr),
+                    rev_seq(seq: AtomicExpr),
+                    merge_sets(sets: AtomicExpr),
+                    merge_maps(maps: AtomicExpr),
+                    seq_to_set(seq: AtomicExpr),
+                    seq_to_mset(seq: AtomicExpr),
+                    list_to_seq(list: AtomicExpr),
+                    internal_sort(set: AtomicExpr),
+                    symb_to_str(AtomicExpr);
 
-type Instr        = init_stream(StreamVar),
-                    append(stream: StreamVar, obj: ObjExpr),
+type BasicInstr   = init_stream(StreamVar),
+                    append(stream: StreamVar, obj: AtomicExpr),  // Ownership transfer: <obj>
 
                     // get_at(var: ObjVar, seq: ObjExpr, idx: IntExpr),
                     //## BUG BUG BUG: IF ObjExpr CONTAINS A NON-COUNTED REFERENCE TO THE ARRAY,
                     //## I COULD END UP WITH A CYCLE IN THE OBJECT GRAPH AND MAYBE OTHER PROBLEMS
-                    set_at(var: ObjVar, idx: IntExpr, value: ObjExpr),
+                    set_at(var: WriteObjVar, idx: IntExpr, value: AtomicExpr),  // Ownership transfer: <value>
 
-                    lookup(success_var: BoolVar?, var: ObjVar, map: ObjExpr, key: ObjExpr),
-                    ext_lookup(success_var: BoolVar?, var: ObjVar, map: ObjExpr, key: ObjExpr),
+                    //## IT DOESN'T REALLY MAKES SENSE TO HAVE THE <map> FIELD OF TYPE AtomicExpr
+                    //## AS OPPOSED TO JUST ObjVar? BUT IN THAT CASE, WHAT ABOUT "()[k]"?
+                    lookup(success_var: BoolVar?, var: WriteObjVar, map: StdObjVar, key: AtomicExpr),
+                    //## DITTO, EVEN THOUGH THIS CASE IS A BIT MORE COMPLICATED (E.G. "().f?")
+                    ext_lookup(success_var: BoolVar?, var: WriteObjVar, map: StdObjVar, key: SymbObj),
 
-                    get_set_iter(var: SetItVar, src: ObjExpr),
-                    get_seq_iter(var: SeqItVar, src: ObjExpr),
-                    get_map_iter(var: MapItVar, src: ObjExpr),
-                    
+                    get_set_iter(var: SetItVar, src: AtomicExpr),
+                    get_seq_iter(var: SeqItVar, src: AtomicExpr),
+                    get_map_iter(var: MapItVar, src: AtomicExpr),
+
                     move_forward(ItVar),
-                    
-                    set_var(var: ObjVar, value: ObjExpr),
+
+                    set_var(var: <WriteObjVar, NamedPar>, value: ObjExpr),
                     set_bvar(var: BoolVar, value: BoolExpr),
                     set_ivar(var: IntVar, value: IntExpr),
-                    
-                    set_var_ref(var: ObjVar, value: <FloatExpr, RefObjExpr>),
 
-                    terminate,
-                    
+                    set_rc_var(var: WriteObjVar, value: <FloatExpr, RefObjExpr>),
+
                     add_ref(ObjVar),
                     release(ObjVar),
-                    
-                    print_obj(obj: ObjExpr),
 
-                    no_val_ret,
-                    ret_val(<ObjExpr, BoolExpr>),
-                    
+                    print_obj(obj: AtomicExpr),
+
                     no_op,
-                    
-                    branch(cond: BoolExpr, when_true: [Instr^], when_false: [Instr]),
-                    
-                    symbol_switch(val: ObjExpr, cases: (vals: SymbObj+, instrs: [Instr])*, else: [Instr^]?),
 
-                    repeat([Instr^]),
-                    break_loop,
-                    
-                    execute_block([Instr^]),
-                    exit_block,
+                    call_proc(var: WriteObjVar?, name: ObjFnName, params: [<AtomicExpr, BoundCls>]),
+                    call_cls(var: WriteObjVar, cls_var: <ClsVar, NamedPar>, params: [AtomicExpr]),
 
-                    call_proc(var: ObjVar?, name: ObjFnName, params: [<ObjExpr, BoundCls>]),
-                    call_cls(var: ObjVar, cls_var: <ClsVar, NamedPar>, params: [ObjExpr]),
-                    
-                    push_call_info(fn_name: ObjFnName, params: [Maybe[ObjVar]]),
+                    push_call_info(fn_name: ObjFnName, params: [Maybe[FnPar]]),
                     pop_call_info,
 
-                    runtime_check(cond: ObjExpr),
+                    runtime_check(cond: AtomicExpr);
 
-                    var_scope(var: NamedPar, new_value: AtomicExpr, body: [Instr^]),
+type JumpInstr    = break_loop,
+                    exit_block,
+                    ret_val(<AtomicExpr, AtomicBoolExpr>), //## MAYBE IT WOULD BE A GOOD IDEA TO SEPARATE THE BOOLEAN FROM THE OBJECT VERSION
+                    terminate;
+
+type CompInstr    = branch(cond: BoolExpr, when_true: [Instr^], when_false: [Instr]),
+                    repeat([Instr^]),
+                    execute_block([Instr^]),
                     cls_scope(var: NamedPar, bound_cls: BoundCls, body: [Instr^]); //## BAD: BoundCls IS TOO LOOSE A TYPE HERE, BECAUSE A ClsVar CANNOT APPEAR HERE
 
+type Instr        = BasicInstr, JumpInstr, CompInstr;
 
 type ClsDef       = cls_def(arity: NzNat, body: [Instr^]);
 
-type BoundCls     = ClsVar, bound_cls(cls: ClsDef, env: [Var]);
+type BoundCls     = ClsVar, bound_cls(cls: ClsDef, env: [Var]); //## WHY IS THE .env FIELD OF TYPE [Var] INSTEAD OF [ObjVar]?
 
 type ObjProcPar   = obj, cls(name: ClsVar?, arity: NzNat);
 

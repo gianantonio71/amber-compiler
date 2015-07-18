@@ -1,0 +1,87 @@
+type NodeId     = Nat, end_node; //## DO I NEED end_node?
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+<end_node>  end_node  = :end_node;
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+NodeId first_node([CodeTree] code_trees, NodeId next_node) = if code_trees /= [] then first_node(head(code_trees)) else next_node;
+
+
+NodeId first_node(CodeTree tree):
+  std_node(i?)      = i,
+  branch_node()     = tree.idx,
+  loop_node(ts?)    = first_node(head(ts)),
+  block_node(ts?)   = first_node(head(ts)),
+  cls_scope_node()  = tree.idx,
+  root_node()       = {fail;};
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[Nat*] reverse_flow_map([[Nat]] flow_map) = [set(ns) : ns <- reverse_adj_list(flow_map)];
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[[Nat]] build_flow_map(CodeTree code_tree, [NodeInfo^] leaf_nodes)
+{
+  subtrees = match (code_tree) root_node(ts?) = ts;; //## UGLY UGLY UGLY
+  let (leaf_nodes=leaf_nodes, next_node=end_node, loop_break_target=nil, block_exit_target=nil)
+    flow_map = build_flow_map(subtrees);
+  ;
+  return [[n : n <- ns, n /= end_node] : ns <- flow_map];
+}
+
+
+using [NodeInfo^] leaf_nodes, NodeId next_node, Maybe[NodeId] loop_break_target, Maybe[NodeId] block_exit_target
+{
+  [[NodeId]] build_flow_map(CodeTree code_tree):
+    std_node(i?)      = [std_node_exit(i)],
+    branch_node()     = build_branch_flow_map(code_tree.idx, code_tree.if_body, code_tree.else_body),
+    loop_node(ts?)    = { new_next_node = first_node(head(ts));
+                          new_loop_break_target = just(next_node);
+                          return build_flow_map(ts, next_node=new_next_node, loop_break_target=new_loop_break_target);
+                        },
+    block_node(ts?)   = build_flow_map(ts, block_exit_target=just(next_node)),
+    cls_scope_node()  = build_cls_scope_flow_map(code_tree.idx, code_tree.body),
+    root_node(ts?)    = {fail;};
+
+
+  [NodeId] std_node_exit(Nat idx) =
+    match (leaf_nodes[idx])
+      std_node(break_loop)    = [try_value(loop_break_target)],
+      std_node(exit_block)    = [try_value(block_exit_target)],
+      std_node(ret_val())     = [],
+      std_node(terminate)     = [],
+      std_node(BasicInstr)    = [next_node];
+    ;
+
+
+  [[NodeId]] build_branch_flow_map(Nat idx, [CodeTree^] if_body, [CodeTree] else_body)
+  {
+    branch_exits = [first_node(if_body, next_node), first_node(else_body, next_node)];
+    if_body_flow_map = build_flow_map(if_body);
+    else_body_flow_map = build_flow_map(else_body);
+    return [branch_exits] & if_body_flow_map & else_body_flow_map;
+  }
+
+
+  [[NodeId]] build_cls_scope_flow_map(Nat idx, [CodeTree^] body)
+  {
+    body_flow_map = build_flow_map(body);
+    return [[first_node(body, next_node)]] & body_flow_map; //## HERE I SHOULD MAKE SURE THE "NEXT" TARGET FOR THE HEAD IS A FORWARD ONE
+  }
+
+
+  [[NodeId]] build_flow_map([CodeTree] code_trees)
+  {
+    next_nodes = [first_node(code_trees[i+1]) : i < length(code_trees)-1];
+    next_nodes = [next_nodes | next_node];
+    flow_maps = [build_flow_map(t, next_node=next_nodes[i]) : t @ i <- code_trees];
+    return join(flow_maps);
+  }
+}

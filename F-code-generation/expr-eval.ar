@@ -50,7 +50,7 @@ using
 
     Var       = ( eval_code:         [],
                   cleanup_code:      [],
-                  add_ref_eval_code: [add_ref(expr)],
+                  add_ref_eval_code: [deprecated_add_ref(expr)],
                   expr:              expr,
                   var_used:          false
                 ),
@@ -59,7 +59,7 @@ using
 
                   return (
                     eval_code:         eval_code,
-                    cleanup_code:      [release(var)],
+                    cleanup_code:      [deprecated_release(var)],
                     add_ref_eval_code: eval_code,
                     expr:              var,
                     var_used:          true
@@ -176,7 +176,7 @@ using
   [Instr^] gen_eval_code(Expr expr, ObjVar res_var):
     object()        = [set_var(res_var, expr)],
     float_lit()     = [mk_float(res_var, expr.mantissa, expr.dec_exp)],
-    Var             = [set_var(res_var, expr), add_ref(res_var)],
+    Var             = [set_var(res_var, expr), deprecated_add_ref(res_var)],
 
     set_expr(es?)   = gen_eval_code_for_set_expr(es, res_var),
     seq_expr(es?)   = gen_eval_code_for_seq_expr(es, res_var),
@@ -305,9 +305,15 @@ using
       rem_named_pars = (v => e : v => e <- named_params, v /= var);
 
       if (expr :: Expr)
-        info = gen_eval_info(expr);
-        body = gen_eval_code_for_fn_call_expr(name, params, rem_named_pars, res_var, next_obj_var_id=info.next_var_id);
-        return nonempty(info.eval_code & [var_scope(var, info.expr, body)] & info.cleanup_code);
+        backup_var = lvar(next_obj_var_id);
+        let (next_obj_var_id = next_obj_var_id + 1)
+          info = gen_eval_info(expr);
+          body = gen_eval_code_for_fn_call_expr(name, params, rem_named_pars, res_var, next_obj_var_id=info.next_var_id);
+        ;
+        set_up_code = [set_var(backup_var, var), set_var(var, info.expr)];
+        tear_down_code = [set_var(var, backup_var)];
+        return nonempty(info.eval_code & set_up_code & body & tear_down_code & info.cleanup_code);
+
       else
         bound_cls = gen_non_scalar_par_code(cast_as_cls_expr(expr));
         body = gen_eval_code_for_fn_call_expr(name, params, rem_named_pars, res_var);
@@ -345,13 +351,13 @@ using
 
 
     [Instr^] gen_call_code(BuiltIn name, [AtomicExpr] params, ObjVar res_var):
-      obj         = [set_var(res_var, get_inner_obj(params[0])), add_ref(res_var)],
+      obj         = [set_var(res_var, get_inner_obj(params[0])), deprecated_add_ref(res_var)],
       has_key     = { bvar = bvar(next_bool_var_id);
                       return [lookup(bvar, res_var, params[0], params[1]), set_var(res_var, to_obj(bvar))];
                     },
-      lookup      = [lookup(res_var, params[0], params[1]), add_ref(res_var)],
-      at          = [set_var(res_var, at(params[0], get_int_val(params[1]))), add_ref(res_var)],
-      rand_elem   = [set_var(res_var, rand_elem(params[0])), add_ref(res_var)],
+      lookup      = [lookup(res_var, params[0], params[1]), deprecated_add_ref(res_var)],
+      at          = [set_var(res_var, at(params[0], get_int_val(params[1]))), deprecated_add_ref(res_var)],
+      rand_elem   = [set_var(res_var, rand_elem(params[0])), deprecated_add_ref(res_var)],
       _           = [gen_eval_instr(name, params, res_var)];
 
 
@@ -376,11 +382,11 @@ using
       floor         = floor_op(res_var, ps[0]),
       ceiling       = ceiling_op(res_var, ps[0]),
       float         = int_to_float(res_var, ps[0]),
+      str           = symb_to_str(res_var, ps[0]),
       _             = set_var(res_var, gen_eval_expr(name, ps));
 
 
     ObjExpr gen_eval_expr(BuiltIn name, [AtomicExpr] ps):
-      str         = to_str(ps[0]),
       symb        = to_symb(ps[0]),
       neg         = to_obj(minus(get_int_val(ps[0]))),
       add         = to_obj(add(get_int_val(ps[0]), get_int_val(ps[1]))),
@@ -459,7 +465,7 @@ using
   [Instr^] gen_eval_code_for_accessor_expr(Expr expr, SymbObj field, ObjVar res_var)
   {
     info = gen_eval_info(expr);
-    code = [ext_lookup(res_var, info.expr, field), add_ref(res_var)];
+    code = [ext_lookup(res_var, info.expr, field), deprecated_add_ref(res_var)];
     return nonempty(info.eval_code & code & info.cleanup_code);
   }
 
@@ -468,9 +474,11 @@ using
   {
     info = gen_eval_info(expr);
     bvar = bvar(next_bool_var_id);
-    // Here I use res_var to store a temporary value
-    // that has nothing to do with the actual result
-    code = [ext_lookup(bvar, res_var, info.expr, field), set_var(res_var, to_obj(bvar))];
+    unused_var = lvar(info.next_var_id);
+    // ## SHOULD I RESTORE THIS FOR VARIABLES OTHER THAN evar()?
+    // // Here I use res_var to store a temporary value
+    // // that has nothing to do with the actual result
+    code = [ext_lookup(bvar, unused_var, info.expr, field), set_var(res_var, to_obj(bvar))];
     return nonempty(info.eval_code & code & info.cleanup_code);
   }
 
@@ -693,7 +701,7 @@ using
     ;
 
     if (may_fall_through(stmts))
-      code = code & [release(v) : v <- rand_sort(vs - surv_vars)];
+      code = code & [deprecated_release(v) : v <- rand_sort(vs - surv_vars)];
     //## Try to reenable it if there are memory leaks
     //## else
     //##   code = code & [terminate];
@@ -708,13 +716,13 @@ using
   // break_vars:    Vars that have to be released before a break statement. It's a subset of all_rel_vars
 
   [Instr^] gen_code(Statement stmt, ObjVar res_var, ObjVar* all_rel_vars, ObjVar* break_vars):
-    break_stmt        = nonempty([release(v) : v <- rand_sort(break_vars)] & [break_loop]),
+    break_stmt        = nonempty([deprecated_release(v) : v <- rand_sort(break_vars)] & [break_loop]),
     fail_stmt         = [terminate],
     loop_stmt(ss?)    = [repeat(gen_code(ss, res_var, all_rel_vars, {}, {}))],
     assert_stmt(e?)   = {info = gen_eval_info(e); return nonempty(info.eval_code & [runtime_check(info.expr)]);},
     // assert_stmt(e?) = [no_op],
     print_stmt(e?)    = {info = gen_eval_info(e); return nonempty(info.eval_code & [print_obj(info.expr)] & info.cleanup_code);},
-    return_stmt       = nonempty([release(v) : v <- rand_sort(all_rel_vars)] & [exit_block]),
+    return_stmt       = nonempty([deprecated_release(v) : v <- rand_sort(all_rel_vars)] & [exit_block]),
     return_stmt(e?)   = gen_code_for_ret_stmt(e, res_var, all_rel_vars, break_vars),
     let_stmt()        = gen_code_for_let_stmt(stmt.asgnms, stmt.body, res_var, all_rel_vars, break_vars),
     assignment_stmt() = gen_code_for_assignment_stmt(stmt.vars, stmt.value, res_var, all_rel_vars, break_vars),
@@ -729,7 +737,7 @@ using
   [Instr^] gen_code_for_ret_stmt(Expr expr, ObjVar res_var, ObjVar* all_rel_vars, ObjVar* break_vars)
   {
     assert not in(res_var, all_rel_vars);
-    return nonempty(gen_eval_code(expr, res_var) & [release(v) : v <- rand_sort(all_rel_vars)] & [exit_block]);
+    return nonempty(gen_eval_code(expr, res_var) & [deprecated_release(v) : v <- rand_sort(all_rel_vars)] & [exit_block]);
   }
 
 
@@ -745,9 +753,17 @@ using
       expr = asgnms[var];
       rem_asgnms = (v => e : v => e <- asgnms, v /= var);
 
-      info = gen_eval_info(expr);
-      inner_body = gen_code_for_let_stmt(rem_asgnms, body, res_var, all_rel_vars, break_vars, next_obj_var_id = info.next_var_id);
-      return nonempty(info.eval_code & [var_scope(var, info.expr, inner_body)] & info.cleanup_code);
+      backup_var = lvar(next_obj_var_id);
+
+      let (next_obj_var_id = next_obj_var_id + 1)
+        info = gen_eval_info(expr);
+        inner_body = gen_code_for_let_stmt(rem_asgnms, body, res_var, all_rel_vars, break_vars, next_obj_var_id = info.next_var_id);
+      ;
+
+      set_up_code = [set_var(backup_var, var), set_var(var, info.expr)];
+      tear_down_code = [set_var(var, backup_var)];
+
+      return nonempty(info.eval_code & set_up_code & inner_body & tear_down_code & info.cleanup_code);
     ;
 
     surv_vars = new_vars(body) - all_rel_vars;
@@ -763,9 +779,9 @@ using
         if (in(var, extern_vars(value)))
           tmp_var = lvar(next_obj_var_id);
           code    = gen_eval_code(value, tmp_var, next_obj_var_id = nat(next_obj_var_id + 1)) &
-                     [release(var), set_var(var, tmp_var)];
+                     [deprecated_release(var), set_var(var, tmp_var)];
         else
-          code = [release(var)] & gen_eval_code(value, var);
+          code = [deprecated_release(var)] & gen_eval_code(value, var);
         ;
       else
         code = gen_eval_code(value, var);
@@ -775,9 +791,9 @@ using
       code = gen_eval_code(value, tmp_var, next_obj_var_id = nat(next_obj_var_id + 1));
       //## THIS CHECK MIGHT BE REDUNDANT WITH STATIC TYPE CHECKING
       code = code & [check(and_then(is_ne_seq(tmp_var), is_eq(get_seq_len(tmp_var), length(vars))))];
-      code = code & [release(v) : v <- vars, in(v, all_rel_vars)];
-      code = code & join([[set_var(v, at(tmp_var, i)), add_ref(v)] : v @ i <- vars]);
-      code = code & [release(tmp_var)]; //## BAD: HERE FIRST I DO AN ADD REF AND THEN A RELEASE FOR EACH ELEMENT OF THE TUPLE
+      code = code & [deprecated_release(v) : v <- vars, in(v, all_rel_vars)];
+      code = code & join([[set_var(v, at(tmp_var, i)), deprecated_add_ref(v)] : v @ i <- vars]);
+      code = code & [deprecated_release(tmp_var)]; //## BAD: HERE FIRST I DO AN ADD REF AND THEN A RELEASE FOR EACH ELEMENT OF THE TUPLE
     ;
     return nonempty(code);
   }
@@ -792,7 +808,7 @@ using
     val_info = gen_eval_info(value, value_var, next_obj_var_id = nat(next_obj_var_id + 2));
 
     //## SINCE THE INDEX VARIABLE IS AN INTEGER, THERE'S NO NEED TO WORRY ABOUT
-    //## ABOUT MEMORY ALLOCATION AND DEALLOCATION. BUT WE EXTEND THE CONSTRUCT
+    //## ABOUT MEMORY ALLOCATION AND DEALLOCATION. BUT IF WE EXTEND THE CONSTRUCT
     //## TO MAPS AS WELL, THE CODE WILL HAVE TO BE CHANGED...
     return nonempty(
       idx_info.eval_code & val_info.add_ref_eval_code &

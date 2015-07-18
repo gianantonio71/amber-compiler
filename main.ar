@@ -93,10 +93,26 @@ Maybe[CCodeOutput] Compile((String => [Nat]) src_files, Bool run_typechecking, B
     FileWrite("dump_code.txt", false, _obj_(to_text(code, 100, 1)));
   ;
 
-  code = {apply_cheats(d) : d <- code};
-
-  c_code  = compile_to_c(code);
+  opt_code = {remove_dead_code(pd) : pd <- code};
   t6 = _ticks_(nil);
+  Print("Dead code removed\n");
+
+  if (print_intermediate)
+    FileWrite("dump_opt_code.txt", false, _obj_(to_text(opt_code, 100, 1)));
+  ;
+
+  rc_code = {add_ref_counting(pd) : pd <- opt_code};
+  t7 = _ticks_(nil);
+  Print("Reference counting added\n");
+
+  if (print_intermediate)
+    FileWrite("dump_rc_code.txt", false, _obj_(to_text(rc_code, 100, 1)));
+  ;
+
+  rc_code = {apply_cheats(d) : d <- rc_code};
+
+  c_code  = compile_to_c(rc_code);
+  t8 = _ticks_(nil);
   Print("C code generated\n");
 
   if (print_times)
@@ -108,8 +124,10 @@ Maybe[CCodeOutput] Compile((String => [Nat]) src_files, Bool run_typechecking, B
       Print("Type checking:       " & to_str(t4-t3) & "ms\n");
     ;
     Print("Code generation:     " & to_str(t5-t4) & "ms\n");
-    Print("C code generation:   " & to_str(t6-t5) & "ms\n");
-    Print("Total time elapsed:  " & to_str(t5-t0) & "ms\n");
+    Print("Code optimization:   " & to_str(t6-t5) & "ms\n");
+    Print("Reference counting:  " & to_str(t7-t6) & "ms\n");
+    Print("C code generation:   " & to_str(t8-t7) & "ms\n");
+    Print("Total time elapsed:  " & to_str(t8-t0) & "ms\n");
   ;
 
   return just(c_code);
@@ -200,6 +218,7 @@ Int Main([String] args)
   ;
 
   output = Compile(src_files, run_typechecking, print_intermediate, print_times);
+
   if (output /= nil)
     output = value(output);
     body = append(intermix(output.body, "\n"));
