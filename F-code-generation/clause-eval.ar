@@ -1,6 +1,6 @@
 
 //## FIND BETTER NAME
-type FinalMatchAction = set_found_var_and_leave(var: ObjVar),
+type FinalMatchAction = set_found_var_and_leave(var: EvalDestVar),
                         eval_expr_and_add_to_set(expr: Expr, stream_var: StreamVar),
                         eval_exprs_and_add_to_map(
                           key_expr:         Expr,
@@ -18,7 +18,7 @@ type MatchAction      = FinalMatchAction,
 
 
 
-FinalMatchAction set_found_var_and_leave(ObjVar v) = set_found_var_and_leave(var: v);
+FinalMatchAction set_found_var_and_leave(EvalDestVar v) = set_found_var_and_leave(var: v);
 
 FinalMatchAction eval_expr_and_add_to_set(Expr e, StreamVar sv) =
   eval_expr_and_add_to_set(expr: e, stream_var: sv);
@@ -48,7 +48,7 @@ using
   Nat next_stream_var_id;
 
 
-  [Instr] gen_code(MatchAction action, Var* loc_bound_vars):
+  [Instr] gen_code(MatchAction action, StdVar* loc_bound_vars):
     match_action()              = gen_iter_code(action.clause, loc_bound_vars, action.action),
     cond_match_action()         = gen_code_for_cond_match_action(action.cond, action.action, loc_bound_vars),
     set_found_var_and_leave()   = [set_var(action.var, obj_true), exit_block],
@@ -56,7 +56,7 @@ using
     eval_exprs_and_add_to_map() = gen_code_for_eval_exprs_and_add_to_map(action.key_expr, action.value_expr, action.key_stream_var, action.value_stream_var);
 
 
-  [Instr] gen_code_for_cond_match_action(Expr cond, FinalMatchAction action, Var* loc_bound_vars)
+  [Instr] gen_code_for_cond_match_action(Expr cond, FinalMatchAction action, StdVar* loc_bound_vars)
   {
     cond_var    = lvar(next_obj_var_id);
     cond_info   = gen_eval_info(cond, cond_var, next_obj_var_id = nat(next_obj_var_id + 1));
@@ -73,7 +73,7 @@ using
   {
     tmp_var = lvar(next_obj_var_id);
     info    = gen_eval_info(expr, tmp_var, next_obj_var_id = nat(next_obj_var_id + 1));
-    return info.add_ref_eval_code & [append(stream_var, info.expr)];
+    return info.eval_code & [append(stream_var, info.expr)];
   }
 
 
@@ -84,19 +84,19 @@ using
     key_info   = gen_eval_info(key_expr, tmp_var, next_obj_var_id = nat(next_obj_var_id + 1));
     value_info = gen_eval_info(value_expr, tmp_var, next_obj_var_id = nat(next_obj_var_id + 1));
 
-    return key_info.add_ref_eval_code   & [append(key_stream_var, key_info.expr)] &
-           value_info.add_ref_eval_code & [append(value_stream_var, value_info.expr)];
+    return key_info.eval_code   & [append(key_stream_var, key_info.expr)] &
+           value_info.eval_code & [append(value_stream_var, value_info.expr)];
   }
 
 
-  [Instr^] gen_iter_code(Clause clause, Var* loc_bound_vars, MatchAction action):
+  [Instr^] gen_iter_code(Clause clause, StdVar* loc_bound_vars, MatchAction action):
     in_clause()       = gen_iter_code_for_in_clause(clause.ptrn, clause.src, loc_bound_vars, action),
     map_in_clause()   = gen_iter_code_for_map_in_clause(clause.key_ptrn, clause.value_ptrn, clause.src, loc_bound_vars, action),
     or_clause()       = nonempty(gen_iter_code(clause.left, loc_bound_vars, action) & gen_iter_code(clause.right, loc_bound_vars, action)),
     and_clause()      = gen_iter_code(clause.left, loc_bound_vars, action(clause.right, action));
 
 
-  [Instr^] gen_iter_code_for_in_clause(Pattern ptrn, Expr src, Var* loc_bound_vars, MatchAction action)
+  [Instr^] gen_iter_code_for_in_clause(Pattern ptrn, Expr src, StdVar* loc_bound_vars, MatchAction action)
   {
     src_var  = lvar(next_obj_var_id);
     tmp_var  = lvar(nat(next_obj_var_id + 1));
@@ -122,11 +122,11 @@ using
     body = body_head & match_code & body_tail;
     loop_code = [get_iter(it_var, src_info.expr), repeat(nonempty(body))];
 
-    return nonempty(src_info.eval_code & loop_code & src_info.cleanup_code);
+    return nonempty(src_info.eval_code & loop_code);
   }
 
 
-  [Instr^] gen_iter_code_for_map_in_clause(Pattern key_ptrn, Pattern value_ptrn, Expr src, Var* loc_bound_vars, MatchAction action)
+  [Instr^] gen_iter_code_for_map_in_clause(Pattern key_ptrn, Pattern value_ptrn, Expr src, StdVar* loc_bound_vars, MatchAction action)
   {
     src_var  = lvar(next_obj_var_id);
     tmp_var  = lvar(nat(next_obj_var_id + 1));
@@ -153,6 +153,6 @@ using
     body_code = [break_if(is_out_of_range(it_var))] & match_and_action_code & [move_forward(it_var)];
     loop_code = [get_iter(it_var, src_info.expr), repeat(nonempty(body_code))];
 
-    return nonempty(src_info.eval_code & loop_code & src_info.cleanup_code);
+    return nonempty(src_info.eval_code & loop_code);
   }
 }
