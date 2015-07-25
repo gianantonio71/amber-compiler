@@ -253,12 +253,11 @@ ParseTokenResult read_cls_par([Nat] bytes, Nat offset)
 
 ParseTokenResult read_symbolic_token([Nat] bytes, Nat offset)
 {
-  map = string_to_symbol;
-  strs = keys(map);
-  maybe_best_match = best_match(bytes, offset, strs);
-  return failure(offset) if maybe_best_match == nil;
-  best_match = value(maybe_best_match);
-  return success(token_line_info(map[best_match], offset, nz_nat(length(best_match))));
+  return failure(offset) if offset >= length(bytes); //## MAYBE HERE I SHOULD CHANGE THE CALLER
+  trie = string_to_symbol_trie;
+  maybe_symb, len = trie_lookup(trie, nonempty(right_subseq(bytes, offset)));
+  return failure(offset) if maybe_symb == nil;
+  return success(token_line_info(value(maybe_symb), offset, nz_nat(len)));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -279,15 +278,6 @@ Nat identifier_length([Nat] bytes, Nat offset, <upper, lower> case)
     len = nz_nat(len + 1);
   ;
  }
-
-Maybe[String] best_match([Nat] bytes, Nat offset, String* strings)
-{
-  candidates = {s : s <- strings, is_str(bytes, offset, s)};
-  return nil if candidates == {};
-  //## THIS IS REALLY BAD
-  max_len = max({length(s) : s <- candidates});
-  return just(only_element({s : s <- candidates, length(s) == max_len}));
-}
 
 //## REENABLE THE COMMENTED OUT IMPLEMENTATION AS SOON AS POSSIBLE
 // [Nat^] to_lower_with_underscores([Nat^] bytes) = join([[ascii_underscore if i > 0 and is_upper(b), lower(b)] : b @ i <- bytes]);
@@ -315,6 +305,14 @@ Nat digit_length([Nat] bytes, Nat offset)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+
+
+Trie[Nat, PlainToken] string_to_symbol_trie
+{
+  raw_str_to_symb = (nonempty(raw_str(str)) => symb : str => symb <- string_to_symbol);
+  return trie(raw_str_to_symb);
+}
+
 
 (String => PlainToken) string_to_symbol = (
   "("     =>  left_parenthesis,

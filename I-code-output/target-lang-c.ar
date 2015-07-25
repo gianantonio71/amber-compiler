@@ -189,8 +189,14 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
   [String] compile_to_c(ProcDef pd)
   {
+    cached = pd.cached? and pd.cached;
+
+    suffix = if cached then "__CALCULATE_CONSTANT" else "";
+
     par_list = gen_fn_pars(pd);
-    signature = ret_type_str(pd) & to_c_fn_name(pd.name) & "(" & append(intermix(par_list, ", ")) & ")";
+    par_list_str = append(intermix(par_list, ", "));
+
+    signature = ret_type_str(pd) & to_c_fn_name(pd.name) & suffix & "(" & par_list_str & ")";
 
     body = pd.body;
 
@@ -209,7 +215,28 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
     comp_body = compile_to_c(body, nil);
 
-    return [signature, "{"] & indent(var_decls) & [""] & indent(comp_body) & ["}"];
+    code = [signature, "{"] & indent(var_decls) & [""] & indent(comp_body) & ["}"];
+
+    if (cached)
+      wrapper_code = [
+        "",
+        "",
+        ret_type_str(pd) & to_c_fn_name(pd.name) & "(" & par_list_str & ")",
+        "{",
+        "  static Obj cached_res = null_obj;",
+        "  if (cached_res == null_obj)",
+        "  {",
+        "    cached_res = " & to_c_fn_name(pd.name) & "__CALCULATE_CONSTANT(env);",
+        "    add_obj_to_cache(cached_res);",
+        "  }",
+        "  add_ref(cached_res);",
+        "  return cached_res;",
+        "}"
+      ];
+      code = code & wrapper_code;
+    ;
+
+    return code;
 
 
     Nat arity(ProcDef pd):

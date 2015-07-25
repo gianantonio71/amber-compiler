@@ -73,7 +73,7 @@ ObjProcDef gen_proc_code(ProcDef2 proc_def)
   ret_val = if proc_def.res_type /= nil then fn_res_var else object(nil); //## BAD: HERE I'M CHEATING...
   body = debug_code & body & [pop_call_info, ret_val(ret_val)];
 
-  return obj_proc_def(proc_def.name, arity(proc_def) * [:obj], (), nonempty(body));
+  return obj_proc_def(proc_def.name, arity(proc_def) * [:obj], (), nonempty(body), false);
 }
 
 
@@ -117,13 +117,29 @@ ObjProcDef gen_fn_code(FnDef fndef)
     non_scalar_par()  = if p.var? then cls(p.var, p.arity) else cls(p.arity);
 
   params = [low_level_param(p) : p <- fndef.params];
+  named_params = (v => arity(t) : v => t <- fndef.named_params);
 
-  return obj_proc_def(fndef.name, params, (v => arity(t) : v => t <- fndef.named_params), nonempty(body));
+  cached = fndef.params == [] and fndef.named_params == () and not is_too_simple_to_be_worth_caching(fndef.expr);
+
+  return obj_proc_def(fndef.name, params, named_params, nonempty(body), cached);
+
 
   //## UGLY: ISNT THERE ANY BETTER WAY? HAVING TO WRITE A FUNCTIONS FOR SOMETHING SO SIMPLE FEELS OVERKILL
   Instr set_var_if_need_be(FnFrmPar p, Nat i):
     scalar_par()      = if p.var? then set_var(p.var, fn_par(i)) else no_op,
     non_scalar_par()  = no_op;
+
+
+  Bool is_too_simple_to_be_worth_caching(Expr expr) = is_within_complexity_level(expr, 1);
+
+  Bool is_within_complexity_level(Expr expr, [0..1] max_compl):
+    LeafObj         = true,
+    FloatLit        = true,
+    set_expr(es?)   = es == {},
+    seq_expr(es?)   = es == [],
+    map_expr(es?)   = es == {},
+    tag_obj_expr()  = max_compl > 0 and is_within_complexity_level(expr.tag, 0) and is_within_complexity_level(expr.obj, 0),
+    _               = false;
 }
 
 
@@ -183,33 +199,35 @@ FnDef+ generate_dispatch_function(FnDef+ fds, (TypeName => Type) typedefs)
     candidates = candidates & [i] if good;
   ;
 
-  // If no single parameter is enough to discriminate between all the functions,
-  // then we just check all of them, except for closures. Otherwise we use the
-  // first parameter that can do the job.
-  //## EVEN IF NO SINGLE PARAMETER IS ENOUGHT TO DISCRIMINATE BETWEEN ALL THE FUNCTIONS,
-  //## CHANCES ARE THAT WE STILL DON'T NEED TO CHECK ALL OF THEM. ALSO, IF THERE IS MORE
-  //## THAN ONE CANDIDATE PARAMETER, WE SHOULD CHOOSE THE BEST ONE, THAT IS, THE ONE THAT
-  //## CAN DO THE JOB MORE EFFICIENTLY.
-  //## ALSO, THE PARAMETERS THAT ARE NOT CHECKED AND THAT DO NOT DEFINE ANY VARIABLES
-  //## SHOULD NOT BE INCLUDED IN THE MATCH AT ALL (ALTHOUGH THIS WOULD MAKE A DIFFERENCE
-  //## ONLY WHEN AT LEAST ONE PARAMETER IS NOT NAMED IN ANY OF THE FUNCTIONS)
-  is_checked = if candidates == [] then bit_map(scalar_pars, arity) else [i == candidates[0] : i < arity];
-
   dispatch_call_params = [if is_scalar_par(p) then fn_par(i) else cls_var(i) : p @ i <- rand_params];
 
-  Pattern mk_ptrn(FnFrmPar param, (TypeName => Type) typedefs, Bool is_checked) =
-    if param.type? and is_checked
-      then type_to_pseudotype_pattern(get_scalar_param_type(param), typedefs)
-      else ptrn_any;
+  if (candidates /= [])
+    //## IF THERE'S MORE THAN ONE CANDIDATE PARAMETER, WE SHOULD CHOOSE THE ONE
+    //## THAT CAN MAKE THE DISPATCH MORE EFFICIENT, NOT JUST THE FIRST ONE
+    dispatch_param = head(candidates);
+    cases = [];
+    //## HERE WE SHOULD LEAVE THE FUNCTION WITH THE MOST EXPENSIVE CHECKING LAST
+    //## (OR RATHER, FIRST, SINCE WE ARE REVERSING THE ORDER) SO THAT IT CAN BE
+    //## MATCHED BY THE "ANY" PATTERN.
+    for (fd @ i : unique_fds)
+      ptrn = if i == 0 then ptrn_any else mk_ptrn(fd.params[dispatch_param], typedefs, true); //## THAT "true" IS UGLY...
+      case  = (ptrns: [ptrn], expr: fn_call(fd.name, dispatch_call_params));
+      cases = [case] & cases;
+    ;
+    new_expr = match_expr([fn_par(dispatch_param)], nonempty(cases));
 
-  cases = [];
-  for (fd : unique_fds)
-    ptrns = [mk_ptrn(p, typedefs, is_checked[i]) : p @ i <- nonempty(fd.params)];
-    case  = (ptrns: ptrns, expr: fn_call(fd.name, dispatch_call_params));
-    cases = [case] & cases;
+  else
+    //## THIS IS ALL WRONG, THERE'S USUALLY NO NEED TO CHECK ALL THE PARAMETERS
+    is_checked = bit_map(scalar_pars, arity);
+    dispatch_call_params = [if is_scalar_par(p) then fn_par(i) else cls_var(i) : p @ i <- rand_params];
+    cases = [];
+    for (fd @ i : unique_fds)
+      ptrns = [if i == 0 then ptrn_any else mk_ptrn(p, typedefs, is_checked[j]) : p @ j <- nonempty(fd.params)];
+      case  = (ptrns: ptrns, expr: fn_call(fd.name, dispatch_call_params));
+      cases = [case] & cases;
+    ;
+    new_expr = match_expr(nonempty([fn_par(i) : i < arity]), nonempty(cases));
   ;
-
-  new_expr = match_expr(nonempty([fn_par(i) : i < arity]), nonempty(cases));
 
   params = [strip_fn_param(p) : p <- rand_params];
 
@@ -223,6 +241,11 @@ FnDef+ generate_dispatch_function(FnDef+ fds, (TypeName => Type) typedefs)
 
   return nonempty(set(unique_fds) & {dispatch_fn});
 
+
+  Pattern mk_ptrn(FnFrmPar param, (TypeName => Type) typedefs, Bool is_checked) =
+    if param.type? and is_checked
+      then type_to_pseudotype_pattern(get_scalar_param_type(param), typedefs)
+      else ptrn_any;
 
   Type get_scalar_param_type(FnFrmPar p):
     scalar_par()      = if p.type? then p.type else {fail;},

@@ -48,7 +48,7 @@ using
   Nat next_stream_var_id;
 
 
-  [Instr] gen_code(MatchAction action, StdVar* loc_bound_vars):
+  [Instr^] gen_code(MatchAction action, StdVar* loc_bound_vars):
     match_action()              = gen_iter_code(action.clause, loc_bound_vars, action.action),
     cond_match_action()         = gen_code_for_cond_match_action(action.cond, action.action, loc_bound_vars),
     set_found_var_and_leave()   = [set_var(action.var, obj_true), exit_block],
@@ -56,36 +56,35 @@ using
     eval_exprs_and_add_to_map() = gen_code_for_eval_exprs_and_add_to_map(action.key_expr, action.value_expr, action.key_stream_var, action.value_stream_var);
 
 
-  [Instr] gen_code_for_cond_match_action(Expr cond, FinalMatchAction action, StdVar* loc_bound_vars)
+  [Instr^] gen_code_for_cond_match_action(Expr cond, FinalMatchAction action, StdVar* loc_bound_vars)
   {
     cond_var    = lvar(next_obj_var_id);
     cond_info   = gen_eval_info(cond, cond_var, next_obj_var_id = nat(next_obj_var_id + 1));
     action_code = gen_code(action, loc_bound_vars);
 
-    return cond_info.eval_code &
-           [ check(is_bool(cond_info.expr)),
-             do_if(is_true(cond_info.expr), action_code)
-           ];
+    return nonempty(cond_info.eval_code & [do_if(is_true(cond_info.expr), action_code)]);
   }
 
 
-  [Instr] gen_code_for_eval_expr_and_add_to_set(Expr expr, StreamVar stream_var)
+  [Instr^] gen_code_for_eval_expr_and_add_to_set(Expr expr, StreamVar stream_var)
   {
     tmp_var = lvar(next_obj_var_id);
     info    = gen_eval_info(expr, tmp_var, next_obj_var_id = nat(next_obj_var_id + 1));
-    return info.eval_code & [append(stream_var, info.expr)];
+    return nonempty(info.eval_code & [append(stream_var, info.expr)]);
   }
 
 
-  [Instr] gen_code_for_eval_exprs_and_add_to_map(Expr key_expr, Expr value_expr, StreamVar key_stream_var, StreamVar value_stream_var)
+  [Instr^] gen_code_for_eval_exprs_and_add_to_map(Expr key_expr, Expr value_expr, StreamVar key_stream_var, StreamVar value_stream_var)
   {
     tmp_var    = lvar(next_obj_var_id);
 
     key_info   = gen_eval_info(key_expr, tmp_var, next_obj_var_id = nat(next_obj_var_id + 1));
     value_info = gen_eval_info(value_expr, tmp_var, next_obj_var_id = nat(next_obj_var_id + 1));
 
-    return key_info.eval_code   & [append(key_stream_var, key_info.expr)] &
+    code = key_info.eval_code   & [append(key_stream_var, key_info.expr)] &
            value_info.eval_code & [append(value_stream_var, value_info.expr)];
+
+    return nonempty(code);
   }
 
 
@@ -112,7 +111,7 @@ using
 
         let (next_obj_var_id = nat(next_obj_var_id + 1))
           // Variables to avoid: src_var, it_var, tmp_var
-          match_code = gen_ptrn_matching_code(ptrn, tmp_var, loc_bound_vars, next_step_code);
+          match_code = gen_ptrn_matching_code(ptrn, tmp_var, pseudotype_any, loc_bound_vars=loc_bound_vars, on_match_code=next_step_code, tag_vars=());
         ;
       ;
     ;
@@ -142,9 +141,9 @@ using
 
         let (next_obj_var_id = nat(next_obj_var_id + 1))
           // Variables to avoid: src_var, it_var, tmp_var
-          intermediate_code = gen_ptrn_matching_code(value_ptrn, tmp_var, loc_bound_vars, next_step_code);
-          intermediate_code = [set_var(tmp_var, get_curr_value(it_var))] & intermediate_code;
-          intermediate_code = gen_ptrn_matching_code(key_ptrn, tmp_var, loc_bound_vars, intermediate_code);
+          intermediate_code = gen_ptrn_matching_code(value_ptrn, tmp_var, pseudotype_any, loc_bound_vars=loc_bound_vars, on_match_code=next_step_code, tag_vars=());
+          intermediate_code = nonempty([set_var(tmp_var, get_curr_value(it_var))] & intermediate_code);
+          intermediate_code = gen_ptrn_matching_code(key_ptrn, tmp_var, pseudotype_any, loc_bound_vars=loc_bound_vars, on_match_code=intermediate_code, tag_vars=());
           match_and_action_code = [set_var(tmp_var, get_curr_key(it_var))] & intermediate_code;
         ;
       ;
