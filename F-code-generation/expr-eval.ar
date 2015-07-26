@@ -177,7 +177,8 @@ using
     set_comp()      = gen_eval_code_for_set_comp_expr(expr.expr, expr.source, maybe_sel_expr(expr), res_var),
     map_comp()      = gen_eval_code_for_map_comp_expr(expr.key_expr, expr.value_expr, expr.source, maybe_sel_expr(expr), res_var),
 
-    seq_comp()      = gen_eval_code_for_seq_comp_expr(expr, res_var);
+    seq_comp(ei?)   = gen_eval_code_for_seq_comp_expr(ei, res_var),
+    range_comp(ei?) = gen_eval_code_for_range_comp_expr(ei, res_var);
 
 
   Maybe[Expr] maybe_sel_expr(Expr expr) = if expr.sel_expr? then just(expr.sel_expr) else nil;
@@ -633,7 +634,7 @@ using
   }
 
 
-  [Instr^] gen_eval_code_for_seq_comp_expr(<seq_comp(expr: Expr, vars: [StdVar^], idx_var: StdVar?, src_expr: Expr, src_expr_type: <sequence, upper_bound(included: Bool)>, sel_expr: Expr?)> expr, EvalDestVar res_var)
+  [Instr^] gen_eval_code_for_seq_comp_expr((expr: Expr, vars: [StdVar^], idx_var: StdVar?, src_expr: Expr, sel_expr: Expr?) expr, EvalDestVar res_var)
   {
     src_var   = lvar(next_obj_var_id);
     item_var  = lvar(nat(next_obj_var_id + 1));
@@ -642,12 +643,11 @@ using
     it_var    = seq_it_var(next_seq_it_var_id);
     strm_var  = svar(next_stream_var_id);
     idx_var   = ivar(next_int_var_id);      //## BAD USED EVEN WHEN NOT REQUIRED
-    bound_var = ivar(nat(next_int_var_id + 1));  //## BAD USED EVEN WHEN NOT REQUIRED
 
     let ( next_obj_var_id    = nat(next_obj_var_id    + 3),
           next_seq_it_var_id = nat(next_seq_it_var_id + 1),
           next_stream_var_id = nat(next_stream_var_id + 1),
-          next_int_var_id    = nat(next_int_var_id    + 2))
+          next_int_var_id    = nat(next_int_var_id    + 1))
 
       src_info  = gen_eval_info(expr.src_expr, src_var);
       item_info = gen_eval_info(expr.expr, item_var);
@@ -667,59 +667,91 @@ using
       core_loop_code = sel_info.eval_code & [do_if(is_true(sel_info.expr), core_loop_code)];
     ;
 
-    src_expr_type = expr.src_expr_type;
-    if (src_expr_type == :sequence)
-      needs_idx_var = not expr.sel_expr? or expr.idx_var?;
+    needs_idx_var = not expr.sel_expr? or expr.idx_var?;
 
-      if (length(expr.vars) == 1)
-        var_set_code = [set_var(expr.vars[0], get_curr_obj(it_var))];
-      else
-        var_set_code = [set_var(tmp_var, get_curr_obj(it_var))];
-        var_set_code = var_set_code & [set_var(v, at(tmp_var, i)) : v @ i <- expr.vars];
-      ;
-      var_set_code = var_set_code & [set_var(expr.idx_var, to_obj(idx_var))] if expr.idx_var?;
-
-      loop_code = [
-        if knows_size
-          then mk_array(res_var, get_seq_len(src_info.expr), obj_nil)
-          else init_stream(strm_var),
-        get_iter(it_var, src_info.expr),
-        maybe_op(set_ivar(idx_var, 0), needs_idx_var),
-        repeat(
-          nonempty(
-            [break_if(is_out_of_range(it_var))] &
-            var_set_code &
-            core_loop_code &
-            [move_forward(it_var), maybe_op(increment(idx_var), needs_idx_var)]
-          )
-        ),
-        maybe_op(mk_seq_from_stream(res_var, strm_var), not knows_size)
-      ];
+    if (length(expr.vars) == 1)
+      var_set_code = [set_var(expr.vars[0], get_curr_obj(it_var))];
     else
-      assert length(expr.vars) == 1 and not expr.idx_var?;
-      var = expr.vars[0];
-      bound_included = src_expr_type.included;
-      iter_count = get_int_val(src_info.expr);
-      iter_count = add(iter_count, 1) if bound_included;
-      loop_code = [
-        if knows_size then mk_array(res_var, iter_count, obj_nil) else init_stream(strm_var),
-        set_ivar(bound_var, get_int_val(src_info.expr)),
-        set_ivar(idx_var, 0),
-        repeat(
-          nonempty(
-            [ break_if(if bound_included then is_gt(idx_var, bound_var) else is_ge(idx_var, bound_var)),
-              set_var(expr.vars[0], to_obj(idx_var))
-            ] &
-            core_loop_code &
-            [increment(idx_var)]
-          )
-        ),
-        maybe_op(mk_seq_from_stream(res_var, strm_var), not knows_size)
-      ];
+      var_set_code = [set_var(tmp_var, get_curr_obj(it_var))];
+      var_set_code = var_set_code & [set_var(v, at(tmp_var, i)) : v @ i <- expr.vars];
     ;
+    var_set_code = var_set_code & [set_var(expr.idx_var, to_obj(idx_var))] if expr.idx_var?;
+
+    loop_code = [
+      if knows_size
+        then mk_array(res_var, get_seq_len(src_info.expr), obj_nil)
+        else init_stream(strm_var),
+      get_iter(it_var, src_info.expr),
+      maybe_op(set_ivar(idx_var, 0), needs_idx_var),
+      repeat(
+        nonempty(
+          [break_if(is_out_of_range(it_var))] &
+          var_set_code &
+          core_loop_code &
+          [move_forward(it_var), maybe_op(increment(idx_var), needs_idx_var)]
+        )
+      ),
+      maybe_op(mk_seq_from_stream(res_var, strm_var), not knows_size)
+    ];
 
     return nonempty(src_info.eval_code & loop_code);
   }
+
+
+  [Instr^] gen_eval_code_for_range_comp_expr((expr: Expr, var: StdVar, bound_expr: Expr, inclusive: Bool, sel_expr: Expr?) expr, EvalDestVar res_var)
+  {
+    src_var   = lvar(next_obj_var_id);
+    item_var  = lvar(nat(next_obj_var_id + 1));
+    sel_var   = lvar(nat(next_obj_var_id + 2));
+    strm_var  = svar(next_stream_var_id);
+    idx_var   = ivar(next_int_var_id);      //## BAD USED EVEN WHEN NOT REQUIRED
+    bound_var = ivar(nat(next_int_var_id + 1));
+
+    let ( next_obj_var_id    = nat(next_obj_var_id    + 3),
+          next_stream_var_id = nat(next_stream_var_id + 1),
+          next_int_var_id    = nat(next_int_var_id    + 2))
+
+      bound_info  = gen_eval_info(expr.bound_expr, src_var);
+      item_info = gen_eval_info(expr.expr, item_var);
+      maybe_sel_info  = if expr.sel_expr? then just(gen_eval_info(expr.sel_expr, sel_var)) else nil; //## BUG BUG BUG
+    ;
+
+    knows_size = not expr.sel_expr?;
+
+    eval_and_assign_code = item_info.eval_code &
+                            if knows_size
+                              then [set_at(res_var, idx_var, item_info.expr)]
+                              else [append(strm_var, item_info.expr)];
+
+    core_loop_code = eval_and_assign_code;
+    if (maybe_sel_info /= nil)
+      sel_info = value(maybe_sel_info);
+      core_loop_code = sel_info.eval_code & [do_if(is_true(sel_info.expr), core_loop_code)];
+    ;
+
+    bound_included = expr.inclusive;
+    iter_count = get_int_val(bound_info.expr);
+    iter_count = add(iter_count, 1) if bound_included;
+    loop_code = [
+      if knows_size then mk_array(res_var, iter_count, obj_nil) else init_stream(strm_var),
+      set_ivar(bound_var, get_int_val(bound_info.expr)),
+      set_ivar(idx_var, 0),
+      repeat(
+        nonempty(
+          [ break_if(if bound_included then is_gt(idx_var, bound_var) else is_ge(idx_var, bound_var)),
+            set_var(expr.var, to_obj(idx_var))
+          ] &
+          core_loop_code &
+          [increment(idx_var)]
+        )
+      ),
+      maybe_op(mk_seq_from_stream(res_var, strm_var), not knows_size)
+    ];
+
+    return nonempty(bound_info.eval_code & loop_code);
+  }
+
+
 
 
   BoundCls gen_non_scalar_par_code(ClsExpr expr):

@@ -39,12 +39,11 @@ using
     ex_qual()         = type_bool,
     set_comp()        = set_comp_expr_type(expr.expr, expr.source, if expr.sel_expr? then just(expr.sel_expr) else nil),
     map_comp()        = map_comp_expr_type(expr.key_expr, expr.value_expr, expr.source, if expr.sel_expr? then just(expr.sel_expr) else nil),
-    seq_comp()        = {
-      comp_type = expr.src_expr_type;
-      return if comp_type == :sequence
-        then seq_comp_expr_type(expr.expr, expr.vars, if expr.idx_var? then just(expr.idx_var) else nil, expr.src_expr, if expr.sel_expr? then just(expr.sel_expr) else nil)
-        else int_range_seq_comp_expr_type(expr.expr, expr.vars[0], expr.src_expr, comp_type.included, expr.sel_expr?);
-    };
+    seq_comp()        = { maybe_idx_var = if expr.idx_var? then just(expr.idx_var) else nil;
+                          maybe_sel_expr = if expr.sel_expr? then just(expr.sel_expr) else nil;
+                          return seq_comp_expr_type(expr.expr, expr.vars, maybe_idx_var, expr.src_expr, maybe_sel_expr);
+                        },
+    range_comp()      = range_comp_expr_type(expr.expr, expr.var, expr.bound_expr, expr.inclusive, expr.sel_expr?);
 
 
   Type set_expr_type(SubExpr* ses)
@@ -210,16 +209,16 @@ using
   }
 
 
-  Type int_range_seq_comp_expr_type(Expr expr, Var var, Expr upper_bound_expr, Bool includes_upper_bound, Bool has_sel_expr)
+  Type range_comp_expr_type(Expr expr, Var var, Expr upper_bound_expr, Bool includes_upper_bound, Bool has_sel_expr)
   {
     //## BAD: WE CAN DO BETTER HERE, IF WE USE THE INFORMATION ON THE TYPE OF THE UPPER BOUND EXPRESSION
     new_env = update(environment, (var => high_ints(0)));
     elem_type = expr_type(expr, environment=new_env);
-    yelds_nonempty_seq = int_range_seq_comp_yelds_nonempty_seq(has_sel_expr, upper_bound_expr, includes_upper_bound);
+    yelds_nonempty_seq = range_comp_yelds_nonempty_seq(has_sel_expr, upper_bound_expr, includes_upper_bound);
     return if yelds_nonempty_seq then ne_seq_type(elem_type) else type_seq(elem_type);
   }
 
-  Bool int_range_seq_comp_yelds_nonempty_seq(Bool has_sel_expr, Expr upper_bound_expr, Bool includes_upper_bound)
+  Bool range_comp_yelds_nonempty_seq(Bool has_sel_expr, Expr upper_bound_expr, Bool includes_upper_bound)
   {
     return false if has_sel_expr;
     upper_bound_type = expr_type(upper_bound_expr);

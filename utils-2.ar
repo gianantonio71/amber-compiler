@@ -104,7 +104,8 @@ T* retrieve_from_nested_exprs(Expr expr, (Expr -> T*) retrieve):
                       if expr.sel_expr? then retrieve(expr.sel_expr) else {},
   seq_comp()        = retrieve(expr.expr) &
                       retrieve(expr.src_expr) &
-                      if expr.sel_expr? then retrieve(expr.sel_expr) else {};
+                      if expr.sel_expr? then retrieve(expr.sel_expr) else {},
+  range_comp()      = retrieve(expr.expr) & retrieve(expr.bound_expr) & if expr.sel_expr? then retrieve(expr.sel_expr) else {};
 
 
 T* retrieve_from_nested_exprs(CondExpr expr, (Expr -> T*) retrieve) = retrieve(expr.expr) & retrieve(expr.cond);
@@ -189,12 +190,18 @@ Expr replace_nested_exprs(Expr expr, (Expr -> Expr) replace):
                         sel_expr:   replace(expr.sel_expr) if expr.sel_expr?
                       ),
   seq_comp()        = seq_comp(
-                        expr:           replace(expr.expr),
-                        vars:           expr.vars,
-                        idx_var:        expr.idx_var if expr.idx_var?,
-                        src_expr:       replace(expr.src_expr),
-                        src_expr_type:  expr.src_expr_type,
-                        sel_expr:       replace(expr.sel_expr) if expr.sel_expr?
+                        expr:     replace(expr.expr),
+                        vars:     expr.vars,
+                        idx_var:  expr.idx_var if expr.idx_var?,
+                        src_expr: replace(expr.src_expr),
+                        sel_expr: replace(expr.sel_expr) if expr.sel_expr?
+                      ),
+  range_comp()      = range_comp(
+                        expr:       replace(expr.expr),
+                        var:        expr.var,
+                        bound_expr: replace(expr.bound_expr),
+                        inclusive:  expr.inclusive,
+                        sel_expr:   expr.sel_expr if expr.sel_expr?
                       );
 
 
@@ -290,6 +297,7 @@ Expr replace_external_vars(Expr expr, (Var => Var) subst_map):
   set_comp()    = {fail;}, //## IMPLEMENT
   map_comp()    = {fail;}, //## IMPLEMENT
   seq_comp()    = {fail;}, //## IMPLEMENT
+  range_comp()  = {fail;}, //## IMPLEMENT
   _             = replace_nested_exprs(expr, replace_external_vars($, subst_map));
 
 
@@ -375,6 +383,7 @@ Expr* ordinary_subexprs(Expr expr):
   set_comp()      = {},
   map_comp()      = {},
   seq_comp()      = {expr.src_expr},
+  range_comp()    = {expr.bound_expr},
   // Expression that require special treatment
   match_expr()    = set(expr.exprs),
   do_expr()       = {};
@@ -388,6 +397,7 @@ Expr* special_subexprs(Expr expr):
   set_comp()      = {expr.expr, expr.sel_expr if expr.sel_expr?},
   map_comp()      = {expr.key_expr, expr.value_expr, expr.sel_expr if expr.sel_expr?},
   seq_comp()      = {expr.expr, expr.sel_expr if expr.sel_expr?}, //## BAD
+  range_comp()    = {expr.expr, expr.sel_expr if expr.sel_expr?},
   _               = {};
 
 Var* gen_vars(Expr expr):
@@ -395,6 +405,7 @@ Var* gen_vars(Expr expr):
   set_comp()      = new_vars(expr.source), //## BAD
   map_comp()      = new_vars(expr.source), //## BAD
   seq_comp()      = set(expr.vars) & {expr.idx_var if expr.idx_var?},
+  range_comp()    = {expr.var},
   _               = {};
 
 ////////////////////////////////////////////////////////////////////////////////
