@@ -3,7 +3,7 @@
 //    Generates code that evaluates <expr> and stores the result in <var>, reference counted
 
 //  gen_eval_info(expr, var)
-//    Generates code needed to evaluate expr, and to cleanup after it's not used anymore
+//    Generates code needed to evaluate expr
 //    If need be, the code stores the result in variable var, but it doesn't have to
 //    It also generates an expression that is used to access the result
 //    The expression may not be valid anymore if a variable used in the expression
@@ -489,8 +489,7 @@ using
       all_cases = [(only_item(c.ptrns), c.expr) : c <- cases];
 
       catch_all_case = nil;
-      all_cases_copy = all_cases; //## THIS IS A WORKAROUND FOR A CODE GENERATION BUG. FIX FIX FIX
-      for (p, e @ i : all_cases_copy)
+      for (p, e @ i : all_cases)
         if (is_pattern_any(p))
           // catch_all_case = (p, e);
           // all_cases = subseq(all_cases, 0, i);
@@ -935,12 +934,12 @@ using
 
     has_idx_var = maybe_idx_var /= nil;
 
-    src_info = gen_eval_info(values, src_var, next_obj_var_id = nat(next_obj_var_id + 1));
+    src_eval_code = gen_eval_code(values, src_var, next_obj_var_id = nat(next_obj_var_id + 1));
 
     body_code = gen_code(
       body,
       res_var,
-      next_obj_var_id    = nat(next_obj_var_id + if src_info.var_used then 1 else 0),
+      next_obj_var_id    = nat(next_obj_var_id + 1),
       next_int_var_id    = nat(next_int_var_id + if has_idx_var then 1 else 0),
       next_seq_it_var_id = nat(next_seq_it_var_id + 1)
     );
@@ -954,7 +953,7 @@ using
     var_set_code = var_set_code & [set_var(value(maybe_idx_var), to_obj(idx_var))] if has_idx_var;
 
     loop_code = [
-      get_iter(it_var, src_info.expr),
+      get_iter(it_var, src_var),
       if has_idx_var then set_ivar(idx_var, 0) else no_op,
       repeat(
         nonempty(
@@ -968,7 +967,7 @@ using
       )
     ];
 
-    return nonempty(src_info.eval_code & loop_code);
+    return nonempty(src_eval_code & loop_code);
   }
 
 
