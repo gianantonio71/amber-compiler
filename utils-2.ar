@@ -276,29 +276,112 @@ Clause replace_exprs_in_clause(Clause cls, (Expr -> Expr) replace):
 
 Expr replace_external_vars(Expr expr, (Var => Var) subst_map):
   Var           = lookup(subst_map, expr, expr),
-  fn_call()     = fn_call(
-                    expr.name,
-                    [replace_external_vars(p, subst_map) : p <- expr.params],
-                    (n => replace_external_vars(e, subst_map) : n => e <- expr.named_params)
-                  ),
-  match_expr()  = {fail;}, //## IMPLEMENT
-  // match_expr()  = match_expr(
-  //                   [replace_external_vars(e, subst_map) : e <- expr.exprs],
-  //                   [(ptrns: c.ptrns, expr: replace_external_vars(c.ptrns, c.expr, subst_map)) : c <- expr.cases]
-  //                 ),
-  do_expr()     = {fail;}, //## IMPLEMENT
-  ex_qual()     = {fail;}, //## IMPLEMENT
-  // ex_qual()     = if expr.sel_expr?
-  //                   then ex_qual(
-  //                     replace_external_vars(expr.source, subst_map),
-  //                     replace_external_vars(expr.source, expr.sel_expr, subst_map)
-  //                   )
-  //                   else ex_qual(replace_external_vars(expr.source, subst_map)),
-  set_comp()    = {fail;}, //## IMPLEMENT
-  map_comp()    = {fail;}, //## IMPLEMENT
-  seq_comp()    = {fail;}, //## IMPLEMENT
-  range_comp()  = {fail;}, //## IMPLEMENT
+  fn_call()     = replace_external_vars_in_fn_call(expr, subst_map),
+  match_expr()  = replace_external_vars_in_match_exprs(expr, subst_map),
+  do_expr()     = replace_external_vars_in_do_expr(expr, subst_map),
+  ex_qual()     = replace_external_vars_in_ex_qual(expr, subst_map),
+  set_comp()    = replace_external_vars_in_set_comp(expr, subst_map),
+  map_comp()    = replace_external_vars_in_map_comp(expr, subst_map),
+  seq_comp()    = replace_external_vars_in_seq_comp(expr, subst_map),
+  range_comp()  = replace_external_vars_in_range_comp(expr, subst_map),
   _             = replace_nested_exprs(expr, replace_external_vars($, subst_map));
+
+
+Expr replace_external_vars_in_fn_call(FnCallExpr expr, (Var => Var) subst_map) =
+  fn_call(
+    expr.name,
+    [replace_external_vars(p, subst_map) : p <- expr.params],
+    (n => replace_external_vars(e, subst_map) : n => e <- expr.named_params)
+  );
+
+
+Expr replace_external_vars_in_match_exprs(MatchExpr expr, (Var => Var) subst_map)
+{
+  new_exprs = [replace_external_vars(e, subst_map) : e <- expr.exprs];
+  new_cases = [];
+  for (c : expr.cases)
+    new_vars = seq_union([new_vars(p) : p <- c.ptrns]);
+    assert disjoint(new_vars, keys(subst_map));
+    new_subst_map = remove_keys(subst_map, new_vars);
+    new_expr = replace_external_vars(c.expr, new_subst_map);
+    new_cases = [new_cases | (ptrns: c.ptrns, expr: new_expr)];
+  ;
+  return match_expr(new_exprs, nonempty(new_cases));
+}
+
+
+Expr replace_external_vars_in_do_expr(DoExpr expr, (Var => Var) subst_map)
+{
+  fail; //## IMPLEMENT
+}
+
+
+Expr replace_external_vars_in_ex_qual(ExQualExpr expr, (Var => Var) subst_map)
+{
+  new_vars = new_vars(expr.source);
+  assert disjoint(new_vars, keys(subst_map));
+  new_subst_map = remove_keys(subst_map, new_vars);
+  return ex_qual(
+    source:     replace_external_vars_in_clause(expr.source, subst_map),
+    sel_expr:   replace_external_vars(expr.sel_expr, new_subst_map) if expr.sel_expr?
+  );
+}
+
+
+Expr replace_external_vars_in_set_comp(SetCompExpr expr, (Var => Var) subst_map)
+{
+  new_vars = new_vars(expr.source);
+  assert disjoint(new_vars, keys(subst_map));
+  new_subst_map = remove_keys(subst_map, new_vars);
+  return set_comp(
+    expr:       replace_external_vars(expr.expr, new_subst_map),
+    source:     replace_external_vars_in_clause(expr.source, subst_map),
+    sel_expr:   replace_external_vars(expr.sel_expr, new_subst_map) if expr.sel_expr?
+  );
+}
+
+
+Expr replace_external_vars_in_map_comp(MapCompExpr expr, (Var => Var) subst_map)
+{
+  new_vars = new_vars(expr.source);
+  assert disjoint(new_vars, keys(subst_map));
+  new_subst_map = remove_keys(subst_map, new_vars);
+  return map_comp(
+    key_expr:   replace_external_vars(expr.key_expr, new_subst_map),
+    value_expr: replace_external_vars(expr.value_expr, new_subst_map),
+    source:     replace_external_vars_in_clause(expr.source, subst_map),
+    sel_expr:   replace_external_vars(expr.sel_expr, new_subst_map) if expr.sel_expr?
+  );
+}
+
+
+Expr replace_external_vars_in_seq_comp(SeqCompExpr expr, (Var => Var) subst_map)
+{
+  redef_vars = set(expr.vars) & {expr.idx_var if expr.idx_var?};
+  assert disjoint(keys(subst_map), redef_vars);
+  new_subst_map = remove_keys(subst_map, redef_vars);
+  return seq_comp(
+    expr:     replace_external_vars(expr.expr, new_subst_map),
+    vars:     expr.vars,
+    idx_var:  expr.idx_var if expr.idx_var?,
+    src_expr: expr.src_expr,
+    sel_expr: replace_external_vars(expr.sel_expr, new_subst_map) if expr.sel_expr?
+  );
+}
+
+
+Expr replace_external_vars_in_range_comp(RangeCompExpr expr, (Var => Var) subst_map)
+{
+  assert not in(expr.var, keys(subst_map));
+  new_subst_map = remove_key(subst_map, expr.var);
+  return range_comp(
+    expr:       replace_external_vars(expr.expr, new_subst_map),
+    var:        expr.var,
+    bound_expr: expr.bound_expr,
+    inclusive:  expr.inclusive,
+    sel_expr:   replace_external_vars(expr.sel_expr, new_subst_map) if expr.sel_expr?
+  );
+}
 
 
 ClsExpr replace_external_vars(ClsExpr expr, (Var => Var) subst_map):
@@ -322,22 +405,44 @@ ClsExpr replace_external_vars([<var(Atom), nil>^] params, Expr expr, (Var => Var
 }
 
 
-// Expr replace_external_vars([Pattern^] ptrns, Expr expr, (Var => Var) subst_map)
-// {
-//   fail;
-// }
+Clause replace_external_vars_in_clause(Clause clause, (Var => Var) subst_map):
+  in_clause()       = replace_external_vars_in_in_clause(clause.ptrn, clause.src, subst_map),
+  map_in_clause()   = replace_external_vars_in_map_in_clause(clause.key_ptrn, clause.value_ptrn, clause.src, subst_map),
+  and_clause()      = replace_external_vars_in_and_clause(clause.left, clause.right, subst_map),
+  or_clause()       = replace_external_vars_in_or_clause(clause.left, clause.right, subst_map);
 
 
-// Clause replace_external_vars(Clause clause, (Var => Var) subst_map)
-// {
-//   fail;
-// }
+Clause replace_external_vars_in_in_clause(Pattern ptrn, Expr src, (Var => Var) subst_map)
+{
+  assert disjoint(new_vars(ptrn), keys(subst_map));
+  new_src = replace_external_vars(src, subst_map);
+  return in_clause(ptrn, new_src);
+}
 
 
-// Expr replace_external_vars(Clause clause, Expr expr, (Var => Var) subst_map)
-// {
-//   fail;
-// }
+Clause replace_external_vars_in_map_in_clause(Pattern key_ptrn, Pattern value_ptrn, Expr src, (Var => Var) subst_map)
+{
+  assert disjoint(new_vars(key_ptrn) & new_vars(value_ptrn), keys(subst_map));
+  new_src = replace_external_vars(src, subst_map);
+  return map_in_clause(key_ptrn, value_ptrn, new_src);
+}
+
+
+Clause replace_external_vars_in_and_clause(Clause left_clause, Clause right_clause, (Var => Var) subst_map)
+{
+  new_left_clause = replace_external_vars_in_clause(left_clause, subst_map);
+  new_subst_map = remove_keys(subst_map, new_vars(left_clause));
+  new_right_clause = replace_external_vars_in_clause(right_clause, subst_map);
+  return and_clause(new_left_clause, new_right_clause);
+}
+
+
+Clause replace_external_vars_in_or_clause(Clause left_clause, Clause right_clause, (Var => Var) subst_map)
+{
+  new_left_clause = replace_external_vars_in_clause(left_clause, subst_map);
+  new_right_clause = replace_external_vars_in_clause(right_clause, subst_map);
+  return or_clause(new_left_clause, new_right_clause);
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
