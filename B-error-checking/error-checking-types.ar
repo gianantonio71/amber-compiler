@@ -1,0 +1,71 @@
+Maybe[WFError] typedef_wf_errors(SynAnyTypedef tdef, (BasicTypeSymbol => Nat+) type_arity_map)
+{
+  errs = type_wf_errors(tdef.type, type_arity_map=type_arity_map, type_vars=just(type_vars(tdef)));
+  return if errs == {} then nil else just(typedef_errors(tdef, errs));
+}
+
+
+[TypeWFError] type_wf_errors(SynType type, (BasicTypeSymbol => Nat+) type_arity_map, Bool fully_instantiated)
+{
+  errs = type_wf_errors(type, type_arity_map);
+  if (fully_instantiated)
+    vars = syn_type_vars(type);
+    errs = [errs | type_vars_not_allowed(type, vars)] if vars /= {};
+  ;
+  return errs;
+}
+
+
+[TypeWFError] type_wf_errors(SynType type, (BasicTypeSymbol => Nat+) type_arity_map) =
+  rand_sort(type_wf_errors(type, type_arity_map=type_arity_map, type_vars=nil));
+
+
+[TypeWFError] type_wf_errors(SynClsType type, (BasicTypeSymbol => Nat+) type_arity_map) =
+  join([type_wf_errors(t, type_arity_map) : t <- type.in_types]) &
+  type_wf_errors(type.out_type, type_arity_map);
+
+
+using (BasicTypeSymbol => Nat+) type_arity_map, Maybe[TypeVar*] type_vars
+{
+  TypeWFError* type_wf_errors(SynType type):
+    LeafType          = {},
+    syn_int_range()   = {invalid_int_range(type) if type.min > type.max},
+    type_ref(ts?)     = type_symb_wf_errors(ts),
+    TypeVar           = {undef_type_var(type) if type_vars /= nil and not in(type, value(type_vars))},
+    ne_seq_type()     = type_wf_errors(type.elem_type),
+    ne_set_type()     = type_wf_errors(type.elem_type),
+    ne_map_type()     = type_wf_errors(type.key_type) & type_wf_errors(type.value_type),
+    record_type(fs?)  = record_type_wf_errors(fs),
+    tuple_type(ts?)   = seq_union([type_wf_errors(t) : t <- ts]),
+    tag_obj_type()    = {invalid_tag_type(type.tag_type) if not type.tag_type :: TagType} & type_wf_errors(type.obj_type),
+    union_type(ts?)   = union_type_wf_errors(ts);
+
+
+  TypeWFError* type_symb_wf_errors(SynTypeSymbol type_symb)
+  {
+    basic_type_symb, arity = match (type_symb)
+      BasicTypeSymbol   = (type_symb, 0),
+      SynParTypeSymbol  = (type_symb.symbol, arity(type_symb));
+    ;
+    return {undef_type(basic_type_symb)} if not has_key(type_arity_map, basic_type_symb);
+    arities = type_arity_map[basic_type_symb];
+    return {undef_type_arity(basic_type_symb, arity, arities) if not in(arity, arities)};
+  }
+
+
+  TypeWFError* record_type_wf_errors([SynRecordField^] fields)
+  {
+    errs = [];
+    for (f1 @ i1 : fields ; f2 : right_subseq(fields, i1+1))
+      errs = [errs | dupl_record_field(f1, f2)] if f1.label == f2.label;
+    ;
+    return set(errs) & seq_union([type_wf_errors(f.type) : f <- fields]);
+  }
+
+
+  TypeWFError* union_type_wf_errors([SynType^] types)
+  {
+    errs = if length(types) > 1 then set([type_var_in_union(t) : t <- types, t :: TypeVar]) else {};
+    return errs & seq_union([type_wf_errors(t) : t <- types]);
+  }
+}

@@ -33,6 +33,27 @@ Var* syn_new_vars(SynIter iter):
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
+TypeVar* syn_type_vars(SynClsType type) = seq_union([syn_type_vars(t) : t <- type.in_types]) & syn_type_vars(type.out_type);
+
+TypeVar* syn_type_vars(SynType type):
+  SynLeafType       = {},
+  type_ref(ts?)     = syn_type_vars(ts),
+  type_var()        = {type},
+  ne_seq_type()     = syn_type_vars(type.elem_type),
+  ne_set_type()     = syn_type_vars(type.elem_type),
+  ne_map_type()     = syn_type_vars(type.key_type) & syn_type_vars(type.value_type),
+  record_type(fs?)  = seq_union([syn_type_vars(f.type) : f <- fs]),
+  tuple_type(ts?)   = seq_union([syn_type_vars(t) : t <- ts]),
+  tag_obj_type()    = syn_type_vars(type.tag_type) & syn_type_vars(type.obj_type),
+  union_type(ts?)   = seq_union([syn_type_vars(t) : t <- ts]);
+
+TypeVar* syn_type_vars(SynTypeSymbol type_symb):
+  BasicTypeSymbol   = {},
+  par_type_symbol() = seq_union([syn_type_vars(t) : t <- type_symb.params]);
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
 TypeSymbol syn_type_symbol_to_type_symbol(SynTypeSymbol ts, Maybe[[TypeVar]] type_vars):
   BasicTypeSymbol   = ts,
   par_type_symbol() = par_type_symbol(ts.symbol, [syn_type_to_type(p, type_vars) : p <- ts.params]);
@@ -61,6 +82,20 @@ ClsType syn_type_to_type(SynClsType type, Maybe[[TypeVar]] type_vars) =
     [syn_type_to_type(t, type_vars) : t <- type.in_types],
     syn_type_to_type(type.out_type, type_vars)
   );
+
+
+(TypeName => Type) create_type_map(SynTypedef* tdefs, SynParTypedef* par_tdefs)
+{
+  type_map = (type_name(td.name, 0) => syn_type_to_type(td.type, just([])) : td <- tdefs);
+  par_type_map = (type_name(td.name, length(td.params)) => syn_type_to_type(td.type, just(td.params)) : td <- par_tdefs);
+  return type_map & par_type_map;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+PseudoType syn_pseudotype(SynType type, (TypeName => Type) typedefs) = pseudotype(syn_type_to_type(type, nil), typedefs);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -133,3 +168,19 @@ Bool never_falls_through([SynStmt] stmts)
   ;
   return false;
 }
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+Var* already_def_vars(Var* new_vars, Var* curr_vars) = {v : v <- new_vars, already_def(v, curr_vars)};
+
+Bool already_def(Var var, Var* vars):
+  named_par(n?)   = already_def(n, vars),
+  var(n?)         = already_def(n, vars),
+  _               = in(var, vars);
+
+Bool already_def(Atom var_name, Var* vars) = in(var(var_name), vars) or in(named_par(var_name), vars);
+
+
+FnSymbol named_par_to_fn_symb(NamedPar p):
+  named_par(n?)   = fn_symbol(n);
