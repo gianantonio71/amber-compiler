@@ -1,7 +1,7 @@
 //## CHECK THAT TWO LOCAL FUNCTIONS CANNOT HAVE THE SAME NAME, EVEN IF THEY HAVE DIFFERENT ARITIES OR COMPATIBLE SIGNATURES
 //## CHECK THAT A POSITIONAL PARAMETER CANNOT HAVE THE SAME NAME AS A NAMED PARAMETER
 
-[AnyWFError] prg_wf_errors(SynPrg prg)
+[WFError] prg_wf_errors(SynPrg prg)
 {
   decls = set(_obj_(prg));
 
@@ -77,26 +77,17 @@
 }
 
 
-[AnyWFError] block_params_wf_errors([SynSgn] signatures, (BasicTypeSymbol => Nat+) type_arity_map)
+[WFError] block_params_wf_errors([SynSgn] signatures, (BasicTypeSymbol => Nat+) type_arity_map)
 {
   errs = [];
   for (s1 @ i1 : signatures ; s2 : right_subseq(signatures, i1+1))
     errs = [errs | dupl_signature(s1, s2)] if s1.name == s2.name;
   ;
   for (s : signatures)
-    ret_type_errs = signature_type_wf_errors(s.res_type, type_arity_map, s);
-    par_type_errs = join([signature_type_wf_errors(t, type_arity_map, s) : t <- s.params]);
-    errs = errs & ret_type_errs & par_type_errs;
+    type_errs = join([type_wf_errors(t, type_arity_map, true) : t <- s.params]) & type_wf_errors(s.res_type, type_arity_map, true);
+    errs = [errs | signature_errors(s, type_errs)] if type_errs /= [];
   ;
   return errs;
-
-  [AnyWFError] signature_type_wf_errors(SynType type, (BasicTypeSymbol => Nat+) type_arity_map, SynSgn signature)
-  {
-    errs = type_wf_errors(type, type_arity_map);
-    vars = syn_type_vars(type);
-    errs = [errs | type_vars_in_block_signature(signature, vars)] if vars /= {};
-    return errs;
-  }
 }
 
 
