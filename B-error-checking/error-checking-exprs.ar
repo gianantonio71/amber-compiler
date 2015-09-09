@@ -18,9 +18,9 @@ using
     set_expr(ses?)    = join([expr_wf_errors(se, def_vars) : se <- rand_sort(ses)]),
     map_expr(es?)     = join([map_entry_wf_errors(e, def_vars) : e <- rand_sort(es)]),
     tag_obj_expr()    = expr_wf_errors(expr.tag, def_vars) & expr_wf_errors(expr.obj, def_vars),
-    FnPar             = [undef_var(expr) if not in(expr, def_vars)], //## BUG BUG BUG
+    FnPar             = {assert in(expr, def_vars); return [];},
     const_or_var(a?)  = const_or_var_wf_errors(a, def_vars),
-    cls_par(n?)       = [undef_cls_param(expr) if n >= actual_param_arity],
+    cls_par(n?)       = [undef_impl_cls_arg(expr) if n >= actual_param_arity],
     fn_call()         = fn_call_wf_errors(expr, def_vars),
     builtin_call()    = builtin_call_wf_errors(expr.name, expr.params, def_vars),
     and()             = expr_wf_errors(expr.left, def_vars) & expr_wf_errors(expr.right, def_vars),
@@ -154,19 +154,19 @@ using
 
         if (has_key(closures, cls_symb))
           cls_arity = closures[cls_symb];
-          return [wrong_cls_arity(actual_param, exp_arity, {cls_arity}) if exp_arity /= cls_arity];
+          return [wrong_cls_param_arity(actual_param, exp_arity, {cls_arity}) if exp_arity /= cls_arity];
         ;
 
         if (has_key(local_functions, cls_symb))
           fns_info = local_functions[cls_symb];
           //## BUG BUG BUG: I MUST ALSO CHECK THAT IT HAS NO NAMED PARAMETERS
-          return [wrong_cls_arity(actual_param, exp_arity, keys(fns_info)) if not has_key(fns_info, exp_arity)];
+          return [wrong_cls_param_arity(actual_param, exp_arity, nonempty(keys(fns_info))) if not has_key(fns_info, exp_arity)];
         ;
 
         if (has_key(global_functions, cls_symb))
           fns_info = global_functions[cls_symb];
           //## BUG BUG BUG: I MUST ALSO CHECK THAT IT HAS NO NAMED PARAMETERS
-          return [wrong_cls_arity(actual_param, exp_arity, keys(fns_info)) if not has_key(fns_info, exp_arity)];
+          return [wrong_cls_param_arity(actual_param, exp_arity, nonempty(keys(fns_info))) if not has_key(fns_info, exp_arity)];
         ;
       ;
       return par_errs;
@@ -206,7 +206,7 @@ using
   {
     par_errs = join([expr_wf_errors(e, def_vars) : e <- params]);
     exp_arity = builtin_arities[name];
-    return par_errs & [wrong_arity(name, params) if length(params) /= exp_arity];
+    return par_errs & [wrong_builtin_arity(name, params) if length(params) /= exp_arity];
   }
 
 
@@ -226,7 +226,10 @@ using
   [ExprWFError] seq_comp_expr_wf_errors(SynLCExpr expr, Var* def_vars)
   {
     errs = expr_wf_errors(expr.src_expr, def_vars);
-    new_vars = set(expr.vars) & {expr.idx_var if expr.idx_var?};
+    new_vars = expr.vars & [expr.idx_var if expr.idx_var?];
+    dupl_vars = dupl_elems(new_vars);
+    errs = errs & [dupl_var_mult_asgnm(v) : v <- rand_sort(dupl_vars)];
+    new_vars = set(new_vars);
     errs = errs & [already_def_var(v) : v <- rand_sort(intersection(new_vars, def_vars))];
     new_def_vars = def_vars & new_vars;
     errs = errs & expr_wf_errors(expr.expr, new_def_vars);

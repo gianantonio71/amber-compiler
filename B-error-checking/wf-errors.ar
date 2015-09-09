@@ -1,89 +1,76 @@
-type WFError      = dupl_typedef((SynAnyTypedef, SynAnyTypedef)),
-                    typedef_errors(typedef: SynAnyTypedef, errors: TypeWFError+),
-                    dupl_signature((SynSgn, SynSgn)),
-                    signature_errors(sgn: SynSgn, errors: [TypeWFError^]),
-                    incomp_pos_params(fndefs: (SynFnDef, SynFnDef), param_indexes: [Nat^]),
-                    incomp_named_params(fndefs: (SynFnDef, SynFnDef), named_params: ([SynSgn], [SynSgn])),
-                    overlapping_pos_params((SynFnDef, SynFnDef)),
-                    fndef_errors(fndef: SynFnDef, errors: [FnDefWFError^]),
-                    incomp_proc_defs(SynProcDef+),
-                    proc_def_errors(proc_def: SynProcDef, errors: [ProcDefWFError^]),
-                    same_name_proc_defs(SynProcDef+);
+type WFError            = dupl_typedef((SynAnyTypedef, SynAnyTypedef)),
+                          typedef_errors(typedef: SynAnyTypedef, errors: [TypeWFError^]),
+                          dupl_using_block_param((SynSgn, SynSgn)),
+                          signature_errors(sgn: SynSgn, errors: [TypeWFError^]),
+                          incomp_pos_params(fndefs: (SynFnDef, SynFnDef), param_indexes: [Nat^]),
+                          overlapping_pos_params_types((SynFnDef, SynFnDef)),
+                          fndef_errors(fndef: SynFnDef, errors: [FnDefWFError^]),
+                          proc_def_errors(proc_def: SynProcDef, errors: [ProcDefWFError^]),
+                          same_name_proc_defs([SynProcDef^]);
+
+type TypeWFError        = invalid_int_range(<syn_int_range(min: Int, max: Int)>),
+                          undef_type_var(TypeVar),
+                          invalid_tag_type(SynType),
+                          undef_type(BasicTypeSymbol),
+                          undef_type_arity(type_symb: BasicTypeSymbol, arity: Nat, actual_arities: Nat+),
+                          dupl_record_field((SynRecordField, SynRecordField)),
+                          type_var_in_union(TypeVar),
+                          type_vars_not_allowed(type: SynType, vars: TypeVar+);
+
+type ExprSpecWFError    = already_def_var(Var),
+                          undef_var_or_const(Atom),
+                          wrong_builtin_arity(name: BuiltIn, params: [SynExpr^]),
+                          invalid_named_params(errors: (NamedPar, Nat, Maybe[Nat])+),
+                          undef_impl_cls_arg(ClsPar),
+                          dupl_named_params(expr: SynFnCall, bad_params: NamedPar+),
+                          wrong_fn_arity(expr: SynFnCall, actual_arities: Nat+),
+                          calling_unknown_function(SynFnCall),
+                          wrong_cls_param_arity(expr: ConstOrVar, exp_arity: NzNat, arities: Nat+),
+                          wrong_cls_call_arity(expr: SynFnCall, exp_arity: Nat),
+                          named_params_not_allowed(expr: SynFnCall),
+                          not_a_scalar_var(name: Atom),
+                          dupl_var_mult_asgnm(StdVar),
+
+                          clause_var_redef(SynClause),  //## THIS TYPE IS TOO LOOSE
+                          ptrn_var_redef(SynPtrn),      //## DITTO
+
+                          ro_vars_asgnm(stmt: <SynAsgnStmt, SynProcCallStmt>, vars: Var+),
+                          wrong_return(<SynReturnStmt, return_stmt>),
+                          vars_redef(stmt: SynForStmt, vars: Var+),
+                          undef_update_var(stmt: SynImpUpdateStmt, var: StdVar),
+                          wrong_proc_arity(stmt: SynProcCallStmt, exp_arity: Nat),
+                          uncaught_ret_val(SynProcCallStmt),
+                          proc_has_no_ret_val(SynProcCallStmt),
+                          undef_proc(SynProcCallStmt),
+                          proc_call_not_allowed(SynProcCallStmt),
+                          break_outside_loop(SynBreakStmt),
+                          missing_ret_stmt([SynStmt^]);
+
+type GenDefSpecWFError  = dupl_par_names(dupl_pos_pars: Atom*, dupl_named_pars: Atom*);
+
+type FnDefSpecWFError   = invalid_cls_type_vars(par_idx: Nat, var_name: Atom, type_vars: TypeVar+),
+                          invalid_res_type_vars(type_vars: TypeVar+),
+                          nested_functions_errors([WFError^]);
+
+type ProcDefSpecWFError = builtin_proc_redef,
+                          wrong_main_proc_arity;
 
 
-type TypeWFError  = invalid_int_range(<syn_int_range(min: Int, max: Int)>),
-                    undef_type_var(TypeVar),
-                    invalid_tag_type(SynType),
-                    undef_type(BasicTypeSymbol),
-                    undef_type_arity(type_symb: BasicTypeSymbol, arity: Nat, actual_arities: Nat+),
-                    dupl_record_field((SynRecordField, SynRecordField)),
-                    type_var_in_union(TypeVar),
-                    type_vars_not_allowed(type: SynType, vars: TypeVar+);
-
-
-type ExprWFError  = TypeWFError,
-                    undef_var(Var),
-                    already_def_var(Var),
-                    undef_var_or_const(Atom),
-                    wrong_arity(name: BuiltIn, params: [SynExpr^]),
-                    invalid_named_params(errors: (NamedPar, Nat, Maybe[Nat])+),
-                    undef_cls_param(ClsPar),
-                    dupl_named_params(expr: SynFnCall, bad_params: NamedPar+),
-                    dupl_named_par(expr: SynFnCall, bad_params: NamedPar+),
-                    wrong_fn_arity(expr: SynFnCall, actual_arities: Nat+),
-                    calling_unknown_function(SynFnCall),
-                    wrong_cls_arity(expr: SynExpr, exp_arity: NzNat, arities: Nat*),
-                    wrong_cls_call_arity(expr: SynFnCall, exp_arity: Nat),
-                    named_params_not_allowed(expr: SynFnCall),
-                    not_a_scalar_var(name: Atom),
-
-                    clause_var_redef(SynClause),
-                    ptrn_var_redef(SynPtrn),
-
-                    ro_vars_asgnm(stmt: <SynAsgnStmt, SynProcCallStmt>, vars: Var+),
-                    wrong_return(<SynReturnStmt, return_stmt>),
-                    invalid_iter_vars(iter: SynIter, vars: Var+),
-                    vars_redef(stmt: SynForStmt, vars: Var+),
-                    undef_update_var(stmt: SynImpUpdateStmt, var: StdVar),
-                    wrong_proc_arity(stmt: SynProcCallStmt, exp_arity: Nat),
-                    uncaught_ret_val(SynProcCallStmt),
-                    proc_has_no_ret_val(SynProcCallStmt),
-                    undef_proc(SynProcCallStmt),
-                    proc_call_not_allowed(SynProcCallStmt),
-                    break_outside_loop(SynBreakStmt),
-                    missing_ret_stmt([SynStmt^]);
-
-type GenDefWFError  = ExprWFError, dupl_par_names(dupl_pos_pars: Atom*, dupl_named_pars: Atom*);
-
-type FnDefWFError   = GenDefWFError,
-                      invalid_cls_type_vars(par_idx: Nat, type_vars: TypeVar+),
-                      invalid_res_type_vars(type_vars: TypeVar+),
-                      nested_functions_errors([WFError^]);
-
-type ProcDefWFError = GenDefWFError,
-                      builtin_proc_redef,
-                      wrong_main_proc_arity;
+type ExprWFError        = TypeWFError, ExprSpecWFError;
+type FnDefWFError       = ExprWFError, GenDefSpecWFError, FnDefSpecWFError;
+type ProcDefWFError     = ExprWFError, GenDefSpecWFError, ProcDefSpecWFError;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-WFError dupl_typedef(SynAnyTypedef td1, SynAnyTypedef td2)    = :dupl_typedef((td1, td2));
-WFError typedef_errors(SynAnyTypedef td, TypeWFError+ errs)   = typedef_errors(typedef: td, errors: errs);
-
-WFError dupl_signature(SynSgn s1, SynSgn s2)                      = :dupl_signature((s1, s2));
+WFError dupl_typedef(SynAnyTypedef td1, SynAnyTypedef td2)        = :dupl_typedef((td1, td2));
+WFError typedef_errors(SynAnyTypedef td, [TypeWFError^] errs)     = typedef_errors(typedef: td, errors: errs);
+WFError dupl_using_block_param(SynSgn s1, SynSgn s2)              = :dupl_using_block_param((s1, s2));
 WFError signature_errors(SynSgn s, [TypeWFError^] es)             = signature_errors(sgn: s, errors: es);
-
 WFError incomp_pos_params(SynFnDef fd1, SynFnDef fd2, [Nat^] is)  = incomp_pos_params(fndefs: (fd1, fd2), param_indexes: is);
-WFError incomp_named_params(SynFnDef fd1, [SynSgn] nps1, SynFnDef fd2, [SynSgn] nps2) =
-  incomp_named_params(fndefs: (fd1, fd2), named_params: (nps1, nps2));
-WFError overlapping_pos_params(SynFnDef fd1, SynFnDef fd2)        = :overlapping_pos_params((fd1, fd2));
-
+WFError overlapping_pos_params_types(SynFnDef fd1, SynFnDef fd2)  = :overlapping_pos_params_types((fd1, fd2));
 WFError fndef_errors(SynFnDef fd, [FnDefWFError^] errs)           = fndef_errors(fndef: fd, errors: errs);
-
-WFError incomp_proc_defs(SynProcDef+ pds)                         = :incomp_proc_defs(pds);
-
 WFError proc_def_errors(SynProcDef pd, [ProcDefWFError^] es)      = proc_def_errors(proc_def: pd, errors: es);
-
-WFError same_name_proc_defs(SynProcDef+ pds)                      = :same_name_proc_defs(pds);
+WFError same_name_proc_defs([SynProcDef^] pds)                    = :same_name_proc_defs(pds);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -98,47 +85,254 @@ TypeWFError type_vars_not_allowed(SynType t, TypeVar+ vs)             = type_var
 
 ////////////////////////////////////////////////////////////////////////////////
 
-GenDefWFError dupl_par_names(Atom* pps, Atom* nps) = dupl_par_names(dupl_pos_pars: pps, dupl_named_pars: nps);
+GenDefSpecWFError dupl_par_names(Atom* pps, Atom* nps) = dupl_par_names(dupl_pos_pars: pps, dupl_named_pars: nps);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-FnDefWFError invalid_cls_type_vars(Nat i, TypeVar+ vs)  = invalid_cls_type_vars(par_idx: i, type_vars: vs);
-FnDefWFError invalid_res_type_vars(TypeVar+ vs)         = invalid_res_type_vars(type_vars: vs);
-FnDefWFError nested_functions_errors([WFError^] es)     = :nested_functions_errors(es);
+FnDefSpecWFError invalid_cls_type_vars(Nat i, Atom n, TypeVar+ vs)  = invalid_cls_type_vars(par_idx: i, var_name: n, type_vars: vs);
+FnDefSpecWFError invalid_res_type_vars(TypeVar+ vs)                 = invalid_res_type_vars(type_vars: vs);
+FnDefSpecWFError nested_functions_errors([WFError^] es)             = :nested_functions_errors(es);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-ProcDefWFError builtin_proc_redef     = :builtin_proc_redef;
-ProcDefWFError wrong_main_proc_arity  = :wrong_main_proc_arity;
+ProcDefSpecWFError builtin_proc_redef     = :builtin_proc_redef;
+ProcDefSpecWFError wrong_main_proc_arity  = :wrong_main_proc_arity;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-ExprWFError undef_var(Var v)                                        = :undef_var(v);
-ExprWFError already_def_var(Var v)                                  = :already_def_var(v);
-ExprWFError undef_var_or_const(Atom v)                              = :undef_var_or_const(v);
-ExprWFError wrong_arity(BuiltIn b, [SynExpr^] ps)                   = wrong_arity(name: b, params: ps);
-ExprWFError invalid_named_params((NamedPar, Nat, Maybe[Nat])+ es)   = invalid_named_params(errors: es);
-ExprWFError undef_cls_param(ClsPar p)                               = :undef_cls_param(p);
-ExprWFError dupl_named_params(SynFnCall c, NamedPar+ ps)            = dupl_named_params(expr: c, bad_params: ps);
-ExprWFError wrong_fn_arity(SynFnCall c, Nat+ as)                    = wrong_fn_arity(expr: c, actual_arities: as);
-ExprWFError calling_unknown_function(SynFnCall c)                   = :calling_unknown_function(c);
-ExprWFError wrong_cls_arity(SynExpr e, NzNat ea, Nat* as)           = wrong_cls_arity(expr: e, exp_arity: ea, arities: as);
-ExprWFError wrong_cls_call_arity(SynFnCall c, Nat ea)               = wrong_cls_call_arity(expr: c, exp_arity: ea);
-ExprWFError named_params_not_allowed(SynFnCall c)                   = named_params_not_allowed(expr: c);
-ExprWFError not_a_scalar_var(Atom a)                                = not_a_scalar_var(name: a);
+ExprSpecWFError already_def_var(Var v)                                  = :already_def_var(v);
+ExprSpecWFError undef_var_or_const(Atom v)                              = :undef_var_or_const(v);
+ExprSpecWFError wrong_builtin_arity(BuiltIn b, [SynExpr^] ps)           = wrong_builtin_arity(name: b, params: ps);
+ExprSpecWFError invalid_named_params((NamedPar, Nat, Maybe[Nat])+ es)   = invalid_named_params(errors: es);
+ExprSpecWFError undef_impl_cls_arg(ClsPar p)                            = :undef_impl_cls_arg(p);
+ExprSpecWFError dupl_named_params(SynFnCall c, NamedPar+ ps)            = dupl_named_params(expr: c, bad_params: ps);
+ExprSpecWFError wrong_fn_arity(SynFnCall c, Nat+ as)                    = wrong_fn_arity(expr: c, actual_arities: as);
+ExprSpecWFError calling_unknown_function(SynFnCall c)                   = :calling_unknown_function(c);
+ExprSpecWFError wrong_cls_param_arity(ConstOrVar e, NzNat ea, Nat+ as)  = wrong_cls_param_arity(expr: e, exp_arity: ea, arities: as);
+ExprSpecWFError wrong_cls_call_arity(SynFnCall c, Nat ea)               = wrong_cls_call_arity(expr: c, exp_arity: ea);
+ExprSpecWFError named_params_not_allowed(SynFnCall c)                   = named_params_not_allowed(expr: c);
+ExprSpecWFError not_a_scalar_var(Atom a)                                = not_a_scalar_var(name: a);
+ExprSpecWFError dupl_var_mult_asgnm(StdVar v)                           = :dupl_var_mult_asgnm(v);
 
-ExprWFError clause_var_redef(SynClause c)                           = :clause_var_redef(c);
-ExprWFError ptrn_var_redef(SynPtrn p)                               = :ptrn_var_redef(p);
+ExprSpecWFError clause_var_redef(SynClause c)                           = :clause_var_redef(c);
+ExprSpecWFError ptrn_var_redef(SynPtrn p)                               = :ptrn_var_redef(p);
 
-ExprWFError ro_vars_asgnm(<SynAsgnStmt, SynProcCallStmt> s, Var+ vs)  = ro_vars_asgnm(stmt: s, vars: vs);
-ExprWFError wrong_return(<SynReturnStmt, return_stmt> s)              = :wrong_return(s);
-ExprWFError invalid_iter_vars(SynIter it, Var+ vs)                    = invalid_iter_vars(iter: it, vars: vs);
-ExprWFError vars_redef(SynForStmt s, Var+ vs)                         = vars_redef(stmt: s, vars: vs);
-ExprWFError undef_update_var(SynImpUpdateStmt s, StdVar v)            = undef_update_var(stmt: s, var: v);
-ExprWFError wrong_proc_arity(SynProcCallStmt s, Nat a)                = wrong_proc_arity(stmt: s, exp_arity: a);
-ExprWFError uncaught_ret_val(SynProcCallStmt s)                       = :uncaught_ret_val(s);
-ExprWFError proc_has_no_ret_val(SynProcCallStmt s)                    = :proc_has_no_ret_val(s);
-ExprWFError undef_proc(SynProcCallStmt s)                             = :undef_proc(s);
-ExprWFError proc_call_not_allowed(SynProcCallStmt s)                  = :proc_call_not_allowed(s);
-ExprWFError break_outside_loop(SynBreakStmt s)                        = :break_outside_loop(s);
-ExprWFError missing_ret_stmt([SynStmt^] ss)                           = :missing_ret_stmt(ss);
+ExprSpecWFError ro_vars_asgnm(<SynAsgnStmt, SynProcCallStmt> s, Var+ vs)  = ro_vars_asgnm(stmt: s, vars: vs);
+ExprSpecWFError wrong_return(<SynReturnStmt, return_stmt> s)              = :wrong_return(s);
+ExprSpecWFError vars_redef(SynForStmt s, Var+ vs)                         = vars_redef(stmt: s, vars: vs);
+ExprSpecWFError undef_update_var(SynImpUpdateStmt s, StdVar v)            = undef_update_var(stmt: s, var: v);
+ExprSpecWFError wrong_proc_arity(SynProcCallStmt s, Nat a)                = wrong_proc_arity(stmt: s, exp_arity: a);
+ExprSpecWFError uncaught_ret_val(SynProcCallStmt s)                       = :uncaught_ret_val(s);
+ExprSpecWFError proc_has_no_ret_val(SynProcCallStmt s)                    = :proc_has_no_ret_val(s);
+ExprSpecWFError undef_proc(SynProcCallStmt s)                             = :undef_proc(s);
+ExprSpecWFError proc_call_not_allowed(SynProcCallStmt s)                  = :proc_call_not_allowed(s);
+ExprSpecWFError break_outside_loop(SynBreakStmt s)                        = :break_outside_loop(s);
+ExprSpecWFError missing_ret_stmt([SynStmt^] ss)                           = :missing_ret_stmt(ss);
+
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+(String, NzNat, NzNat) source_code_location(PrgDecl decl)
+{
+  data = _fetch_(decl);
+  print data if not data :: (String, NzNat, NzNat)* or size(data) /= 1;
+  fail if not data :: (String, NzNat, NzNat)*;
+  return only_element(data);
+}
+
+
+String source_code_loc_str(PrgDecl decl)
+{
+  fn, sl, el = source_code_location(decl);
+  return "file " & fn & " line" & if sl == el then to_str(sl) else "s " & to_str(sl) & "-" & to_str(el);
+}
+
+
+String source_code_loc_str(SynSgn sgn1, SynSgn sgn2)
+{
+  return "";
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+String user_name(SynTypedef td)     = user_repr(td.name);
+String user_name(SynParTypedef td)  = user_repr(td.name) & "/" & to_str(length(td.params));
+String user_name(SynSgn s)          = match (s.name) named_par(n?) = _str_(n);;
+String user_name(SynFnDef fd)       = user_repr(fd.name) & "/" & to_str(arity(fd));
+String user_name(SynProcDef pd)     = match (pd.name) proc_symbol(n?) = capitalize(_str_(n), false);;
+
+
+String user_repr(BasicTypeSymbol):
+  type_symbol(a?)   = upper_camel_case(a);
+
+String user_repr(FnSymbol fn_symb):
+  fn_symbol(a?)         = _str_(a),
+  op_symbol(op?)        = user_repr(op),
+  nested_fn_symbol()    = user_repr(fn_symb.outer) & ":" & user_repr(fn_symb.inner),
+  unique_fn_symbol()    = {fail;};
+
+String user_repr(Operator):
+  plus          = "(_+_)",
+  minus         = "(_-_)", //## BUG BUG BUG: THIS IS WRONG, THERE ARE TWO OPERATORS HERE, THE UNARY AND THE BINARY ONE
+  star          = "(_*_)",
+  slash         = "(_/_)",
+  exp           = "(_^_)",
+  amp           = "(_&_)",
+  lower         = "(_<_)",
+  greater       = "(_>_)",
+  lower_eq      = "(_<=_)",
+  greater_eq    = "(_>=_)",
+  brackets      = "(_[_])";
+
+
+String user_repr(TypeVar):
+  type_var(Atom a?)   = uppercase(a);
+
+String user_repr(SymbObj):
+  object(a?)  = _str_(a);
+
+String user_repr(ClsPar):
+  cls_par(n?) = string([ascii_dollar, nat(ascii_lower_a + n)]);
+
+String user_repr(ConstOrVar):
+  const_or_var(a?)  = _str_(a);
+
+String user_repr(Var v):
+  fn_par(n?)        = "$" & to_str(n),
+  named_par(a?)     = _str_(a),
+  cls_ext_par(n?)   = {fail;},
+  var(a?)           = _str_(a);
+
+String user_repr(ProcSymbol):
+  proc_symbol(a?)   = upper_camel_case(a);
+
+String user_repr(BuiltIn b) = "_" & _str_(b) & "_";
+
+
+String plural([Any^] objs)  = if length(objs) > 1 then "s" else "";
+String plural(Any+ objs)    = if size(objs)   > 1 then "s" else "";
+
+////////////////////////////////////////////////////////////////////////////////
+
+[String] create_error_msg(WFError err):
+  dupl_typedef(tds?)                  = create_dupl_typedef_error_msg(left(tds), right(tds)),
+  typedef_errors()                    = create_typedef_error_msg(err.typedef, err.errors),
+  dupl_using_block_param(ss?)         = create_dupl_using_block_param_err_msg(left(ss), right(ss)),
+  incomp_pos_params()                 = create_incomp_pos_pars_err_msg(left(err.fndefs), right(err.fndefs), err.param_indexes),
+  overlapping_pos_params_types(fds?)  = create_overlapping_pos_pars_types_err_msg(left(fds), right(fds)),
+  fndef_errors()                      = create_fndef_errs_msg(err.fndef, err.errors),
+  proc_def_errors()                   = create_proc_def_errs_msg(err.proc_def, err.errors),
+  same_name_proc_defs(pds?)           = create_same_name_proc_defs_err_msg(pds);
+
+
+[String] create_dupl_typedef_error_msg(SynAnyTypedef td1, SynAnyTypedef td2) = [
+    "Duplicated type definition: " & user_name(td1),
+    "    " & source_code_loc_str(td1),
+    "    " & source_code_loc_str(td2)
+  ];
+
+
+[String] create_typedef_error_msg(SynAnyTypedef tdef, [TypeWFError^] errs) =
+  ["Type definition errors: " & user_name(tdef), source_code_loc_str(tdef)] &
+  ["    " & l : l <- join([create_error_msg(e) : e <- errs])];
+
+
+[String] create_dupl_using_block_param_err_msg(SynSgn sgn1, SynSgn sgn2) =
+  ["Duplicate using block parameter: " & user_name(sgn1), source_code_loc_str(sgn1, sgn2)];
+
+
+[String] create_incomp_pos_pars_err_msg(SynFnDef fd1, SynFnDef fd2, [Nat^] par_idxs) = [
+    "Incompatible argument types in polymorphic function: " & user_name(fd1) & ", arguments: " & append([to_str(i) : i <- par_idxs]),
+    "    " & source_code_loc_str(fd1),
+    "    " & source_code_loc_str(fd2)
+  ];
+
+
+[String] create_overlapping_pos_pars_types_err_msg(SynFnDef fd1, SynFnDef fd2) = [
+    "Overlapping argument types in polymorphic functions: " & user_name(fd1),
+    "    " & source_code_loc_str(fd1),
+    "    " & source_code_loc_str(fd2)
+  ];
+
+
+[String] create_fndef_errs_msg(SynFnDef fndef, [FnDefWFError^] errs) =
+  ["Error" & plural(errs) & " in function definition: " & user_name(fndef), source_code_loc_str(fndef)] &
+  ["    " & l : l <- join([create_error_msg(e) : e <- errs])];
+
+
+[String] create_proc_def_errs_msg(SynProcDef proc_def, [ProcDefWFError^] errs) =
+  ["Error" & plural(errs) & " in procedure definition: " & user_name(proc_def), source_code_loc_str(proc_def)] &
+  ["    " & l : l <- join([create_error_msg(e) : e <- errs])];
+
+
+[String] create_same_name_proc_defs_err_msg([SynProcDef^] proc_defs) =
+  ["Multiple definitions of the same procedure: " & user_name(head(proc_defs))] &
+  ["    " & source_code_loc_str(pd) : pd <- proc_defs];
+
+////////////////////////////////////////////////////////////////////////////////
+
+[String] create_error_msg(TypeWFError err):
+  invalid_int_range(r?)     = ["Invalid integer range: [" & to_str(r.min) & ".." & to_str(r.max) & "]"],
+  undef_type_var(v?)        = ["Undefined type variable: " & user_repr(v)],
+  invalid_tag_type(t?)      = ["Invalid tag type"],
+  undef_type(ts?)           = ["Undefined type: " & user_repr(ts)],
+  undef_type_arity()        = { suffix = if size(err.actual_arities) > 1 then "y" else "ies";
+                                arity_str = append([to_str(a) : a <- rand_sort(err.actual_arities)]);
+                                type_name = user_repr(err.type_symb);
+                                return ["Wrong parametric type arity: " & type_name & ", actual arit" & suffix & ": " & arity_str];
+                              },
+  dupl_record_field(rs?)    = ["Duplicated record field: " & user_repr(left(rs).label)],
+  type_var_in_union(v?)     = ["Type variables not allowed in union types: " & user_repr(v)],
+  type_vars_not_allowed()   = ["Type variables not allowed here: " & append([user_repr(v) : v <- rand_sort(err.vars)], ", ")];
+
+
+[String] create_error_msg(ExprSpecWFError err):
+  already_def_var(v?)         = ["Variable redefinition: " & user_repr(v)],
+  undef_var_or_const(a?)      = ["Undefined variable or constant: " & _str_(a)],
+  wrong_builtin_arity()       = ["Wrong builtin function arity: " & user_repr(err.name)],
+  invalid_named_params()      = ["Invalid named parameter: " & user_repr(np) : np, unused_var_1, unused_var_2 <- rand_sort(err.errors)],
+  undef_impl_cls_arg(p?)      = ["Invalid implicit closure argument: " & user_repr(p)],
+  dupl_named_params()         = ["Duplicated named parameter" & plural(err.bad_params) & ": " & user_repr(np) : np <- rand_sort(err.bad_params)],
+  wrong_fn_arity()            = ["Wrong number of arguments: " & user_repr(err.expr.name) &
+                                 ", actual arity: " & append([to_str(a) : a <- rand_sort(err.actual_arities)], ", ")
+                                ],
+  calling_unknown_function(c?)  = ["Unknown function: " & user_repr(c.name)],
+  wrong_cls_param_arity()     = ["Closure has wrong arity: " & user_repr(err.expr) &
+                                 ", expected arity: " & to_str(err.exp_arity) &
+                                 ", actual arity: " & append([to_str(a) : a <- rand_sort(err.arities)], ", ")
+                                ],
+  wrong_cls_call_arity()      = ["Wrong number of arguments: " & user_repr(err.expr.name) & ", actual arity: " & to_str(err.exp_arity)],
+  named_params_not_allowed()  = ["Closures cannot have named parameters: " & user_repr(err.expr.name)],
+  not_a_scalar_var()          = ["Invalid use of closure variable: " & _str_(err.name)],
+
+  clause_var_redef(eq_clause() c?)  = ["Variable redefinition: " & user_repr(c.var)],
+  ptrn_var_redef(ptrn_var() p?)     = ["Variable redefinition: " & user_repr(p.var)],
+
+  ro_vars_asgnm()             = ["Invalid assignment to read-only variable: " & user_repr(v) : v <- rand_sort(err.vars)],
+  wrong_return(s?)            = [if s == return_stmt then "Return value required" else "Cannot return a value"],
+  vars_redef()                = ["Variable is already defined: " & user_repr(v) : v <- rand_sort(err.vars)],
+  undef_update_var()          = ["Variable is not defined: " & user_repr(err.var)],
+  wrong_proc_arity()          = ["Wrong number of arguments: " & user_repr(err.stmt.proc_name) & ", expected arity: " & to_str(err.exp_arity)],
+  uncaught_ret_val(p?)        = ["Return value cannot be ignored: " & user_repr(p.proc_name)],
+  proc_has_no_ret_val(p?)     = ["Procedure has no return value: " & user_repr(p.proc_name)],
+  undef_proc(p?)              = ["Undefined procedure: " & user_repr(p.proc_name)],
+  proc_call_not_allowed()     = {fail;},
+  break_outside_loop()        = ["Break statement outside a loop"],
+  missing_ret_stmt()          = ["Missing return statement"];
+
+
+[String] create_error_msg(GenDefSpecWFError err) =
+  ["Duplicated parameter name: " & _str_(a) : a <- rand_sort(err.dupl_pos_pars)] &
+  ["Implicit and standard arguments cannot have the same name: " & _str_(a) : a <- rand_sort(err.dupl_named_pars)];
+
+
+[String] create_error_msg(FnDefSpecWFError err):
+  invalid_cls_type_vars()       = ["Invalid type variable: " & user_repr(v)  & " in argument type: " & _str_(err.var_name) : v <- rand_sort(err.type_vars)],
+  invalid_res_type_vars()       = ["Invalid type variable in function result: " & user_repr(v) : v <- rand_sort(err.type_vars)],
+  nested_functions_errors(es?)  = ["Errors in nested functions"] & ["    " & l : l <- join([create_error_msg(e) : e <- es])];
+
+
+[String] create_error_msg(ProcDefSpecWFError err):
+  builtin_proc_redef     = ["Redefinition of builtin procedure"],
+  wrong_main_proc_arity  = ["Main procedure can only have one parameter"];

@@ -1,5 +1,5 @@
 
-Result[[PrgDecl], <LexerError, ParError, ParserError>] lex_and_parse_src_file([Nat] chars)
+Result[[PrgDecl], <LexerError, ParError, ParserError>] lex_and_parse_src_file(String filename, [Nat] chars)
 {
   lex_res = lex_src_file(chars);
   return failure(get_error(lex_res)) if is_failure(lex_res); //## BAD: TO SHUT UP THE TYPECHECKER IT HAS TO BE failure(get_error(lex_res)) INSTEAD OF JUST lex_res
@@ -26,9 +26,26 @@ Result[[PrgDecl], <LexerError, ParError, ParserError>] lex_and_parse_src_file([N
   return failure(get_error(parser_res)) if is_failure(parser_res); //## BAD: SEE ABOVE COMMENT
   parser_match = get_result(parser_res);
 
-  post_parser_res = [reshuffle_local_fndefs(d) : d <- build_amber_file_ast(parser_match.rule_match)];
+  post_parser_res = [attach_src_code_info(reshuffle_local_fndefs(d), filename, m) : d, m <- build_amber_file_ast(parser_match.rule_match)];
 
   return success(post_parser_res);
+}
+
+
+PrgDecl attach_src_code_info(PrgDecl decl, String filename, RuleMatch match)
+{
+  src_code_info = source_file_location(match);
+  if (src_code_info == nil)
+    start_line = nil;
+    end_line = nil;
+  else
+    start_pos, end_pos = value(src_code_info);
+    start_line, unused_var = start_pos;
+    end_line, unused_var = end_pos;
+  ;
+  return attach(decl, (filename, start_line, end_line));
+
+  T attach(T obj, Any data) = _attach_(obj, data); //## BAD BAD BAD: THIS IS A WORKAROUND FOR A BUG IN THE TYPECHECKER
 }
 
 

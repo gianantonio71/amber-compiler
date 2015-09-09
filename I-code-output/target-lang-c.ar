@@ -76,7 +76,7 @@ CCodeOutput compile_to_c(ProcDef* prg)
 
   [String] generate_cls_obj_typedef(NzNat arity) = [
     "struct CLS" & to_str(arity) & " {",
-    "  Obj (*fn_ptr)(" & append(intermix(arity * ["Obj"], ", ")) & ", const Obj *, Env &env);",
+    "  Obj (*fn_ptr)(" & append(arity * ["Obj"], ", ") & ", const Obj *, Env &env);",
     "  const Obj *data;",
     "};"
   ];
@@ -103,9 +103,9 @@ CCodeOutput compile_to_c(ProcDef* prg)
     "",
     "namespace generated",
     "{"
-  ] & indent(c_code & proc_code.body) & ["}"];
+  ] & indent_lines(c_code & proc_code.body) & ["}"];
 
-  header = ["namespace generated", "{"] & indent(symb_decls & env_decl & cls_obj_typedefs & proc_code.header) & ["}"];
+  header = ["namespace generated", "{"] & indent_lines(symb_decls & env_decl & cls_obj_typedefs & proc_code.header) & ["}"];
 
   return (body: body, header: header);
 
@@ -168,21 +168,21 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
   String gen_c_decl(ObjProcDef pd)
   {
     par_types = [if p == :obj then "Obj" else "CLS" & to_str(p.arity) & " &" : p <- pd.params];
-    par_list = append(intermix(par_types & ["Env &"], ", "));
+    par_list = append(par_types & ["Env &"], ", ");
     return "Obj " & to_c_fn_name(pd.name) & "(" & par_list & ");";
   }
 
 
   String gen_c_decl(BoolProcDef pd)
   {
-    par_list = append(intermix(pd.arity * ["Obj"], ", "));
+    par_list = append(pd.arity * ["Obj"], ", ");
     return "bool " & to_c_fn_name(pd.name) & "(" & par_list & ");";
   }
 
 
   String gen_c_decl(ClsDef cd, Nat id)
   {
-    par_list = append(intermix(cd.arity * ["Obj"] & ["const Obj *", "Env &"], ", "));
+    par_list = append(cd.arity * ["Obj"] & ["const Obj *", "Env &"], ", ");
     return "Obj cls_" & to_str(id) & "(" & par_list & ");";
   }
 
@@ -194,7 +194,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     suffix = if cached then "__CALCULATE_CONSTANT" else "";
 
     par_list = gen_fn_pars(pd);
-    par_list_str = append(intermix(par_list, ", "));
+    par_list_str = append(par_list, ", ");
 
     signature = ret_type_str(pd) & to_c_fn_name(pd.name) & suffix & "(" & par_list_str & ")";
 
@@ -215,7 +215,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
     comp_body = compile_to_c(body, nil);
 
-    code = [signature, "{"] & indent(var_decls) & [""] & indent(comp_body) & ["}"];
+    code = [signature, "{"] & indent_lines(var_decls) & [""] & indent_lines(comp_body) & ["}"];
 
     if (cached)
       wrapper_code = [
@@ -261,7 +261,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
   [String] compile_to_c(ClsDef cd, Nat id)
   {
     par_list  = ["Obj p" & to_str(n) : n < cd.arity] & ["const Obj C[]", "Env &env"]; //## BAD
-    signature = "Obj cls_" & to_str(id) & "(" & append(intermix(par_list, ", ")) & ")";
+    signature = "Obj cls_" & to_str(id) & "(" & append(par_list, ", ") & ")";
 
     body = cd.body;
     vars_to_decl = vars_to_declare(body);
@@ -269,7 +269,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     var_decls = [var_decl(v) : v <- rand_sort(vars_to_decl)];
     comp_body = compile_to_c(body, nil);
 
-    return [signature, "{"] & indent(var_decls) & [""] & indent(comp_body) & ["}"];
+    return [signature, "{"] & indent_lines(var_decls) & [""] & indent_lines(comp_body) & ["}"];
   }
 
 
@@ -347,7 +347,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
     no_op                 = [],
 
-    repeat(body?)         = ["for ( ; ; )", "{"] & indent(compile_to_c(body, block_id)) & ["}"],
+    repeat(body?)         = ["for ( ; ; )", "{"] & indent_lines(compile_to_c(body, block_id)) & ["}"],
 
     break_loop            = ["break;"],
 
@@ -480,10 +480,10 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
   {
     assert when_true /= [];
     code = ["if (" & to_c_expr(cond) & ")", "{"]     &
-           indent(compile_to_c(when_true, block_id)) &
+           indent_lines(compile_to_c(when_true, block_id)) &
            ["}"];
     if (when_false /= [])
-      code = code & ["else", "{"] & indent(compile_to_c(when_false, block_id)) & ["}"];
+      code = code & ["else", "{"] & indent_lines(compile_to_c(when_false, block_id)) & ["}"];
     ;
     return code;
   }
@@ -497,11 +497,11 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
   //   code = ["switch (" & to_c_expr(val) & ")", "{"];
   //   for (c : rand_sort(cases))
   //     case_code = ["case S_" & _str_(_obj_(s)) & ":" : s <- rand_sort(c.vals)] & //## BAD
-  //                  indent(compile_to_c(c.instrs, block_id) & ["break;"]);
-  //     code = code & indent(case_code);
+  //                  indent_lines(compile_to_c(c.instrs, block_id) & ["break;"]);
+  //     code = code & indent_lines(case_code);
   //   ;
   //   if (default /= [])
-  //     code = code & ["default:"] & indent(compile_to_c(default, block_id));
+  //     code = code & ["default:"] & indent_lines(compile_to_c(default, block_id));
   //   ;
   //   return code & ["}"];
   // }
@@ -524,9 +524,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     data_bk_var = "BD" & scope_id;
     new_data_var = "ND" & scope_id;
 
-    tmp = arity * ["Obj"] & ["const Obj *", "Env &"];
-    tmp = intermix(tmp, ", ");
-    tmp = append(tmp);
+    tmp = append(arity * ["Obj"] & ["const Obj *", "Env &"], ", ");
 
     code = [
       "Obj (*" & fn_bk_var & ")(" & tmp & ") = " & fn_var & ";",
@@ -559,7 +557,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
       code = code & ["release(" & new_data_var & "[" & to_str(i) & "]);"];
     ;
 
-    code = ["{"] & indent(code) & ["}"];
+    code = ["{"] & indent_lines(code) & ["}"];
 
     return code;
   }
@@ -568,7 +566,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
   ///////////////////////////////////////////////////////////////////////////////
 
   String mk_gen_call(String fn_name, [String] leading_params, [FnCallParam] params, [String] trailing_params) =
-    fn_name & "(" & append(intermix(leading_params & [to_c_expr(p) : p <- params] & trailing_params, ", ")) & ");";
+    fn_name & "(" & append(leading_params & [to_c_expr(p) : p <- params] & trailing_params, ", ") & ");";
 
   String mk_gen_call(AnyVar var, String fn_name, [String] leading_params, [FnCallParam] params, [String] trailing_params) =
     to_c_var_name(var) & " = " & mk_gen_call(fn_name, leading_params, params, trailing_params);
@@ -696,7 +694,7 @@ using String typesymb2name(TypeSymbol)
 
   String to_nary_op(String op, [AnyTypeExpr^] exprs, Bool parentesised)
   {
-    expr = append(intermix([to_c_expr(e, true) : e <- exprs], op));
+    expr = append([to_c_expr(e, true) : e <- exprs], op);
     expr = "(" & expr & ")" if length(exprs) > 1 and parentesised;
     return expr;
   }
@@ -765,28 +763,4 @@ using String typesymb2name(TypeSymbol)
     unique_fn_symbol()  = fn_name_to_str(fn_symb.symbol); //## BAD: THE DISPATCH FUNCTION WILL APPEAR ON THE STACK, AND IT WILL BE INDISTINGUISHABLE FROM ONE OF THE REAL FUNCTIONS
 
   String fn_name_to_str(ProcSymbol proc_symbol): proc_symbol(s?) = capitalize(_str_(s), false); //## UGLY UGLY UGLY
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
-[String] indent([String] strs) = [indent_line(s) : s <- strs];
-
-String indent_line(String str) = "  " & str;
-
-
-String capitalize(String s, Bool keep_underscores)
-{
-  first = true;
-  res = [];
-  for (ch @ i : _obj_(s))
-    tr_ch = ch;
-    if (ch == ascii_underscore)
-      first = true;
-    else
-      tr_ch  = nat(ch - ascii_lower_a + ascii_upper_a) if ch >= ascii_lower_a and ch <= ascii_lower_z and first; //## CREATE PRELUDE FUNCTION is_lower()/is_upper() AND to_lower()/to_upper()
-      first = false;
-    ;
-    res = res & [tr_ch if tr_ch /= ascii_underscore or keep_underscores];
-  ;
-  return string(res);
 }

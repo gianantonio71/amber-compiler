@@ -97,3 +97,32 @@ Atom get_rule_name(RuleMatch mtc):
 RuleMatch get_rule_match(RuleMatch mtc):
   rule_choice_match()   = mtc.match,
   _                     = {fail;};
+
+
+////////////////////////////////////////////////////////////////////////////////
+
+Maybe[((NzNat, NzNat), (NzNat, NzNat))] source_file_location(RuleMatch mtc):
+  null_match              = nil,
+  atomic_rule_match(t?)   = {pos = (t.line, t.col); return just((pos, pos));},
+  rule_seq_match(ms?)     = source_file_location(ms),
+  rep_rule_match(ms?)     = source_file_location(ms),
+  rule_choice_match()     = source_file_location(mtc.match);
+
+
+Maybe[((NzNat, NzNat), (NzNat, NzNat))] source_file_location([RuleMatch] mtcs)
+{
+  return nil if mtcs == [];
+  start_loc = nil;
+  for (m : mtcs)
+    start_loc = source_file_location(head(mtcs));
+    break if start_loc /= nil;
+  ;
+  return nil if start_loc == nil;
+  end_loc = nil;
+  for (i < length(mtcs))
+    end_loc = source_file_location(rev_at(mtcs, i));
+    break if end_loc /= nil;
+  ;
+  fail if end_loc == nil;
+  return just((left(value(start_loc)), right(value(end_loc))));
+}

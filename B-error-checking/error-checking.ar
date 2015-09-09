@@ -81,7 +81,7 @@
 {
   errs = [];
   for (s1 @ i1 : signatures ; s2 : right_subseq(signatures, i1+1))
-    errs = [errs | dupl_signature(s1, s2)] if s1.name == s2.name;
+    errs = [errs | dupl_using_block_param(s1, s2)] if s1.name == s2.name;
   ;
   for (s : signatures)
     type_errs = join([type_wf_errors(t, type_arity_map, true) : t <- s.params]) & type_wf_errors(s.res_type, type_arity_map, true);
@@ -119,12 +119,11 @@ Maybe[WFError] fndef_signature_wf_errors(SynFnDef fndef, [SynSgn] named_pars, (B
 
   indirect_type_vars = {};
   for (p @ i : fndef.params)
-    type = p.type;
-    if (type :: SynClsType)
-      in_type_vars = seq_union([syn_type_vars(t) : t <- type.in_types]);
+    if (p :: SynClsFnArg)
+      in_type_vars = seq_union([syn_type_vars(t) : t <- p.type.in_types]);
       undef_type_vars = in_type_vars - direct_type_vars;
-      errs = [errs | invalid_cls_type_vars(i, undef_type_vars)] if undef_type_vars /= {};
-      indirect_type_vars = indirect_type_vars & syn_type_vars(type.out_type);
+      errs = [errs | invalid_cls_type_vars(i, p.var_name, undef_type_vars)] if undef_type_vars /= {};
+      indirect_type_vars = indirect_type_vars & syn_type_vars(p.type.out_type);
     ;
   ;
 
@@ -147,7 +146,7 @@ Maybe[WFError] fndef_signature_wf_errors(SynFnDef fndef, [SynSgn] named_pars, (B
     // //## BAD BAD BAD. I SHOULD MAKE SURE THAT THE SIGNATURES ARE EQUIVALENT, NOT THAT THEY ARE SYNTACTICALLY THE SAME
     // return [incomp_named_params(fd1, ss1, fd2, ss2)] if set(ss1) /= set(ss2);
     args_are_disjoint = [args_are_pseudotype_disjoint(p1, p2, typedefs) : p1, p2 <- zip(fd1.params, fd2.params)];
-    return [overlapping_pos_params(fd1, fd2)] if not at_least_one(args_are_disjoint);
+    return [overlapping_pos_params_types(fd1, fd2)] if not at_least_one(args_are_disjoint);
   ;
   return [];
 
@@ -168,7 +167,7 @@ Maybe[WFError] fndef_signature_wf_errors(SynFnDef fndef, [SynSgn] named_pars, (B
 {
   def_errs = join([proc_signature_wf_errors(pd, type_arity_map) : pd <- rand_sort(proc_defs)]);
   procs_by_name = group_by(proc_defs, $.name);
-  global_errs = rand_sort({same_name_proc_defs(pds) : _ => pds <- procs_by_name, size(pds) /= 1});
+  global_errs = rand_sort({same_name_proc_defs(rand_sort(pds)) : _ => pds <- procs_by_name, size(pds) /= 1});
   return def_errs & global_errs;
 }
 

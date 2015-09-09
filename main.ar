@@ -1,10 +1,9 @@
 
 [Instr^] type_any_cheat_body = [ret_val(true)];
 
-[Instr^] type_seq_cheat_body = [ret_val(or(is_empty_seq(fn_par(0)), is_ne_seq(fn_par(0))))];
+[Instr^] type_seq_cheat_body = [set_bvar(bvar(0), or(is_empty_seq(fn_par(0)), is_ne_seq(fn_par(0)))), ret_val(bvar(0))];
 
-[Instr^] type_set_cheat_body = [ret_val(or(is_empty_set(fn_par(0)), is_ne_set(fn_par(0))))];
-
+[Instr^] type_set_cheat_body = [set_bvar(bvar(0), or(is_empty_set(fn_par(0)), is_ne_set(fn_par(0)))), ret_val(bvar(0))];
 
 
 ProcDef apply_cheats(ObjProcDef pd) = pd;
@@ -30,18 +29,47 @@ ProcDef apply_cheats(BoolProcDef pd)
 }
 
 
+String error_pos_msg(String filename, NzNat line, NzNat col) =
+  "File " & filename & ", line " & to_str(line) & ", column " & to_str(col);
+
+
+[String] create_error_msg(LexerError err, String filename) = ["Syntax error, invalid token", error_pos_msg(filename, err.line, err.col)];
+
+
+[String] create_error_msg(ParError err, String filename):
+  parenthesis_not_closed(t?)  = ["Opening parenthesis without corresponding closing parenthesis", error_pos_msg(filename, t.line, t.col)],
+  parenthesis_not_opened(t?)  = ["Closing parenthesis without corresponding opening parenthesis", error_pos_msg(filename, t.line, t.col)],
+  mismatched_parenthesis()    = [ "Mismatched parentheses, file " & filename,
+                                  "Line " & to_str(err.left.line) & " column " & to_str(err.left.col) &
+                                  ", line " & to_str(err.right.line) & "column " & to_str(err.right.col)
+                                ];
+
+
+[String] create_error_msg(ParserError err, String filename):
+  unexpected_end_of_file()  = ["Unexpected end of file: " & filename],
+  unexpected_token()        = ["Unexpected token", error_pos_msg(filename, err.found.line, err.found.col)],
+  all_choices_failed()      = create_error_msg(err.error, filename),
+  neg_rule_match()          = { pos = source_file_location(err.match.rule_match);
+                                return ["Syntax error in file " & filename, "The exact location of the error is unknown"] if pos == nil;
+                                start_pos, end_pos = value(pos);
+                                start_line, start_col = start_pos;
+                                return ["Syntax error", error_pos_msg(filename, start_line, start_col)];
+
+                              };
+
+
 Maybe[CCodeOutput] Compile((String => [Nat]) src_files, Bool run_typechecking, Bool print_intermediate, Bool print_times)
 {
   t0 = _ticks_(nil);
 
   decls = [];
   for (fn : rand_sort(keys(src_files)))
-    res = lex_and_parse_src_file(src_files[fn]);
+    res = lex_and_parse_src_file(fn, src_files[fn]);
     if (is_success(res))
       decls = decls & get_result(res);
     else
-      print fn;
-      print get_error(res);
+      err_msg = create_error_msg(get_error(res), fn);
+      Print(append(err_msg, "\n") & "\n");
       return nil;
     ;
   ;
@@ -62,7 +90,13 @@ Maybe[CCodeOutput] Compile((String => [Nat]) src_files, Bool run_typechecking, B
   if (errs == [])
     Print("Program is well-formed\n");
   else
-    print errs;
+    msgs = [create_error_msg(e) : e <- errs];
+    for (m : msgs)
+      for (l : m)
+        Print(l & "\n");
+      ;
+      Print("\n");
+    ;
     return nil;
   ;
 
@@ -223,8 +257,8 @@ Int Main([String] args)
 
   if (output /= nil)
     output = value(output);
-    body = append(intermix(output.body, "\n"));
-    header = append(intermix(output.header, "\n"));
+    body = append(output.body, "\n");
+    header = append(output.header, "\n");
     FileWrite("generated.cpp", false, _obj_(body));
     FileWrite("generated.h", false, _obj_(header));
   ;
