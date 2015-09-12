@@ -287,7 +287,19 @@ String plural(Any+ objs)    = if size(objs)   > 1 then "s" else "";
   type_vars_not_allowed()   = ["Type variables not allowed here: " & append([user_repr(v) : v <- rand_sort(err.vars)], ", ")];
 
 
-[String] create_error_msg(ExprSpecWFError err):
+[String] create_error_msg(ExprSpecWFError err)
+{
+  msg = basic_err_msg(err);
+  loc = source_code_location(err);
+  if (loc /= nil)
+    start_line = left(left(value(loc)));
+    msg = [l & " (line " & to_str(start_line) & ")" : l <- msg];
+  ;
+  return msg;
+}
+
+
+[String] basic_err_msg(ExprSpecWFError err):
   already_def_var(v?)         = ["Variable redefinition: " & user_repr(v)],
   undef_var_or_const(a?)      = ["Undefined variable or constant: " & _str_(a)],
   wrong_builtin_arity()       = ["Wrong builtin function arity: " & user_repr(err.name)],
@@ -295,13 +307,11 @@ String plural(Any+ objs)    = if size(objs)   > 1 then "s" else "";
   undef_impl_cls_arg(p?)      = ["Invalid implicit closure argument: " & user_repr(p)],
   dupl_named_params()         = ["Duplicated named parameter" & plural(err.bad_params) & ": " & user_repr(np) : np <- rand_sort(err.bad_params)],
   wrong_fn_arity()            = ["Wrong number of arguments: " & user_repr(err.expr.name) &
-                                 ", actual arity: " & append([to_str(a) : a <- rand_sort(err.actual_arities)], ", ")
-                                ],
+                                ", actual arity: " & append([to_str(a) : a <- rand_sort(err.actual_arities)], ", ")],
   calling_unknown_function(c?)  = ["Unknown function: " & user_repr(c.name)],
   wrong_cls_param_arity()     = ["Closure has wrong arity: " & user_repr(err.expr) &
-                                 ", expected arity: " & to_str(err.exp_arity) &
-                                 ", actual arity: " & append([to_str(a) : a <- rand_sort(err.arities)], ", ")
-                                ],
+                                ", expected arity: " & to_str(err.exp_arity) &
+                                ", actual arity: " & append([to_str(a) : a <- rand_sort(err.arities)], ", ")],
   wrong_cls_call_arity()      = ["Wrong number of arguments: " & user_repr(err.expr.name) & ", actual arity: " & to_str(err.exp_arity)],
   named_params_not_allowed()  = ["Closures cannot have named parameters: " & user_repr(err.expr.name)],
   not_a_scalar_var()          = ["Invalid use of closure variable: " & _str_(err.name)],
@@ -336,3 +346,48 @@ String plural(Any+ objs)    = if size(objs)   > 1 then "s" else "";
 [String] create_error_msg(ProcDefSpecWFError err):
   builtin_proc_redef     = ["Redefinition of builtin procedure"],
   wrong_main_proc_arity  = ["Main procedure can only have one parameter"];
+
+////////////////////////////////////////////////////////////////////////////////
+
+Maybe[((NzNat, NzNat), (NzNat, NzNat))] source_code_location(ExprSpecWFError err)
+{
+  obj = anchor_obj(err);
+  return nil if obj == nil;
+  info = fetch(obj);
+  assert size(info) <= 1;
+  return nil if size(info) /= 1;
+  loc_info = only_element(info);
+  return nil if not loc_info :: ((NzNat, NzNat), (NzNat, NzNat));
+  return just(loc_info);
+
+  Set fetch(Any obj)        = _fetch_(obj);         //## BAD BAD BAD: THIS IS A WORKAROUND FOR A BUG IN THE TYPECHECKER
+
+  Any anchor_obj(ExprSpecWFError err):
+    already_def_var(v?)               = v,
+    undef_var_or_const(a?)            = nil,
+    wrong_builtin_arity()             = nil,
+    invalid_named_params()            = nil,
+    undef_impl_cls_arg(p?)            = nil,
+    dupl_named_params()               = err.expr,
+    wrong_fn_arity()                  = err.expr,
+    calling_unknown_function(c?)      = c,
+    wrong_cls_param_arity()           = err.expr,
+    wrong_cls_call_arity()            = err.expr,
+    named_params_not_allowed()        = err.expr,
+    not_a_scalar_var()                = nil,
+
+    clause_var_redef(c?)              = c,
+    ptrn_var_redef(p?)                = p,
+
+    ro_vars_asgnm()                   = err.stmt,
+    wrong_return(s?)                  = s,
+    vars_redef()                      = err.stmt,
+    undef_update_var()                = err.stmt,
+    wrong_proc_arity()                = err.stmt,
+    uncaught_ret_val(s?)              = s,
+    proc_has_no_ret_val(s?)           = s,
+    undef_proc(s?)                    = s,
+    proc_call_not_allowed()           = {fail;},
+    break_outside_loop(s?)            = s,
+    missing_ret_stmt(ss?)             = head(ss);
+}

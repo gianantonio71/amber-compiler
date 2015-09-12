@@ -346,7 +346,7 @@ SynExpr build_expr_10_ast(RuleMatch mtc)
   expr = build_expr_9_ast(nodes[0]);
   return expr if nodes[1] == null_match;
   right_expr = build_expr_9_ast(rule_seq_node(nodes[1], 1));
-  return syn_tag_obj_expr(expr, right_expr);
+  return attach_src_code_info(syn_tag_obj_expr(expr, right_expr), mtc);
 }
 
 SynExpr build_expr_9_ast(RuleMatch mtc)
@@ -366,7 +366,7 @@ SynExpr build_expr_9_ast(RuleMatch mtc)
     ;
     i = i + 2;
   ;
-  return expr;
+  return attach_src_code_info(expr, mtc);
 }
 
 SynExpr build_expr_8_ast(RuleMatch mtc)
@@ -380,11 +380,12 @@ SynExpr build_expr_8_ast(RuleMatch mtc)
   op = get_token(nodes[0]);
   right_expr = build_expr_7_ast(nodes[1]);
   if (op == :double_equals)
-    return syn_eq(expr, right_expr);
+    expr = syn_eq(expr, right_expr);
   else
     assert op == :not_equal;
-    return syn_neq(expr, right_expr);
+    expr = syn_neq(expr, right_expr);
   ;
+  return attach_src_code_info(expr, mtc);
 }
 
 SynExpr build_expr_7_ast(RuleMatch mtc)
@@ -397,7 +398,7 @@ SynExpr build_expr_7_ast(RuleMatch mtc)
   nodes = rule_seq_nodes(nodes[1]);
   op = op_symbol(token_to_operator(get_token(nodes[0])));
   right_expr = build_expr_6_ast(nodes[1]);
-  return syn_fn_call(op, [expr, right_expr]);
+  return attach_src_code_info(syn_fn_call(op, [expr, right_expr]), mtc);
 }
 
 SynExpr build_expr_6_ast(RuleMatch mtc)
@@ -412,7 +413,7 @@ SynExpr build_expr_6_ast(RuleMatch mtc)
     expr = syn_fn_call(op, [expr, right_expr]);
     i = i + 2;
   ;
-  return expr;
+  return attach_src_code_info(expr, mtc);
 }
 
 SynExpr build_expr_5_ast(RuleMatch mtc)
@@ -427,7 +428,7 @@ SynExpr build_expr_5_ast(RuleMatch mtc)
     expr = syn_fn_call(op, [expr, right_expr]);
     i = i + 2;
   ;
-  return expr;
+  return attach_src_code_info(expr, mtc);
 }
 
 SynExpr build_expr_4_ast(RuleMatch mtc)
@@ -446,7 +447,7 @@ SynExpr build_expr_4_ast(RuleMatch mtc)
       expr = syn_not(expr);
     ;
   ;
-  return expr;
+  return attach_src_code_info(expr, mtc);
 }
 
 SynExpr build_expr_3_ast(RuleMatch mtc)
@@ -460,7 +461,7 @@ SynExpr build_expr_3_ast(RuleMatch mtc)
     expr = syn_fn_call(op_symbol(:exp), [left_expr, expr]);
     i = i - 1;
   ;
-  return expr;
+  return attach_src_code_info(expr, mtc);
 }
 
 SynExpr build_expr_2_ast(RuleMatch mtc)
@@ -471,7 +472,7 @@ SynExpr build_expr_2_ast(RuleMatch mtc)
   expr = build_expr_1_ast(nodes[0]);
   return expr if nodes[1] == null_match;
   type = build_type_ast(rule_seq_node(nodes[1], 1));
-  return syn_membership(expr, type);
+  return attach_src_code_info(syn_membership(expr, type), mtc);
 }
 
 SynExpr build_expr_1_ast(RuleMatch mtc)
@@ -494,11 +495,12 @@ SynExpr build_expr_1_ast(RuleMatch mtc)
     field = get_lowercase_id(nodes[2], 1);
     expr = syn_accessor_test(expr, field);
   ;
-  return expr;
+  return attach_src_code_info(expr, mtc);
 }
 
-SynExpr build_expr_0_ast(RuleMatch mtc) =
-  match (get_rule_name(mtc))
+SynExpr build_expr_0_ast(RuleMatch mtc)
+{
+  expr = match (get_rule_name(mtc))
     tag_obj       = build_tag_obj_expr_ast(get_rule_match(mtc)),                  // rule_seq([atomic_rule(qualified_symbol), par_rule(rule_ref_expr)])
     integer       = object(get_integer(get_rule_match(mtc))),                     // atomic_rule(integer)
     symbol        = object(get_qualified_symbol(get_rule_match(mtc))),            // atomic_rule(qualified_symbol)
@@ -527,6 +529,8 @@ SynExpr build_expr_0_ast(RuleMatch mtc) =
     const_or_var  = const_or_var(get_lowercase_id(get_rule_match(mtc))),          // rule_id
     cls_par       = cls_par(get_cls_par_idx(get_rule_match(mtc)));                // atomic_rule(qual_var))
   ;
+  return attach_src_code_info(expr, mtc);
+}
 
 SynTagObjExpr build_tag_obj_expr_ast(RuleMatch mtc)
 {
@@ -783,8 +787,9 @@ SynMapExprEntry build_record_field_ast(RuleMatch mtc)
 
 [SynStmt^] build_stmts_ast(RuleMatch mtc) = [build_stmt_ast(n) : n <- rep_rule_nodes(mtc)];
 
-SynStmt build_stmt_ast(RuleMatch mtc) =
-  match (get_rule_name(mtc))
+SynStmt build_stmt_ast(RuleMatch mtc)
+{
+  stmt = match (get_rule_name(mtc))
     asgnm       = build_asgnm_stmt_ast(get_rule_match(mtc)),
     ret         = build_ret_stmt_ast(get_rule_match(mtc)),
     if_stmt     = build_if_stmt_ast(get_rule_match(mtc)),
@@ -803,6 +808,8 @@ SynStmt build_stmt_ast(RuleMatch mtc) =
     no_val_ret  = build_no_val_ret_stmt_ast(get_rule_match(mtc)),
     proc_call   = build_proc_call_stmt_ast(get_rule_match(mtc));
   ;
+  return attach_src_code_info(stmt, mtc);
+}
 
 SynStmt build_asgnm_stmt_ast(RuleMatch mtc)
 {
@@ -994,21 +1001,22 @@ SynClause build_clause_ast(RuleMatch mtc)
   if (get_rule_name(mtc) == :eq)
     var  = var(get_lowercase_id(get_rule_match(mtc), 0));
     expr = build_expr_ast(rule_seq_node(get_rule_match(mtc), 2));
-    return syn_eq_clause(var, expr);
+    return attach_src_code_info(syn_eq_clause(var, expr), mtc);
   ;
   assert get_rule_name(mtc) == :in;
   ptrn = build_clause_ptrn_ast(nodes[0]);
   expr = build_expr_ast(nodes[3]);
-  return syn_in_clause(ptrn, expr) if nodes[1] == null_match;
+  return attach_src_code_info(syn_in_clause(ptrn, expr), mtc) if nodes[1] == null_match;
   nodes = rule_seq_nodes(nodes[1]);
   value_ptrn = build_clause_ptrn_ast(nodes[1]);
-  return syn_map_in_clause(ptrn, value_ptrn, expr);
+  return attach_src_code_info(syn_map_in_clause(ptrn, value_ptrn, expr), mtc);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-SynPtrn build_clause_ptrn_ast(RuleMatch mtc) =
-  match (get_rule_name(mtc))
+SynPtrn build_clause_ptrn_ast(RuleMatch mtc)
+{
+  ptrn = match (get_rule_name(mtc))
     // atomic_rule(underscore)
     any       = ptrn_any,
     // rule_seq([atomic_rule(lowercase_id), empty_block_rule(parenthesis), atomic_rule(lowercase_id)])
@@ -1020,6 +1028,8 @@ SynPtrn build_clause_ptrn_ast(RuleMatch mtc) =
     // atomic_rule(lowercase_id)
     var       = syn_ptrn_var(var(get_lowercase_id(get_rule_match(mtc))), ptrn_any);
   ;
+  return attach_src_code_info(ptrn, mtc);
+}
 
 SynPtrn build_tag_obj_clause_ptrn_ast(RuleMatch mtc)
 {
@@ -1038,7 +1048,7 @@ SynPtrn build_switch_ptrn_ast(RuleMatch mtc)  //## build_try_ptrn_ast? build_mat
   var_match = nodes[1];
   ptrn = build_switch_ptrn_ast(get_rule_name(ptrn_match), get_rule_match(ptrn_match));
   ptrn = syn_ptrn_var(var(get_lowercase_id(var_match, 0)), ptrn) if var_match /= null_match;
-  return ptrn;
+  return attach_src_code_info(ptrn, mtc);
 }
 
 SynPtrn build_switch_ptrn_ast(Atom name, RuleMatch mtc):  //## build_try_ptrn_ast? build_match_ptrn_ast?
