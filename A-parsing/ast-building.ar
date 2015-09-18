@@ -1,16 +1,19 @@
-[(PrgDecl, RuleMatch)] build_amber_file_ast(RuleMatch file) = [(build_declaration_ast(m), m) : m <- rep_rule_nodes(file)];
+[PrgDecl] build_amber_file_ast(RuleMatch file, String filename) = [build_declaration_ast(m, filename) : m <- rep_rule_nodes(file)];
 
-PrgDecl build_declaration_ast(RuleMatch decl) =
-  match (get_rule_name(decl))
-    typedef         = build_typedef_ast(get_rule_match(decl)),
-    par_typedef     = build_par_typedef_ast(get_rule_match(decl)),
-    fndef           = build_std_fndef_ast(get_rule_match(decl)),
-    fndef_proc      = build_proc_fndef_ast(get_rule_match(decl)),
-    fndef_switch    = build_switch_fndef_ast(get_rule_match(decl)),
-    using_block_1   = build_using_block_1_ast(get_rule_match(decl)),
-    using_block_2   = build_using_block_2_ast(get_rule_match(decl)),
-    proc_def        = build_proc_def_ast(get_rule_match(decl));
+PrgDecl build_declaration_ast(RuleMatch mtc, String filename)
+{
+  decl = match (get_rule_name(mtc))
+    typedef         = build_typedef_ast(get_rule_match(mtc)),
+    par_typedef     = build_par_typedef_ast(get_rule_match(mtc)),
+    fndef           = build_std_fndef_ast(get_rule_match(mtc)),
+    fndef_proc      = build_proc_fndef_ast(get_rule_match(mtc)),
+    fndef_switch    = build_switch_fndef_ast(get_rule_match(mtc)),
+    using_block_1   = build_using_block_1_ast(get_rule_match(mtc), filename),
+    using_block_2   = build_using_block_2_ast(get_rule_match(mtc), filename),
+    proc_def        = build_proc_def_ast(get_rule_match(mtc));
   ;
+  return attach_src_code_info(decl, filename, mtc);
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -215,12 +218,22 @@ SynFnDef build_proc_fndef_ast(RuleMatch mtc)
   assert length(nodes) == 4;
   ret_type = build_maybe_type_ast(nodes[0]);
   fail if ret_type == nil; //## BAD BAD BAD
+
+  lfds = [];
+  rem_stmts = [];
+  for (s : build_stmts_ast(block_node(nodes[3])))
+    lfds, rem_stmts = match (s)
+      fn_def_stmt(fd?)  = ([lfds | fd], rem_stmts),
+      _                 = (lfds, [rem_stmts | s]);
+    ;
+  ;
+
   return syn_fn_def(
     name:       build_fn_symbol_ast(nodes[1]),
     params:     build_fn_params_ast(nodes[2]),
     res_type:   value(ret_type),
-    expr:       build_proc_expr_ast(block_node(nodes[3])),
-    local_fns:  []
+    expr:       syn_do_expr(nonempty(rem_stmts)),
+    local_fns:  lfds
   );
 }
 
@@ -243,25 +256,25 @@ SynFnDef build_switch_fndef_ast(RuleMatch mtc)
   );
 }
 
-SynUsingBlock build_using_block_1_ast(RuleMatch mtc)
+SynUsingBlock build_using_block_1_ast(RuleMatch mtc, String filename)
 {
   nodes = rule_seq_nodes(mtc);
   assert length(nodes) == 3;
-  return build_using_block_ast(nodes[1], block_node(nodes[2]));
+  return build_using_block_ast(nodes[1], block_node(nodes[2]), filename);
 }
 
-SynUsingBlock build_using_block_2_ast(RuleMatch mtc)
+SynUsingBlock build_using_block_2_ast(RuleMatch mtc, String filename)
 {
   nodes = rule_seq_nodes(mtc);
   nodes = rule_seq_nodes(block_node(nodes[1]));
   assert length(nodes) == 3;
-  return build_using_block_ast(nodes[0], nodes[2]);
+  return build_using_block_ast(nodes[0], nodes[2], filename);
 }
 
-SynUsingBlock build_using_block_ast(RuleMatch signatures, RuleMatch fndefs) =
+SynUsingBlock build_using_block_ast(RuleMatch signatures, RuleMatch fndefs, String filename) =
   syn_using_block(
     nonempty([build_signature_ast(n) : n  <- rep_rule_nodes(signatures)]),
-    nonempty([build_fndef_ast(fd)    : fd <- rep_rule_nodes(fndefs)])
+    nonempty([attach_src_code_info(build_fndef_ast(fd), filename, fd) : fd <- rep_rule_nodes(fndefs)])
   );
 
 SynSgn build_signature_ast(RuleMatch mtc)

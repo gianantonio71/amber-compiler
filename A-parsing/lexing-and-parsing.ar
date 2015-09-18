@@ -25,76 +25,7 @@ Result[[PrgDecl], <LexerError, ParError, ParserError>] lex_and_parse_src_file(St
   parser_res = parse_all(rule_amber_file, tokens, rec_rules);
   return failure(get_error(parser_res)) if is_failure(parser_res); //## BAD: SEE ABOVE COMMENT
   parser_match = get_result(parser_res);
-
-  post_parser_res = [attach_src_code_info(reshuffle_local_fndefs(d), filename, m) : d, m <- build_amber_file_ast(parser_match.rule_match)];
-
-  return success(post_parser_res);
-}
-
-
-PrgDecl attach_src_code_info(PrgDecl decl, String filename, RuleMatch match)
-{
-  src_code_info = source_file_location(match);
-  if (src_code_info == nil)
-    start_line = nil;
-    end_line = nil;
-  else
-    start_pos, end_pos = value(src_code_info);
-    start_line, unused_var = start_pos;
-    end_line, unused_var = end_pos;
-  ;
-  return attach(decl, (filename, start_line, end_line));
-
-  T attach(T obj, Any data) = _attach_(obj, data); //## BAD BAD BAD: THIS IS A WORKAROUND FOR A BUG IN THE TYPECHECKER
-}
-
-
-PrgDecl reshuffle_local_fndefs(PrgDecl decl)
-{
-  //## HUGE BUG: IF THE DO EXPRESSION ONLY CONTAINS FUNCTION DEFINITIONS,
-  //## THE PURGED EXPRESSIONS WILL BE EMPTY, AND THIS WILL CRASH THE PROGRAM.
-  //## IT ALSO DOESN'T REACH DOWN TO THE DO EXPRESSIONS THAT ARE NOT AT THE TOP LEVEL
-
-  //## ALSO, THINK ABOUT HOW TO WRITE THIS FUNCTIONS WITHOUT APPENDING TO ARRAYS
-  //## AND WITHOUT JUMPING THROUGH HOOP WITH PATTERN MATCHING
-
-  return match (decl)
-    syn_fn_def()  = reshuffle(decl),
-    using_block() = syn_using_block(decl.signatures, [reshuffle(fd) : fd <- decl.fn_defs]),
-    _             = decl;
-  ;
-
-  SynFnDef reshuffle(SynFnDef fd) =
-    match (fd.expr)
-      do_expr(ss?)  = reshuffle(fd, ss),
-      _             = fd;
-    ;
-
-  SynFnDef reshuffle(SynFnDef fd, [SynStmt^] stmts)
-  {
-    lfds = [];
-    rem_stmts = [];
-    for (s : stmts)
-      maybe_fn_def = get_maybe_fn_def(s);
-      if (maybe_fn_def /= nil)
-        lfds = lfds & [value(maybe_fn_def)];
-      else
-        rem_stmts = rem_stmts & [s];
-      ;
-    ;
-    fail if not fd.res_type?; //## BAD BAD BAD
-    return syn_fn_def(
-      name:       fd.name,
-      params:     fd.params,
-      res_type:   fd.res_type,
-      expr:       syn_do_expr(nonempty(rem_stmts)),
-      local_fns:  lfds
-    );
-  }
-
-  Maybe[SynFnDef] get_maybe_fn_def(SynStmt):
-    fn_def_stmt(fd?)  = just(fd),
-    _                 = nil;
+  return success(build_amber_file_ast(parser_match.rule_match, filename));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
