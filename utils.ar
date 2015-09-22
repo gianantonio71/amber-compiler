@@ -30,5 +30,142 @@ String capitalize(String s, Bool keep_underscores)
   return string(res);
 }
 
-
 ////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+String user_repr(Type type):
+  empty_type                = "<>",
+  atom_type                 = "<+>",
+  symb_type(object(a?))     = _str_(a),
+  integer                   = "<*..*>",
+  low_ints()                = "<*.." & to_text(type.max) & ">",
+  high_ints()               = "<" & to_text(type.min) & "..*>",
+  int_range()               = "<" & to_text(type.min) & ".." & to_text(type.min + type.size) & ">",
+  float_type                = "<^>",
+  empty_seq_type            = "[]",
+  empty_seq_type            = "{}",
+  empty_map_type            = "()",
+  type_var(Atom a?)         = uppercase(a),
+  type_var()                = {fail;},
+  type_ref(ts?)             = user_repr(ts),
+  ne_seq_type()             = "[" & user_repr(type.elem_type) & "^]",
+  ne_set_type()             = user_repr(type.elem_type) & "+",
+  ne_map_type()             = "(" & user_repr(type.key_type) & " => " & user_repr(type.value_type) & ")",
+  record_type(fs?)          = record_type_user_repr(fs),
+  tuple_type(ts?)           = "[" & append([user_repr(t) : t <- ts], ", ") & "]",
+  tag_obj_type()            = tag_obj_type_user_repr(type.tag_type, type.obj_type),
+  union_type(ts?)           = "<" & append([user_repr(t) : t <- rand_sort(ts)], ", ") & ">";
+
+
+String record_type_user_repr(RecordTypeFields fields)
+{
+  field_reprs = {record_field_user_repr(l, f.type, f.optional) : l => f <- fields};
+  return "(" & append(rand_sort(field_reprs), ", ") & ")";
+
+  String record_field_user_repr(SymbObj label, NeType type, Bool optional) =
+    _str_(match (label) object(a?) = a;) & ": " & user_repr(type) & if optional then "?" else "";
+}
+
+
+String tag_obj_type_user_repr(TagType tag_type, NeType obj_type):
+  atom_type               = "(<+> @ " & user_repr(obj_type) & ")",
+  symb_type(object(tag?)) = _str_(tag) & "(" & user_repr(obj_type) & ")";
+
+
+String user_repr(TypeSymbol type_symb):
+  type_symbol(a?)           = upper_camel_case(a),
+  builtin_type_symbol(a?)   = "#" & upper_camel_case(a),
+  par_type_symbol()         = user_repr(type_symb.symbol) & "[" & append([user_repr(p) : p <- type_symb.params], ", ") & "]";
+
+
+String user_repr(SymbObj):
+  object(a?)  = _str_(a);
+
+
+String user_repr(Var v):
+  fn_par(n?)        = "$" & to_str(n),
+  named_par(a?)     = _str_(a),
+  cls_ext_par(n?)   = {fail;},
+  var(a?)           = _str_(a);
+
+
+String user_repr(ProcSymbol):
+  proc_symbol(a?)   = upper_camel_case(a);
+
+
+String user_repr(BuiltIn b) = "_" & _str_(b) & "_";
+
+
+String user_repr(FnSymbol fn_symb, Nat arity):
+  fn_symbol(a?)         = _str_(a) & "/" & to_str(arity),
+  op_symbol(op?)        = user_repr(op, arity),
+  nested_fn_symbol()    = user_repr(fn_symb.outer) & ":" & user_repr(fn_symb.inner),
+  unique_fn_symbol()    = {fail;};
+
+
+String user_repr(Operator, Nat arity):
+  plus          = "(_+_)",
+  minus         = if arity == 1 then "(-_)" else "(_-_)",
+  star          = "(_*_)",
+  slash         = "(_/_)",
+  exp           = "(_^_)",
+  amp           = "(_&_)",
+  lower         = "(_<_)",
+  greater       = "(_>_)",
+  lower_eq      = "(_<=_)",
+  greater_eq    = "(_>=_)",
+  brackets      = "(_[_])";
+
+
+String user_repr(ClsVar v):
+  cls_var(Atom a?)    = _str_(a);
+
+
+String user_repr(ClsType type) = "(" & append([user_repr(t) : t <- type.in_types], ", ") & " -> " & user_repr(type.out_type) & ")";
+
+
+String user_repr(FnType type) = append([user_repr(t) : t <- type.params], ", ") & " -> " & user_repr(type.ret_type);
+
+
+String user_repr(PseudoType pseudotype)
+{
+  bpts = match (pseudotype) pseudotype(pts?) = pts;;
+  return append([user_repr(pt) : pt <- rand_sort(bpts)], ", ");
+
+  String user_repr(BasicPseudoType psuedotype):
+    symbol(a?)        = _str_(a),
+    integers          = "<*..*>",
+    floats            = "<^>",
+    empty_set         = "{}",
+    ne_sets           = "{..}",
+    empty_seq         = "[]",
+    ne_seqs           = "[..]",
+    empty_map         = "()",
+    ne_maps           = "(..)",
+    tag_obj(a?)       = _str_(a) & "()",
+    symbols           = "<+>",
+    tag_objs          = "*()";
+}
+
+
+String user_repr(Pattern ptrn):
+  ptrn_symbol         = "+",
+  ptrn_float          = "*",
+  ptrn_empty_set      = "{...}",
+  ptrn_ne_set         = "{...}",
+  ptrn_empty_seq      = "[...]",
+  ptrn_ne_seq         = "[...]",
+  ptrn_empty_map      = "(...)",
+  ptrn_ne_map         = "(...)",
+  ptrn_any            = "_",
+  ptrn_symbol(s?)     = _str_(match (s) object(a?) = a;),
+  ptrn_integer(t?)    = user_repr(t),
+  ptrn_tag_obj()      = ptrn_tag_obj_user_repr(ptrn.tag, ptrn.obj),
+  ptrn_var()          = (if ptrn.ptrn /= ptrn_any then user_repr(ptrn.ptrn) & " " else "") & user_repr(ptrn.var) & "?",
+  ptrn_union(ps?)     = "<" & append([user_repr(p) : p <- rand_sort(ps)], ", ") & ">";
+
+
+String ptrn_tag_obj_user_repr(TagPtrn tag, Pattern obj):
+  ptrn_symbol               = "_ @ " & user_repr(obj),
+  ptrn_symbol(object(s?))   = _str_(s) & "(" & user_repr(obj) & ")",
+  ptrn_var()                = user_repr(tag.var) & " @ " & user_repr(obj);

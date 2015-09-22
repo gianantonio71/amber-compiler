@@ -3,13 +3,13 @@
 //## THAT ALL CLOSURE PARAMETERS HAVE EXACTLY THE SAME TYPE.
 
 
-((FnSymbol, [FnFrmPar]) => TypeCheckingError+) typecheck(Program prg)
+(FnDef => TypeCheckingError+) typecheck(Program prg)
 {
   typedefs = prg.typedefs & builtin_typedefs;
   signatures = merge_values({((fd.name, arity(fd)) => signature(fd)) : fd <- prg.fndefs});
   aggregated_signatures = (n => build_aggregated_signatures(ss, typedefs) : n => ss <- signatures);
-  errors = ((fd.name, fd.params) => typecheck(fd, typedefs, signatures, aggregated_signatures) : fd <- prg.fndefs);
-  return (f => es : f => es <- errors, es /= {});
+  errors = (fd => typecheck(fd, typedefs, signatures, aggregated_signatures) : fd <- prg.fndefs);
+  return (fd => es : fd => es <- errors, es /= {});
 }
 
 
@@ -184,14 +184,14 @@ using
     errs = {obj_does_not_belong_to_type([], exp_type) if may_be_empty and not type_contains_obj(exp_type, [])};
     return errs if subexprs == [];
     exp_elem_types = seq_elem_types(exp_type);
-    return errs & if exp_elem_types /= {} then typecheck_any(subexprs, exp_elem_types) else {not_a_seq_type};
+    return errs & if exp_elem_types /= {} then typecheck_any(subexprs, exp_elem_types) else {exp_type_not_a_seq_type};
   }
 
 
   TypeCheckingError* typecheck_seq_tail_expr(Expr seq, [Expr^] tail, Type exp_type)
   {
     exp_elem_types = seq_elem_types(exp_type);
-    return {not_a_seq_type} if exp_elem_types == {};
+    return {exp_type_not_a_seq_type} if exp_elem_types == {};
     return typecheck_any(seq, {type_seq(t) : t <- exp_elem_types}) & typecheck_any(tail, exp_elem_types);
   }
 
@@ -322,7 +322,7 @@ using
   TypeCheckingError* typecheck_tag_obj_expr(Expr tag_expr, Expr obj_expr, Type exp_type)
   {
     tag_types = tagged_obj_types(exp_type);
-    return {not_a_tag_type} if tag_types == {};
+    return {exp_type_not_a_tag_type} if tag_types == {};
 
     errs = {};
     for (t : rand_sort(tag_types))
@@ -353,19 +353,19 @@ using
     if (candidate_signatures == {})
       candidate_signatures = {s : s <- aggregated_signatures[fn_key], will_dispatch_to(s, params)};
       if (candidate_signatures == {})
-        return {no_suitable_function_found(name, nz_nat(length(params)), signatures[fn_key], nonempty(param_types))};
+        return {no_dispatchable_function_found(name, nz_nat(length(params)), signatures[fn_key], nonempty(param_types))};
       ;
     ;
 
     // There might be more than one candidate signature
     // if the type of one or more parameters is the empty type
-    err_sets = {typecheck_fn_call(s, params, named_params, exp_type) : s <- candidate_signatures};
+    err_sets = {typecheck_fn_call(name, s, params, named_params, exp_type) : s <- candidate_signatures};
 
     return if in({}, err_sets) then {} else an_elem(err_sets);
   }
 
 
-  TypeCheckingError* typecheck_fn_call(FnType signature, [AnyExpr] params, (NamedPar => AnyExpr) named_params, Type exp_type)
+  TypeCheckingError* typecheck_fn_call(FnSymbol name, FnType signature, [AnyExpr] params, (NamedPar => AnyExpr) named_params, Type exp_type)
   {
     // We first check that all scalar positional parameters (and those parameters only) match
     // the type of the corresponding formal parameter (we already know they typecheck)
@@ -378,7 +378,7 @@ using
         ;
       ;
     ;
-    return {invalid_param_types(signature, invalid_params)} if invalid_params /= {};
+    return {invalid_param_types(name, signature, invalid_params)} if invalid_params /= {};
 
     // Now we can instantiate the concrete type for type variables
     res = try_to_instantiate_type_vars(params, signature.params);
@@ -622,7 +622,7 @@ using
     errs = typecheck(src_expr, exp_src_type);
     return errs if errs /= {};
     exp_elem_types = seq_elem_types(exp_type);
-    return {not_a_seq_type} if exp_elem_types == {};
+    return {exp_type_not_a_seq_type} if exp_elem_types == {};
     src_type = expr_type(src_expr);
     elem_type = seq_elem_supertype(src_type);
     assert is_subset(src_type, empty_seq_type) or elem_type /= empty_type;
@@ -640,7 +640,7 @@ using
   TypeCheckingError* typecheck_range_comp(Expr expr, Var var, Expr upper_bound_expr, Bool includes_upper_bound, Maybe[Expr] maybe_sel_expr, Type exp_type)
   {
     exp_elem_types = seq_elem_types(exp_type);
-    errs = {not_a_seq_type if exp_elem_types == {}} & typecheck(upper_bound_expr, integer);
+    errs = {exp_type_not_a_seq_type if exp_elem_types == {}} & typecheck(upper_bound_expr, integer);
     new_env = update(environment, (var => type_nat)); //## BAD: HERE WE COULD TAKE ADVANTAGE OF THE KNOWLEDGE ON THE TYPE OF THE UPPER BOUND
     errs = errs & typecheck(value(maybe_sel_expr), type_bool, environment=new_env) if maybe_sel_expr /= nil;
     if (not range_comp_yelds_nonempty_seq(maybe_sel_expr /= nil, upper_bound_expr, includes_upper_bound))
@@ -656,7 +656,7 @@ using
   TypeCheckingError* typecheck(ClsExpr expr, ClsType exp_type):
     ClsVar = {
       var_type = closures[expr];
-      return {unexpected_actual_cls_type(var_type, exp_type) if not is_subset(var_type, exp_type)};
+      return {invalid_cls_param_type(var_type, exp_type) if not is_subset(var_type, exp_type)};
     },
     fn_ptr() = {
       sgns = signatures[(expr.name, expr.arity)];
@@ -665,7 +665,7 @@ using
       assert sgn.named_params == ();
       assert not (? p <- set(sgn.params) : not p :: Type);
       sgn_cls = cls_type(cast_as_type_ne_seq(sgn.params), sgn.ret_type);
-      return {unexpected_actual_cls_type(sgn_cls, exp_type) if not is_subset(sgn_cls, exp_type)};
+      return {invalid_cls_param_type(sgn_cls, exp_type) if not is_subset(sgn_cls, exp_type)};
     },
     cls_expr() = {
       delta_env = merge([(fn_par(i) => t, v => t if v /= nil) : v, t @ i <- zip(expr.params, exp_type.in_types)]);
@@ -744,11 +744,13 @@ using
   TypeCheckingError* typecheck_foreach_stmt([Var^] vars, Maybe[Var] maybe_idx_var, Expr values, [Statement^] body, Type exp_type)
   {
     nvars = nz_nat(length(vars));
-    exp_src_type = type_seq(if nvars == 1 then type_any else type_tuple(nvars));
+    exp_src_type = if nvars == 1 then type_seq else type_seq(type_tuple(nvars));
     errs = typecheck(values, exp_src_type);
     return errs if errs /= {};
     elem_type = seq_elem_supertype(expr_type(values));
-    return {not_a_seq_type} if elem_type == empty_type; //## COULD I ACCEPT A TUPLE TYPE HERE ALSO?
+
+    // return {not_a_seq_type} if elem_type == empty_type; //## COULD I ACCEPT A TUPLE TYPE HERE ALSO?
+
     num_vars = nz_nat(length(vars));
     if (num_vars == 1)
       loop_vars = (vars[0] => elem_type);

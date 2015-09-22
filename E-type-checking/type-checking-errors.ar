@@ -1,14 +1,14 @@
 type TypeCheckingError =
   missing_param_type(param: FnFrmPar, pos: Nat),
   missing_res_type,
-  obj_does_not_belong_to_type(obj: Any, type: Type),
+  obj_does_not_belong_to_type(obj: <Atom, Int, [], {}, ()>, type: Type),
   not_a_set_type,
-  not_a_seq_type,
+  exp_type_not_a_seq_type,
   not_a_tuple_or_seq_type(Type),
   not_a_map_type,
   not_a_map_or_record_type,
   not_a_record_type(type: Type),
-  not_a_tag_type,
+  exp_type_not_a_tag_type,
   wrong_tuple_type_length(actual_length: NzNat, expected_lenghts: NzNat+),
   non_symbol_keys_with_record_type(keys: Expr+),
   may_not_have_field(type: Type, field: SymbObj),
@@ -16,11 +16,11 @@ type TypeCheckingError =
   missing_rec_fields(fields: SymbObj+),
   invalid_rec_fields(fields: SymbObj+),
   // tag_not_a_symbol(errors: TypeCheckingError+),
-  // not_a_tag_type_with_any_tag,
+  // exp_type_not_a_tag_type_with_any_tag,
   invalid_tag_expr(errors: TypeCheckingError+),
   invalid_var_type(actual_type: Type, expected_type: Type),
-  no_suitable_function_found(name: FnSymbol, arity: NzNat, signatures: FnType+, par_types: [Maybe[Type]]),
-  invalid_param_types(target_signature: FnType, invalid_params: <(Nat, Expr, Type)>*),
+  no_dispatchable_function_found(name: FnSymbol, arity: NzNat, signatures: FnType+, par_types: [Maybe[Type]]),
+  invalid_param_types(fn_name: FnSymbol, target_signature: FnType, invalid_params: <(Nat, Expr, Type)>+),
   invalid_cls_var_type(var: ClsVar, expected_type: ClsType, type_var_insts: (TypeVar => Type)),
   invalid_cls_param_types(target_signature: FnType, errors: TypeCheckingError*),
   invalid_implicit_par_type(
@@ -32,7 +32,7 @@ type TypeCheckingError =
   ),
   invalid_return_type(actual_type: Type, expected_type: Type),
   unexpected_actual_type(actual_type: Type, expected_type: Type),
-  unexpected_actual_cls_type(actual_type: ClsType, expected_type: ClsType),
+  invalid_cls_param_type(actual_type: ClsType, expected_type: ClsType),
   loop_did_not_converge(iteractions: NzNat),
   ptrn_cannot_match_type(pattern: Pattern, type: Type),
   annotated_expr_error(error: TypeCheckingError, expr: Expr);
@@ -42,16 +42,16 @@ type TypeCheckingError =
 TypeCheckingError missing_param_type(FnFrmPar p, Nat i) = missing_param_type(param: p, pos: i);
 TypeCheckingError missing_res_type = :missing_res_type;
 
-TypeCheckingError obj_does_not_belong_to_type(Any o, Type t) = obj_does_not_belong_to_type(obj: o, type: t);
+TypeCheckingError obj_does_not_belong_to_type(<Atom, Int, [], {}, ()> o, Type t) = obj_does_not_belong_to_type(obj: o, type: t);
 
 TypeCheckingError not_a_set_type = :not_a_set_type;
-TypeCheckingError not_a_seq_type = :not_a_seq_type;
+TypeCheckingError exp_type_not_a_seq_type = :exp_type_not_a_seq_type;
 TypeCheckingError not_a_tuple_or_seq_type(Type t) = :not_a_tuple_or_seq_type(t);
 TypeCheckingError not_a_map_type = :not_a_map_type;
 TypeCheckingError not_a_map_or_record_type = :not_a_map_or_record_type;
 TypeCheckingError not_a_record_type(Type t) = not_a_record_type(type: t);
-TypeCheckingError not_a_tag_type = :not_a_tag_type;
-// TypeCheckingError not_a_tag_type_with_any_tag = :not_a_tag_type_with_any_tag;
+TypeCheckingError exp_type_not_a_tag_type = :exp_type_not_a_tag_type;
+// TypeCheckingError exp_type_not_a_tag_type_with_any_tag = :exp_type_not_a_tag_type_with_any_tag;
 
 TypeCheckingError wrong_tuple_type_length(NzNat al, NzNat+ els) = wrong_tuple_type_length(actual_length: al, expected_lenghts: els);
 
@@ -69,13 +69,13 @@ TypeCheckingError invalid_tag_expr(TypeCheckingError+ es) = invalid_tag_expr(err
 
 TypeCheckingError invalid_var_type(Type at, Type et) = invalid_var_type(actual_type: at, expected_type: et);
 
-TypeCheckingError no_suitable_function_found(FnSymbol n, NzNat a, FnType+ ss, [Maybe[Type]^] ts) =
-  no_suitable_function_found(name: n, arity: a, signatures: ss, par_types: ts);
+TypeCheckingError no_dispatchable_function_found(FnSymbol n, NzNat a, FnType+ ss, [Maybe[Type]^] ts) =
+  no_dispatchable_function_found(name: n, arity: a, signatures: ss, par_types: ts);
 
 ////////////////////////////////////////////////////////////////////////////////
 
 //## CAN I OMMIT THE ANGLE BRACKETS FOR THE TYPE OF THE SECOND PARAMETER?
-TypeCheckingError invalid_param_types(FnType s, <(Nat, Expr, Type)>* ps) = invalid_param_types(target_signature: s, invalid_params: ps);
+TypeCheckingError invalid_param_types(FnSymbol n, FnType s, <(Nat, Expr, Type)>+ ps) = invalid_param_types(fn_name: n, target_signature: s, invalid_params: ps);
 
 TypeCheckingError invalid_cls_var_type(ClsVar v, ClsType t, (TypeVar => Type) tvis) = invalid_cls_var_type(var: v, expected_type: t, type_var_insts: tvis);
 
@@ -94,7 +94,7 @@ TypeCheckingError invalid_return_type(Type at, Type et) = invalid_return_type(ac
 
 TypeCheckingError unexpected_actual_type(Type at, Type et) = unexpected_actual_type(actual_type: at, expected_type: et);
 
-TypeCheckingError unexpected_actual_cls_type(ClsType at, ClsType et) = unexpected_actual_cls_type(actual_type: at, expected_type: et);
+TypeCheckingError invalid_cls_param_type(ClsType at, ClsType et) = invalid_cls_param_type(actual_type: at, expected_type: et);
 
 TypeCheckingError loop_did_not_converge(NzNat nis) = loop_did_not_converge(iteractions: nis);
 
@@ -110,4 +110,99 @@ using (TypeName => Type) typedefs
   TypeCheckingError* invalid_type_if_not_subset(Type at, Type et) = {
     unexpected_actual_type(at, et) if not is_subset(at, et)
   };
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[String] create_error_msgs(FnDef fndef, TypeCheckingError+ errs)
+{
+  err_msgs = join([create_error_msg(e) : e <- rand_sort(errs)]);
+  fn, sl, el = source_code_location(fndef);
+  loc_msg = "File " & fn & " line" & if sl == el then " " & to_str(sl) else "s " & to_str(sl) & "-" & to_str(el);
+  return [loc_msg] & err_msgs;
+}
+
+
+(String, NzNat, NzNat) source_code_location(FnDef fndef) //## THERE'S AN ALMOST IDENTICAL FUNCTION IN WELL-FORMEDNESS CHECKING
+{
+  data = _fetch_(fndef);
+  print data if not data :: (String, NzNat, NzNat)* or size(data) /= 1;
+  fail if not data :: (String, NzNat, NzNat)*;
+  return only_element(data);
+}
+
+
+[String] create_error_msg(TypeCheckingError err):
+  missing_param_type()                = ["Missing parameter type"], //## NOT SURE ABOUT THIS ONE
+  missing_res_type                    = ["Missing return type"],
+  obj_does_not_belong_to_type()       = ["Object " & to_text(err.obj) & " does not belong to type " & user_repr(err.type)],
+  not_a_set_type                      = ["Set expression used but the expected type does not include sets"],
+  exp_type_not_a_seq_type             = ["Sequence expression used but the expected type does not include sequences"],
+  not_a_tuple_or_seq_type()           = ["Tuple expression used but the expected type does not include tuples"],
+  not_a_map_type                      = ["Map/record expression used but the expected type does not include maps"],
+  not_a_map_or_record_type            = ["Map/record expression used but the expected type does not include maps"],
+  not_a_record_type()                 = ["Dot notation used but the type of the expression is not a record type"],
+  exp_type_not_a_tag_type             = ["Tag expression used but the expected type does not include tagged objects"],
+  wrong_tuple_type_length()           = ["Wrong tuple size"],
+  non_symbol_keys_with_record_type()  = ["Record expected, but map expression doesn't have only symbols for keys"],
+  may_not_have_field()                = ["Record object may not have field: " & user_repr(err.field)],
+  never_has_field()                   = ["Record object doesn't have field: " & user_repr(err.field)],
+  missing_rec_fields()                = ["Record fields required: " & append([user_repr(f) : f <- rand_sort(err.fields)], " ")],
+  invalid_rec_fields()                = ["Invalid record fields: " & append([user_repr(f) : f <- rand_sort(err.fields)], " ")],
+  invalid_tag_expr()                  = join([create_error_msg(e) : e <- rand_sort(err.errors)]),
+  invalid_var_type()                  = ["Invalid variable type. Expected type: " & user_repr(err.expected_type)],
+  no_dispatchable_function_found()    = create_no_dispatchable_function_found_error_msg(err.name, err.arity, err.signatures, err.par_types),
+  invalid_param_types()               = create_invalid_params_types_error_msg(err.fn_name, err.target_signature, err.invalid_params),
+  invalid_cls_var_type()              = ["Invalid closure variable: " & user_repr(err.var) & ". Expected type: " & user_repr(err.expected_type)],
+  invalid_cls_param_types()           = ["Unable to instantiate type variables"],
+  invalid_implicit_par_type()         = [ "Invalid named parameter type: " & user_repr(err.param_name),
+                                          "  Expected type: " & user_repr(err.formal_type),
+                                          "  Actual type: " & user_repr(err.actual_type)
+                                        ],
+  invalid_return_type()               = [ "Invalid return type. Expected type: " & user_repr(err.expected_type),
+                                          "  Actual type: " & user_repr(err.expected_type)
+                                        ],
+  unexpected_actual_type()            = [ "Invalid type: " & user_repr(err.actual_type),
+                                          "  The type must be a subset of " & user_repr(err.expected_type)
+                                        ],
+  invalid_cls_param_type()            = ["Invalid closure parameter type. Actual type: " & user_repr(err.actual_type) & " Expected type: " & user_repr(err.expected_type)],
+  loop_did_not_converge()             = ["Cannot infer types of variables updated in loop"],
+  ptrn_cannot_match_type()            = ["Pattern cannot match type: " & user_repr(err.pattern)],
+  annotated_expr_error()              = create_annotated_expr_error_msg(err.error, err.expr);
+
+
+[String] create_no_dispatchable_function_found_error_msg(FnSymbol name, NzNat arity, FnType+ signatures, [Maybe[Type]] par_types)
+{
+  actual_types = [if t /= nil then user_repr(value(t)) else "CLOSURE" : t <- par_types];
+  return ["No suitable function found: " & user_repr(name, arity) & ". Possible function signatures:"] &
+         ["  " & user_repr(s) : s <- rand_sort(signatures)] &
+         ["  Actual types:"] & actual_types;
+}
+
+
+[String] create_invalid_params_types_error_msg(FnSymbol fn_name, FnType signature, (Nat, Expr, Type)+ invalid_params)
+{
+  errs = [];
+  for (i, e, t : rand_sort(invalid_params))
+    errs = [errs | "  Invalid parameter " & to_str(i) & " type in function call: " & user_repr(fn_name) &
+                   "(...). Expected type: " & user_repr(signature.params[i])];
+  ;
+  return errs;
+}
+
+
+[String] create_annotated_expr_error_msg(TypeCheckingError error, Expr expr)
+{
+  err_msg = create_error_msg(error);
+  return ["Internal compiler error"] if err_msg == [];
+  attached_info = _fetch_(expr);
+  if (size(attached_info) == 1 and attached_info :: ((NzNat, NzNat), (NzNat, NzNat))+)
+    start_pos, end_pos = only_element(attached_info);
+    start_line = left(start_pos);
+    end_line = left(end_pos);
+    line_info = "Line" & if start_line == end_line then " " & to_str(start_line) else "s " & to_str(start_line) & "-" & to_str(end_line);
+    err_msg = [if i == 0 then line_info & ": " & l else l : l @ i <- err_msg];
+  ;
+  return err_msg;
 }
