@@ -1,5 +1,5 @@
 type Atom           = <+>;
-type Int            = [*..*];
+type Int            = <*..*>;
 type Float          = <^>;
 
 type Set            = Any*;
@@ -13,9 +13,9 @@ type Any            = Atom, Int, Float, Seq, Set, Map, TagObj;
 
 type Bool           = true, false;
 
-type Nat            = [0..*];
-type NzNat          = [1..*];
-type NegInt         = [*..-1];
+type Nat            = <0..*>;
+type NzNat          = <1..*>;
+type NegInt         = <*..-1>;
 
 type NeSet          = Any+;
 type NeSeq          = [Any^];
@@ -64,9 +64,9 @@ T try_value(Maybe[T]):
 
 Maybe[T] maybe(T x, Bool cond) = if cond then :just(x) else nil;
 
-[T] values([Maybe[T]] maybe_seq) = [value(maybe_value) : maybe_value <- maybe_seq, maybe_value /= nil];
+[T] values([Maybe[T]] maybe_seq) = [value(maybe_value) : maybe_value <- maybe_seq, maybe_value != nil];
 
-T* values(Maybe[T]* maybe_seq) = {value(maybe_value) : maybe_value <- maybe_seq, maybe_value /= nil};
+T* values(Maybe[T]* maybe_seq) = {value(maybe_value) : maybe_value <- maybe_seq, maybe_value != nil};
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -109,7 +109,7 @@ Bool not_all([Bool^] s) = in(true, s);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-[0..1] bit(Bool b) = if b then 1 else 0;
+<0..1> bit(Bool b) = if b then 1 else 0;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -119,9 +119,9 @@ Nat nat(Int n):
 NzNat nz_nat(Int n):
   NzNat = n;
 
-[T^] nonempty([T] s) = if s /= [] then s else {fail;};
+[T^] nonempty([T] s) = if s != [] then s else {fail;};
 
-T+ nonempty(T* s)    = if s /= {} then s else {fail;};
+T+ nonempty(T* s)    = if s != {} then s else {fail;};
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -181,7 +181,7 @@ T (_[_]) ([T] seq, Int idx) = _at_(seq, idx);
 // T rev_at([T^] seq, Nat idx) = _at_(seq, _len_(seq)-idx-1);
 T rev_at([T] seq, Int idx) = _at_(seq, _len_(seq)-idx-1);
 
-<[0..0]> length(<[]> seq) = 0;
+<0..0> length(<[]> seq) = 0;
 NzNat    length([T^] seq) = nz_nat(_len_(seq));
 // Nat length(Seq seq) = _len_(seq);
 
@@ -285,7 +285,7 @@ Maybe[Nat] left_search(Seq seq, Seq subseq)
   Bool subseq_matches(Seq seq, Seq subseq, Nat offset)
   {
     for (i < length(subseq))
-      return false if seq[offset+i] /= subseq[i];
+      return false if seq[offset+i] != subseq[i];
     ;
     return true;
   }
@@ -441,7 +441,7 @@ Maybe[T2] maybe_lookup((T1 => T2) map, T1 key) = if has_key(map, key) then just(
 
 Nat size((Any => Any) map) = size(keys(map));
 
-T1* keys((T1 => T2) map) = {k : k => _ <- map};
+T1* keys((T1 => T2) map) = {k : _ @ k <- map};
 
 Bool has_key((T1 => T2) map, T1 key) = _has_key_(map, key);
 
@@ -454,7 +454,7 @@ Bool has_key((T1 => T2) map, T1 key) = _has_key_(map, key);
 }
 
 //## BUG: ACTUAL SIGNATURE IS (K => V+) merge_value_sets((K => V+)* maps). FIX.
-(K => V*) merge_value_sets((K => V*)* maps) = (k => union(vss) : k => vss <- merge_values(maps));
+(K => V*) merge_value_sets((K => V*)* maps) = (k => union(vss) : vss @ k <- merge_values(maps));
 
 (K => [V^]) merge_sorted_values([(K => V)] maps)
 {
@@ -466,7 +466,7 @@ Bool has_key((T1 => T2) map, T1 key) = _has_key_(map, key);
 
 (T1 => T2) merge([(T1 => T2)] maps) = merge(set(maps));
 
-(T1 => T2) remove_key((T1 => T2) m, T3 kr) = (k => v : k => v <- m, k /= kr);
+(T1 => T2) remove_key((T1 => T2) m, T3 kr) = (k => v : v @ k <- m, k != kr);
 
 (T1 => T2) remove_keys((T1 => T2) m, T3* ks) = (k => m[k] : k <- keys(m) - ks);
 
@@ -475,7 +475,7 @@ Bool has_key((T1 => T2) map, T1 key) = _has_key_(map, key);
 (KT => (VT1, VT2)) zip_by_key((KT => VT1) map1, (KT => VT2) map2)
 {
   assert keys(map1) == keys(map2);
-  return (k => (v1, map2[k]) : k => v1 <- map1);
+  return (k => (v1, map2[k]) : v1 @ k <- map1);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -489,17 +489,17 @@ T* dupl_elems([T] s)
 {
   r = {};
   for (e1 @ i1 : s ; e2 @ i2 : s)
-    r = r & {e1, e2} if (e1 == e2 and i1 /= i2);
+    r = r & {e1, e2} if (e1 == e2 and i1 != i2);
   ;
   return r;
 }
 
-Bool has_duplicates([Any] s) = dupl_elems(s) /= {};
+Bool has_duplicates([Any] s) = dupl_elems(s) != {};
 
 <[]> rand_sort(<{}>)    = [];
 [T^] rand_sort(T+ set)  = nonempty(_isort_(set));
 
-[(TK, TV)] rand_sort_pairs((TK => TV) map) = rand_sort({(k, v) : k => v <- map});
+[(TK, TV)] rand_sort_pairs((TK => TV) map) = rand_sort({(k, v) : v @ k <- map});
 
 T an_elem(T+ s) = {ses = rand_sort(s); return ses[0];};
 
@@ -509,7 +509,7 @@ T an_elem(T+ s) = {ses = rand_sort(s); return ses[0];};
 
 (T => NzNat) bag([T] s) = _mset_(s);
 
-T2* values((T1 => T2) map) = {v : _ => v <- map};
+T2* values((T1 => T2) map) = {v : v @ _ <- map};
 
 //## THERE'S A BUG HERE, PROBABLY WHEN ONE OF THE SET OF TARGETS IS EMPTY
 (T => T*) transitive_closure((T => T*) map)
@@ -530,7 +530,7 @@ T2* values((T1 => T2) map) = {v : _ => v <- map};
   closure = map;
 
   loop
-    new_closure = (n => next_step(rs, closure) : n => rs <- closure);
+    new_closure = (n => next_step(rs, closure) : rs @ n <- closure);
     return closure if (new_closure == closure);
     closure = new_closure;
   ;
@@ -551,9 +551,8 @@ Any* select(Any obj, (Any -> Bool) cond) =
       ^           = {},
       {...}       = union({select(x, cond) : x <- obj}),
       [...]       = union({select(x, cond) : x <- set(obj)}),
-      (...)       = union({select(k, cond) & select(v, cond) : k => v <- obj}),
+      (...)       = union({select(k, cond) & select(v, cond) : v @ k <- obj}),
       tag @ iobj  = select(iobj, cond); //## SHOULD I EXTEND THE SEARCH TO THE TAG AS WELL?
-  ;
 
 
 Any* select_rec(Any obj, (Any -> Bool) cond) =
@@ -564,9 +563,8 @@ Any* select_rec(Any obj, (Any -> Bool) cond) =
       ^           = {},
       {...}       = union({select_rec(x, cond) : x <- obj}),
       [...]       = union({select_rec(x, cond) : x <- set(obj)}),
-      (...)       = union({select_rec(k, cond) & select_rec(v, cond) : k => v <- obj}),
+      (...)       = union({select_rec(k, cond) & select_rec(v, cond) : v @ k <- obj}),
       tag @ iobj  = select_rec(iobj, cond); //## SHOULD I EXTEND THE SEARCH TO THE TAG AS WELL?
-  ;
 
 
 Any replace(Any obj, (Any -> Bool) cond, (Any -> Any) eval) =
@@ -578,12 +576,11 @@ Any replace(Any obj, (Any -> Bool) cond, (Any -> Any) eval) =
       ^           = obj, //## BAD
       {...}       = {replace(x, cond, eval) : x <- obj},
       [...]       = [replace(x, cond, eval) : x <- obj],
-      (...)       = (replace(k, cond, eval) => replace(v, cond, eval) : k => v <- obj),
+      (...)       = (replace(k, cond, eval) => replace(v, cond, eval) : v @ k <- obj),
       tag @ iobj  = tag @ replace(iobj, cond, eval); //## SHOULD I EXTEND THE REPLACEMENT TO THE TAG AS WELL?
-  ;
 
 
-[T] intermix([T] seq, T obj) = join([[obj if i /= 0, e] : e @ i <- seq]);
+[T] intermix([T] seq, T obj) = join([[obj if i != 0, e] : e @ i <- seq]);
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -680,7 +677,7 @@ String to_text(Any obj)
 
   String to_txt(Map map, String key_val_sep)
   {
-    es   = rand_sort({(key: k, value: v) : k => v <- map});
+    es   = rand_sort({(key: k, value: v) : v @ k <- map});
     strs = [to_txt(e.key) & key_val_sep & to_txt(e.value) : e <- es];
     return "(" & append(intermix(strs, ", ")) & ")";
   }
@@ -734,9 +731,8 @@ String to_text(Any obj, Nat line_len, Nat indent_level)
   [String] to_txt_tag_obj(Atom tag, Any obj, Nat line_len)
   {
     obj_is_record = match (obj)
-                      (...)   = keys(obj) :: <Atom*>,
-                      _       = false;
-                    ;
+      (...)   = keys(obj) :: <Atom*>,
+      _       = false;
     tag_str      = _str_(tag);
     obj_lines    = to_txt(obj, line_len);
     line_count   = length(obj_lines);
@@ -776,17 +772,17 @@ String to_text(Any obj, Nat line_len, Nat indent_level)
       ;
     ;
     last_idx = length(lines_seq) - 1;
-    indented_lines_with_commas = join([["  " & l : l <- if i /= last_idx then append_to_last(ls, ",") else ls] : ls @ i <- lines_seq]);
+    indented_lines_with_commas = join([["  " & l : l <- if i != last_idx then append_to_last(ls, ",") else ls] : ls @ i <- lines_seq]);
     return [left_del] & indented_lines_with_commas & [right_del];
   }
 
-  // [String^] append_to_last([String^] lines, String str) = [if i /= last_idx then l else l & str : l @ i <- lines] let last_idx = length(lines) - 1;;
+  // [String^] append_to_last([String^] lines, String str) = [if i != last_idx then l else l & str : l @ i <- lines] let last_idx = length(lines) - 1;;
   // [String^] append_to_last([String^] lines, String str)
   [String] append_to_last([String] lines, String str)
   {
     fail if lines == [];
     last_idx = length(lines) - 1;
-    return [if i /= last_idx then l else l & str : l @ i <- lines];
+    return [if i != last_idx then l else l & str : l @ i <- lines];
   }
 
   // [String^] to_txt_map(Map map, Nat line_len)
@@ -795,7 +791,7 @@ String to_text(Any obj, Nat line_len, Nat indent_level)
     is_record   = keys(map) :: <Atom*>;
     key_val_sep = if is_record then ": " else " => ";
     size        = size(map);
-    es          = rand_sort({(key: k, value: v) : k => v <- map});
+    es          = rand_sort({(key: k, value: v) : v @ k <- map});
     lines       = [];
     single_line = "";
     is_single_line_so_far = true;
@@ -1002,7 +998,7 @@ Nat ascii_tilde             = 126;
 
   [Nat] rem_trail_cr([Nat] line)
   {
-    has_cr = line /= [] and rev_at(line, 0) == ascii_carriage_return;
+    has_cr = line != [] and rev_at(line, 0) == ascii_carriage_return;
     return if has_cr then subseq(line, 0, length(line)-1) else line;
   }
 }
@@ -1015,7 +1011,7 @@ Nat ascii_tilde             = 126;
   start = 0;
   for (ch @ i : _obj_(str))
     if (is_space(ch))
-      frags = [frags | substr(str, start, i-start)] if start /= i;
+      frags = [frags | substr(str, start, i-start)] if start != i;
       start = i + 1;
     ;
   ;
@@ -1026,15 +1022,15 @@ Nat ascii_tilde             = 126;
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-// (T2 => T1+) reverse((T1 => T2) map) = merge_values({(v => k) : k => v <- map});
+// (T2 => T1+) reverse((T1 => T2) map) = merge_values({(v => k) : v @ k <- map});
 
-// (T2 => T1+) reverse_multi((T1 => T2*) map) = merge_values({(v => k : v <- vs) : k => vs <- map});
+// (T2 => T1+) reverse_multi((T1 => T2*) map) = merge_values({(v => k : v <- vs) : vs @ k <- map});
 
 // Bool is_prefix([T] prefix, [T] seq)
 // {
 //   return false if length(prefix) > length(seq);
 //   for (e @ i : prefix)
-//     return false if e /= seq[i];
+//     return false if e != seq[i];
 //   ;
 //   return true;
 // }
@@ -1050,7 +1046,7 @@ T only_item([T] seq)
 Maybe[T] maybe_only_item([T] seq)
 {
   fail if length(seq) > 1;
-  return if seq /= [] then just(seq[0]) else nil;
+  return if seq != [] then just(seq[0]) else nil;
 }
 
 
@@ -1075,7 +1071,7 @@ Maybe[T] maybe_only_item([T] seq)
   {
     lx, rx = x;
     ly, ry = y;
-    return if lx /= ly then lx < ly else rx < ry;
+    return if lx != ly then lx < ly else rx < ry;
   }
 }
 
@@ -1116,7 +1112,7 @@ T reduce([T^] xs, (T, T -> T) f)
 //   for (x1 @ i1 : seq)
 //     for (i2 = i1+1 .. len)
 //       maybe = f(x1, seq[x2]);
-//       res = [res | value(maybe)] if maybe /= nil;
+//       res = [res | value(maybe)] if maybe != nil;
 //     ;
 //   ;
 //   return res;

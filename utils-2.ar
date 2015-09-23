@@ -12,7 +12,7 @@ Type replace_type_vars_computed(Type type, (TypeVar -> Type) replace):
   ne_seq_type()     = ne_seq_type(replace_type_vars_computed(type.elem_type, replace)),
   ne_set_type()     = ne_set_type(replace_type_vars_computed(type.elem_type, replace)),
   ne_map_type()     = ne_map_type(replace_type_vars_computed(type.key_type, replace), replace_type_vars_computed(type.value_type, replace)),
-  record_type(fs?)  = record_type((l => (type: replace_type_vars_computed(f.type, replace), optional: f.optional) : l => f <- fs)), //## BAD: WOULD BE GOOD TO HAVE A "DECLARATIVE" UPDATE OPERATION
+  record_type(fs?)  = record_type((l => (type: replace_type_vars_computed(f.type, replace), optional: f.optional) : f @ l <- fs)), //## BAD: WOULD BE GOOD TO HAVE A "DECLARATIVE" UPDATE OPERATION
   tuple_type(ts?)   = tuple_type([replace_type_vars_computed(t, replace) : t <- ts]),
   tag_obj_type()    = tag_obj_type(type.tag_type, replace_type_vars_computed(type.obj_type, replace)),
   union_type(ts?)   = union_type({replace_type_vars_computed(t, replace) : t <- ts});
@@ -44,7 +44,7 @@ T* retrieve_from_nested_types(Type type, (Type -> T*) retrieve):
   ne_seq_type()     = retrieve(type.elem_type),
   ne_set_type()     = retrieve(type.elem_type),
   ne_map_type()     = retrieve(type.key_type) & retrieve(type.value_type),
-  record_type(fs?)  = union({retrieve(f.type) : _ => f <- fs}),
+  record_type(fs?)  = union({retrieve(f.type) : f @ _ <- fs}),
   tuple_type(ts?)   = seq_union([retrieve(t) : t <- ts]),
   tag_obj_type()    = retrieve(type.tag_type) & retrieve(type.obj_type),
   union_type(ts?)   = union({retrieve(t) : t <- ts});
@@ -125,7 +125,7 @@ T* retrieve_from_nested_exprs(Statement stmt, (Expr -> T*) retrieve):
   loop_stmt(ss?)      = retrieve_from_nested_exprs(ss, retrieve),
   foreach_stmt()      = retrieve(stmt.values) & retrieve_from_nested_exprs(stmt.body, retrieve),
   for_stmt()          = retrieve(stmt.start_val) & retrieve(stmt.end_val) & retrieve_from_nested_exprs(stmt.body, retrieve),
-  let_stmt()          = union({retrieve(e) : _ => e <- stmt.asgnms}) & retrieve_from_nested_exprs(stmt.body, retrieve),
+  let_stmt()          = union({retrieve(e) : e @ _ <- stmt.asgnms}) & retrieve_from_nested_exprs(stmt.body, retrieve),
   break_stmt          = {},
   fail_stmt           = {},
   assert_stmt(e?)     = retrieve(e),
@@ -160,7 +160,7 @@ Expr replace_nested_exprs(Expr expr, (Expr -> Expr) replace):
   fn_call()         = fn_call(
                         expr.name,
                         [replace_exprs_in_any_expr(p, replace) : p <- expr.params],
-                        (n => replace_exprs_in_any_expr(e, replace) : n => e <- expr.named_params)
+                        (n => replace_exprs_in_any_expr(e, replace) : e @ n <- expr.named_params)
                       ),
   cls_call()        = cls_call(expr.name, [replace(p) : p <- expr.params]),
   builtin_call()    = builtin_call(expr.name, [replace(p) : p <- expr.params]),
@@ -247,7 +247,7 @@ Statement replace_exprs_in_stmt(Statement stmt, (Expr -> Expr) replace):
                           end_val_incl: stmt.end_val_incl,
                           body:         replace_exprs_in_stmts(stmt.body, replace)
                         ),
-  let_stmt()          = let_stmt((n => replace(e) : n => e <- stmt.asgnms), replace_exprs_in_stmts(stmt.body, replace)),
+  let_stmt()          = let_stmt((n => replace(e) : e @ n <- stmt.asgnms), replace_exprs_in_stmts(stmt.body, replace)),
   break_stmt          = break_stmt,
   fail_stmt           = fail_stmt,
   assert_stmt(e?)     = assert_stmt(replace(e)),
@@ -292,7 +292,7 @@ Expr replace_external_vars_in_fn_call(FnCallExpr expr, (Var => Var) subst_map) =
   fn_call(
     expr.name,
     [replace_external_vars(p, subst_map) : p <- expr.params],
-    (n => replace_external_vars(e, subst_map) : n => e <- expr.named_params)
+    (n => replace_external_vars(e, subst_map) : e @ n <- expr.named_params)
   );
 
 
@@ -393,15 +393,15 @@ ClsExpr replace_external_vars(ClsExpr expr, (Var => Var) subst_map):
 
 ClsExpr replace_external_vars([<var(Atom), nil>^] params, Expr expr, (Var => Var) subst_map)
 {
-  non_anon_params = set([p : p <- params, p /= nil]);
+  non_anon_params = set([p : p <- params, p != nil]);
 
   // We cannot replace variables inside a closure with fn_par(n),
   // because those names refer to different variables inside the closure.
   // Same goes for the non-anonymous closure parameters.
   //## THIS HAS TO BE FIXED SOMEHOW...
-  assert not (? _ => vv <- subst_map : vv :: FnPar or in(vv, non_anon_params));
+  assert not (? vv @ _ <- subst_map : vv :: FnPar or in(vv, non_anon_params));
 
-  new_subst_map = (kv => vv : kv => vv <- subst_map, not in(kv, non_anon_params), not kv :: FnPar);
+  new_subst_map = (kv => vv : vv @ kv <- subst_map, not in(kv, non_anon_params), not kv :: FnPar);
   return cls_expr(params, replace_external_vars(expr, new_subst_map));
 }
 
@@ -553,7 +553,7 @@ Var* extern_vars(Expr expr)
 
   Var* special_cases(Expr expr):
       Var            = {expr},
-      fn_call()      = union({extern_vars(e) : e <- set(expr.params)} & {extern_vars(e) : k => e <- expr.named_params}),
+      fn_call()      = union({extern_vars(e) : e <- set(expr.params)} & {extern_vars(e) : e @ k <- expr.named_params}),
       ex_qual()      = extern_vars(expr.source),
       set_comp()     = extern_vars(expr.source), //## BAD
       map_comp()     = extern_vars(expr.source), //## BAD
@@ -609,7 +609,7 @@ Var* extern_vars(Statement s):
 Var* extern_vars(ClsExpr expr):
   ClsVar      = {},
   fn_ptr()    = {},
-  cls_expr()  = extern_vars(expr.expr) - set([v : v <- expr.params, v /= nil] & [fn_par(i) : i < length(expr.params)]);
+  cls_expr()  = extern_vars(expr.expr) - set([v : v <- expr.params, v != nil] & [fn_par(i) : i < length(expr.params)]);
 
 ////////////////////////////////////////////////////////////////////////////////
 

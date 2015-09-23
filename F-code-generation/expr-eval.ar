@@ -270,11 +270,11 @@ using
 
   [Instr^] gen_eval_code_for_fn_call_expr(FnSymbol name, [AnyExpr] params, (NamedPar => AnyExpr) named_params, EvalDestVar res_var)
   {
-    if (named_params /= ())
+    if (named_params != ())
       //## BUG BUG BUG. THE ASSIGNMENTS ARE DONE IN RANDOM ORDER. FIX THIS
       var = an_elem(nonempty(keys(named_params)));
       expr = named_params[var];
-      rem_named_pars = (v => e : v => e <- named_params, v /= var);
+      rem_named_pars = (v => e : e @ v <- named_params, v != var);
 
       if (expr :: Expr)
         backup_var = lvar(next_obj_var_id);
@@ -398,7 +398,7 @@ using
     let (next_obj_var_id = next_var_id)
       left_info = gen_eval_info(left_expr, tmp_var);
       if_code = gen_eval_code(right_expr, res_var);
-      else_code = [set_var(res_var, obj_false) if left_info.expr /= res_var];
+      else_code = [set_var(res_var, obj_false) if left_info.expr != res_var];
     ;
     return [left_info.eval_code | branch(is_true(left_info.expr), if_code, else_code)];
   }
@@ -409,7 +409,7 @@ using
     tmp_var, next_var_id = pick_temp_var(res_var);
     let (next_obj_var_id = next_var_id)
       left_info = gen_eval_info(left_expr, tmp_var);
-      if_code = [set_var(res_var, obj_true) if left_info.expr /= res_var];
+      if_code = [set_var(res_var, obj_true) if left_info.expr != res_var];
       else_code = gen_eval_code(right_expr, res_var);
     ;
     return [left_info.eval_code | branch(is_true(left_info.expr), if_code, else_code)];
@@ -527,7 +527,7 @@ using
           ;
           tag_objs_code = tag_objs_code & matched_case_code;
         ;
-        code = code & opt_do_if(is_tagged_obj(mtc_expr), tag_objs_code) if tag_objs_code /= [];
+        code = code & opt_do_if(is_tagged_obj(mtc_expr), tag_objs_code) if tag_objs_code != [];
       ;
 
       ptypes_info = [
@@ -553,11 +553,11 @@ using
               ptype_code = ptype_code & gen_ptrn_matching_code(try_value(p), mtc_expr, pseudotype);
             ;
           ;
-          code = code & opt_do_if(memb_expr, ptype_code) if ptype_code /= [];
+          code = code & opt_do_if(memb_expr, ptype_code) if ptype_code != [];
         ;
       ;
 
-      if (catch_all_case /= nil)
+      if (catch_all_case != nil)
         unused_var, e = catch_all_case;
         catch_all_code = gen_case_eval_code(e, res_var);
         code = [execute_block(nonempty(code & catch_all_code))];
@@ -601,7 +601,7 @@ using
   [Instr^] gen_eval_code_for_ex_qual_expr(Clause source, Maybe[Expr] maybe_sel_expr, EvalDestVar res_var)
   {
     action = set_found_var_and_leave(res_var);
-    action = action(value(maybe_sel_expr), action) if maybe_sel_expr /= nil;
+    action = action(value(maybe_sel_expr), action) if maybe_sel_expr != nil;
     code = gen_iter_code(source, {}, action);
     return [set_var(res_var, obj_false), execute_block(code)];
   }
@@ -611,7 +611,7 @@ using
   {
     strm_var = svar(next_stream_var_id);
     action = eval_expr_and_add_to_set(expr, strm_var);
-    action = action(value(maybe_sel_expr), action) if maybe_sel_expr /= nil;
+    action = action(value(maybe_sel_expr), action) if maybe_sel_expr != nil;
     code = gen_iter_code(source, {}, action, next_stream_var_id = nat(next_stream_var_id + 1));
     return nonempty([init_stream(strm_var)] & code & [mk_set_from_stream(res_var, strm_var)]);
   }
@@ -623,7 +623,7 @@ using
     value_strm_var = svar(nat(next_stream_var_id + 1));
 
     action = eval_exprs_and_add_to_map(key_expr, value_expr, key_strm_var, value_strm_var);
-    action = action(value(maybe_sel_expr), action) if maybe_sel_expr /= nil;
+    action = action(value(maybe_sel_expr), action) if maybe_sel_expr != nil;
 
     code = gen_iter_code(source, {}, action, next_stream_var_id = nat(next_stream_var_id + 2));
 
@@ -662,7 +662,7 @@ using
                               else [append(strm_var, item_info.expr)];
 
     core_loop_code = eval_and_assign_code;
-    if (maybe_sel_info /= nil)
+    if (maybe_sel_info != nil)
       sel_info = value(maybe_sel_info);
       core_loop_code = sel_info.eval_code & [do_if(is_true(sel_info.expr), core_loop_code)];
     ;
@@ -724,7 +724,7 @@ using
                               else [append(strm_var, item_info.expr)];
 
     core_loop_code = eval_and_assign_code;
-    if (maybe_sel_info /= nil)
+    if (maybe_sel_info != nil)
       sel_info = value(maybe_sel_info);
       core_loop_code = sel_info.eval_code & [do_if(is_true(sel_info.expr), core_loop_code)];
     ;
@@ -767,13 +767,13 @@ using
       //###################################################################################
       //## BUG BUG BUG: WHAT HAPPENS HERE IF THE CLOSURE ITSELF USES A CLOSURE VARIABLE? ##
       //###################################################################################
-      loc_vs = seq_union([{v if v /= nil, fn_par(i)} : v @ i <- expr.params]);
+      loc_vs = seq_union([{v if v != nil, fn_par(i)} : v @ i <- expr.params]);
       ext_vs = rand_sort(extern_vars(expr.expr) - loc_vs);
 
       subst_map = merge([(v => cls_ext_par(i)) : v @ i <- ext_vs]);
       new_expr = replace_external_vars(expr.expr, subst_map);
 
-      cls_body = [set_var(v, fn_par(i)) : v @ i <- expr.params, v /= nil] & gen_fn_body(new_expr);
+      cls_body = [set_var(v, fn_par(i)) : v @ i <- expr.params, v != nil] & gen_fn_body(new_expr);
 
       return bound_cls(cls_def(nz_nat(length(expr.params)), nonempty(cls_body)), ext_vs);
     };
@@ -822,11 +822,11 @@ using
     //## IT'S A TEMPORARY LIMITATION THAT SHOULD BE REMOVED
     assert subset(outcomes(body), {:fails, :falls_through});
 
-    if (asgnms /= ())
+    if (asgnms != ())
       //## BUG BUG BUG. THE ASSIGNMENTS ARE DONE IN RANDOM ORDER. FIX THIS
       var = an_elem(nonempty(keys(asgnms)));
       expr = asgnms[var];
-      rem_asgnms = (v => e : v => e <- asgnms, v /= var);
+      rem_asgnms = (v => e : e @ v <- asgnms, v != var);
 
       backup_var = lvar(next_obj_var_id);
 
@@ -911,7 +911,7 @@ using
       repeat(
         nonempty(
           [ break_if(if end_val_incl then is_gt(idx_var, end_var) else is_ge(idx_var, end_var)),
-            set_var(value(maybe_var), to_obj(idx_var)) if maybe_var /= nil
+            set_var(value(maybe_var), to_obj(idx_var)) if maybe_var != nil
           ] & body_code &
           [increment(idx_var)]
         )
@@ -933,7 +933,7 @@ using
     idx_var = ivar(next_int_var_id);
     it_var  = seq_it_var(next_seq_it_var_id);
 
-    has_idx_var = maybe_idx_var /= nil;
+    has_idx_var = maybe_idx_var != nil;
 
     src_eval_code = gen_eval_code(values, src_var, next_obj_var_id = nat(next_obj_var_id + 1));
 
@@ -975,7 +975,7 @@ using
   [Instr^] gen_code_for_proc_call_stmt(Maybe[StdVar] maybe_res_var, ProcSymbol proc_name, [Expr] params, EvalDestVar res_var)
   {
     pars_info = gen_eval_info(params);
-    call_code = [call_proc(var: value(maybe_res_var) if maybe_res_var /= nil, name: proc_name, params: pars_info.exprs)];
+    call_code = [call_proc(var: value(maybe_res_var) if maybe_res_var != nil, name: proc_name, params: pars_info.exprs)];
     return nonempty(pars_info.eval_code & call_code);
   }
 }

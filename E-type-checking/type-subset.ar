@@ -32,11 +32,11 @@ SubsetCond subset_when(TypeVar var, Type type)            = {subset_when(type_va
 
 SubsetCond all_conds(SubsetCond* iss) = if in(not_a_subset, iss)
                                           then not_a_subset
-                                          else union({is : is <- iss, is /= not_a_subset}); //## POINTLESS, BUT NEEDED FOR TYPECHECKING
+                                          else union({is : is <- iss, is != not_a_subset}); //## POINTLESS, BUT NEEDED FOR TYPECHECKING
 
-(TypeSymbol, Type)* subtype_conds(SubsetCond conds) = if conds /= not_a_subset then {(c.subset, c.superset) : subset_if() c <- conds} else {fail;};
+(TypeSymbol, Type)* subtype_conds(SubsetCond conds) = if conds != not_a_subset then {(c.subset, c.superset) : subset_if() c <- conds} else {fail;};
 
-SubsetCond type_var_inst_conds(SubsetCond conds) = if conds /= not_a_subset then {c : subset_when() c <- conds} else {fail;};
+SubsetCond type_var_inst_conds(SubsetCond conds) = if conds != not_a_subset then {c : subset_when() c <- conds} else {fail;};
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -99,7 +99,7 @@ using (TypeName => Type) typedefs, Bool inst_type_vars
     type_var(),           _                   = if is_type_any(t2) then {} else not_a_subset,
 
     // Dealing with all the recursive stuff
-    type_ref(ts1?),       _                   = if t1 /= t2 then subset_if(ts1, t2) else {},
+    type_ref(ts1?),       _                   = if t1 != t2 then subset_if(ts1, t2) else {},
     // _,                    type_ref(ts?)       = shallow_subset_conds(t1, expand_type_ref(ts, typedefs)),
     _,                    type_ref(ts?)       = if ts == :builtin_type_symbol(:any) //## BAD BAD BAD: THIS IS A REALLY HORRIBLE HACK
                                                   then {}
@@ -132,7 +132,7 @@ using (TypeName => Type) typedefs, Bool inst_type_vars
 
     // Map types
     empty_map_type,       empty_map_type      = {},
-    empty_map_type,       record_type(fs?)    = if not (? l => f <- fs : not f.optional) then {} else not_a_subset,
+    empty_map_type,       record_type(fs?)    = if not (? f @ l <- fs : not f.optional) then {} else not_a_subset,
     empty_map_type,       _                   = not_a_subset,
 
     ne_map_type(),        ne_map_type()       = all_conds({shallow_subset_conds(t1.key_type, t2.key_type), shallow_subset_conds(t1.value_type, t2.value_type)}),
@@ -162,12 +162,12 @@ using (TypeName => Type) typedefs, Bool inst_type_vars
 
   SubsetCond union_shallow_subset_conds(Type t1, Type+ ts2)
   {
-    all_conds = {cs : t2 <- ts2, cs = shallow_subset_conds(t1, t2), cs /= not_a_subset};
+    all_conds = {cs : t2 <- ts2, cs = shallow_subset_conds(t1, t2), cs != not_a_subset};
     return not_a_subset if all_conds == {};
     return {} if in({}, all_conds);
     return only_element(all_conds) if size(all_conds) == 1;
     var_only_conds = {cs : cs <- all_conds, subtype_conds(cs) == {}};
-    return an_elem(var_only_conds) if var_only_conds /= {}; //## COULD WE IMPROVE ON THIS?
+    return an_elem(var_only_conds) if var_only_conds != {}; //## COULD WE IMPROVE ON THIS?
     return an_elem(all_conds); //## BAD: THIS IS REALLY REALLY BAD.
   }
 
@@ -176,8 +176,8 @@ using (TypeName => Type) typedefs, Bool inst_type_vars
   {
     labels_1 = keys(fs1);
     labels_2 = keys(fs2);
-    mandatory_labels_1 = {l : l => f <- fs1, not f.optional};
-    mandatory_labels_2 = {l : l => f <- fs2, not f.optional};
+    mandatory_labels_1 = {l : f @ l <- fs1, not f.optional};
+    mandatory_labels_2 = {l : f @ l <- fs2, not f.optional};
     optional_labels_1  = labels_1 - mandatory_labels_1;
     optional_labels_2  = labels_2 - mandatory_labels_2;
 
@@ -192,8 +192,8 @@ using (TypeName => Type) typedefs, Bool inst_type_vars
 
     // No particular requirement for optional labels in the supertype
 
-    label_type_map_1 = (l => f.type : l => f <- fs1);
-    label_type_map_2 = (l => f.type : l => f <- fs2);
+    label_type_map_1 = (l => f.type : f @ l <- fs1);
+    label_type_map_2 = (l => f.type : f @ l <- fs2);
 
     return all_conds({shallow_subset_conds(label_type_map_1[l], label_type_map_2[l]) : l <- labels_1});
   }
@@ -201,7 +201,7 @@ using (TypeName => Type) typedefs, Bool inst_type_vars
 
   SubsetCond record_map_shallow_subset_conds(RecordTypeFields record_fields, NeMapType map_type) =
     all_conds(
-      for (l => f <- record_fields) {
+      for (f @ l <- record_fields) {
         all_conds(
           { shallow_subset_conds(symb_type(l), map_type.key_type),
             shallow_subset_conds(f.type, map_type.value_type)
@@ -214,16 +214,16 @@ using (TypeName => Type) typedefs, Bool inst_type_vars
   SubsetCond map_record_shallow_subset_conds(Type key_type, Type value_type, RecordTypeFields record_fields)
   {
     //## BUG: WHY is_subset AND NOT shallow_subset_conds? IS THIS A BUG?
-    return not_a_subset if not is_subset(key_type, union_type({symb_type(l) : l => _ <- record_fields}));
+    return not_a_subset if not is_subset(key_type, union_type({symb_type(l) : _ @ l <- record_fields}));
 
     if (key_type :: SymbType)
       only_key_obj = _obj_(key_type);
-      return not_a_subset if (? l => f <- record_fields : l /= only_key_obj, not f.optional);
+      return not_a_subset if (? f @ l <- record_fields : l != only_key_obj, not f.optional);
     else
-      return not_a_subset if (? _ => f <- record_fields : not f.optional);
+      return not_a_subset if (? f @ _ <- record_fields : not f.optional);
     ;
 
-    return all_conds({shallow_subset_conds(key_type, f.type) : l => f <- record_fields, type_contains_obj(key_type, _obj_(l))});
+    return all_conds({shallow_subset_conds(key_type, f.type) : f @ l <- record_fields, type_contains_obj(key_type, _obj_(l))});
   }
 }
 

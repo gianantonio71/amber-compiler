@@ -60,7 +60,7 @@ using (TypeName => Type) typedefs
     union_type(ts?) = union({split_type(t) : t <- ts}); //## SHOULD I MERGE TYPES HERE WHEN POSSIBLE?
 
 
-  Bool may_match(Pattern ptrn, Type type) = type_pattern_intersection_superset(type, ptrn) /= empty_type;
+  Bool may_match(Pattern ptrn, Type type) = type_pattern_intersection_superset(type, ptrn) != empty_type;
 
 
   // Rule: the type returned by this function is always a subset of the input one
@@ -98,7 +98,7 @@ using (TypeName => Type) typedefs
     ne_set_type(),      _                 = if ptrn == ptrn_ne_set then type else empty_type,
     ne_map_type(),      _                 = if ptrn == ptrn_ne_map then type else empty_type,
 
-    record_type(fs?),   ptrn_empty_map    = if (? l => f <- fs : not f.optional) then empty_type else empty_map_type,
+    record_type(fs?),   ptrn_empty_map    = if (? f @ l <- fs : not f.optional) then empty_type else empty_map_type,
     record_type(fs?),   ptrn_ne_map       = type, // This is the reason why this function does not return the exact intersection but a superset of it
     record_type(fs?),   _                 = empty_type,
 
@@ -116,7 +116,7 @@ using (TypeName => Type) typedefs
 
     tag_obj_type(),     _                 = empty_type,
 
-    union_type(ts?),    _                 = { int_types = {it : t <- ts, it = type_pattern_intersection_superset(t, ptrn), it /= empty_type};
+    union_type(ts?),    _                 = { int_types = {it : t <- ts, it = type_pattern_intersection_superset(t, ptrn), it != empty_type};
                                               return empty_type if int_types == {};
                                               // return only_element(int_types) if size(int_types) == 1;
                                               // The types here are all union-compatible, since they are all
@@ -160,17 +160,17 @@ using (TypeName => Type) typedefs
     empty_set_type,   _           = obj == {},
     empty_map_type,   _           = obj == (),
 
-    ne_seq_type(),    [...]       = obj /= [] and all([type_contains_obj(type.elem_type, e) : e <- obj]),
+    ne_seq_type(),    [...]       = obj != [] and all([type_contains_obj(type.elem_type, e) : e <- obj]),
     ne_seq_type(),    _           = false,
 
-    ne_set_type(),    {...}       = obj /= {} and not (? e <- obj : not type_contains_obj(type.elem_type, e)),
+    ne_set_type(),    {...}       = obj != {} and not (? e <- obj : not type_contains_obj(type.elem_type, e)),
     ne_set_type(),    _           = false,
 
-    ne_map_type(),    (...)       = obj /= () and not (? k => v <- obj : not type_contains_obj(type.key_type, k) or not type_contains_obj(type.value_type, v)),
+    ne_map_type(),    (...)       = obj != () and not (? v @ k <- obj : not type_contains_obj(type.key_type, k) or not type_contains_obj(type.value_type, v)),
     ne_map_type(),    _           = false,
 
-    record_type(fs?), (...)       = not (? k => v <- obj : not has_key(fs, k) or not type_contains_obj(fs[k].type, v)) and
-                                    subset({l : l => f <- fs, not f.optional}, keys(obj)),
+    record_type(fs?), (...)       = not (? v @ k <- obj : not has_key(fs, k) or not type_contains_obj(fs[k].type, v)) and
+                                    subset({l : f @ l <- fs, not f.optional}, keys(obj)),
     record_type(fs?), _           = false,
 
     tuple_type(ts?),  [...]       = length(ts) == length(obj) and all([type_contains_obj(t, e) : t, e <- zip(ts, obj)]),
@@ -199,14 +199,14 @@ using (TypeName => Type) typedefs
 
     type_ref(ts?)           = { exp_type = expand_type_ref(ts, typedefs);
                                 res_type = subtract_obj_from_type(exp_type, obj);
-                                return if res_type /= exp_type then res_type else type;
+                                return if res_type != exp_type then res_type else type;
                               },
 
     empty_seq_type          = if obj == [] then empty_type else type,
     empty_set_type          = if obj == {} then empty_type else type,
     empty_map_type          = if obj == () then empty_type else type,
 
-    union_type(ts?)         = { nts = {nt : t <- ts, nt = subtract_obj_from_type(t, obj), nt /= empty_type};
+    union_type(ts?)         = { nts = {nt : t <- ts, nt = subtract_obj_from_type(t, obj), nt != empty_type};
                                 return if nts == {} then empty_type else union_type(nts);
                               },
 
@@ -315,7 +315,7 @@ Type type_seq(Type elem_type)  = union_type({empty_seq_type, ne_seq_type(elem_ty
 Type type_set(Type elem_type)  = union_type({empty_set_type, ne_set_type(elem_type)});
 Type type_mset(Type elem_type) = union_type({empty_map_type, ne_map_type(elem_type, high_ints(1))});
 
-Type type_tuple([2..*] size)  = tuple_type(nonempty(size * [type_any]));
+Type type_tuple(<2..*> size)  = tuple_type(nonempty(size * [type_any]));
 
 Type type_map(Type key_type, Type value_type)  = union_type({empty_map_type, ne_map_type(key_type, value_type)});
 

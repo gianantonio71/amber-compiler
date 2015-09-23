@@ -16,41 +16,41 @@
 
   type_arity_map = merge_values({(td.name => 0) : td <- tdefs} & {(td.name => arity(td)) : td <- par_tdefs});
   tdef_errs = typedefs_wf_errors(rand_sort(tdefs), rand_sort(par_tdefs), type_arity_map);
-  return tdef_errs if tdef_errs /= [];
+  return tdef_errs if tdef_errs != [];
 
   typedefs = create_type_map(tdefs, par_tdefs);
 
   params_errs = join([block_params_wf_errors(ub.signatures, type_arity_map) : ub <- rand_sort(ublocks)]);
-  return params_errs if params_errs /= [];
+  return params_errs if params_errs != [];
 
   full_fndefs = [(fd, []) : fd <- rand_sort(fndefs)] & join([[(fd, ub.signatures) : fd <- ub.fn_defs] : ub <- rand_sort(ublocks)]);
 
   sgn_errs = function_group_signature_wf_errors(full_fndefs, type_arity_map, typedefs);
-  return sgn_errs if sgn_errs /= [];
+  return sgn_errs if sgn_errs != [];
 
   global_fns_map = create_global_functions_map(full_fndefs);
 
   proc_sgn_errs = procedures_signature_wf_errors(proc_defs, type_arity_map);
 
-  proc_map = (pd.name => (arity(pd), pd.res_type /= nil) : pd <- proc_defs) & builtin_procs_map;
+  proc_map = (pd.name => (arity(pd), pd.res_type != nil) : pd <- proc_defs) & builtin_procs_map;
 
   fndef_errs = [];
   for (fd : rand_sort(fndefs))
     errs = fndef_wf_errors(fd, [], type_arity_map, typedefs, global_fns_map);
-    fndef_errs = [fndef_errs | fndef_errors(fd, errs)] if errs /= [];
+    fndef_errs = [fndef_errs | fndef_errors(fd, errs)] if errs != [];
   ;
   for (ub : rand_sort(ublocks))
     impl_ps = ub.signatures;
     for (fd : ub.fn_defs)
       errs = fndef_wf_errors(fd, impl_ps, type_arity_map, typedefs, global_fns_map);
-      fndef_errs = [fndef_errs | fndef_errors(fd, errs)] if errs /= [];
+      fndef_errs = [fndef_errs | fndef_errors(fd, errs)] if errs != [];
     ;
   ;
 
   proc_def_errs = [];
   for (pd : rand_sort(proc_defs))
     errs = proc_def_wf_errors(pd, type_arity_map, typedefs, global_fns_map, proc_map);
-    proc_def_errs = [proc_def_errs | proc_def_errors(pd, errs)] if errs /= [];
+    proc_def_errs = [proc_def_errs | proc_def_errors(pd, errs)] if errs != [];
   ;
 
   return fndef_errs & proc_def_errs;
@@ -71,7 +71,7 @@
 
   for (td : tdefs & par_tdefs)
     maybe_err = typedef_wf_errors(td, type_arity_map);
-    errs = [errs | value(maybe_err)] if maybe_err /= nil;
+    errs = [errs | value(maybe_err)] if maybe_err != nil;
   ;
   return errs;
 }
@@ -85,7 +85,7 @@
   ;
   for (s : signatures)
     type_errs = join([type_wf_errors(t, type_arity_map, true) : t <- s.params]) & type_wf_errors(s.res_type, type_arity_map, true);
-    errs = [errs | signature_errors(s, type_errs)] if type_errs /= [];
+    errs = [errs | signature_errors(s, type_errs)] if type_errs != [];
   ;
   return errs;
 }
@@ -94,10 +94,10 @@
 [WFError] function_group_signature_wf_errors([(SynFnDef, [SynSgn])] full_fndefs, (BasicTypeSymbol => Nat+) type_arity_map, (TypeName => Type) typedefs)
 {
   sgn_errs = values([fndef_signature_wf_errors(fd, nps, type_arity_map) : fd, nps <- full_fndefs]);
-  return sgn_errs if sgn_errs /= [];
+  return sgn_errs if sgn_errs != [];
 
   fndefs_by_name_and_arity = merge_values(set([((fd.name, arity(fd)) => (fd, ss)) : fd, ss <- full_fndefs]));
-  fndef_incomp_errs = join(rand_sort({polymorphic_functions_errors(nonempty(rand_sort(fds)), typedefs) : _ => fds <- fndefs_by_name_and_arity}));
+  fndef_incomp_errs = join(rand_sort({polymorphic_functions_errors(nonempty(rand_sort(fds)), typedefs) : fds @ _ <- fndefs_by_name_and_arity}));
   return fndef_incomp_errs;
 }
 
@@ -108,11 +108,11 @@ Maybe[WFError] fndef_signature_wf_errors(SynFnDef fndef, [SynSgn] named_pars, (B
   errs = errs & type_wf_errors(fndef.res_type, type_arity_map) if fndef.res_type?;
 
   pos_args = [p.var_name : p <- fndef.params, p.var_name?];
-  named_args = [match (p.name) named_par(n?) = n; : p <- named_pars];
+  named_args = [match (p.name) named_par(n?) = n : p <- named_pars];
 
   dupl_pos_pars = dupl_elems(pos_args);
   dupl_named_pars = dupl_elems(pos_args & named_args) - dupl_pos_pars;
-  errs = [errs | dupl_par_names(dupl_pos_pars, dupl_named_pars)] if dupl_pos_pars /= {} or dupl_named_pars /= {};
+  errs = [errs | dupl_par_names(dupl_pos_pars, dupl_named_pars)] if dupl_pos_pars != {} or dupl_named_pars != {};
 
   direct_type_vars = seq_union([syn_type_vars(p.type) : p <- fndef.params, p.type :: SynType]);
   // indirect_type_vars = seq_union([syn_type_vars(p.type.out_type) : p <- fndef.params, p.type :: SynClsType]);
@@ -122,16 +122,16 @@ Maybe[WFError] fndef_signature_wf_errors(SynFnDef fndef, [SynSgn] named_pars, (B
     if (p :: SynClsFnArg)
       in_type_vars = seq_union([syn_type_vars(t) : t <- p.type.in_types]);
       undef_type_vars = in_type_vars - direct_type_vars;
-      errs = [errs | invalid_cls_type_vars(i, p.var_name, undef_type_vars)] if undef_type_vars /= {};
+      errs = [errs | invalid_cls_type_vars(i, p.var_name, undef_type_vars)] if undef_type_vars != {};
       indirect_type_vars = indirect_type_vars & syn_type_vars(p.type.out_type);
     ;
   ;
 
   res_type_vars = syn_type_vars(fndef.res_type);
   undef_res_type_vars = res_type_vars - (direct_type_vars & indirect_type_vars);
-  errs = [errs | invalid_res_type_vars(undef_res_type_vars)] if undef_res_type_vars /= {};
+  errs = [errs | invalid_res_type_vars(undef_res_type_vars)] if undef_res_type_vars != {};
 
-  return if errs /= [] then just(fndef_errors(fndef, errs)) else nil;
+  return if errs != [] then just(fndef_errors(fndef, errs)) else nil;
 }
 
 
@@ -144,7 +144,7 @@ Maybe[WFError] fndef_signature_wf_errors(SynFnDef fndef, [SynSgn] named_pars, (B
       return [incomp_pos_params(fd1, fd2, nonempty([i : b @ i <- arity_match, not b]))];
     ;
     // //## BAD BAD BAD. I SHOULD MAKE SURE THAT THE SIGNATURES ARE EQUIVALENT, NOT THAT THEY ARE SYNTACTICALLY THE SAME
-    // return [incomp_named_params(fd1, ss1, fd2, ss2)] if set(ss1) /= set(ss2);
+    // return [incomp_named_params(fd1, ss1, fd2, ss2)] if set(ss1) != set(ss2);
     args_are_disjoint = [args_are_pseudotype_disjoint(p1, p2, typedefs) : p1, p2 <- zip(fd1.params, fd2.params)];
     return [overlapping_pos_params_types(fd1, fd2)] if not at_least_one(args_are_disjoint);
   ;
@@ -167,7 +167,7 @@ Maybe[WFError] fndef_signature_wf_errors(SynFnDef fndef, [SynSgn] named_pars, (B
 {
   def_errs = join([proc_signature_wf_errors(pd, type_arity_map) : pd <- rand_sort(proc_defs)]);
   procs_by_name = group_by(proc_defs, $.name);
-  global_errs = rand_sort({same_name_proc_defs(rand_sort(pds)) : _ => pds <- procs_by_name, size(pds) /= 1});
+  global_errs = rand_sort({same_name_proc_defs(rand_sort(pds)) : pds @ _ <- procs_by_name, size(pds) != 1});
   return def_errs & global_errs;
 }
 
@@ -175,22 +175,22 @@ Maybe[WFError] fndef_signature_wf_errors(SynFnDef fndef, [SynSgn] named_pars, (B
 [WFError] proc_signature_wf_errors(SynProcDef proc_def, (BasicTypeSymbol => Nat+) type_arity_map)
 {
   name = proc_def.name;
-  bare_name = match (name) proc_symbol(n?) = n;;
+  bare_name = match (name) proc_symbol(n?) = n;
   arity = arity(proc_def);
   res_type = proc_def.res_type;
 
-  dup_pars = dupl_elems([match (p.var) var(n?) = n; : p <- proc_def.params]);
+  dup_pars = dupl_elems([match (p.var) var(n?) = n : p <- proc_def.params]);
 
   errs = [
     builtin_proc_redef            if has_key(builtin_procs_map, name),
-    wrong_main_proc_arity         if bare_name == :main and arity(proc_def) /= 1,
-    dupl_par_names(dup_pars, {})  if dup_pars /= {}
+    wrong_main_proc_arity         if bare_name == :main and arity(proc_def) != 1,
+    dupl_par_names(dup_pars, {})  if dup_pars != {}
   ];
 
   errs = errs & join([type_wf_errors(p.type, type_arity_map) : p <- proc_def.params]);
-  errs = errs & type_wf_errors(value(res_type), type_arity_map) if res_type /= nil;
+  errs = errs & type_wf_errors(value(res_type), type_arity_map) if res_type != nil;
 
-  return [proc_def_errors(proc_def, errs) if errs /= []];
+  return [proc_def_errors(proc_def, errs) if errs != []];
 }
 
 
@@ -203,10 +203,10 @@ Maybe[WFError] fndef_signature_wf_errors(SynFnDef fndef, [SynSgn] named_pars, (B
 )
 {
   loc_fns_errs = function_group_signature_wf_errors([(fd, named_params) : fd <- fndef.local_fns], type_arity_map, typedefs);
-  return [nested_functions_errors(loc_fns_errs)] if loc_fns_errs /= [];
+  return [nested_functions_errors(loc_fns_errs)] if loc_fns_errs != [];
 
   loc_fns_by_name = group_by(fndef.local_fns, $.name);
-  local_fns = (n => local_fn_untyped_sgns(fds) : n => fds <- loc_fns_by_name);
+  local_fns = (n => local_fn_untyped_sgns(fds) : fds @ n <- loc_fns_by_name);
 
   main_fn_errs = fndef_wf_errors(fndef, named_params, local_fns, type_arity_map, typedefs, global_functions);
 
@@ -221,7 +221,7 @@ Maybe[WFError] fndef_signature_wf_errors(SynFnDef fndef, [SynSgn] named_pars, (B
   (Nat => [Nat]) local_fn_untyped_sgns(SynFnDef+ fds)
   {
     pars_arities_by_fn_arity = group_by(fds, arity($), [syn_type_arity(p.type) : p <- $.params]);
-    return (fn_arity => only_element(param_arities) : fn_arity => param_arities <- pars_arities_by_fn_arity);
+    return (fn_arity => only_element(param_arities) : param_arities @ fn_arity <- pars_arities_by_fn_arity);
   }
 }
 
@@ -239,7 +239,7 @@ Maybe[WFError] fndef_signature_wf_errors(SynFnDef fndef, [SynSgn] named_pars, (B
          set([p.name : p <- named_params, p.params == []]);
 
   cls = (fn_symbol(p.var_name) => syn_type_arity(type) : p <- set(fndef.params), type = p.type, type :: SynClsType, p.var_name?) &
-        (named_par_to_fn_symb(p.name) => a : p <- set(named_params), a = arity(p), a /= 0);
+        (named_par_to_fn_symb(p.name) => a : p <- set(named_params), a = arity(p), a != 0);
 
   named_params_arities = merge(set([(p.name => arity(p)): p <- named_params]));
 
@@ -271,7 +271,7 @@ Maybe[WFError] fndef_signature_wf_errors(SynFnDef fndef, [SynSgn] named_pars, (B
   return root_stmt_block_wf_errors(
     body,
     set([p.var : p <- proc_def.params]),
-    proc_def.res_type /= nil,
+    proc_def.res_type != nil,
     true,
     type_arity_map = type_arity_map,
     curr_function_named_params = (),
@@ -289,13 +289,13 @@ Maybe[WFError] fndef_signature_wf_errors(SynFnDef fndef, [SynSgn] named_pars, (B
 (FnSymbol => (Nat => ([Nat], (NamedPar => Nat)+))) create_global_functions_map([(SynFnDef, [SynSgn])] full_fndefs)
 {
   fndefs_by_name = group_by(full_fndefs, left($).name);
-  return (n => create_polymorphic_function_map(fds) : n => fds <- fndefs_by_name);
+  return (n => create_polymorphic_function_map(fds) : fds @ n <- fndefs_by_name);
 
   (Nat => ([Nat], (NamedPar => Nat)+)) create_polymorphic_function_map((SynFnDef, [SynSgn])+ full_fndefs)
   {
     fndefs_by_arity = group_by(full_fndefs, arity(left($)));
-    // return (a => {fndef_sgn_info(left(fd), right(fd)) : fd <- fds} : a => fds <- fndefs_by_arity);
-    return (a => fndefs_sgn_info(fds) : a => fds <- fndefs_by_arity);
+    // return (a => {fndef_sgn_info(left(fd), right(fd)) : fd <- fds} : fds @ a <- fndefs_by_arity);
+    return (a => fndefs_sgn_info(fds) : fds @ a <- fndefs_by_arity);
   }
 
 

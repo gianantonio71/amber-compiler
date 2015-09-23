@@ -73,14 +73,13 @@ using (TypeName => Type) typedefs
     tag_types = match (type)
       type_var()  = {type_tagged_obj},
       _           = tagged_obj_types(type);
-    ;
 
     envs = for (t <- tag_types)
       if (may_match(tag_ptrn, t.tag_type) and may_match(obj_ptrn, t.obj_type)) {
         generated_environment(tag_ptrn, t.tag_type) & generated_environment(obj_ptrn, t.obj_type)
       };
 
-    return (v => union_superset(ts) : v => ts <- merge_values(envs));
+    return (v => union_superset(ts) : ts @ v <- merge_values(envs));
   }
 
 
@@ -94,7 +93,7 @@ using (TypeName => Type) typedefs
   (Var => Type) ptrn_union_gen_env(Pattern+ ptrns, Type type)
   {
     matching_ptrns = {p : p <- ptrns, may_match(p, type)};
-    return (v => union_superset(ts) : v => ts <- merge_values({generated_environment(p, type) : p <- matching_ptrns}));
+    return (v => union_superset(ts) : ts @ v <- merge_values({generated_environment(p, type) : p <- matching_ptrns}));
   }
 }
 
@@ -132,7 +131,7 @@ using (Var => Type) environment
   (Var => Type) get_updated_env([<var(Atom), nil>^] params, Expr expr, [Type^] param_types)
   {
     arity = length(params);
-    env_delta = merge([(fn_par(i) => pt, pn => pt if pn /= nil) : pn, pt @ i <- zip(params, param_types)]);
+    env_delta = merge([(fn_par(i) => pt, pn => pt if pn != nil) : pn, pt @ i <- zip(params, param_types)]);
     return update(environment, env_delta);
   }
 }
@@ -148,7 +147,7 @@ ClsExpr rewrite_cls_expr(ClsExpr expr):
 //## WHAT THE HECK IS THIS?
 Type mandatory_record_field_type(RecordType type, SymbObj label)
 {
-  mfs = {f : l => f <- _obj_(type), l == label};
+  mfs = {f : f @ l <- _obj_(type), l == label};
   assert size(mfs) >= 0;
   return empty_type if mfs == {};
   mf = only_element(mfs);

@@ -13,7 +13,7 @@ using String filename
       using_block_1   = build_using_block_1_ast(get_rule_match(mtc)),
       using_block_2   = build_using_block_2_ast(get_rule_match(mtc)),
       proc_def        = build_proc_def_ast(get_rule_match(mtc));
-    ;
+
     return attach_src_code_info(decl, filename, mtc);
   }
 
@@ -51,7 +51,6 @@ using String filename
       type_tag_obj      = build_tag_obj_type_ast(get_rule_match(pretype)),
       type_tag_record   = build_tag_record_type_ast(get_rule_match(pretype)),
       type_symbol       = build_symbol_type(get_rule_match(pretype));
-    ;
 
   SynType build_type_ast(RuleMatch mtc)
   {
@@ -71,7 +70,6 @@ using String filename
       type_record       = build_record_type_ast(submatch),
       type_tuple        = build_tuple_type_ast(submatch),
       type_any_tag_obj  = build_any_tag_obj_type(submatch);
-    ;
     for (s : rep_rule_nodes(nodes[1]))
       res_type = syn_set_type(res_type, get_rule_name(s) == :ne_set);
     ;
@@ -121,11 +119,11 @@ using String filename
 
   SynType build_integer_type_ast(RuleMatch mtc)
   {
-    nodes = rule_seq_nodes(block_node(mtc));
-    assert length(nodes) == 3;
-    assert is_annotated_token(nodes[1], double_dot);
-    min_node = nodes[0];
-    max_node = nodes[2];
+    nodes = rule_seq_nodes(mtc);
+    assert length(nodes) == 5;
+    assert is_annotated_token(nodes[0], lower) and is_annotated_token(nodes[2], double_dot) and is_annotated_token(nodes[4], greater);
+    min_node = nodes[1];
+    max_node = nodes[3];
     min = bound(get_rule_name(min_node), get_rule_match(min_node));
     max = bound(get_rule_name(max_node), get_rule_match(max_node));
     return match (min, max)
@@ -133,7 +131,6 @@ using String filename
              nil,   *     = low_ints(max),
              *,     nil   = high_ints(min),
              *,     *     = syn_int_range(min, max);
-           ;
 
     <Int, nil> bound(Atom bound_type, RuleMatch mtc):
       asterisk      = nil,
@@ -147,7 +144,7 @@ using String filename
     nodes = rule_seq_nodes(block_node(mtc));
     assert length(nodes) == 2;
     elem_type = build_type_ast(nodes[0]);
-    return syn_seq_type(elem_type, nodes[1] /= null_match);
+    return syn_seq_type(elem_type, nodes[1] != null_match);
   }
 
   SynType build_map_type_ast(RuleMatch mtc)
@@ -170,7 +167,7 @@ using String filename
       assert length(nodes) == 3;
       label = object(get_label(nodes[0]));
       type = build_pretype_ast(nodes[1]);
-      optional = nodes[2] /= null_match;
+      optional = nodes[2] != null_match;
       return (label: label, type: type, optional: optional);
     }
   }
@@ -188,7 +185,7 @@ using String filename
 
   ////////////////////////////////////////////////////////////////////////////////
 
-  Maybe[SynType] build_maybe_type_ast(RuleMatch mtc) = if mtc /= null_match then just(build_type_ast(mtc)) else nil;
+  Maybe[SynType] build_maybe_type_ast(RuleMatch mtc) = if mtc != null_match then just(build_type_ast(mtc)) else nil;
 
   ////////////////////////////////////////////////////////////////////////////////
 
@@ -197,7 +194,6 @@ using String filename
       std     = build_std_fndef_ast(get_rule_match(mtc)),
       proc    = build_proc_fndef_ast(get_rule_match(mtc)),
       switch  = build_switch_fndef_ast(get_rule_match(mtc));
-    ;
 
   SynFnDef build_std_fndef_ast(RuleMatch mtc)
   {
@@ -228,7 +224,6 @@ using String filename
       lfds, rem_stmts = match (s)
         fn_def_stmt(fd?)  = ([lfds | transfer_attached_data(fd, s)], rem_stmts),
         _                 = (lfds, [rem_stmts | s]);
-      ;
     ;
 
     return syn_fn_def(
@@ -332,9 +327,8 @@ using String filename
     match (get_token(mtc))
       lowercase_id(a?)  = fn_symbol(a),
       operator(op?)     = op_symbol(op);
-    ;
 
-  [SynFnArg] build_fn_params_ast(RuleMatch mtc) = if mtc /= null_match then [build_fn_arg_ast(m) : m <- rep_rule_nodes(block_node(mtc))] else []; //## MAYBE rep_rule_nodes (AND seq_rule_nodes) SHOULD RETURN THE EMPTY SEQUENCE WHEN INVOKED WITH A null_match PARAMETER
+  [SynFnArg] build_fn_params_ast(RuleMatch mtc) = if mtc != null_match then [build_fn_arg_ast(m) : m <- rep_rule_nodes(block_node(mtc))] else []; //## MAYBE rep_rule_nodes (AND seq_rule_nodes) SHOULD RETURN THE EMPTY SEQUENCE WHEN INVOKED WITH A null_match PARAMETER
 
   SynFnArg build_fn_arg_ast(RuleMatch mtc) =
     match (get_rule_name(mtc))
@@ -343,14 +337,13 @@ using String filename
       typed     = {
         nodes = rule_seq_nodes(get_rule_match(mtc));
         assert length(nodes) == 2;
-        return (type: build_type_ast(nodes[0]), var_name: get_lowercase_id(nodes[1]) if nodes[1] /= null_match);
+        return (type: build_type_ast(nodes[0]), var_name: get_lowercase_id(nodes[1]) if nodes[1] != null_match);
       },
       cls       = {
         nodes = rule_seq_nodes(get_rule_match(mtc));
         assert length(nodes) == 2;
         return (type: build_cls_type_ast(nodes[0]), var_name: get_lowercase_id(nodes[1]));
       };
-    ;
 
   SynClsType build_cls_type_ast(RuleMatch mtc)
   {
@@ -465,7 +458,7 @@ using String filename
     assert length(nodes) == 2;
     expr = build_expr_3_ast(nodes[1]);
     prefix = nodes[0];
-    if (prefix /= null_match)
+    if (prefix != null_match)
       op = annotated_token(prefix).token;
       if (op == :minus)
         expr = syn_fn_call(op_symbol(:minus), [expr]);
@@ -518,7 +511,7 @@ using String filename
         expr = syn_fn_call(op_symbol(:brackets), [expr, idx_expr]);
       ;
     ;
-    if (nodes[2] /= null_match)
+    if (nodes[2] != null_match)
       field = get_lowercase_id(nodes[2], 1);
       expr = syn_accessor_test(expr, field);
     ;
@@ -555,7 +548,7 @@ using String filename
       fn_call       = build_fn_call_expr_ast(get_rule_match(mtc)),                  // rule_fn_call_expr
       const_or_var  = const_or_var(get_lowercase_id(get_rule_match(mtc))),          // rule_id
       cls_par       = cls_par(get_cls_par_idx(get_rule_match(mtc)));                // atomic_rule(qual_var))
-    ;
+
     return attach_src_code_info(expr, mtc);
   }
 
@@ -648,7 +641,7 @@ using String filename
 
     src_expr = build_expr_ast(nodes[3]);
 
-    if (nodes[4] /= null_match)
+    if (nodes[4] != null_match)
       ns = rule_seq_nodes(nodes[4]);
       sel_expr = just(build_expr_ast(ns[1]));
     else
@@ -659,7 +652,7 @@ using String filename
     if (get_rule_name(var_and_type_node) == :seq)
       ns = rule_seq_nodes(get_rule_match(var_and_type_node));
       vars = [var(get_lowercase_id(n)) : n <- rep_rule_nodes(ns[0])];
-      if (ns[1] /= null_match)
+      if (ns[1] != null_match)
         sub_ns = rule_seq_nodes(ns[1]);
         idx_var = just(var(get_lowercase_id(sub_ns[1])));
       else
@@ -668,9 +661,9 @@ using String filename
       return seq_comp(
         expr:       expr,
         vars:       nonempty(vars),
-        idx_var:    value(idx_var) if idx_var /= nil,
+        idx_var:    value(idx_var) if idx_var != nil,
         src_expr:   src_expr,
-        sel_expr:   value(sel_expr) if sel_expr /= nil
+        sel_expr:   value(sel_expr) if sel_expr != nil
       );
 
     else
@@ -680,7 +673,7 @@ using String filename
       op = get_token(ns[1]);
       assert op == lower or op == lower_eq;
       inclusive = op == lower_eq;
-      return range_comp(expr: expr, var: var, bound_expr: src_expr, inclusive: inclusive, sel_expr: value(sel_expr) if sel_expr /= nil);
+      return range_comp(expr: expr, var: var, bound_expr: src_expr, inclusive: inclusive, sel_expr: value(sel_expr) if sel_expr != nil);
     ;
   }
 
@@ -726,7 +719,7 @@ using String filename
   SynExpr build_match_expr_ast(RuleMatch mtc)
   {
     nodes = rule_seq_nodes(mtc);
-    assert length(nodes) == 4;
+    assert length(nodes) == 3;
     exprs = [build_expr_ast(n) : n <- rep_rule_nodes(block_node(nodes[1]))];
     cases = [build_switch_case_ast(n) : n <- rep_rule_nodes(nodes[2])];
     return syn_try_expr(nonempty(exprs), nonempty(cases));
@@ -782,7 +775,7 @@ using String filename
     assert length(nodes) == 4;
     key = build_expr_ast(nodes[0]);
     value = build_expr_ast(nodes[2]);
-    // return (key: key, value: value, cond: build_expr_ast(rule_seq_nodes(nodes[3])[1]) if nodes[3] /= null_match); //## REENABLE
+    // return (key: key, value: value, cond: build_expr_ast(rule_seq_nodes(nodes[3])[1]) if nodes[3] != null_match); //## REENABLE
     return (key: key, value: value) if nodes[3] == null_match;
     cond_nodes = rule_seq_nodes(nodes[3]);
     cond = build_expr_ast(cond_nodes[1]);
@@ -834,7 +827,7 @@ using String filename
       fn_case     = syn_fn_def_stmt(build_switch_fndef_ast(get_rule_match(mtc))),
       no_val_ret  = build_no_val_ret_stmt_ast(get_rule_match(mtc)),
       proc_call   = build_proc_call_stmt_ast(get_rule_match(mtc));
-    ;
+
     return attach_src_code_info(stmt, mtc);
   }
 
@@ -844,7 +837,7 @@ using String filename
     assert length(nodes) == 6;
     assert nodes[0] == null_match;
     vars = [var(get_lowercase_id(n)) : n <- rep_rule_nodes(nodes[1])];
-    assert vars /= [];
+    assert vars != [];
     expr = build_expr_ast(nodes[3]);
     stmt = syn_asgnm_stmt(nonempty(vars), expr);
     return stmt if nodes[4] == null_match;
@@ -875,7 +868,7 @@ using String filename
       stmts = build_stmts_ast(rule_seq_node(n, 2));
       branches = branches & [(cond: cond, body: stmts)];
     ;
-    else_stmts = if nodes[4] /= null_match then build_stmts_ast(rule_seq_node(nodes[4], 1)) else [];
+    else_stmts = if nodes[4] != null_match then build_stmts_ast(rule_seq_node(nodes[4], 1)) else [];
     return syn_if_stmt(nonempty(branches), else_stmts);
   }
 
@@ -1035,8 +1028,8 @@ using String filename
     expr = build_expr_ast(nodes[3]);
     return attach_src_code_info(syn_in_clause(ptrn, expr), mtc) if nodes[1] == null_match;
     nodes = rule_seq_nodes(nodes[1]);
-    value_ptrn = build_clause_ptrn_ast(nodes[1]);
-    return attach_src_code_info(syn_map_in_clause(ptrn, value_ptrn, expr), mtc);
+    key_ptrn = build_clause_ptrn_ast(nodes[1]);
+    return attach_src_code_info(syn_map_in_clause(key_ptrn, ptrn, expr), mtc);
   }
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -1054,7 +1047,7 @@ using String filename
       tag_obj   = build_tag_obj_clause_ptrn_ast(get_rule_match(mtc)),
       // atomic_rule(lowercase_id)
       var       = syn_ptrn_var(var(get_lowercase_id(get_rule_match(mtc))), ptrn_any);
-    ;
+
     return attach_src_code_info(ptrn, mtc);
   }
 
@@ -1074,7 +1067,7 @@ using String filename
     ptrn_match = nodes[0];
     var_match = nodes[1];
     ptrn = build_switch_ptrn_ast(get_rule_name(ptrn_match), get_rule_match(ptrn_match));
-    ptrn = syn_ptrn_var(var(get_lowercase_id(var_match, 0)), ptrn) if var_match /= null_match;
+    ptrn = syn_ptrn_var(var(get_lowercase_id(var_match, 0)), ptrn) if var_match != null_match;
     return attach_src_code_info(ptrn, mtc);
   }
 

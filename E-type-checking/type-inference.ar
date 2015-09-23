@@ -69,7 +69,7 @@ using
   {
     head_elem_type = seq_elem_supertype(expr_type(seq));
     tail_elem_types = [expr_type(e) : e <- tail];
-    return ne_seq_type(union_superset({head_elem_type if head_elem_type /= empty_type} & set(tail_elem_types)));
+    return ne_seq_type(union_superset({head_elem_type if head_elem_type != empty_type} & set(tail_elem_types)));
   }
 
 
@@ -112,7 +112,7 @@ using
       candidate_signatures = {s : s <- aggregated_signatures[fn_key], will_dispatch_to(s, params)};
     ;
 
-    // assert size(candidate_signatures) == 1 or at_least_one([is_subset(value(t), empty_type) : t <- param_maybe_types, t /= nil]);
+    // assert size(candidate_signatures) == 1 or at_least_one([is_subset(value(t), empty_type) : t <- param_maybe_types, t != nil]);
 
     return empty_type if size(candidate_signatures) > 1;
     signature = only_element(candidate_signatures);
@@ -134,8 +134,7 @@ using
     types = for (t <- split_type(expr_type(expr))) {
       match (t)
         record_type()   = t,
-        tag_obj_type()  = match (t.obj_type) record_type() ot? = ot;
-      ;
+        tag_obj_type()  = match (t.obj_type) record_type() ot? = ot
     };
     return empty_type if types == {};
     assert types :: <RecordType+>;
@@ -171,7 +170,7 @@ using
   Type set_comp_expr_type(Expr expr, Clause source, Maybe[Expr] maybe_sel_expr)
   {
     new_env = refine_environment(source);
-    if (maybe_sel_expr /= nil)
+    if (maybe_sel_expr != nil)
       sel_expr = value(maybe_sel_expr);
       new_env = left(refine_environment(sel_expr, environment=new_env));
     ;
@@ -182,7 +181,7 @@ using
   Type map_comp_expr_type(Expr key_expr, Expr value_expr, Clause source, Maybe[Expr] maybe_sel_expr)
   {
     new_env = refine_environment(source);
-    if (maybe_sel_expr /= nil)
+    if (maybe_sel_expr != nil)
       sel_expr = value(maybe_sel_expr);
       new_env = left(refine_environment(sel_expr, environment=new_env));
     ;
@@ -197,10 +196,10 @@ using
     src_expr_type = expr_type(src_expr);
     return empty_seq_type if is_subset(src_expr_type, empty_seq_type);
     elem_type = seq_elem_supertype(src_expr_type);
-    assert elem_type /= empty_type;
-    env_delta = asgnm_env_updates(vars, elem_type) & (value(maybe_idx_var) => type_nat if maybe_idx_var /= nil);
+    assert elem_type != empty_type;
+    env_delta = asgnm_env_updates(vars, elem_type) & (value(maybe_idx_var) => type_nat if maybe_idx_var != nil);
     new_env = update(environment, env_delta);
-    if (maybe_sel_expr /= nil)
+    if (maybe_sel_expr != nil)
       sel_expr = value(maybe_sel_expr);
       new_env = left(refine_environment(sel_expr, environment=new_env));
     ;
@@ -281,8 +280,8 @@ using
   Type foreach_stmt_return_type([Var^] vars, Maybe[Var] maybe_idx_var, Expr values, [Statement^] body)
   {
     elem_type = seq_elem_supertype(expr_type(values));
-    assert elem_type /= empty_type;
-    env_delta = asgnm_env_updates(vars, elem_type) & (value(maybe_idx_var) => type_nat if maybe_idx_var /= nil);
+    assert elem_type != empty_type;
+    env_delta = asgnm_env_updates(vars, elem_type) & (value(maybe_idx_var) => type_nat if maybe_idx_var != nil);
     env_0 = update(environment, env_delta);
     env_1 = update_environment(body, environment=env_0);
     ret_type_0 = return_type(body, environment=env_0);
@@ -293,7 +292,7 @@ using
 
   Type for_stmt_return_type(Maybe[Var] maybe_var, Expr start_val, Expr end_val, Bool end_val_incl, [Statement^] body)
   {
-    env_0 = environment & (value(maybe_var) => integer if maybe_var /= nil);
+    env_0 = environment & (value(maybe_var) => integer if maybe_var != nil);
     env_1 = update_environment(body, environment=env_0);
     ret_type_0 = return_type(body, environment=env_0);
     ret_type_1 = return_type(body, environment=env_1);
@@ -303,7 +302,7 @@ using
 
   Type let_stmt_return_type((NamedPar => Expr) asgnms, [Statement^] body)
   {
-    env_delta = (v => expr_type(e) : v => e <- asgnms);
+    env_delta = (v => expr_type(e) : e @ v <- asgnms);
     new_env = update(environment, env_delta);
     return return_type(body, environment=new_env);
   }
@@ -378,8 +377,8 @@ using
   (Var => Type) foreach_stmt_update_environment([Var^] vars, Maybe[Var] maybe_idx_var, Expr values, [Statement^] body)
   {
     elem_type = seq_elem_supertype(expr_type(values));
-    assert elem_type /= empty_type;
-    loop_vars = set(vars) & {value(maybe_idx_var) if maybe_idx_var /= nil};
+    assert elem_type != empty_type;
+    loop_vars = set(vars) & {value(maybe_idx_var) if maybe_idx_var != nil};
     assert disjoint(keys(environment), loop_vars);
     nvars = nz_nat(length(vars));
     if (nvars == 1)
@@ -388,7 +387,7 @@ using
       field_types = tuple_field_supertypes(elem_type, nvars);
       non_idx_typed_loop_vars = merge([(v => t) : v, t <- zip(vars, field_types)]);
     ;
-    env_0 = environment & non_idx_typed_loop_vars & (value(maybe_idx_var) => type_nat if maybe_idx_var /= nil);
+    env_0 = environment & non_idx_typed_loop_vars & (value(maybe_idx_var) => type_nat if maybe_idx_var != nil);
     env_1 = update_environment(body, environment=env_0);
     return merge_envs(environment, remove_keys(env_1, loop_vars));
   }
@@ -397,17 +396,17 @@ using
   (Var => Type) for_stmt_update_environment(Maybe[Var] maybe_var, Expr start_val, Expr end_val, Bool end_val_incl, [Statement^] body)
   {
     env_0 = environment & (
-      value(maybe_var) => loop_var_type(expr_type(start_val), expr_type(end_val), end_val_incl) if maybe_var /= nil
+      value(maybe_var) => loop_var_type(expr_type(start_val), expr_type(end_val), end_val_incl) if maybe_var != nil
     );
     env_1 = update_environment(body, environment=env_0);
-    return merge_envs(environment, remove_keys(env_1, {value(maybe_var) if maybe_var /= nil}));
+    return merge_envs(environment, remove_keys(env_1, {value(maybe_var) if maybe_var != nil}));
   }
 
 
   (Var => Type) let_stmt_update_environment((NamedPar => Expr) asgnms, [Statement^] body)
   {
     return () if not may_fall_through(body); //## SEE COMMENT FOR loop_stmt() ABOVE
-    env_delta = (v => expr_type(e) : v => e <- asgnms);
+    env_delta = (v => expr_type(e) : e @ v <- asgnms);
     new_env = update(environment, env_delta);
     return update_environment(body, environment=new_env);
   }
@@ -458,8 +457,8 @@ using
 
     elif (cond :: <accessor_test(expr: Var, field: SymbObj)>)
       type_if_true, type_if_false = accessor_test_refine(environment[cond.expr], cond.field, true);
-      if_true_env = update(if_true_env, (cond.expr => type_if_true)) if type_if_true /= empty_type;
-      if_false_env = update(if_false_env, (cond.expr => type_if_false)) if type_if_false /= empty_type;
+      if_true_env = update(if_true_env, (cond.expr => type_if_true)) if type_if_true != empty_type;
+      if_false_env = update(if_false_env, (cond.expr => type_if_false)) if type_if_false != empty_type;
 
     elif (cond :: <and_expr(left: Expr, right: Expr)>)
       et, ef = refine_environment(cond.left);
@@ -484,7 +483,7 @@ using
                                                       then subtract_obj_from_type(var_type, expr_type.min)
                                                       else var_type),
         _                       = (var_type,        var_type);
-      ;
+
       type_if_eq = var_type if type_if_eq == empty_type;
       type_if_not_eq = var_type if type_if_not_eq == empty_type;
       return (type_if_eq, type_if_not_eq);
@@ -500,7 +499,7 @@ using
       ne_map_type()           = (type, type),
       record_type(fs?)        =
         if has_key(fs, field)
-          then (record_type((l => (type: f.type, optional: l /= field and f.optional) : l => f <- fs)), type)
+          then (record_type((l => (type: f.type, optional: l != field and f.optional) : f @ l <- fs)), type)
           else (empty_type, type),
       tuple_type()            = (empty_type, type),
       tag_obj_type()          = {
@@ -513,8 +512,8 @@ using
       },
       union_type(ts?)         = {
         rts = {accessor_test_refine(t, field, look_inside) : t <- ts};
-        rts_if_true = {rtt : rt <- rts, rtt = left(rt), rtt /= empty_type};
-        rts_if_false = {rtf : rt <- rts, rtf = right(rt), rtf /= empty_type};
+        rts_if_true = {rtt : rt <- rts, rtt = left(rt), rtt != empty_type};
+        rts_if_false = {rtf : rt <- rts, rtf = right(rt), rtf != empty_type};
         return (
           if rts_if_true  == {} then empty_type else union_type(rts_if_true),
           if rts_if_false == {} then empty_type else union_type(rts_if_false)
@@ -672,7 +671,7 @@ using
       type = expr_type(expr);
       if (expr :: Var)
         refined_type = type_pattern_intersection_superset(type, ptrn);
-        assert refined_type /= empty_type;
+        assert refined_type != empty_type;
         var_group = only_element_or_def_if_empty({as : as <- var_aliases, in(expr, as)}, {expr});
         new_env = update(new_env, (v => refined_type : v <- var_group));
       ;
