@@ -18,7 +18,7 @@ type TypeCheckingError =
   // tag_not_a_symbol(errors: TypeCheckingError+),
   // exp_type_not_a_tag_type_with_any_tag,
   invalid_tag_expr(errors: TypeCheckingError+),
-  invalid_var_type(actual_type: Type, expected_type: Type),
+  invalid_var_type(var: Var, actual_type: Type, expected_type: Type),
   no_dispatchable_function_found(name: FnSymbol, arity: NzNat, signatures: FnType+, par_types: [Maybe[Type]]),
   invalid_param_types(fn_name: FnSymbol, target_signature: FnType, invalid_params: <(Nat, Expr, Type)>+),
   invalid_cls_var_type(var: ClsVar, expected_type: ClsType, type_var_insts: (TypeVar => Type)),
@@ -67,7 +67,7 @@ TypeCheckingError invalid_rec_fields(SymbObj+ fs) = invalid_rec_fields(fields: f
 
 TypeCheckingError invalid_tag_expr(TypeCheckingError+ es) = invalid_tag_expr(errors: es);
 
-TypeCheckingError invalid_var_type(Type at, Type et) = invalid_var_type(actual_type: at, expected_type: et);
+TypeCheckingError invalid_var_type(Var v, Type at, Type et) = invalid_var_type(var: v, actual_type: at, expected_type: et);
 
 TypeCheckingError no_dispatchable_function_found(FnSymbol n, NzNat a, FnType+ ss, [Maybe[Type]^] ts) =
   no_dispatchable_function_found(name: n, arity: a, signatures: ss, par_types: ts);
@@ -151,7 +151,10 @@ using (TypeName => Type) typedefs
   missing_rec_fields()                = ["Record fields required: " & append([user_repr(f) : f <- rand_sort(err.fields)], " ")],
   invalid_rec_fields()                = ["Invalid record fields: " & append([user_repr(f) : f <- rand_sort(err.fields)], " ")],
   invalid_tag_expr()                  = join([create_error_msg(e) : e <- rand_sort(err.errors)]),
-  invalid_var_type()                  = ["Invalid variable type. Expected type: " & user_repr(err.expected_type)],
+  invalid_var_type()                  = [ "Invalid variable type: " & user_repr(err.var),
+                                          "  Expected type: " & user_repr(err.expected_type),
+                                          "  Actual type:   " & user_repr(err.actual_type)
+                                        ],
   no_dispatchable_function_found()    = create_no_dispatchable_function_found_error_msg(err.name, err.arity, err.signatures, err.par_types),
   invalid_param_types()               = create_invalid_params_types_error_msg(err.fn_name, err.target_signature, err.invalid_params),
   invalid_cls_var_type()              = ["Invalid closure variable: " & user_repr(err.var) & ". Expected type: " & user_repr(err.expected_type)],
@@ -160,8 +163,9 @@ using (TypeName => Type) typedefs
                                           "  Expected type: " & user_repr(err.formal_type),
                                           "  Actual type: " & user_repr(err.actual_type)
                                         ],
-  invalid_return_type()               = [ "Invalid return type. Expected type: " & user_repr(err.expected_type),
-                                          "  Actual type: " & user_repr(err.expected_type)
+  invalid_return_type()               = [ "Invalid return type.",
+                                          "  Expected type: " & user_repr(err.expected_type),
+                                          "  Actual type: " & user_repr(err.actual_type)
                                         ],
   unexpected_actual_type()            = [ "Invalid type: " & user_repr(err.actual_type),
                                           "  The type must be a subset of " & user_repr(err.expected_type)
