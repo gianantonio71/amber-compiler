@@ -1,0 +1,57 @@
+[ParTypeSymbol] par_type_symbols(CompiledPrg prg)
+{
+  tss = {if mt :: <memb_test(TypeSymbol)> then _obj_(mt) else {fail;} : mt <- select(prg, $ :: <memb_test(TypeSymbol)>)};
+
+  btss = {ts : type_symbol()     ts <- tss};
+  ptss = {ts : par_type_symbol() ts <- tss};
+
+  btss = rand_sort(btss);
+  ptss = rand_sort(ptss);
+
+  return ptss;
+}
+
+
+[SymbObj^] used_symbols(CompiledPrg prg)
+{
+  // symbs = (select SymbObj in prg end - {obj_true, obj_false}) & {:object(:string)};
+  // symbs = [obj_true, obj_false] & sort_set(symbs, $a < $b);
+  symbs = select(prg, $ :: SymbObj) & {obj_true, obj_false, :object(:string)};
+  fail if not symbs :: SymbObj+;
+  return nonempty(sort_set(symbs, $a < $b));
+}
+
+
+ClsDef* cls_defs(CompiledPrg prg)
+{
+  cls_defs = select_rec(prg, $ :: ClsDef); //## TODO: THIS SHOULD BE TESTED
+  fail if not cls_defs :: ClsDef*;
+  return cls_defs;
+}
+
+//## BAD: THIS THING IS INCREDIBLY MESSY. I MUST IMPLEMENT A VERSION OF SELECT WITH A <STOP> GUARD
+AnyVar* vars_to_declare([Instr] instrs)
+{
+  vars = select(
+    instrs,
+    $ :: <AnyVar, ClsDef> and not $ :: <FnPar, NamedPar, CaptVar, ElemVar, MembVar, AutoVar, MembBoolVar, MembIntVar, ClsDef>
+  );
+  fail if not vars :: AnyVar*;
+  return vars;
+}
+
+
+(AutoVar => AutoSymbol) auto_vars_to_decl_and_init([Instr] instrs)
+{
+  all_typed_vars = retrieve_from_nested_low_level_instrs(instrs, retrieve);
+  return (left(vt) => right(vt) : vt <- all_typed_vars);
+
+  (AutoVar, AutoSymbol)* retrieve(Instr instr):
+    update_inputs()   = {(instr.var, instr.type)},
+    _                 = retrieve_from_nested_low_level_instrs(instr, retrieve);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+String parentesize(String code, Bool parentesized) = if parentesized then "(" & code & ")" else code;

@@ -2,6 +2,8 @@ using
 {
   ClsVar*                       closures,
   NamedPar*                     named_params,
+  MembVar*                      memb_vars,
+  (AutoVar => Atom*)            auto_vars_outputs,
   ((FnSymbol, NzNat) => [Nat^]) local_fns,
   Maybe[FnSymbol]               curr_outer_fn, //## BUG: THIS IS NOT ENOUGH TO IDENTIFY THE OUTER FUNCTION...
   (TypeName => Type)            typedefs,
@@ -29,8 +31,8 @@ using
     neq()             = not_expr(eq(desugar_expr(expr.left, def_vars), desugar_expr(expr.right, def_vars))),
     membership()      = membership(desugar_expr(expr.obj, def_vars), syn_type_to_type(expr.type, nil)),
     cast_expr()       = cast_expr(desugar_expr(expr.expr, def_vars), syn_type_to_type(expr.type, nil)),
-    accessor()        = accessor(desugar_expr(expr.expr, def_vars), expr.field),
-    accessor_test()   = accessor_test(desugar_expr(expr.expr, def_vars), expr.field),
+    accessor()        = desugar_accessor(expr.expr, expr.field, def_vars),
+    accessor_test()   = desugar_accessor_test(expr.expr, expr.field, def_vars),
     ex_qual()         = desugar_ex_qual_expr(expr.source, expr.sel_exprs, def_vars),
     set_comp()        = desugar_set_comp_expr(expr.expr, expr.source, expr.sel_exprs, def_vars),
     map_comp()        = desugar_map_comp_expr(expr.key_expr, expr.value_expr, expr.source, expr.sel_exprs, def_vars),
@@ -58,7 +60,18 @@ using
 
     return var(var_symb) if in(var(var_symb), def_vars);
     return named_par(var_symb) if in(named_par(var_symb), named_params);
-    // return cls_var(var_symb) if in(cls_var(var_symb), closures);
+    return memb_var(var_symb) if in(memb_var(var_symb), memb_vars);
+
+    auto_var = auto_var(var_symb);
+    if (has_key(auto_vars_outputs, auto_var))
+      entries = for (output <- auto_vars_outputs[auto_var]) {(
+        key:    object(output),
+        value:  get_output(auto_var, output),
+        cond:   test_output(auto_var, output)
+      )};
+      return map_expr(entries);
+    ;
+
     return fn_call(fn_symbol(var_symb), [], ());
   }
 
@@ -139,6 +152,20 @@ using
       ;
     }
   }
+
+
+  Expr desugar_accessor(SynExpr expr, SymbObj field, Var* def_vars):
+    const_or_var(n?)  = if has_key(auto_vars_outputs, auto_var(n))
+                          then get_output(auto_var(n), match (field) object(f?) = f)
+                          else accessor(desugar_expr(expr, def_vars), field),
+    _                 = accessor(desugar_expr(expr, def_vars), field);
+
+
+  Expr desugar_accessor_test(SynExpr expr, SymbObj field, Var* def_vars):
+    const_or_var(n?)  = if has_key(auto_vars_outputs, auto_var(n))
+                          then test_output(auto_var(n), match (field) object(f?) = f)
+                          else accessor_test(desugar_expr(expr, def_vars), field),
+    _                 = accessor_test(desugar_expr(expr, def_vars), field);
 
 
   Expr desugar_ex_qual_expr([SynClause^] source, [SynExpr] sel_exprs, Var* def_vars)
@@ -294,24 +321,25 @@ using
 
 
   Statement desugar_stmt(SynStmt stmt, Var* def_vars):
-    assignment_stmt()   = assignment_stmt(stmt.vars, desugar_expr(stmt.value, def_vars)),
-    imp_update_stmt()   = imp_update_stmt(stmt.obj, desugar_expr(stmt.idx, def_vars), desugar_expr(stmt.value, def_vars)),
-    return_stmt(e?)     = return_stmt(desugar_expr(e, def_vars)),
-    break_stmt          = break_stmt,
-    fail_stmt           = fail_stmt,
-    assert_stmt(e?)     = assert_stmt(desugar_expr(e, def_vars)),
-    print_stmt(e?)      = print_stmt(desugar_expr(e, def_vars)),
-    inf_loop_stmt(ss?)  = loop_stmt(desugar_stmts(ss, def_vars)),
-    if_stmt()           = desugar_if_stmt(stmt, def_vars),
-    let_stmt()          = desugar_let_stmt(stmt, def_vars),
-    loop_stmt()         = desugar_loop_stmt(stmt, def_vars),
-    for_stmt()          = desugar_for_stmt(stmt.loops, stmt.body, def_vars),
-    return_stmt         = return_stmt,
-    proc_call()         = proc_call(
-                            res_var:    stmt.res_var if stmt.res_var?,
-                            proc_name:  stmt.proc_name,
-                            params:     [desugar_expr(p, def_vars) : p <- stmt.params]
-                          );
+    assignment_stmt()         = assignment_stmt(stmt.vars, desugar_expr(stmt.value, def_vars)),
+    imp_update_stmt()         = imp_update_stmt(stmt.obj, desugar_expr(stmt.idx, def_vars), desugar_expr(stmt.value, def_vars)),
+    return_stmt(e?)           = return_stmt(desugar_expr(e, def_vars)),
+    break_stmt                = break_stmt,
+    fail_stmt                 = fail_stmt,
+    assert_stmt(e?)           = assert_stmt(desugar_expr(e, def_vars)),
+    print_stmt(e?)            = print_stmt(desugar_expr(e, def_vars)),
+    inf_loop_stmt(ss?)        = loop_stmt(desugar_stmts(ss, def_vars)),
+    if_stmt()                 = desugar_if_stmt(stmt, def_vars),
+    let_stmt()                = desugar_let_stmt(stmt, def_vars),
+    loop_stmt()               = desugar_loop_stmt(stmt, def_vars),
+    for_stmt()                = desugar_for_stmt(stmt.loops, stmt.body, def_vars),
+    return_stmt               = return_stmt,
+    proc_call()               = proc_call(
+                                  res_var:    stmt.res_var if stmt.res_var?,
+                                  proc_name:  stmt.proc_name,
+                                  params:     [desugar_expr(p, def_vars) : p <- stmt.params]
+                                ),
+    auto_input_update_stmt()  = auto_input_update_stmt(stmt.var, (i.input => desugar_expr(i.value, def_vars) : i <- set(stmt.inputs)));
 
 
   Statement desugar_if_stmt(SynIfStmt stmt, Var* def_vars)

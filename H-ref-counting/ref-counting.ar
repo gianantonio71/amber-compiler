@@ -17,17 +17,35 @@ ObjProcDef add_ref_counting(ObjProcDef proc_def) =
     proc_def.cached
   );
 
+
+Block add_ref_counting(Block block) =
+  block(
+    name:           block.name,
+    inputs:         block.inputs,
+    outputs:        block.outputs,
+    memb_vars:      block.memb_vars,
+    levels:         block.levels,
+    max_level_size: block.max_level_size,
+    init_code:      safe_add_ref_counting(block.init_code),
+    update_code:    safe_add_ref_counting(block.update_code),
+    cleanup_code:   block.cleanup_code
+  );
+
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
+
+// <[]> add_ref_counting(<[]>) = []; //## THIS DOESN'T WORK BECAUSE OF THAT BUG IN THE TYPECHECKER
+[Instr] safe_add_ref_counting([Instr] instrs) = if instrs != [] then add_ref_counting(instrs) else [];
 
 [Instr^] add_ref_counting([Instr^] instrs)
 {
   leaf_nodes, code_tree = build_root_code_graph(instrs);
   flow_map = build_flow_map(code_tree, leaf_nodes);
-  rev_flow_map = reverse_flow_map(flow_map);
-  live_vars_before_map, live_vars_after_map = build_live_vars_maps(leaf_nodes, flow_map);
+  no_end_node_flow_map = [[n : n <- ns, n != end_node] : ns <- flow_map];
+  rev_flow_map = reverse_flow_map(no_end_node_flow_map);
+  live_vars_before_map, live_vars_after_map = build_live_vars_maps(leaf_nodes, no_end_node_flow_map);
   // ref_live_vars_before_map, ref_live_vars_after_map = ref_build_live_vars_maps(leaf_nodes, flow_map);
-  entry_vars_states = entry_vars_states(leaf_nodes, flow_map, live_vars_after_map);
+  entry_vars_states = entry_vars_states(leaf_nodes, no_end_node_flow_map, live_vars_after_map);
   // ref_entry_vars_states = ref_entry_vars_states(leaf_nodes, flow_map, live_vars_after_map);
   assert none([{v : v <- lvs, not is_initialized(vs, v)} != {} : lvs, vs <- zip(live_vars_before_map, entry_vars_states)]);
   let (flow_map=flow_map, live_vars_after_map=live_vars_after_map, entry_vars_states=entry_vars_states)
@@ -35,7 +53,6 @@ ObjProcDef add_ref_counting(ObjProcDef proc_def) =
   ;
   return ref_count_closures(nonempty(reconstruct(code_tree, rc_nodes)));
 }
-
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -137,7 +154,7 @@ ObjProcDef add_ref_counting(ObjProcDef proc_def) =
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-using [[Nat]] flow_map, [TrkVar*] live_vars_after_map, [VarsState] entry_vars_states
+using [[NodeId]] flow_map, [TrkVar*] live_vars_after_map, [VarsState] entry_vars_states
 {
   RCNodeInfo add_ref_counting(NodeInfo info, Nat idx)
   {
@@ -147,20 +164,23 @@ using [[Nat]] flow_map, [TrkVar*] live_vars_after_map, [VarsState] entry_vars_st
   }
 
 
-  RCNodeInfo add_ref_counting(NodeInfo info, [Nat] next_nodes, VarsState entry_state, VarsState exit_state, [Instr] pre_instrs, [Instr] post_instrs):
-    std_node(terminate)                    = std_node([terminate]),
-    std_node(ret_val(e?))                  = {assert post_instrs == []; return rc_ret_node(e, entry_state, pre_instrs);},
-    std_node(<break_loop, exit_block> i?)  = { assert pre_instrs == [] and post_instrs == [];
-                                               return rc_break_or_exit_node(i, only_item(next_nodes), exit_state);
-                                             },
-    std_node(i?)                           = rc_std_node(i, only_item(next_nodes), exit_state, pre_instrs, post_instrs),
-    branch_node(c?)                        = { assert pre_instrs == [] and post_instrs == [];
-                                               fail if not next_nodes :: (Nat, Nat);
-                                               return rc_branch_node(c, left(next_nodes), right(next_nodes), exit_state);
-                                             },
-    set_cls_par_node()                     = { assert pre_instrs == [] and post_instrs == [];
-                                               return rc_set_cls_par_node(info.var, info.cls, only_item(next_nodes), exit_state);
-                                             };
+  RCNodeInfo add_ref_counting(NodeInfo info, [NodeId] next_nodes, VarsState entry_state, VarsState exit_state, [Instr] pre_instrs, [Instr] post_instrs):
+    std_node(terminate)                     = std_node([terminate]),
+    std_node(ret_val(e?))                   = {assert post_instrs == []; return rc_ret_node(e, entry_state, pre_instrs);},
+    std_node(<break_loop, exit_block> i?)   = { assert pre_instrs == [] and post_instrs == [];
+                                                return rc_break_or_exit_node(i, only_item(next_nodes), exit_state);
+                                              },
+    std_node(i?)                            = rc_std_node(i, only_item(next_nodes), exit_state, pre_instrs, post_instrs),
+    branch_node(c?)                         = { assert pre_instrs == [] and post_instrs == [];
+                                                fail if not next_nodes :: (NodeId, NodeId);
+                                                return rc_branch_node(c, left(next_nodes), right(next_nodes), exit_state);
+                                              },
+    switch_node(v?)                         = { assert pre_instrs == [] and post_instrs == [];
+                                                return rc_switch_node(v, nonempty(next_nodes), exit_state);
+                                              },
+    set_cls_par_node()                      = { assert pre_instrs == [] and post_instrs == [];
+                                                return rc_set_cls_par_node(info.var, info.cls, only_item(next_nodes), exit_state);
+                                              };
 
 
   RCNodeInfo rc_ret_node(<AtomicExpr, AtomicBoolExpr> expr, VarsState entry_state, [Instr] pre_instrs) //## THE LAST PARAMETER SHOULD BE REMOVED BECAUSE IT'S RECALCULATED. IT IS ONLY USED FOR AN ASSERTION
@@ -172,38 +192,53 @@ using [[Nat]] flow_map, [TrkVar*] live_vars_after_map, [VarsState] entry_vars_st
   }
 
 
-  RCNodeInfo rc_break_or_exit_node(Instr instr, Nat next_node, VarsState exit_state)
+  RCNodeInfo rc_break_or_exit_node(Instr instr, NodeId next_node, VarsState exit_state)
   {
-    next_node_entry_state = entry_vars_states[next_node];
+    next_node_entry_state = entry_vars_state(next_node);
     state_switch_code = gen_state_switch_code(exit_state, next_node_entry_state);
     return std_node([state_switch_code | instr]);
   }
 
 
-  RCNodeInfo rc_std_node(Instr instr, Nat next_node, VarsState exit_state, [Instr] pre_instrs, [Instr] post_instrs)
+  RCNodeInfo rc_std_node(Instr instr, NodeId next_node, VarsState exit_state, [Instr] pre_instrs, [Instr] post_instrs)
   {
-    next_node_entry_state = entry_vars_states[next_node];
+    next_node_entry_state = entry_vars_state(next_node);
     post_instrs_2 = gen_state_switch_code(exit_state, next_node_entry_state);
     return std_node(pre_instrs & [instr] & post_instrs & post_instrs_2);
   }
 
 
-  RCNodeInfo rc_branch_node(BoolExpr cond, Nat if_next_node, Nat then_next_node, VarsState exit_state)
+  RCNodeInfo rc_branch_node(BoolExpr cond, NodeId if_next_node, NodeId then_next_node, VarsState exit_state)
   {
-    if_branch_entry_state = entry_vars_states[if_next_node];
-    then_branch_entry_state = entry_vars_states[then_next_node];
+    if_branch_entry_state = entry_vars_state(if_next_node);
+    then_branch_entry_state = entry_vars_state(then_next_node);
     if_branch_post_instrs = gen_state_switch_code(exit_state, if_branch_entry_state);
     then_branch_post_instrs = gen_state_switch_code(exit_state, then_branch_entry_state);
     return branch_node(cond, if_branch_post_instrs, then_branch_post_instrs);
   }
 
 
-  RCNodeInfo rc_set_cls_par_node(NamedPar var, BoundCls cls, Nat next_node, VarsState exit_state)
+  RCNodeInfo rc_switch_node(IntVar v, [NodeId^] next_nodes, VarsState exit_state)
   {
-    next_node_entry_state = entry_vars_states[next_node];
+    case_post_instrs = [gen_state_switch_code(exit_state, entry_vars_state(n)) : n <- next_nodes];
+    return switch_node(v, case_post_instrs);
+  }
+
+
+  RCNodeInfo rc_set_cls_par_node(NamedPar var, BoundCls cls, NodeId next_node, VarsState exit_state)
+  {
+    next_node_entry_state = entry_vars_state(next_node);
     post_instrs = gen_state_switch_code(exit_state, next_node_entry_state);
     return set_cls_par_node(var, cls, post_instrs);
   }
+}
+
+using [VarsState] entry_vars_states
+{
+  VarsState entry_vars_state(NodeId next_node) =
+    if next_node == end_node
+      then blank_vars_state
+      else entry_vars_states[next_node];
 }
 
 ////////////////////////////////////////////////////////////////////////////////

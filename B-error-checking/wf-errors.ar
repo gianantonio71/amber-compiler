@@ -44,7 +44,10 @@ type ExprSpecWFError    = already_def_var(Var),
                           undef_proc(SynProcCallStmt),
                           proc_call_not_allowed(SynProcCallStmt),
                           break_outside_loop(SynBreakStmt),
-                          missing_ret_stmt([SynStmt^]);
+                          missing_ret_stmt([SynStmt^]),
+
+                          auto_var_not_defined(var: AutoVar, is_other_var_type: Bool),
+                          unknown_input(name: Atom, automaton: SynAutoDef);
 
 type GenDefSpecWFError  = dupl_par_names(dupl_pos_pars: Atom*, dupl_named_pars: Atom*);
 
@@ -52,9 +55,7 @@ type FnDefSpecWFError   = invalid_cls_type_vars(par_idx: Nat, var_name: Atom, ty
                           invalid_res_type_vars(type_vars: TypeVar+),
                           nested_functions_errors([WFError^]);
 
-type ProcDefSpecWFError = builtin_proc_redef,
-                          wrong_main_proc_arity;
-
+type ProcDefSpecWFError = builtin_proc_redef, wrong_main_proc_arity;
 
 type ExprWFError        = TypeWFError, ExprSpecWFError;
 type FnDefWFError       = ExprWFError, GenDefSpecWFError, FnDefSpecWFError;
@@ -95,8 +96,8 @@ FnDefSpecWFError nested_functions_errors([WFError^] es)             = :nested_fu
 
 ////////////////////////////////////////////////////////////////////////////////
 
-ProcDefSpecWFError builtin_proc_redef     = :builtin_proc_redef;
-ProcDefSpecWFError wrong_main_proc_arity  = :wrong_main_proc_arity;
+ProcDefSpecWFError builtin_proc_redef                   = :builtin_proc_redef;
+ProcDefSpecWFError wrong_main_proc_arity                = :wrong_main_proc_arity;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -129,6 +130,8 @@ ExprSpecWFError proc_call_not_allowed(SynProcCallStmt s)                  = :pro
 ExprSpecWFError break_outside_loop(SynBreakStmt s)                        = :break_outside_loop(s);
 ExprSpecWFError missing_ret_stmt([SynStmt^] ss)                           = :missing_ret_stmt(ss);
 
+ExprSpecWFError auto_var_not_defined(AutoVar v, Bool b)   = auto_var_not_defined(var: v, is_other_var_type: b);
+ExprSpecWFError unknown_input(Atom n, SynAutoDef a)       = unknown_input(name: n, automaton: a);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -169,6 +172,10 @@ String user_repr(FnSymbol fn_symb):
   op_symbol(op?)        = user_repr(op),
   nested_fn_symbol()    = user_repr(fn_symb.outer) & ":" & user_repr(fn_symb.inner),
   unique_fn_symbol()    = {fail;};
+
+
+String user_repr(AutoSymbol): auto_symbol(a?) = _str_(a);
+
 
 String user_repr(Operator):
   plus          = "(_+_)",
@@ -310,7 +317,10 @@ String plural(Any+ objs)    = if size(objs)   > 1 then "s" else "";
   undef_proc(p?)              = ["Undefined procedure: " & user_repr(p.proc_name)],
   proc_call_not_allowed()     = {fail;},
   break_outside_loop()        = ["Break statement outside a loop"],
-  missing_ret_stmt()          = ["Missing return statement"];
+  missing_ret_stmt()          = ["Missing return statement"],
+
+  auto_var_not_defined()      = [(if err.is_other_var_type then "Not an automaton" else "Undefined") & " variable: " & user_repr(err.var)],
+  unknown_input()             = ["Automaton " & user_repr(err.automaton.name) & " has no such input: " & _str_(err.name)];
 
 
 [String] create_error_msg(GenDefSpecWFError err) =
@@ -369,5 +379,8 @@ Maybe[((NzNat, NzNat), (NzNat, NzNat))] source_code_location(ExprSpecWFError err
     undef_proc(s?)                    = s,
     proc_call_not_allowed()           = {fail;},
     break_outside_loop(s?)            = s,
-    missing_ret_stmt(ss?)             = head(ss);
+    missing_ret_stmt(ss?)             = head(ss),
+
+    auto_var_not_defined()            = nil,
+    unknown_input()                   = nil;
 }

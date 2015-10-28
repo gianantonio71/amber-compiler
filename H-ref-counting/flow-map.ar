@@ -14,6 +14,7 @@ NodeId first_node([CodeTree] code_trees, NodeId next_node) = if code_trees != []
 NodeId first_node(CodeTree tree):
   std_node(i?)      = i,
   branch_node()     = tree.idx,
+  switch_node()     = tree.idx,
   loop_node(ts?)    = first_node(head(ts)),
   block_node(ts?)   = first_node(head(ts)),
   cls_scope_node()  = tree.idx,
@@ -27,13 +28,13 @@ NodeId first_node(CodeTree tree):
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-[[Nat]] build_flow_map(CodeTree code_tree, [NodeInfo^] leaf_nodes)
+[[NodeId]] build_flow_map(CodeTree code_tree, [NodeInfo^] leaf_nodes)
 {
   subtrees = match (code_tree) root_node(ts?) = ts; //## UGLY UGLY UGLY
   let (leaf_nodes=leaf_nodes, next_node=end_node, loop_break_target=nil, block_exit_target=nil)
     flow_map = build_flow_map(subtrees);
   ;
-  return [[n : n <- ns, n != end_node] : ns <- flow_map];
+  return flow_map;
 }
 
 
@@ -42,6 +43,7 @@ using [NodeInfo^] leaf_nodes, NodeId next_node, Maybe[NodeId] loop_break_target,
   [[NodeId]] build_flow_map(CodeTree code_tree):
     std_node(i?)      = [std_node_exit(i)],
     branch_node()     = build_branch_flow_map(code_tree.idx, code_tree.if_body, code_tree.else_body),
+    switch_node()     = build_switch_flow_map(code_tree.idx, code_tree.cases),
     loop_node(ts?)    = { new_next_node = first_node(head(ts));
                           new_loop_break_target = just(next_node);
                           return build_flow_map(ts, next_node=new_next_node, loop_break_target=new_loop_break_target);
@@ -66,6 +68,14 @@ using [NodeInfo^] leaf_nodes, NodeId next_node, Maybe[NodeId] loop_break_target,
     if_body_flow_map = build_flow_map(if_body);
     else_body_flow_map = build_flow_map(else_body);
     return [branch_exits] & if_body_flow_map & else_body_flow_map;
+  }
+
+
+  [[NodeId]] build_switch_flow_map(Nat idx, [[CodeTree]^] cases)
+  {
+    branch_exits = [first_node(c, next_node) : c <- cases];
+    case_flow_maps = [build_flow_map(c) : c <- cases];
+    return [branch_exits] & join(case_flow_maps);
   }
 
 

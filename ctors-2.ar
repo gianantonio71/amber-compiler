@@ -36,11 +36,21 @@ TypeVar type_var(<Atom, Nat> n) = :type_var(n);
 <empty_set_type> empty_set_type = :empty_set_type;
 <empty_map_type> empty_map_type = :empty_map_type;
 
-Type ne_seq_type(Type t) = if t != empty_type then ne_seq_type(elem_type: t) else empty_type;
+<empty_type> ne_seq_type(<empty_type>)  = empty_type;
+NeType ne_seq_type(NeType t)            = ne_seq_type(elem_type: t);
 
-Type ne_set_type(Type t) = if t != empty_type then ne_set_type(elem_type: t) else empty_type;
+<empty_type> ne_set_type(<empty_type>)  = empty_type;
+NeType ne_set_type(NeType t)            = ne_set_type(elem_type: t);
 
-Type ne_map_type(Type kt, Type vt) = if kt != empty_type and vt != empty_type then ne_map_type(key_type: kt, value_type: vt) else empty_type;
+<empty_type> ne_map_type(<empty_type>, <empty_type>)  = empty_type;
+<empty_type> ne_map_type(NeType, <empty_type>)        = empty_type;
+<empty_type> ne_map_type(<empty_type>, NeType)        = empty_type;
+NeType ne_map_type(NeType kt, NeType vt)              = ne_map_type(key_type: kt, value_type: vt);
+
+
+//## BAD: IF THE LANGUAGE HAD SUBSIGNATURES, THIS FUNCTION WOULD NOT BE NEEDED
+NeType record_type_nonempty((SymbObj => (type: NeType, optional: Bool)) fs) =
+  :record_type((l => (type: f.type, optional: f.optional) : f @ l <- fs));
 
 Type record_type((SymbObj => (type: Type, optional: Bool)) fs)
 {
@@ -49,17 +59,32 @@ Type record_type((SymbObj => (type: Type, optional: Bool)) fs)
   return :record_type(rfs);
 }
 
+//## BAD: IF THE LANGUAGE HAD SUBSIGNATURES, THIS FUNCTION WOULD NOT BE NEEDED
+NeType tuple_type_nonempty([NeType^] ts) = :tuple_type(ts);
+
 Type tuple_type([Type^] ts)
 {
-  nv_ts = [];
+  ne_ts = [];
   for (t : ts)
     return empty_type if t == empty_type;
-    nv_ts = [nv_ts | t];
+    ne_ts = [ne_ts | t];
   ;
-  return :tuple_type(nonempty(nv_ts));
+  return :tuple_type(nonempty(ne_ts));
 }
 
-<empty_type, TagObjType> tag_obj_type(TagType tt, Type ot) = if ot != empty_type then tag_obj_type(tag_type: tt, obj_type: ot) else empty_type;
+<empty_type> tag_obj_type(TagType, <empty_type>) = empty_type;
+TagObjType   tag_obj_type(TagType tt, NeType ot) = tag_obj_type(tag_type: tt, obj_type: ot);
+
+//## BAD: IF THE LANGUAGE HAD SUBSIGNATURES, THIS FUNCTION WOULD NOT BE NEEDED
+NeType union_type_nonempty(NeType+ ts)
+{
+  nu_ts = union({nu_types(t) : t <- ts});
+  return if size(nu_ts) == 1 then only_element(nu_ts) else :union_type(nonempty(nu_ts));
+
+  NeType+ nu_types(NeType type):
+    union_type(ts?)  = nonempty(union({nu_types(t) : t <- ts})),
+    _                = {type};
+}
 
 Type union_type(Type* ts)
 {
@@ -140,10 +165,14 @@ FnSymbol op_symbol(Operator op)                   = :op_symbol(op);
 FnSymbol nested_fn_symbol(FnSymbol o, FnSymbol i) = nested_fn_symbol(outer: o, inner: i);
 FnSymbol unique_fn_symbol(FnSymbol s, Nat id)     = unique_fn_symbol(symbol: s, id: id);
 
+AutoSymbol auto_symbol(Atom a)  = :auto_symbol(a);
+
 StdVar    var(Atom a)         = :var(a);
 FnPar     fn_par(Nat n)       = :fn_par(n);
 NamedPar  named_par(Atom a)   = :named_par(a);
 CaptVar   cls_ext_par(Nat n)  = :cls_ext_par(n);
+MembVar   memb_var(Atom a)    = :memb_var(a);
+AutoVar   auto_var(Atom a)    = :auto_var(a);
 
 ClsVar cls_var(<Atom, Nat> a)  = :cls_var(a);
 
@@ -181,6 +210,9 @@ Expr eq(Expr l, Expr r) = eq(left: l, right: r);
 
 Expr accessor(Expr e, SymbObj f) = accessor(expr: e, field: f);
 Expr accessor_test(Expr e, SymbObj f) = accessor_test(expr: e, field: f);
+
+Expr get_output(AutoVar v, Atom o)    = get_output(var: v, output: o);
+Expr test_output(AutoVar v, Atom o)   = test_output(var: v, output: o);
 
 Expr cast_expr(Expr e, Type t) = cast_expr(expr: e, type: t);
 Expr membership(Expr obj, Type type) = membership(obj: obj, type: type);
@@ -242,6 +274,8 @@ Statement for_stmt(Maybe[StdVar] v, Expr sv, Expr ev, Bool evi, [Statement^] b) 
     body:         b
   );
 
+Statement auto_input_update_stmt(AutoVar v, (Atom => Expr) is) = auto_input_update_stmt(var: v, inputs: is);
+
 ////////////////////////////////////////////////////////////////////////////////
 
 ProcSymbol proc_symbol(Atom a) = :proc_symbol(a);
@@ -251,5 +285,11 @@ ProcSymbol proc_symbol(Atom a) = :proc_symbol(a);
 FnDef fn_def(FnSymbol n, [FnFrmPar] ps, (NamedPar => AnyType) nps, Maybe[Type] mrt, Expr e) =
   fn_def(name: n, params: ps, named_params: nps, res_type: value(mrt) if mrt != nil, expr: e);
 
-ProcDef2 proc_def(ProcSymbol n, [(var: StdVar, type: Type)] ps, Maybe[Type] rt, [Statement] b) =
-  proc_def(name: n, params: ps, res_type: rt, body: b);
+ProcDef2 proc_def(ProcSymbol n, [(var: StdVar, type: Type)] ps, Maybe[Type] rt, (AutoVar => AutoSymbol) avs, [Statement] b) =
+  proc_def(name: n, params: ps, res_type: rt, auto_vars_types: avs, body: b);
+
+////////////////////////////////////////////////////////////////////////////////
+
+AutoUpdate update(Atom a, Expr e) = update(target: a, value: e);
+
+AutoAction cond_action(Expr c, <AutoUpdate, AutoAction>* b, <AutoUpdate, AutoAction>* e) = cond_action(cond: c, body: b, else: e);

@@ -81,12 +81,16 @@ type FnSymbol = fn_symbol(Atom),
                 nested_fn_symbol(outer: FnSymbol, inner: FnSymbol),
                 unique_fn_symbol(symbol: FnSymbol, id: Nat); //## THE symbol: FIELD SHOULD ONLY CONTAIN EITHER fn_symbol() OR op_symbol()
 
+type AutoSymbol = auto_symbol(Atom);
+
+type StdVar     = var(Atom);
 type FnPar      = fn_par(Nat);
 type NamedPar   = named_par(Atom);
 type CaptVar    = cls_ext_par(Nat); //## RENAME THIS. BESIDES, DO I NEED IT HERE? OR IS IT ONLY USED IN THE LAYER 3?
-type StdVar     = var(Atom);
+type MembVar    = memb_var(Atom);
+type AutoVar    = auto_var(Atom);
 
-type Var      = StdVar, FnPar, NamedPar, CaptVar; //## BAD
+type Var      = StdVar, FnPar, NamedPar, CaptVar, MembVar;
 
 type ClsVar   = cls_var(<Atom, Nat>); //## BAD: THERE SHOULD BE A NAMED VERSION OF ClsVar
 
@@ -103,6 +107,7 @@ type Expr     = LeafObj, FloatLit, Var,
                 EqExpr,
                 MembExpr, CastExpr,
                 AccExpr, AccTestExpr,
+                GetOutputExpr, TestOutputExpr,
                 IfExpr, MatchExpr, DoExpr,
                 ExQualExpr, SetCompExpr, MapCompExpr,
                 SeqCompExpr, RangeCompExpr;
@@ -133,6 +138,9 @@ type CastExpr       = cast_expr(expr: Expr, type: Type);
 type AccExpr        = accessor(expr: Expr, field: SymbObj);      //## SHOULD <field> BE AN OBJECT OR JUST A PLAIN SYMBOL?
 type AccTestExpr    = accessor_test(expr: Expr, field: SymbObj); //## DITTO
 
+type GetOutputExpr  = get_output(var: AutoVar, output: Atom);
+type TestOutputExpr = test_output(var: AutoVar, output: Atom);
+
 type IfExpr         = if_expr(cond: Expr, then: Expr, else: Expr);
 type MatchExpr      = match_expr(exprs: [Expr^], cases: [(ptrns: [Pattern^], expr: Expr)^]);
 type DoExpr         = do_expr([Statement^]);
@@ -142,7 +150,7 @@ type SetCompExpr    = set_comp(expr: Expr, source: Clause, sel_expr: Expr?);
 type MapCompExpr    = map_comp(key_expr: Expr, value_expr: Expr, source: Clause, sel_expr: Expr?);
 
 type SeqCompExpr    = seq_comp(expr: Expr, vars: [StdVar^], idx_var: StdVar?, src_expr: Expr, sel_expr: Expr?);
-type RangeCompExpr  =range_comp(expr: Expr, var: StdVar, bound_expr: Expr, inclusive: Bool, sel_expr: Expr?);
+type RangeCompExpr  = range_comp(expr: Expr, var: StdVar, bound_expr: Expr, inclusive: Bool, sel_expr: Expr?);
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -202,7 +210,8 @@ type Statement  = assignment_stmt(vars: [StdVar^], value: Expr),
                   imp_update_stmt(obj: StdVar, idx: Expr, value: Expr),
                   //## BAD: MIXING PURE AND IMPURE STATEMENTS
                   return_stmt,
-                  proc_call(res_var: StdVar?, proc_name: ProcSymbol, params: [Expr]);
+                  proc_call(res_var: StdVar?, proc_name: ProcSymbol, params: [Expr]),
+                  auto_input_update_stmt(var: AutoVar, inputs: (Atom => Expr));
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -224,15 +233,36 @@ type ProcSymbol = proc_symbol(Atom);
 
 //## SERIOUSLY, FIND BETTER NAME...
 type ProcDef2   = proc_def(
-                    name:       ProcSymbol,
-                    params:     [(var: StdVar, type: Type)],
-                    res_type:   Maybe[Type],
-                    body:       [Statement]
+                    name:             ProcSymbol,
+                    params:           [(var: StdVar, type: Type)],
+                    res_type:         Maybe[Type],
+                    auto_vars_types:  (AutoVar => AutoSymbol),
+                    body:             [Statement]
                   );
+
+///////////////////////////////////////////////////////////////////////////////
+
+type AutoUpdate = update(target: Atom, value: Expr);
+
+type AutoAction = cond_action(cond: Expr, body: <AutoUpdate, AutoAction>*, else: <AutoUpdate, AutoAction>*);
+
+type Automaton  = automaton(
+                    name:       AutoSymbol,
+                    pos_params: [Atom],
+                    inputs:     (Atom => (type: NeType, discrete: Bool)),
+                    outputs:    (Atom => (type: NeType, discrete: Bool)),
+                    state:      (Atom => (type: NeType, init_value: Expr)),
+                    params:     (Atom => Expr),
+                    rules:      (Atom => Expr),
+                    actions:    AutoAction*
+                  );
+
+///////////////////////////////////////////////////////////////////////////////
 
 type Program    = program(
                     typedefs:       (TypeName => Type),
                     subtype_decls:  SubtypeDecl*,
                     fndefs:         FnDef*,
-                    proc_defs:      ProcDef2*
+                    proc_defs:      ProcDef2*,
+                    auto_defs:      Automaton*
                   );

@@ -1,18 +1,22 @@
 type LocVar         = lvar(Nat);  //## FIND BETTER NAME.
 type ElemVar        = evar(id: Nat, idx: <Nat, IntVar, add(val1: IntVar, val2: Nat)>);
+type MembObjVar     = new_input(Atom);
 
 type ObjVar         = Var, LocVar, ElemVar;
 
 type ReadOnlyObjVar = FnPar, CaptVar;
 type WriteObjVar    = RWObjVar, ElemVar;
-type RWObjVar       = StdVar, LocVar;
+type RWObjVar       = StdVar, LocVar, MembVar;
 
 type StdObjVar      = RWObjVar, NamedPar, ReadOnlyObjVar;
 
 type VecVar         = vvar(id: Nat, size: NzNat);
 
-type BoolVar        = bvar(Nat);
-type IntVar         = ivar(Nat);
+type MembBoolVar    = cond_value_var(Nat), cond_expr_up_to_date_var(Nat), cond_expr_value_var(Nat), marked_for_update_var(<Atom, Nat>);
+type MembIntVar     = update_source_var(Atom), update_count_var(IntExpr), nodes_to_update_var(level: IntExpr, index: IntExpr);
+
+type BoolVar        = bvar(Nat), MembBoolVar;
+type IntVar         = ivar(Nat), MembIntVar;
 
 type StreamVar      = svar(Nat); //## DOES THIS NEED CLEANUP?
 
@@ -52,7 +56,9 @@ type NatBoolOp      = is_symb(ObjExpr),
                       is_lt(expr1: IntExpr, expr2: IntExpr),
                       is_le(expr1: IntExpr, expr2: IntExpr),
                       inline_is_eq(expr: ObjExpr, value: InlineObj),
-                      is_out_of_range(ItVar);
+                      is_out_of_range(ItVar),
+                      memb_is_def(<MembVar, MembObjVar>),
+                      output_is_def(var: AutoVar, output: Atom);
 
 type NatIntOp       = get_int_val(ObjExpr),
                       get_set_size(ObjExpr),
@@ -132,6 +138,10 @@ type RefObjExpr     = mk_set_from_stream(stream: StreamVar),
                       list_to_seq(list: AtomicExpr),
                       internal_sort(set: AtomicExpr),
                       symb_to_str(AtomicExpr),
+                      // Can be used only once per input, and does not automatically clear the new input,
+                      // which has to be manually cleared with clear_var(new_input(...))
+                      get_new_input(Atom),
+                      read_output(var: AutoVar, type: AutoSymbol, output: Atom),
                       add_attachment(target: AtomicExpr, data: AtomicExpr), // Impure
                       fetch_attachments(AtomicExpr);                        // Impure
 
@@ -161,8 +171,10 @@ type BasicInstr     = init_stream(StreamVar),
 
                       set_rc_var(var: WriteObjVar, value: <FloatExpr, RefObjExpr>),
 
+                      clear_var(<MembVar, MembObjVar>),
+
                       add_ref(ObjVar),
-                      release(ObjVar),
+                      release(<ObjVar, MembObjVar>),
 
                       print_obj(obj: AtomicExpr),
 
@@ -170,6 +182,9 @@ type BasicInstr     = init_stream(StreamVar),
 
                       call_proc(var: WriteObjVar?, name: ObjFnName, params: [<AtomicExpr, BoundCls>]),
                       call_cls(var: WriteObjVar, cls_var: <ClsVar, NamedPar>, params: [AtomicExpr]),
+
+                      set_input(var: AutoVar, type: AutoSymbol, input: Atom, value: AtomicExpr),
+                      update_inputs(var: AutoVar, type: AutoSymbol),
 
                       push_call_info(fn_name: ObjFnName, params: [Maybe[FnPar]]),
                       pop_call_info,
@@ -184,6 +199,7 @@ type JumpInstr      = break_loop,
                       terminate;
 
 type CompInstr      = branch(cond: BoolExpr, when_true: [Instr^], when_false: [Instr]),
+                      switch_on_nat(value: IntVar, cases: [[Instr]^]),
                       repeat([Instr^]),
                       execute_block([Instr^]),
                       cls_scope(var: NamedPar, bound_cls: BoundCls, body: [Instr^]); //## BAD: BoundCls IS TOO LOOSE A TYPE HERE, BECAUSE A ClsVar CANNOT APPEAR HERE
@@ -211,3 +227,17 @@ type BoolProcDef    = bool_proc_def(
                       );
 
 type ProcDef        = ObjProcDef, BoolProcDef;
+
+type Block          = block(
+                        name:           AutoSymbol,
+                        inputs:         [Atom],
+                        outputs:        Atom*,
+                        memb_vars:      <MembVar, MembObjVar, MembIntVar, MembBoolVar>*,
+                        levels:         Nat,
+                        max_level_size: Nat,
+                        init_code:      [Instr],
+                        update_code:    [Instr],
+                        cleanup_code:   [Instr]
+                      );
+
+type CompiledPrg    = compiled_prg(bool_procs: BoolProcDef*, procs: ObjProcDef*, blocks: Block*);

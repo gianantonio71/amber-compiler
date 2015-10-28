@@ -11,8 +11,9 @@
   proc_defs     = {d : syn_proc_def()  d <- decls};
   ublocks       = {d : using_block()   d <- decls};
   subtype_decls = {d : subtype_decl()  d <- decls};
+  automata      = {d : syn_auto_def()  d <- decls};
 
-  assert tdefs & par_tdefs & fndefs & proc_defs & ublocks & subtype_decls == decls;
+  assert tdefs & par_tdefs & fndefs & proc_defs & ublocks & subtype_decls & automata == decls;
 
   type_arity_map = merge_values({(td.name => 0) : td <- tdefs} & {(td.name => arity(td)) : td <- par_tdefs});
   tdef_errs = typedefs_wf_errors(rand_sort(tdefs), rand_sort(par_tdefs), type_arity_map);
@@ -33,23 +34,24 @@
   proc_sgn_errs = procedures_signature_wf_errors(proc_defs, type_arity_map);
 
   proc_map = (pd.name => (arity(pd), pd.res_type != nil) : pd <- proc_defs) & builtin_procs_map;
+  auto_map = (ad.name => ad : ad <- automata);
 
   fndef_errs = [];
   for (fd : rand_sort(fndefs))
-    errs = fndef_wf_errors(fd, [], type_arity_map, typedefs, global_fns_map);
+    errs = fndef_wf_errors(fd, [], type_arity_map, typedefs, global_fns_map, auto_map);
     fndef_errs = [fndef_errs | fndef_errors(fd, errs)] if errs != [];
   ;
   for (ub : rand_sort(ublocks))
     impl_ps = ub.signatures;
     for (fd : ub.fn_defs)
-      errs = fndef_wf_errors(fd, impl_ps, type_arity_map, typedefs, global_fns_map);
+      errs = fndef_wf_errors(fd, impl_ps, type_arity_map, typedefs, global_fns_map, auto_map);
       fndef_errs = [fndef_errs | fndef_errors(fd, errs)] if errs != [];
     ;
   ;
 
   proc_def_errs = [];
   for (pd : rand_sort(proc_defs))
-    errs = proc_def_wf_errors(pd, type_arity_map, typedefs, global_fns_map, proc_map);
+    errs = proc_def_wf_errors(pd, type_arity_map, typedefs, global_fns_map, proc_map, auto_map);
     proc_def_errs = [proc_def_errs | proc_def_errors(pd, errs)] if errs != [];
   ;
 
@@ -199,7 +201,8 @@ Maybe[WFError] fndef_signature_wf_errors(SynFnDef fndef, [SynSgn] named_pars, (B
   [SynSgn]                                            named_params,
   (BasicTypeSymbol => Nat+)                           type_arity_map,
   (TypeName => Type)                                  typedefs,
-  (FnSymbol => (Nat => ([Nat], (NamedPar => Nat)+)))  global_functions
+  (FnSymbol => (Nat => ([Nat], (NamedPar => Nat)+)))  global_functions,
+  (AutoSymbol => SynAutoDef)                          automata
 )
 {
   loc_fns_errs = function_group_signature_wf_errors([(fd, named_params) : fd <- fndef.local_fns], type_arity_map, typedefs);
@@ -208,10 +211,10 @@ Maybe[WFError] fndef_signature_wf_errors(SynFnDef fndef, [SynSgn] named_pars, (B
   loc_fns_by_name = group_by(fndef.local_fns, $.name);
   local_fns = (n => local_fn_untyped_sgns(fds) : fds @ n <- loc_fns_by_name);
 
-  main_fn_errs = fndef_wf_errors(fndef, named_params, local_fns, type_arity_map, typedefs, global_functions);
+  main_fn_errs = fndef_wf_errors(fndef, named_params, local_fns, type_arity_map, typedefs, global_functions, automata);
 
   nested_fns_errs = join([
-      fndef_wf_errors(fd, named_params, local_fns, type_arity_map, typedefs, global_functions)
+      fndef_wf_errors(fd, named_params, local_fns, type_arity_map, typedefs, global_functions, automata)
       : fd <- fndef.local_fns
   ]);
 
@@ -232,7 +235,8 @@ Maybe[WFError] fndef_signature_wf_errors(SynFnDef fndef, [SynSgn] named_pars, (B
   (FnSymbol => (Nat => [Nat]))                        local_fns,
   (BasicTypeSymbol => Nat+)                           type_arity_map,
   (TypeName => Type)                                  typedefs,
-  (FnSymbol => (Nat => ([Nat], (NamedPar => Nat)+)))  global_functions
+  (FnSymbol => (Nat => ([Nat], (NamedPar => Nat)+)))  global_functions,
+  (AutoSymbol => SynAutoDef)                          automata
 )
 {
   args = seq_union([{fn_par(i), var(p.var_name) if p.var_name?} : p @ i <- fndef.params, p.type :: SynType]) &
@@ -252,6 +256,8 @@ Maybe[WFError] fndef_signature_wf_errors(SynFnDef fndef, [SynSgn] named_pars, (B
     local_functions = local_fns,
     closures = cls,
     procedures = (),
+    auto_vars = (),
+    automata = automata,
     actual_param_arity = 0
   );
 }
@@ -262,7 +268,8 @@ Maybe[WFError] fndef_signature_wf_errors(SynFnDef fndef, [SynSgn] named_pars, (B
   (BasicTypeSymbol => Nat+)                           type_arity_map,
   (TypeName => Type)                                  typedefs,
   (FnSymbol => (Nat => ([Nat], (NamedPar => Nat)+)))  global_functions,
-  (ProcSymbol => (Nat, Bool))                         procedures
+  (ProcSymbol => (Nat, Bool))                         procedures,
+  (AutoSymbol => SynAutoDef)                          automata
 )
 {
   body = proc_def.body;
@@ -279,6 +286,8 @@ Maybe[WFError] fndef_signature_wf_errors(SynFnDef fndef, [SynSgn] named_pars, (B
     local_functions = (),
     closures = (),
     procedures = procedures,
+    auto_vars = (v.var => auto_symbol(v.type) : v <- set(proc_def.auto_vars)),
+    automata = automata,
     actual_param_arity = 0
   );
 }

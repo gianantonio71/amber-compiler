@@ -13,6 +13,12 @@
 //   cls_ext_par(Nat)
 
 
+// Can be managed deterministicly. No need to track them
+// ELABORATE ON THEIR USAGE A BIT
+//   memb_var(Atom)
+//   new_input(Atom)
+
+
 // Can be temporarily set, and in that case both the current
 // and the old value must be kept alive
 //   named_par(Atom)
@@ -29,14 +35,14 @@
 // Always local, and with deterministic scope, so again no need for reference counting
 // They own the objects they contain. evar() can only be assigned to, and never read from.
 // Moreover, they are always assigned at most once, so no need to ever release their
-// content.The corresponding vvar() must be used once and only once. svar() can only
+// content. The corresponding vvar() must be used once and only once. svar() can only
 // be appended to, and they must be used once and only once.
 //   svar(Nat)
 //   evar(id: Nat, idx: <Nat, IntVar>)
 //   vvar(id: Nat, size: NzNat)
 
-
-type TrkVar           = RWObjVar, ItVar;
+type TrkObjVar  = StdVar, LocVar;
+type TrkVar     = TrkObjVar, ItVar;
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -61,9 +67,9 @@ TrkVar* tracked_vars_used_by_any_type_expr(AnyTypeExpr expr):
   TrkVar                = {expr},
   _                     = retrieve_from_nested_low_level_exprs(expr, tracked_vars_used_by_any_type_expr);
 
-RWObjVar* tracked_vars_used(BoundCls cls):
+<StdVar, LocVar>* tracked_vars_used(BoundCls cls):
   ClsVar      = {},
-  bound_cls() = {v : v <- set(cls.env), v :: RWObjVar};
+  bound_cls() = {v : v <- set(cls.env), v :: <StdVar, LocVar>};
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -76,6 +82,7 @@ TrkVar* trk_vars(AnyVar* vs)  = {v : v <- vs, v :: TrkVar};
 TrkVar* vars_set(NodeInfo info):
   std_node(i?)        = vars_set(i),
   branch_node()       = {},
+  switch_node()       = {},
   set_cls_par_node()  = {};
 
 
@@ -93,6 +100,7 @@ TrkVar* vars_set(BasicInstr instr):
   set_bvar()        = {},
   set_ivar()        = {},
   set_rc_var()      = trk_vars(instr.var),
+  clear_var()       = {}, //## NOT SURE ABOUT THIS ONE...
   add_ref()         = {},
   release()         = {},
   print_obj()       = {},
@@ -101,7 +109,9 @@ TrkVar* vars_set(BasicInstr instr):
   call_cls()        = trk_vars(instr.var),
   push_call_info()  = {},
   pop_call_info     = {},
-  runtime_check()   = {};
+  runtime_check()   = {},
+  set_input()       = {},
+  update_inputs()   = {};
 
 
 TrkVar* vars_set(JumpInstr) = {};
@@ -110,6 +120,7 @@ TrkVar* vars_set(JumpInstr) = {};
 TrkVar* vars_used(NodeInfo info):
   std_node(i?)        = vars_used(i),
   branch_node(e?)     = tracked_vars_used(e),
+  switch_node()       = {},
   set_cls_par_node()  = tracked_vars_used(info.cls);
 
 
@@ -128,6 +139,7 @@ TrkVar* vars_used(BasicInstr instr):
   set_bvar()        = tracked_vars_used(instr.value),
   set_ivar()        = tracked_vars_used(instr.value),
   set_rc_var()      = tracked_vars_used(instr.value),
+  clear_var()       = {},
   add_ref()         = {fail;},
   release()         = {fail;},
   print_obj(e?)     = tracked_vars_used(instr.obj),
@@ -136,7 +148,9 @@ TrkVar* vars_used(BasicInstr instr):
   call_cls()        = seq_union([tracked_vars_used(p) : p <- instr.params]),
   push_call_info()  = {},
   pop_call_info     = {},
-  runtime_check()   = tracked_vars_used(instr.cond);
+  runtime_check()   = tracked_vars_used(instr.cond),
+  set_input()       = tracked_vars_used(instr.value),
+  update_inputs()   = {};
 
 
 TrkVar* vars_used(JumpInstr instr):

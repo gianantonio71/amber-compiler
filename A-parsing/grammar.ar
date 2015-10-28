@@ -4,6 +4,7 @@ ParsingRule rule_keyword(Atom kw) = atomic_rule(keyword(kw));
 
 ParsingRule keyword_and       = rule_keyword(:and);
 ParsingRule keyword_assert    = rule_keyword(:assert);
+ParsingRule keyword_auto      = rule_keyword(:auto);
 ParsingRule keyword_break     = rule_keyword(:break);
 ParsingRule keyword_elif      = rule_keyword(:elif);
 ParsingRule keyword_else      = rule_keyword(:else);
@@ -12,17 +13,21 @@ ParsingRule keyword_false     = rule_keyword(:false);
 ParsingRule keyword_for       = rule_keyword(:for);
 ParsingRule keyword_if        = rule_keyword(:if);
 ParsingRule keyword_in        = rule_keyword(:in);
+ParsingRule keyword_input     = rule_keyword(:input);
 ParsingRule keyword_let       = rule_keyword(:let);
 ParsingRule keyword_loop      = rule_keyword(:loop);
 ParsingRule keyword_match     = rule_keyword(:match);
 ParsingRule keyword_nil       = rule_keyword(:nil);
 ParsingRule keyword_not       = rule_keyword(:not);
 ParsingRule keyword_or        = rule_keyword(:or);
+ParsingRule keyword_output    = rule_keyword(:output);
 ParsingRule keyword_print     = rule_keyword(:print);
 ParsingRule keyword_return    = rule_keyword(:return);
+ParsingRule keyword_state     = rule_keyword(:state);
 ParsingRule keyword_then      = rule_keyword(:then);
 ParsingRule keyword_true      = rule_keyword(:true);
 ParsingRule keyword_type      = rule_keyword(:type);
+ParsingRule keyword_update    = rule_keyword(:update);
 ParsingRule keyword_using     = rule_keyword(:using);
 ParsingRule keyword_while     = rule_keyword(:while);
 ParsingRule keyword_with      = rule_keyword(:with);
@@ -58,7 +63,8 @@ ParsingRule rule_declaration =
     (:fndef_switch,   rule_switch_fndef),
     (:using_block_1,  rule_using_block_1),
     (:using_block_2,  rule_using_block_2),
-    (:proc_def,       rule_proc_def)
+    (:proc_def,       rule_proc_def),
+    (:auto_def,       rule_auto_def)
   ]);
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -71,7 +77,15 @@ ParsingRule rule_proc_def =
       (:no_ret_val,   atomic_rule(mixedcase_id))
     ]),
     par_rule(opt_comma_sep_seq(rule_seq([rule_type, optional_rule(rule_id)]))),
-    brace_rule(rep_rule(rule_stmt(:proc)))
+    brace_rule(rule_seq([rep_rule(rule_auto_var_decl), rep_rule(rule_stmt(:proc))]))
+  ]);
+
+ParsingRule rule_auto_var_decl =
+  rule_seq([
+    keyword_auto,
+    atomic_rule(lowercase_id),
+    atomic_rule(lowercase_id),
+    atomic_rule(semicolon)
   ]);
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -292,23 +306,24 @@ ParsingRule rule_clause_ptrn =
 
 ParsingRule rule_stmt(<fn, proc> ctx) =
   rule_choice([
-    (:asgnm,        rule_asgnm_stmt),
-    (:ret,          rule_ret_stmt),
-    (:if_stmt,      rule_if_stmt(ctx)),
-    (:loop_stmt,    rule_loop_stmt(ctx)),
-    (:while_stmt,   rule_while_stmt(ctx)),
-    (:let_stmt,     rule_let_stmt(ctx)),
-    (:break_stmt,   rule_break_stmt),
-    (:for_stmt,     rule_for_stmt(ctx)),
-    (:fail_stmt,    rule_fail_stmt),
-    (:assert_stmt,  rule_assert_stmt),
-    (:print_stmt,   rule_print_stmt),
-    (:imp_update,   rule_imp_update_stmt),
-    (:fn,           rule_ref_fndef) if ctx == :fn,
-    (:fn_proc,      rule_ref_fndef_proc) if ctx == :fn,
-    (:fn_case,      rule_ref_fndef_switch) if ctx == :fn,
-    (:no_val_ret,   rule_no_val_ret_stmt) if ctx == :proc,
-    (:proc_call,    rule_proc_call_stmt) if ctx == :proc
+    (:asgnm,              rule_asgnm_stmt),
+    (:ret,                rule_ret_stmt),
+    (:if_stmt,            rule_if_stmt(ctx)),
+    (:loop_stmt,          rule_loop_stmt(ctx)),
+    (:while_stmt,         rule_while_stmt(ctx)),
+    (:let_stmt,           rule_let_stmt(ctx)),
+    (:break_stmt,         rule_break_stmt),
+    (:for_stmt,           rule_for_stmt(ctx)),
+    (:fail_stmt,          rule_fail_stmt),
+    (:assert_stmt,        rule_assert_stmt),
+    (:print_stmt,         rule_print_stmt),
+    (:imp_update,         rule_imp_update_stmt),
+    (:fn,                 rule_ref_fndef) if ctx == :fn,
+    (:fn_proc,            rule_ref_fndef_proc) if ctx == :fn,
+    (:fn_case,            rule_ref_fndef_switch) if ctx == :fn,
+    (:no_val_ret,         rule_no_val_ret_stmt) if ctx == :proc,
+    (:proc_call,          rule_proc_call_stmt) if ctx == :proc,
+    (:auto_input_update,  rule_auto_input_update_stmt) if ctx == :proc
   ]);
 
 ParsingRule rule_asgnm_stmt =
@@ -436,6 +451,14 @@ ParsingRule rule_proc_call_stmt =
     optional_rule_seq([rule_id, atomic_rule(equals)]),
     atomic_rule(mixedcase_id),
     par_rule(opt_comma_sep_seq(rule_ref_expr)),
+    atomic_rule(semicolon)
+  ]);
+
+ParsingRule rule_auto_input_update_stmt =
+  rule_seq([
+    keyword_update,
+    atomic_rule(lowercase_id),
+    comma_sep_seq(rule_seq([atomic_rule(lowercase_id), atomic_rule(equals), rule_expr])),
     atomic_rule(semicolon)
   ]);
 
@@ -696,4 +719,69 @@ ParsingRule rule_switch_case =
     comma_sep_seq(rule_switch_ptrn),
     atomic_rule(equals),
     rule_ref_expr
+  ]);
+
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+ParsingRule rule_auto_def =
+  rule_seq([
+    keyword_auto,
+    atomic_rule(lowercase_id),
+    optional_rule(par_rule(comma_sep_seq(atomic_rule(lowercase_id)))),
+    brace_rule(rep_rule(rule_auto_decl))
+  ]);
+
+ParsingRule rule_auto_decl =
+  rule_choice([
+    (:input,      rule_input_decl),
+    (:output,     rule_output_decl),
+    (:state,      rule_state_decl),
+    (:plain_rule, rule_plain_rule),
+    (:cond_rule,  rule_cond_rule)
+  ]);
+
+ParsingRule rule_input_decl =
+  rule_seq([
+    keyword_input,
+    comma_sep_seq(rule_seq([rule_type, atomic_rule(lowercase_id)])),
+    atomic_rule(semicolon)
+  ]);
+
+ParsingRule rule_output_decl =
+  rule_seq([
+    keyword_output,
+    comma_sep_seq(rule_seq([rule_type, atomic_rule(lowercase_id)])),
+    atomic_rule(semicolon)
+  ]);
+
+ParsingRule rule_state_decl =
+  rule_seq([
+    keyword_state,
+    comma_sep_seq(
+      rule_seq([
+        rule_type,
+        atomic_rule(lowercase_id),
+        atomic_rule(equals),
+        rule_expr
+      ])
+    ),
+    atomic_rule(semicolon)
+  ]);
+
+ParsingRule rule_plain_rule =
+  rule_seq([
+    atomic_rule(lowercase_id),
+    atomic_rule(equals),
+    rule_expr,
+    atomic_rule(semicolon)
+  ]);
+
+ParsingRule rule_cond_rule =
+  rule_seq([
+    atomic_rule(lowercase_id),
+    atomic_rule(equals),
+    comma_sep_seq(rule_seq([rule_expr, keyword_if, rule_expr])),
+    atomic_rule(semicolon)
   ]);

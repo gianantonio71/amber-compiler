@@ -59,7 +59,7 @@ TypeSymbol syn_type_symbol_to_type_symbol(SynTypeSymbol ts, Maybe[[TypeVar]] typ
   par_type_symbol() = par_type_symbol(ts.symbol, [syn_type_to_type(p, type_vars) : p <- ts.params]);
 
 
-Type syn_type_to_type(SynType type, Maybe[[TypeVar]] type_vars):
+NeType syn_type_to_type(SynType type, Maybe[[TypeVar]] type_vars):
   LeafType            = type,
   type_var(+)         = if type_vars != nil then type_var(index_first(type, value(type_vars))) else type,
   type_var(*)         = type,
@@ -68,13 +68,13 @@ Type syn_type_to_type(SynType type, Maybe[[TypeVar]] type_vars):
   ne_seq_type()       = ne_seq_type(syn_type_to_type(type.elem_type, type_vars)),
   ne_set_type()       = ne_set_type(syn_type_to_type(type.elem_type, type_vars)),
   ne_map_type()       = ne_map_type(syn_type_to_type(type.key_type, type_vars), syn_type_to_type(type.value_type, type_vars)),
-  record_type(fs?)    = record_type((f.label => (type: syn_type_to_type(f.type, type_vars), optional: f.optional) : f <- set(fs))),
-  tuple_type(ts?)     = tuple_type([syn_type_to_type(t, type_vars) : t <- ts]),
+  record_type(fs?)    = record_type_nonempty((f.label => (type: syn_type_to_type(f.type, type_vars), optional: f.optional) : f <- set(fs))),
+  tuple_type(ts?)     = tuple_type_nonempty([syn_type_to_type(t, type_vars) : t <- ts]),
   tag_obj_type()      = { tag_type = type.tag_type;
                           fail if not tag_type :: TagType; //## BAD: HANDLE THE ERROR
                           return tag_obj_type(tag_type, syn_type_to_type(type.obj_type, type_vars));
                         },
-  union_type(ts?)     = union_type({syn_type_to_type(t, type_vars) : t <- set(ts)});
+  union_type(ts?)     = union_type_nonempty({syn_type_to_type(t, type_vars) : t <- set(ts)});
 
 
 ClsType syn_type_to_type(SynClsType type, Maybe[[TypeVar]] type_vars) =
@@ -175,12 +175,15 @@ Bool never_falls_through([SynStmt] stmts)
 Var* already_def_vars(Var* new_vars, Var* curr_vars) = {v : v <- new_vars, already_def(v, curr_vars)};
 
 Bool already_def(Var var, Var* vars):
-  named_par(n?)   = already_def(n, vars),
   var(n?)         = already_def(n, vars),
+  named_par(n?)   = already_def(n, vars),
+  memb_var(n?)    = already_def(n, vars),
   _               = in(var, vars);
 
-Bool already_def(Atom var_name, Var* vars) = in(var(var_name), vars) or in(named_par(var_name), vars);
-
+Bool already_def(Atom var_name, Var* vars) =
+  in(var(var_name), vars)         or
+  in(named_par(var_name), vars)   or
+  in(memb_var(var_name), vars);
 
 FnSymbol named_par_to_fn_symb(NamedPar p):
   named_par(n?)   = fn_symbol(n);

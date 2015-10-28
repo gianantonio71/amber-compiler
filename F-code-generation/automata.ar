@@ -1,0 +1,388 @@
+
+type AutoNodeType = input(Atom),
+                    derived(id: Atom, expr: Expr),
+                    state(id: Atom, exprs: [Expr]),
+                    cond_node(id: Nat, cond: Expr, parent: Maybe[(id: Nat, trigger: Bool)], updates: UpdateInfo*);
+
+type UpdateInfo   = (state: Atom, value_idx: Nat, trigger: Bool);
+
+type CondInfo     = ( cond:         Expr,
+                      parent:       Maybe[(id: Nat, trigger: Bool)],
+                      nested_conds: (id: Nat, trigger: Bool)*,
+                      updates:      (state_id: Atom, new_value: Expr, trigger: Bool)*
+                    );
+
+////////////////////////////////////////////////////////////////////////////////
+
+AutoNodeType input(Atom id)             = :input(id);
+AutoNodeType derived(Atom id, Expr e)   = derived(id: id, expr: e);
+AutoNodeType state(Atom id, [Expr] es)  = state(id: id, exprs: es);
+AutoNodeType cond_node(Nat id, Expr c, Maybe[(id: Nat, trigger: Bool)] p, UpdateInfo* us) = cond_node(id: id, cond: c, parent: p, updates: us);
+
+////////////////////////////////////////////////////////////////////////////////
+
+<Atom, Nat> get_id(AutoNodeType node_type):
+  input(id?)      = id,
+  derived()       = node_type.id,
+  state()         = node_type.id,
+  cond_node()     = node_type.id;
+
+////////////////////////////////////////////////////////////////////////////////
+
+Block gen_auto_code(Automaton automaton)
+{
+  nodes = gen_auto_nodes(automaton);
+  fail if nodes == []; //## BUG BUG BUG
+
+  nodes_idxs = merge([(get_id(t) => i) : unused_var_1, unused_var_2, t @ i <- nodes]);
+  nodes_levels = merge([(get_id(t) => l) : l, unused_var_1, t <- nodes]);
+
+  levels_count = nz_nat(max(nonempty(values(nodes_levels))) + 1);
+  max_level_size = nat(max(nonempty(values(bag([l : l, unused_var_1, unused_var_2 <- nodes])))));
+
+  lev_var = ivar(0);
+  node_idx_var = ivar(1);
+  node_count_var = ivar(2);
+  curr_node_var = ivar(3);
+
+  let (nodes_idxs = nodes_idxs, nodes_levels = nodes_levels, next_int_var_id = 4)
+    nodes_code = [gen_node_code(n, l, ds) : l, ds, n <- nodes];
+  ;
+
+  update_code = [
+    set_ivar(lev_var, 0),
+    repeat([
+      break_if(is_eq(lev_var, levels_count)),
+      set_ivar(node_idx_var, 0),
+      set_ivar(node_count_var, update_count_var(lev_var)),
+      repeat([
+        break_if(is_eq(node_idx_var, node_count_var)),
+        set_ivar(curr_node_var, nodes_to_update_var(lev_var, node_idx_var)),
+        switch_on_nat(curr_node_var, nodes_code),
+        set_ivar(node_idx_var, add(node_idx_var, 1))
+      ]),
+      set_ivar(update_count_var(lev_var), 0),
+      set_ivar(lev_var, add(lev_var, 1))
+    ])
+  ];
+
+  param_ids = keys(automaton.params);
+  input_ids = keys(automaton.inputs);
+  state_var_ids = keys(automaton.state);
+  rule_ids = keys(automaton.rules);
+  cond_ids = {t.id : cond_node() t <- set([t1 : unused_var_1, unused_var_2, t1 <- nodes])}; //## BIT UGLY. ALSO USING TWO VARIABLES <t> and <t1> BECAUSE OF A BUG IN THE WELL-FORMEDNESS CHECKER
+
+  memb_obj_vars  = {memb_var(a) : a <- param_ids & input_ids & state_var_ids & rule_ids} & {new_input(a) : a <- input_ids};
+  memb_int_vars  = {update_source_var(a) : a <- state_var_ids};
+  memb_bool_vars = {cond_expr_up_to_date_var(n) : n <- cond_ids} &
+                   {cond_expr_value_var(n) : n <- cond_ids} &
+                   {cond_value_var(n) : n <- cond_ids} &
+                   {marked_for_update_var(id) : id <- param_ids & input_ids & state_var_ids & rule_ids & cond_ids};
+
+  param_deps = (a => {match (v) var(n?) = n : v <- extern_vars(e)} : e @ a <- automaton.params);
+  assert not (? ts @ s <- param_deps, t <- ts : not in(t, param_ids));
+  sorted_params = topological_sort(param_deps);
+  params_init_code = [[gen_eval_code(automaton.params[p], memb_var(p), 0, 0, 0) : p <- rand_sort(ps)] : ps <- sorted_params];
+
+  state_vars_deps = (a => {match (v) var(n?) = n : v <- extern_vars(s.init_value)} - param_ids : s @ a <- automaton.state);
+  assert not (? ts @ s <- state_vars_deps, t <- ts : not in(t, state_var_ids));
+  sorted_state_vars = topological_sort(state_vars_deps);
+  state_vars_init_code = [[gen_eval_code(automaton.state[sv].init_value, memb_var(sv), 0, 0, 0) : sv <- rand_sort(svs)] : svs <- sorted_state_vars];
+
+
+  init_code = join([join(cfs) : cfs <- params_init_code & state_vars_init_code]) &
+              [clear_var(memb_var(a))  : a <- rand_sort(input_ids & rule_ids)] &
+              [clear_var(new_input(a)) : a <- rand_sort(input_ids)] &
+              [set_ivar(v, -1) : v <- rand_sort(memb_int_vars)] &
+              [set_bvar(v, false) : v <- rand_sort(memb_bool_vars)];
+
+  memb_vars_to_rel = param_ids & input_ids & state_var_ids & rule_ids;
+  vars_to_rel = {memb_var(id) : id <- memb_vars_to_rel} & {new_input(id) : id <- input_ids};
+  cleanup_code = [do_if(memb_is_def(v), [release(v), clear_var(v)]) : v <- rand_sort(vars_to_rel)];
+
+  assert {
+    inputs_count = size(automaton.inputs);
+    for (l, unused_var_2, node_type @ i : nodes)
+      is_input = match (node_type)
+        input()  = true,
+        _        = false;
+      if (i < inputs_count)
+        return false if l != 0 or not is_input;
+      else
+        return false if l == 0 or is_input;
+      ;
+    ;
+    return true;
+  };
+  sorted_input_ids = subseq([get_id(t) : unused_var_1, unused_var_2, t <- nodes], 0, size(automaton.inputs));
+  fail if not sorted_input_ids :: [Atom]; //## BAD: RUNTIME TYPE CHECKING SHOULD NOT BE NEEDED HERE
+
+
+  return block(
+    name:           automaton.name,
+    inputs:         sorted_input_ids,
+    outputs:        keys(automaton.outputs),
+    memb_vars:      memb_obj_vars & memb_int_vars & memb_bool_vars,
+    levels:         levels_count,
+    max_level_size: max_level_size,
+    init_code:      init_code,
+    update_code:    update_code,
+    cleanup_code:   cleanup_code
+  );
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+using (<Atom, Nat> => Nat) nodes_idxs, (<Atom, Nat> => Nat) nodes_levels, Nat next_int_var_id
+{
+  [Instr] gen_node_code(AutoNodeType node_type, Nat level, <Atom, Nat>* dep_nodes)
+  {
+    code = match (node_type)
+      input(id?)  = gen_input_node_code(id, dep_nodes),
+      derived()   = gen_derived_node_code(node_type.id, node_type.expr, dep_nodes),
+      state()     = gen_state_node_code(node_type.id, node_type.exprs, dep_nodes),
+      cond_node() = gen_cond_node_code(node_type.id, node_type.cond, node_type.parent, node_type.updates, dep_nodes);
+    return code & [set_bvar(marked_for_update_var(get_id(node_type)), false)];
+  }
+
+  // set_var(lvar(0), get_new_input(a))         lvar(0) -> owner
+  // clear(new_input(a))
+  // set_var(lvar(1), memb_var(a))              lvar(0) -> owner, lvar(1) -> copy_of(memb_var(a))
+  // if not(is_eq(lvar(0), lvar(1)))
+  //   set_var(memb_var(a), lvar(0))            lvar(1) -> owner
+  //   mark dependent nodes as not up-to-date
+
+  [Instr^] gen_input_node_code(Atom id, <Atom, Nat>* dep_nodes)
+  {
+    l0 = lvar(0);
+    l1 = lvar(1);
+    memb_var = memb_var(id);
+    return [
+      get_new_input(l0, id),
+      clear_var(new_input(id)),
+      set_var(l1, memb_var),
+      do_if_not(is_eq(l0, l1), [set_var(memb_var, l0)] & [mark_for_update(n, false) : n <- rand_sort(dep_nodes)])
+    ];
+  }
+
+
+  [Instr^] gen_derived_node_code(Atom id, Expr expr, <Atom, Nat>* dep_nodes)
+  {
+    var = memb_var(id);
+    nv_var = lvar(0);
+    eval_code = gen_eval_code(expr, nv_var, 1, next_int_var_id, 0);
+    cond = neg(is_eq(var, nv_var));
+    body = [set_var(var, nv_var)] & [mark_for_update(n, false) : n <- rand_sort(dep_nodes)];
+    return [eval_code | do_if(cond, body)];
+  }
+
+
+  [Instr^] gen_state_node_code(Atom id, [Expr] exprs, <Atom, Nat>* dep_nodes)
+  {
+    var = memb_var(id);
+    nv_var = lvar(0);
+    eval_instr = switch_on_nat(update_source_var(id), [gen_eval_code(e, nv_var, 1, next_int_var_id, 0) : e <- nonempty(exprs)]);
+    cond = neg(is_eq(var, nv_var));
+    body = [set_var(var, nv_var)] & [mark_for_update(n, false) : n <- rand_sort(dep_nodes)];
+    return [eval_instr, do_if(cond, body)];
+  }
+
+
+  [Instr] gen_cond_node_code(Nat id, Expr cond, Maybe[(id: Nat, trigger: Bool)] parent, UpdateInfo* updates, <Atom, Nat>* dep_nodes)
+  {
+    l0 = lvar(0);
+    b0 = bvar(0);
+    b1 = bvar(1);
+    id_var = cond_value_var(id);
+    cv_var = cond_expr_value_var(id);
+    utd_var = cond_expr_up_to_date_var(id);
+
+    if (parent != nil)
+      // if <parent.id> == parent.trigger
+      //   assert <id> == false
+      //   if not <utd(id)>
+      //     l0 = <<cond>>
+      //     <cv(id)> = l0 == True
+      //     <utd(id)> = true
+      //   b0 = <id> != <cv(id)>
+      //   <id> = <cv(id)>
+      // else
+      //   assert <id> == true
+      //   // b0 = true --- Assuming here <id> == true //## IS THIS AT ALL TRUE?
+      //   b0 = <id> != false = <id> == true = <id>
+      //   <id> = false
+
+      cond_refresh_code = gen_eval_code(cond, l0, 1, next_int_var_id, 2) & [
+        set_bvar(cv_var, inline_is_eq(l0, obj_true)),
+        set_bvar(utd_var, true)
+      ];
+
+      then_body = [
+        // runtime_check(is_eq(id_var, false)),
+        do_if(neg(utd_var), cond_refresh_code),
+        set_bvar(b0, neg(is_eq(id_var, cv_var))),
+        set_bvar(id_var, cv_var)
+      ];
+
+      else_body = [
+        // runtime_check(is_eq(id_var, true)),
+        set_bvar(b0, id_var),
+        set_bvar(id_var, false)
+      ];
+
+      eval_code = [branch(is_eq(cond_value_var(parent.id), parent.trigger), then_body, else_body)];
+    else
+      //  l0 = <<cond>>
+      //  b1 = l0 == True
+      //  b0 = <id> != b1
+      //  <id> = b1
+
+      eval_code = gen_eval_code(cond, l0, 1, next_int_var_id, 2) & [
+        set_bvar(b1, inline_is_eq(l0, obj_true)),
+        set_bvar(b0, neg(is_eq(id_var, b1))),
+        set_bvar(id_var, b1)
+      ];
+    ;
+
+    state_update_code = branch(
+      id_var,
+      join(rand_sort({gen_update_code(u.state, u.value_idx) : u <- updates, u.trigger == true})),
+      join(rand_sort({gen_update_code(u.state, u.value_idx) : u <- updates, u.trigger == false}))
+    );
+
+    return eval_code & [do_if(b0, [state_update_code] & [mark_for_update(n, true) : n <- rand_sort(dep_nodes)])];
+  }
+
+
+  [Instr^] gen_update_code(Atom state, Nat src_idx) = [set_ivar(update_source_var(state), src_idx), mark_for_update(state, false)];
+
+
+  Instr mark_for_update(<Atom, Nat> node_id, Bool from_cond)
+  {
+    index = nodes_idxs[node_id];
+    level = nodes_levels[node_id];
+
+    idx_var = ivar(next_int_var_id);
+    mark_var = marked_for_update_var(node_id);
+    count_var = update_count_var(level);
+    nodes_var = nodes_to_update_var(level, idx_var);
+
+    return do_if(neg(mark_var), [
+      set_bvar(mark_var, true),
+      set_ivar(idx_var, count_var),
+      set_ivar(nodes_var, index),
+      set_ivar(count_var, add(idx_var, 1)),
+      set_bvar(cond_expr_up_to_date_var(node_id), false) if node_id :: Nat and not from_cond
+    ]);
+  }
+}
+
+
+[Instr^] gen_eval_code(Expr expr, EvalDestVar res_var, Nat next_obj_var_id, Nat next_int_var_id, Nat next_bool_var_id) =
+  gen_eval_code(
+    expr,
+    res_var,
+    next_obj_var_id = next_obj_var_id,
+    next_int_var_id = next_int_var_id,
+    next_bool_var_id = next_bool_var_id,
+    next_set_it_var_id = 0,
+    next_seq_it_var_id = 0,
+    next_map_it_var_id = 0,
+    next_vector_var_id = 0,
+    next_stream_var_id = 0,
+    auto_vars_types = ()
+  );
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[(Nat, <Atom, Nat>*, AutoNodeType)] gen_auto_nodes(Automaton automaton)
+{
+  cond_nodes = ();
+  next_id = 0;
+  for (a : rand_sort(automaton.actions))
+    action_conds, next_id = gen_action_nodes(a, next_id, nil);
+    cond_nodes = cond_nodes & action_conds;
+  ;
+
+  conds_deps = (id => cond_deps(c) : c @ id <- cond_nodes);
+  state_trigger_deps = merge_values({(u.state_id => id) : c @ id <- cond_nodes, u <- c.updates});
+  state_value_deps = merge_value_sets({(u.state_id => expr_deps(u.new_value)) : c @ id <- cond_nodes, u <- c.updates});
+  rules_deps = (a => {unsafe_name(v) : v <- extern_vars(e)} : e @ a <- automaton.rules);
+
+  trigger_dep_map = conds_deps & state_trigger_deps & rules_deps;
+  value_dep_map = conds_deps & rules_deps & merge_value_sets({state_trigger_deps, state_value_deps});
+
+  rev_trigger_dep_map = reverse_multi(trigger_dep_map);
+
+  params = {id : _ @ id <- automaton.params};
+  inputs = {id : _ @ id <- automaton.inputs};
+  level_0 = params & inputs;
+
+  nodes_by_level = topological_sort((s => new_ts : ts @ s <- value_dep_map, new_ts = ts - level_0 - {s}));
+
+  sorted_nodes = [(0, lookup(rev_trigger_dep_map, i, {}), input(i)) : i <- rand_sort(inputs)];
+
+  update_values = merge_values({(u.state_id => u.new_value) : c @ id <- cond_nodes, u <- c.updates});
+  update_values = (s => rand_sort(vs) : vs @ s <- update_values);
+
+  state_vars_ids = keys(automaton.state);
+
+  for (l @ i : nodes_by_level)
+    nodes = rand_sort(l);
+    for (n : nodes)
+      level = nat(i + 1);
+      dependent_nodes = lookup(rev_trigger_dep_map, n, {}) - state_vars_ids;
+      if (has_key(automaton.rules, n))
+        fail if not n :: Atom;
+        info = derived(n, automaton.rules[n]);
+      elif (has_key(automaton.state, n))
+        fail if not n :: Atom;
+        info = state(n, update_values[n]);
+      elif (has_key(cond_nodes, n))
+        fail if not n :: Nat;
+        cond_node = cond_nodes[n];
+        cond_updates = {(state: u.state_id, value_idx: index_first(u.new_value, update_values[u.state_id]), trigger: u.trigger) : u <- cond_node.updates};
+        info = cond_node(n, cond_node.cond, cond_node.parent, cond_updates);
+      else
+        fail;
+      ;
+      new_node_info = (level, dependent_nodes, info);
+      sorted_nodes = [sorted_nodes | new_node_info];
+    ;
+  ;
+
+  return sorted_nodes;
+
+
+  <Atom, Nat>* cond_deps(CondInfo cond)
+  {
+    parent = cond.parent;
+    return expr_deps(cond.cond) & {value(parent).id if parent != nil};
+  }
+
+  Atom* expr_deps(Expr e) = {unsafe_name(v) : v <- extern_vars(e)};
+}
+
+
+((Nat => CondInfo), Nat) gen_action_nodes(AutoAction action, Nat root_id, Maybe[(id: Nat, trigger: Bool)] parent)
+{
+  next_id = nat(root_id + 1);
+
+  updates = {};
+  conditions = ();
+  nested_conds = {};
+
+  for (a, tv : rand_sort({(a, true) : a <- action.body} & {(a, false) : a <- action.else}))
+    if (a :: AutoUpdate)
+      updates = updates & {(state_id: a.target, new_value: a.value, trigger: tv)};
+
+    elif (a :: AutoAction) //## BAD BAD: THE TYPECHECKER SHOULD AUTOMATICALLY INFER THE TYPE OF <a> IF WE TAKE THIS BRANCH
+      nested_conds = nested_conds & {(id: next_id, trigger: tv)};
+      subconds, next_id = gen_action_nodes(a, next_id, just(id: root_id, trigger: tv));
+      conditions = conditions & subconds;
+    ;
+  ;
+
+  return (conditions & (root_id => (cond: action.cond, parent: parent, nested_conds: nested_conds, updates: updates)), next_id);
+}

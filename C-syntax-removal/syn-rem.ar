@@ -9,24 +9,31 @@ Program rem_syntax(SynPrg prg)
   proc_defs     = {d : syn_proc_def()  d <- decls};
   ublocks       = {d : using_block()   d <- decls};
   subtype_decls = {d : subtype_decl()  d <- decls};
+  automata      = {d : syn_auto_def()  d <- decls};
 
-  assert tdefs & par_tdefs & fndefs & proc_defs & ublocks & subtype_decls == decls;
+  assert tdefs & par_tdefs & fndefs & proc_defs & ublocks & subtype_decls & automata == decls;
 
   typedefs = create_type_map(tdefs, par_tdefs);
   fn_param_arities = get_fn_param_arities(fndefs, ublocks);
+
   desugared_fndefs = union({syn_fndef_to_fndefs(fd, {}, typedefs, fn_param_arities) : fd <- fndefs});
-  desugared_proc_defs = {syn_proc_def_to_proc_def(pd, typedefs, fn_param_arities) : pd <- proc_defs};
   desugared_block_fndefs = union(
     for (ub <- ublocks, fd <- set(ub.fn_defs)) {
       syn_fndef_to_fndefs(fd, set(ub.signatures), typedefs, fn_param_arities)
     }
   );
 
+  desugared_automata = {syn_auto_def_to_auto_def(a, typedefs=typedefs, fn_param_arities=fn_param_arities) : a <- automata};
+
+  auto_vars_outputs = (a.name => keys(a.outputs) : a <- desugared_automata);
+  desugared_proc_defs = {syn_proc_def_to_proc_def(pd, typedefs, fn_param_arities, auto_vars_outputs) : pd <- proc_defs};
+
   return program(
     typedefs:       typedefs,
     subtype_decls:  subtype_decls,
     fndefs:         desugared_fndefs & desugared_block_fndefs,
-    proc_defs:      desugared_proc_defs
+    proc_defs:      desugared_proc_defs,
+    auto_defs:      desugared_automata
   );
 }
 
@@ -65,6 +72,8 @@ FnDef* syn_fndef_to_fndefs(SynFnDef fndef, SynSgn* named_params, (TypeName => Ty
       {var(p.var_name) : p <- set(fndef.params), p.var_name? and (not p.type? or p.type :: SynType)},
       closures          = {cls_var(p.var_name) : p <- set(fndef.params), p.var_name?, p.type?, p.type :: SynClsType},
       named_params      = {np.name : np <- named_params}, //## BAD BAD BAD
+      memb_vars         = {},
+      auto_vars_outputs = (),
       local_fns         = lfns,
       curr_outer_fn     = just(outer_fn),
       typedefs          = typedefs,
@@ -105,19 +114,95 @@ FnDef* syn_fndef_to_fndefs(SynFnDef fndef, SynSgn* named_params, (TypeName => Ty
 }
 
 
-ProcDef2 syn_proc_def_to_proc_def(SynProcDef pd, (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_param_arities)
+ProcDef2 syn_proc_def_to_proc_def(SynProcDef pd, (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_param_arities,
+                                  (AutoSymbol => Atom*) auto_outputs)
 {
   params = [(var: p.var, type: syn_type_to_type(p.type, nil)) : p <- pd.params];
   maybe_ret_type = if pd.res_type != nil then just(syn_type_to_type(value(pd.res_type), nil)) else nil;
+  auto_vars_types = (v.var => auto_symbol(v.type) : v <- set(pd.auto_vars));
+  auto_vars_outputs = (v => auto_outputs[t] : t @ v <- auto_vars_types);
   body = desugar_stmts(
     pd.body,
     set([p.var : p <- pd.params]),
     closures = {},
     named_params = {},
+    memb_vars = {},
+    auto_vars_outputs = auto_vars_outputs,
     local_fns = (),
     curr_outer_fn = nil,
     typedefs = typedefs,
     fn_param_arities = fn_param_arities
   );
-  return proc_def(pd.name, params, maybe_ret_type, body);
+  return proc_def(pd.name, params, maybe_ret_type, auto_vars_types, body);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+using (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_param_arities
+{
+  Automaton syn_auto_def_to_auto_def(SynAutoDef auto_def)
+  {
+    decls = set(auto_def.decls);
+
+    memb_vars = {memb_var(d.name) : d <- decls};
+
+    syn_state_vars  = {d : syn_state()      d <- decls};
+    syn_plain_rules = {d : syn_plain_rule() d <- decls};
+    syn_cond_rules  = {d : syn_cond_rule()  d <- decls};
+
+    state_vars = (v.name => (type: syn_type_to_type(v.type, nil), init_value: syn_expr_to_expr(v.init_value, memb_vars)) : v <- syn_state_vars);
+    actions = {cond_rule_to_action(r.name, r.branches, memb_vars) : r <- syn_cond_rules};
+    rules = (r.name => syn_expr_to_expr(r.expr, memb_vars) : r <- syn_plain_rules);
+
+    param_ids = {};
+    loop
+      next_round = {id : e @ id <- rules, vids = {unsafe_name(v) : v <- extern_vars(e)}, subset(vids, param_ids)};
+      break if next_round == param_ids;
+      param_ids = next_round;
+    ;
+
+    params = select_by_key(rules, param_ids);
+    rules = remove_keys(rules, param_ids);
+
+    return automaton(
+      name:       auto_def.name,
+      pos_params: auto_def.pos_params,
+      params:     params,
+      inputs:     inputs(auto_def),
+      outputs:    outputs(auto_def),
+      state:      state_vars,
+      rules:      rules,
+      actions:    actions
+    );
+
+
+    AutoAction cond_rule_to_action(Atom name, [(expr: SynExpr, cond: SynExpr)^] branches, MembVar* memb_vars)
+    {
+      outer_branch = head(branches);
+      inner_branches = tail(branches);
+
+      else_actions = if inner_branches != [] then {cond_rule_to_action(name, inner_branches, memb_vars)} else {};
+
+      cond = syn_expr_to_expr(outer_branch.cond, memb_vars);
+      expr = syn_expr_to_expr(outer_branch.expr, memb_vars);
+      action = update(name, expr);
+
+      return cond_action(cond, {action}, else_actions);
+    }
+
+
+    Expr syn_expr_to_expr(SynExpr expr, MembVar* memb_vars) =
+      desugar_expr(
+        expr,
+        {},
+        closures = {},
+        named_params = {},
+        memb_vars = memb_vars,
+        auto_vars_outputs = (),
+        local_fns = (),
+        curr_outer_fn = nil, //## UGLY UGLY UGLY
+        typedefs = typedefs,
+        fn_param_arities = fn_param_arities
+      );
+  }
 }

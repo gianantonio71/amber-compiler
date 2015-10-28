@@ -14,7 +14,7 @@
 //    Also returns the id of the first free object variable.
 
 type EvalVar        = StdVar, LocVar;
-type EvalDestVar    = StdVar, LocVar, ElemVar;
+type EvalDestVar    = StdVar, LocVar, ElemVar, MembVar;
 
 type ExprEvalRes    = StdObjVar, LeafObj;
 
@@ -33,7 +33,9 @@ using
   Nat next_seq_it_var_id,
   Nat next_map_it_var_id,
   Nat next_vector_var_id,
-  Nat next_stream_var_id;
+  Nat next_stream_var_id,
+
+  (AutoVar => AutoSymbol) auto_vars_types;
 
 
   (EvalVar, Nat) pick_temp_var(EvalDestVar res_var) =
@@ -168,6 +170,9 @@ using
 
     accessor()      = gen_eval_code_for_accessor_expr(expr.expr, expr.field, res_var),
     accessor_test() = gen_eval_code_for_accessor_test_expr(expr.expr, expr.field, res_var),
+
+    get_output()    = [read_output(res_var, expr.var, auto_vars_types[expr.var], expr.output)],
+    test_output()   = [set_var(res_var, to_obj(output_is_def(expr.var, expr.output)))],
 
     if_expr()       = gen_eval_code_for_if_expr(expr.cond, expr.then, expr.else, res_var),
     match_expr()    = gen_eval_code_for_match_expr(expr.exprs, expr.cases, res_var),
@@ -792,21 +797,22 @@ using
 
 
   [Instr^] gen_code(Statement stmt, EvalDestVar res_var):
-    break_stmt        = [break_loop],
-    fail_stmt         = [terminate],
-    loop_stmt(ss?)    = [repeat(gen_code(ss, res_var))],
-    assert_stmt(e?)   = {info = gen_eval_info(e); return nonempty(info.eval_code & [runtime_check(info.expr)]);},
-    // assert_stmt(e?) = [no_op],
-    print_stmt(e?)    = {info = gen_eval_info(e); return nonempty(info.eval_code & [print_obj(info.expr)]);},
-    return_stmt       = [exit_block],
-    return_stmt(e?)   = gen_code_for_ret_stmt(e, res_var),
-    let_stmt()        = gen_code_for_let_stmt(stmt.asgnms, stmt.body, res_var),
-    assignment_stmt() = gen_code_for_assignment_stmt(stmt.vars, stmt.value, res_var),
-    imp_update_stmt() = gen_code_for_imp_update_stmt(stmt.obj, stmt.idx, stmt.value, res_var),
-    if_stmt()         = gen_code_for_if_stmt(stmt.cond, stmt.body, stmt.else, res_var),
-    for_stmt()        = gen_code_for_for_stmt(if stmt.var? then just(stmt.var) else nil, stmt.start_val, stmt.end_val, stmt.end_val_incl, stmt.body, res_var),
-    foreach_stmt()    = gen_code_for_foreach_stmt(stmt.vars, if stmt.idx_var? then just(stmt.idx_var) else nil, stmt.values, stmt.body, res_var),
-    proc_call()       = gen_code_for_proc_call_stmt(if stmt.res_var? then just(stmt.res_var) else nil, stmt.proc_name, stmt.params, res_var);
+    break_stmt                = [break_loop],
+    fail_stmt                 = [terminate],
+    loop_stmt(ss?)            = [repeat(gen_code(ss, res_var))],
+    assert_stmt(e?)           = {info = gen_eval_info(e); return nonempty(info.eval_code & [runtime_check(info.expr)]);},
+    // assert_stmt(e?)           = [no_op],
+    print_stmt(e?)            = {info = gen_eval_info(e); return nonempty(info.eval_code & [print_obj(info.expr)]);},
+    return_stmt               = [exit_block],
+    return_stmt(e?)           = gen_code_for_ret_stmt(e, res_var),
+    let_stmt()                = gen_code_for_let_stmt(stmt.asgnms, stmt.body, res_var),
+    assignment_stmt()         = gen_code_for_assignment_stmt(stmt.vars, stmt.value, res_var),
+    imp_update_stmt()         = gen_code_for_imp_update_stmt(stmt.obj, stmt.idx, stmt.value, res_var),
+    if_stmt()                 = gen_code_for_if_stmt(stmt.cond, stmt.body, stmt.else, res_var),
+    for_stmt()                = gen_code_for_for_stmt(if stmt.var? then just(stmt.var) else nil, stmt.start_val, stmt.end_val, stmt.end_val_incl, stmt.body, res_var),
+    foreach_stmt()            = gen_code_for_foreach_stmt(stmt.vars, if stmt.idx_var? then just(stmt.idx_var) else nil, stmt.values, stmt.body, res_var),
+    proc_call()               = gen_code_for_proc_call_stmt(if stmt.res_var? then just(stmt.res_var) else nil, stmt.proc_name, stmt.params),
+    auto_input_update_stmt()  = gen_code_for_auto_input_update_stmt(stmt.var, stmt.inputs);
 
 
 
@@ -972,10 +978,22 @@ using
   }
 
 
-  [Instr^] gen_code_for_proc_call_stmt(Maybe[StdVar] maybe_res_var, ProcSymbol proc_name, [Expr] params, EvalDestVar res_var)
+  [Instr^] gen_code_for_proc_call_stmt(Maybe[StdVar] maybe_res_var, ProcSymbol proc_name, [Expr] params)
   {
     pars_info = gen_eval_info(params);
     call_code = [call_proc(var: value(maybe_res_var) if maybe_res_var != nil, name: proc_name, params: pars_info.exprs)];
     return nonempty(pars_info.eval_code & call_code);
+  }
+
+
+  [Instr^] gen_code_for_auto_input_update_stmt(AutoVar var, (Atom => Expr) inputs)
+  {
+    sorted_inputs = rand_sort(keys(inputs));
+    sorted_values = [inputs[i] : i <- sorted_inputs];
+    values_info = gen_eval_info(sorted_values);
+    code = values_info.eval_code;
+    var_type = auto_vars_types[var];
+    set_input_code = [set_input(var, var_type, input, values_info.exprs[idx]) : input @ idx <- sorted_inputs];
+    return nonempty(values_info.eval_code & set_input_code & [update_inputs(var, var_type)]);
   }
 }

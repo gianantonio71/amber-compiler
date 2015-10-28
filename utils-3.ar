@@ -1,5 +1,3 @@
-// type StmtOutcome = fails, returns, breaks, falls_through;
-
 type CodeOutcome = fails, returns, breaks_loop, exits_block, falls_through;
 
 <fails>         fails         = :fails;
@@ -21,6 +19,7 @@ CodeOutcome+ code_outcomes(JumpInstr):
 
 CodeOutcome+ code_outcomes(CompInstr instr):
   branch()            = nonempty(code_outcomes(instr.when_true) & code_outcomes(instr.when_false)),
+  switch_on_nat()     = nonempty(union({code_outcomes(c) : c <- set(instr.cases)})),
   repeat(is?)         = loop_outcomes(is),
   execute_block(is?)  = block_outcomes(is),
   cls_scope()         = code_outcomes(instr.body);
@@ -75,6 +74,8 @@ T* retrieve_from_nested_low_level_exprs(BoolExpr expr, (AnyTypeExpr -> T*) retri
   is_le()               = retrieve(expr.expr1) & retrieve(expr.expr2),
   inline_is_eq()        = retrieve(expr.expr),
   is_out_of_range()     = {},
+  memb_is_def(v?)       = if v :: MembVar then retrieve(v) else {},
+  output_is_def()       = {},
   neg(e?)               = retrieve(e),
   and(es?)              = seq_union([retrieve(e) : e <- es]),
   or(es?)               = seq_union([retrieve(e) : e <- es]),
@@ -155,5 +156,23 @@ T* retrieve_from_nested_low_level_exprs(RefObjExpr expr, (AnyTypeExpr -> T*) ret
   list_to_seq()           = retrieve(expr.list),
   internal_sort()         = retrieve(expr.set),
   symb_to_str(e?)         = retrieve(e),
+  get_new_input()         = {},
+  read_output()           = {},
   add_attachment()        = retrieve(expr.target) & retrieve(expr.data),
   fetch_attachments(e?)   = retrieve(e);
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+T* retrieve_from_nested_low_level_instrs(<BasicInstr, JumpInstr>, (Instr -> T*) retrieve) = {};
+
+
+T* retrieve_from_nested_low_level_instrs(CompInstr instr, (Instr -> T*) retrieve):
+  branch()            = retrieve_from_nested_low_level_instrs(instr.when_true & instr.when_false, retrieve),
+  repeat(is?)         = retrieve_from_nested_low_level_instrs(is, retrieve),
+  execute_block(is?)  = retrieve_from_nested_low_level_instrs(is, retrieve),
+  switch_on_nat()     = retrieve_from_nested_low_level_instrs(join(instr.cases), retrieve),
+  cls_scope()         = retrieve_from_nested_low_level_instrs(instr.body, retrieve);
+
+
+T* retrieve_from_nested_low_level_instrs([Instr] instrs, (Instr -> T*) retrieve) = seq_union([retrieve(i) : i <- instrs]);
