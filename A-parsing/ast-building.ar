@@ -205,7 +205,7 @@ using String filename
     fail if ret_type == nil; //## BAD BAD BAD
     return syn_fn_def(
       name:       build_fn_symbol_ast(nodes[1]),
-      params:     build_fn_params_ast(nodes[2]),
+      args:       build_fn_args_ast(nodes[2]),
       res_type:   value(ret_type),
       expr:       build_expr_ast(nodes[4]),
       local_fns:  []
@@ -230,7 +230,7 @@ using String filename
 
     return syn_fn_def(
       name:       build_fn_symbol_ast(nodes[1]),
-      params:     build_fn_params_ast(nodes[2]),
+      args:       build_fn_args_ast(nodes[2]),
       res_type:   value(ret_type),
       expr:       syn_do_expr(nonempty(rem_stmts)),
       local_fns:  lfds
@@ -254,13 +254,13 @@ using String filename
     assert length(nodes) == 6;
     ret_type = build_maybe_type_ast(nodes[0]);
     fail if ret_type == nil; //## BAD BAD BAD
-    params = build_fn_params_ast(nodes[2]);
+    args = build_fn_args_ast(nodes[2]);
     cases = [build_switch_case_ast(n) : n <- rep_rule_nodes(nodes[4])];
     arity = syn_case_arity(cases[0]);
     expr = syn_try_expr(nonempty([fn_par(i) : i < arity]), nonempty(cases));
     return syn_fn_def(
       name:       build_fn_symbol_ast(nodes[1]),
-      params:     params,
+      args:       args,
       res_type:   value(ret_type),
       expr:       expr,
       local_fns:  []
@@ -293,7 +293,7 @@ using String filename
     nodes = rule_seq_nodes(mtc);
     assert length(nodes) == 3;
     return syn_sgn(
-      named_par(get_lowercase_id(nodes[1])),
+      named_arg(get_lowercase_id(nodes[1])),
       [build_type_ast(t) : t <- rep_rule_nodes(block_node_or_null(nodes[2]))],
       build_type_ast(nodes[0])
     );
@@ -314,7 +314,7 @@ using String filename
       name = proc_symbol(get_lowercase_id(get_rule_match(nodes[0])));
     ;
 
-    params = [(type: build_type_ast(rule_seq_node(ns, 0)), var: var(get_lowercase_id(rule_seq_node(ns, 1)))) : ns <- rep_rule_nodes(block_node(nodes[1]))];
+    args = [(type: build_type_ast(rule_seq_node(ns, 0)), var: var(get_lowercase_id(rule_seq_node(ns, 1)))) : ns <- rep_rule_nodes(block_node(nodes[1]))];
 
     body_nodes = rule_seq_nodes(block_node(nodes[2]));
     auto_vars = [build_auto_var_decl(n) : n <- rep_rule_nodes(body_nodes[0])];
@@ -322,7 +322,7 @@ using String filename
 
     return syn_proc_def(
       name:       name,
-      params:     params,
+      args:       args,
       res_type:   res_type,
       auto_vars:  auto_vars,
       body:       body
@@ -343,7 +343,7 @@ using String filename
       lowercase_id(a?)  = fn_symbol(a),
       operator(op?)     = op_symbol(op);
 
-  [SynFnArg] build_fn_params_ast(RuleMatch mtc) = if mtc != null_match then [build_fn_arg_ast(m) : m <- rep_rule_nodes(block_node(mtc))] else []; //## MAYBE rep_rule_nodes (AND seq_rule_nodes) SHOULD RETURN THE EMPTY SEQUENCE WHEN INVOKED WITH A null_match PARAMETER
+  [SynFnArg] build_fn_args_ast(RuleMatch mtc) = if mtc != null_match then [build_fn_arg_ast(m) : m <- rep_rule_nodes(block_node(mtc))] else []; //## MAYBE rep_rule_nodes (AND seq_rule_nodes) SHOULD RETURN THE EMPTY SEQUENCE WHEN INVOKED WITH A null_match PARAMETER
 
   SynFnArg build_fn_arg_ast(RuleMatch mtc) =
     match (get_rule_name(mtc))
@@ -614,8 +614,8 @@ using String filename
     nodes = rule_seq_nodes(mtc);
     assert length(nodes) == 2;
     builtin = get_builtin(nodes[0]);
-    params = [build_expr_ast(n) : n <- rep_rule_nodes(block_node(nodes[1]))];
-    return syn_builtin_call(builtin, nonempty(params));
+    args = [build_expr_ast(n) : n <- rep_rule_nodes(block_node(nodes[1]))];
+    return syn_builtin_call(builtin, nonempty(args));
   }
 
   SynExpr build_ex_qual_expr_ast(RuleMatch mtc)
@@ -752,21 +752,21 @@ using String filename
     nodes = rule_seq_nodes(block_node(nodes[1]));
     assert length(nodes) == 2;
 
-    params = [build_expr_ast(rule_seq_nodes(n)[1]) : n <- rep_rule_nodes(nodes[0])];
-    named_pars = [build_actual_named_par_ast(rule_seq_nodes(n)[1]) : n <- rep_rule_nodes(nodes[1])];
+    args = [build_expr_ast(rule_seq_nodes(n)[1]) : n <- rep_rule_nodes(nodes[0])];
+    named_args = [build_actual_named_arg_ast(rule_seq_nodes(n)[1]) : n <- rep_rule_nodes(nodes[1])];
 
-    return syn_fn_call(fn_name, nonempty(params), named_pars);
+    return syn_fn_call(fn_name, nonempty(args), named_args);
 
-    (NamedPar, [<var(Atom)>], SynExpr) build_actual_named_par_ast(RuleMatch mtc)
+    (NamedArg, [<var(Atom)>], SynExpr) build_actual_named_arg_ast(RuleMatch mtc)
     {
       nodes = rule_seq_nodes(mtc);
       assert length(nodes) == 4;
 
-      name = named_par(get_lowercase_id(nodes[0]));
-      params = [var(get_lowercase_id(n)) : n <- rep_rule_nodes(block_node_or_null(nodes[1]))];
+      name = named_arg(get_lowercase_id(nodes[0]));
+      args = [var(get_lowercase_id(n)) : n <- rep_rule_nodes(block_node_or_null(nodes[1]))];
       expr = build_expr_ast(nodes[3]);
 
-      return (name, params, expr);
+      return (name, args, expr);
     }
   }
 
@@ -914,9 +914,9 @@ using String filename
     stmts = build_stmts_ast(nodes[2]);
     return syn_let_stmt(nonempty(asgnms), stmts);
 
-    (NamedPar, SynExpr) build_let_asgnm_ast(RuleMatch mtc)
+    (NamedArg, SynExpr) build_let_asgnm_ast(RuleMatch mtc)
     {
-      name = named_par(get_lowercase_id(mtc, 0));
+      name = named_arg(get_lowercase_id(mtc, 0));
       expr = build_expr_ast(rule_seq_node(mtc, 2));
       return (name, expr);
     }
@@ -1025,10 +1025,10 @@ using String filename
     nodes = rule_seq_nodes(mtc);
     assert length(nodes) == 4;
     proc_name = proc_symbol(get_lowercase_id(nodes[1]));
-    params = [build_expr_ast(n) : n <- rep_rule_nodes(block_node(nodes[2]))];
-    return syn_proc_call(proc_name, params) if nodes[0] == null_match;
+    args = [build_expr_ast(n) : n <- rep_rule_nodes(block_node(nodes[2]))];
+    return syn_proc_call(proc_name, args) if nodes[0] == null_match;
     var = var(get_lowercase_id(rule_seq_node(nodes[0], 0)));
-    return syn_proc_call(var, proc_name, params);
+    return syn_proc_call(var, proc_name, args);
   }
 
   SynStmt build_auto_input_update_stmt(RuleMatch mtc)

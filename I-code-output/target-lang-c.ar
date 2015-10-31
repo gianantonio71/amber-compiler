@@ -21,8 +21,8 @@ CCodeOutput compile_to_c(CompiledPrg prg)
 
   cls_defs = cls_defs(prg);
 
-  all_named_pars = merge_values(set([p.named_params : p <- rand_sort(prg.procs)]));
-  all_param_arity_pairs = rand_sort({(var: v, arity: a) : ars @ v <- all_named_pars, a <- ars});
+  all_named_args = merge_values(set([p.named_args : p <- rand_sort(prg.procs)]));
+  all_param_arity_pairs = rand_sort({(var: v, arity: a) : ars @ v <- all_named_args, a <- ars});
 
   env_decl = ["struct Env {"];
 
@@ -88,8 +88,8 @@ CCodeOutput compile_to_c(CompiledPrg prg)
   ];
 
   String typesymb2str(TypeSymbol ts, [ParTypeSymbol] par_types):
-    type_symbol(a?)     = upper(_str_(a)),
-    par_type_symbol()   = typesymb2str(ts.symbol, par_types) & "__" & to_str(index_first(ts, par_types));
+    type_symbol(a?)     = upper_camel_case(a),
+    par_type_symbol()   = typesymb2str(ts.symbol, par_types) & "_" & to_str(index_first(ts, par_types));
 }
 
 
@@ -237,7 +237,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
   {
     par_types = [if p == :obj then "Obj" else "CLS" & to_str(p.arity) & " &" : p <- pd.params];
     par_list = append(par_types & ["Env &"], ", ");
-    return "Obj " & to_c_fn_name(pd.name) & "(" & par_list & ");";
+    return "Obj " & to_c_fn_name(pd.name, in_arity(pd)) & "(" & par_list & ");";
   }
 
 
@@ -259,12 +259,14 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
   {
     cached = pd.cached? and pd.cached;
 
+    fn_name = to_c_fn_name(pd.name, in_arity(pd));
+
     suffix = if cached then "__CALCULATE_CONSTANT" else "";
 
     par_list = gen_fn_pars(pd);
     par_list_str = append(par_list, ", ");
 
-    signature = ret_type_str(pd) & to_c_fn_name(pd.name) & suffix & "(" & par_list_str & ")";
+    signature = ret_type_str(pd) & fn_name & suffix & "(" & par_list_str & ")";
 
     body = pd.body;
     auto_vars_types = auto_vars_to_decl_and_init(body);
@@ -290,12 +292,12 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
       wrapper_code = [
         "",
         "",
-        ret_type_str(pd) & to_c_fn_name(pd.name) & "(" & par_list_str & ")",
+        ret_type_str(pd) & fn_name & "(" & par_list_str & ")",
         "{",
         "  static Obj cached_res = null_obj;",
         "  if (cached_res == null_obj)",
         "  {",
-        "    cached_res = " & to_c_fn_name(pd.name) & "__CALCULATE_CONSTANT(env);",
+        "    cached_res = " & fn_name & suffix & "(env);",
         "    add_obj_to_cache(cached_res);",
         "  }",
         "  add_ref(cached_res);",
@@ -318,7 +320,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
     String gen_fn_par(ObjProcPar par, Nat pos):
       obj   = "Obj p" & to_str(pos),
-      cls() = "CLS" & to_str(par.arity) & " &" & if par.name? then to_c_var_name(par.name) else "c_" & to_str(pos);
+      cls() = "CLS" & to_str(par.arity) & " &" & to_c_var_name(if par.name? then par.name else cls_var(pos));
 
     [String] gen_fn_pars(ProcDef pd):
       ObjProcDef  = [gen_fn_par(p, i) : p @ i <- pd.params] & ["Env &env"],
@@ -514,8 +516,8 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     pars_info = [gen_par_info(p) : p <- params];
     code_frags, args = unzip(pars_info);
     call_code = if var != nil
-      then mk_fn_call(value(var), to_c_fn_name(name), args)
-      else mk_fn_call(to_c_fn_name(name), args);
+      then mk_fn_call(value(var), to_c_fn_name(name, length(params)), args)
+      else mk_fn_call(to_c_fn_name(name, length(params)), args);
     return join(code_frags) & call_code;
 
 
@@ -589,7 +591,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
   // }
 
 
-  [String] compile_cls_scope_to_c(NamedPar var, ClsDef cls, [Var] env, [Instr^] body, <Nat, nil> block_id)
+  [String] compile_cls_scope_to_c(NamedArg var, ClsDef cls, [Var] env, [Instr^] body, <Nat, nil> block_id)
   {
     scope_id = to_str(_counter_(nil));
 
@@ -665,12 +667,12 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
   [String] mk_assignment(AnyVar var, AnyTypeExpr value) = [to_c_var_name(var) & " = " & to_c_expr(value) & ";"];
 
 
-  [String] mk_cls_call(<ClsVar, NamedPar> cls_var, ObjVar var, [ObjExpr] params):
+  [String] mk_cls_call(<ClsVar, NamedArg> cls_var, ObjVar var, [ObjExpr] params):
     cls_var(+ symb?) = { //## NO NEED FOR NOW TO HANDLE THE CASE cls_var(Nat), AS THOSE VARIABLES ARE NEVER "CALLED", ONLY PASSED ON
-      name = "c_" & _str_(symb);
+      name = to_c_var_name(cls_var);
       return [mk_gen_call(var, name & ".fn_ptr", [], params, [name & ".data", "env"])];
     },
-    named_par(symb?) = {
+    named_arg(symb?) = {
       name = to_str(length(params)) & "_" & _str_(_obj_(cls_var));
       return [mk_gen_call(var, "env.n" & name, [], params, ["env.C" & name, "env"])];
     };
@@ -683,7 +685,7 @@ using String typesymb2name(TypeSymbol)
 {
   //## IT WOULD MUCH BETTER IF WE COULD USE mk_call HERE...
   String to_c_expr(ObjExpr expr):
-    object(Atom a?)     = "S_" & _str_(a),
+    object(Atom a?)     = upper_camel_case(a) & "_S",
     object(Int n?)      = "to_obj(" & to_str(n) & ")",
     empty_set           = "empty_set",
     empty_seq           = "empty_seq",
@@ -734,7 +736,7 @@ using String typesymb2name(TypeSymbol)
     is_lt()               = to_nary_op(" < ",  [expr.expr1, expr.expr2], parentesised), //## BAD
     is_le()               = to_nary_op(" <= ", [expr.expr1, expr.expr2], parentesised), //## BAD
 
-    inline_is_eq()        = "inline_eq(" & to_c_expr(expr.expr) & ", " & to_c_expr(expr.value) & ")",
+    inline_is_eq()        = parentesize(to_c_expr(expr.expr) & " == " & to_c_expr(expr.value), parentesised),
 
     is_out_of_range(v?)   = "is_out_of_range(" & to_c_var_name(v) & ")",
 
@@ -813,16 +815,16 @@ using String typesymb2name(TypeSymbol)
   String to_c_var_name(IntVar v)      = to_c_var_name(v, false);
 
   String to_c_var_name(ClsVar v):
-    cls_var(+ a?)  = "c_" & _str_(a),
-    cls_var(* n?)  = "c_" & to_str(n);
+    cls_var(+ a?)  = upper_camel_case(a) & "_C",
+    cls_var(* n?)  = "c" & to_str(n);
 
 
   String to_c_var_name(<ObjVar, MembObjVar> v, Bool decl) = to_c_var_name(v, if decl then "" else "self->");
 
   String to_c_var_name(<ObjVar, MembObjVar> v, String prefix):
-    var(Atom a?)          = "v_"  & _str_(a),
+    var(Atom a?)          = upper_camel_case(a) & "_V",
     fn_par(Nat n?)        = "p"   & to_str(n),
-    named_par(Atom a?)    = "env.n_"  & _str_(a),
+    named_arg(Atom a?)    = "env.n_"  & _str_(a),
     cls_ext_par(Nat n?)   = "C["  & to_str(n) & "]",
     memb_var(Atom a?)     = prefix & upper_camel_case(a),
     lvar(Nat n?)          = "l"   & to_str(n),
@@ -863,29 +865,17 @@ using String typesymb2name(TypeSymbol)
   ///////////////////////////////////////////////////////////////////////////////
   ///////////////////////////////////////////////////////////////////////////////
 
-  //String to_c_imp_var_name(FnSymbol fn_symb, Nat arity) = "imp_" & to_c_fn_name(fn_symb, arity);
-  //String to_c_env_var_name(FnSymbol fn_symb, Nat arity) = "env_" & to_c_fn_name(fn_symb, arity);
-  //String to_c_imp_var_name(FnSymbol fn_symb, Nat arity) = "imp_" & to_c_fn_name(fn_symb, arity);
-  //String to_c_env_var_name(FnSymbol fn_symb, Nat arity) = "env_" & to_c_fn_name(fn_symb, arity);
-
-  //String to_c_imp_bkp_var_name(FnSymbol fn_symb, Nat arity, Nat id) = "bkp_imp_" & to_c_fn_name(fn_symb, arity, id);
-  //String to_c_env_bkp_var_name(FnSymbol fn_symb, Nat arity, Nat id) = "bkp_env_" & to_c_fn_name(fn_symb, arity, id);
-
-  //String to_c_cls_name(FnSymbol fn_symb, Nat arity, Nat id) = "cls_" & to_c_fn_name(fn_symb, arity, id);
-
-  String to_c_fn_name(FnSymbol fn_symb, Nat arity, Nat id) = to_c_fn_name(fn_symb, arity) & "__" & to_str(id);
-  String to_c_fn_name(FnSymbol fn_symb, Nat arity)         = to_c_fn_name(fn_symb) & "__" & to_str(arity);
-
-  //String to_c_fn_name(ObjFnName name) = to_c_fn_name(_obj_(name));
-  String to_c_fn_name(FnSymbol fn_symb):
-    fn_symbol(symb?)    = capitalize(_str_(symb), true),
+  String to_c_fn_name(FnSymbol fn_symb, Nat arity):
+    fn_symbol(symb?)    = upper_camel_case(symb) & "_" & to_str(arity),
     op_symbol(op?)      = _str_(op),
-    nested_fn_symbol()  = to_c_fn_name(fn_symb.outer) & "__" & to_c_fn_name(fn_symb.inner),
-    unique_fn_symbol()  = to_c_fn_name(fn_symb.symbol) & "__" & to_str(fn_symb.id); //## IS THIS ENOUGHT TO AVOID CONFLICTS?
+    nested_fn_symbol()  = to_c_fn_name(fn_symb.outer, arity) & "__" & to_c_fn_name(fn_symb.inner, arity),
+    unique_fn_symbol()  = to_c_fn_name(fn_symb.symbol, arity) & uppercase_encoding(fn_symb.id); //## IS THIS ENOUGHT TO AVOID CONFLICTS?
 
+  String to_c_fn_name(BoolFnName n, Nat) = to_c_fn_name(n);
   String to_c_fn_name(BoolFnName): memb_test(ts?)   = "is_" & typesymb2name(ts); //## UGLY UGLY UGLY
 
-  String to_c_fn_name(ProcSymbol): proc_symbol(s?)  = "io_" & capitalize(_str_(s), true); //## UGLY UGLY UGLY
+  String to_c_fn_name(ProcSymbol s, Nat) = to_c_fn_name(s);
+  String to_c_fn_name(ProcSymbol): proc_symbol(s?)  = upper_camel_case(s) & "_P"; //## UGLY UGLY UGLY
 
   ///////////////////////////////////////////////////////////////////////////////
 

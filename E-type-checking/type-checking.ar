@@ -43,7 +43,7 @@ FnType* build_aggregated_signatures(FnType+ signatures, (TypeName => Type) tdefs
     merged_ret_type = union_superset({s.ret_type : s <- signatures});
     a_sgn = an_elem(signatures);
     params = [if i == par_idx then merged_par_type else p : p @ i <- an_elem(signatures).params];
-    return fn_type(params, a_sgn.named_params, merged_ret_type);
+    return fn_type(params, a_sgn.named_args, merged_ret_type);
   }
 
   Bool other_params_are_eq(FnType sgn1, FnType sgn2, Nat par_idx, (TypeName => Type) tdefs) =
@@ -64,10 +64,10 @@ TypeCheckingError* typecheck(FnDef fn_def, (TypeName => Type) typedefs, ((FnSymb
   let (typedefs=typedefs, signatures=signatures, aggregated_signatures=aggregated_signatures, var_aliases=var_aliases)
     scalar_vars = (scalar_var(p) => scalar_param_type(p) : p <- set(fn_def.params), is_scalar_par(p), p.var?) &
                   (fn_par(i) => scalar_param_type(p) : i <- index_set(fn_def.params), p = fn_def.params[i], is_scalar_par(p)) &
-                  (v => t : t @ v <- fn_def.named_params, t :: Type);
+                  (v => t : t @ v <- fn_def.named_args, t :: Type);
 
     cls_vars = (cls_var(p) => cls_param_type(p) : p <- set(fn_def.params), not is_scalar_par(p), p.var?) &
-               (v => t : t @ v <- fn_def.named_params, t :: ClsType);
+               (v => t : t @ v <- fn_def.named_args, t :: ClsType);
 
     // return typecheck(fn_def.expr, fn_def.res_type, environment=scalar_vars, closures=cls_vars);
     //## THIS IS A TEMPORARY HACK TO WORK AROUND AN UNIMPLEMENTED FEATURE IN THE CODE GENERATION CODE
@@ -85,7 +85,7 @@ using
   ((FnSymbol, Nat) => FnType+)    signatures,
   ((FnSymbol, Nat) => FnType*)    aggregated_signatures,
   (Var => Type)                   environment,
-  (<ClsVar, NamedPar> => ClsType) closures,
+  (<ClsVar, NamedArg> => ClsType) closures,
   Var**                           var_aliases;
 
   //////////////////////////////////////////////////////////////////////////////
@@ -111,7 +111,7 @@ using
       map_expr(es?)   = typecheck_map_expr(es, exp_type),
       tag_obj_expr()  = typecheck_tag_obj_expr(expr.tag, expr.obj, exp_type),
       Var             = {invalid_var_type(expr, environment[expr], exp_type) if not is_subset(environment[expr], exp_type)},
-      fn_call()       = typecheck_fn_call(expr.name, expr.params, expr.named_params, exp_type),
+      fn_call()       = typecheck_fn_call(expr.name, expr.params, expr.named_args, exp_type),
       cls_call()      = typecheck_cls_call(expr.params, closures[expr.name], exp_type),
       builtin_call()  = typecheck_builtin_call(expr.name, expr.params, exp_type),
       and_expr()      = typecheck_and_expr(expr.left, expr.right, exp_type),
@@ -338,7 +338,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_fn_call(FnSymbol name, [AnyExpr] params, (NamedPar => AnyExpr) named_params, Type exp_type)
+  TypeCheckingError* typecheck_fn_call(FnSymbol name, [AnyExpr] params, (NamedArg => AnyExpr) named_args, Type exp_type)
   {
     // First I check that all scalar positional parameters typecheck. This is something that
     // I need to do before trying to determine the functions this call may dispatch to.
@@ -359,13 +359,13 @@ using
 
     // There might be more than one candidate signature
     // if the type of one or more parameters is the empty type
-    err_sets = {typecheck_fn_call(name, s, params, named_params, exp_type) : s <- candidate_signatures};
+    err_sets = {typecheck_fn_call(name, s, params, named_args, exp_type) : s <- candidate_signatures};
 
     return if in({}, err_sets) then {} else an_elem(err_sets);
   }
 
 
-  TypeCheckingError* typecheck_fn_call(FnSymbol name, FnType signature, [AnyExpr] params, (NamedPar => AnyExpr) named_params, Type exp_type)
+  TypeCheckingError* typecheck_fn_call(FnSymbol name, FnType signature, [AnyExpr] params, (NamedArg => AnyExpr) named_args, Type exp_type)
   {
     // We first check that all scalar positional parameters (and those parameters only) match
     // the type of the corresponding formal parameter (we already know they typecheck)
@@ -397,33 +397,33 @@ using
     ;
 
     // Now named parameters
-    named_par_errs = {};
+    named_arg_errs = {};
     // Going through all the named params in the signature
-    for (n, t : rand_sort_pairs(signature.named_params))
+    for (n, t : rand_sort_pairs(signature.named_args))
       // Instantiating type variables in the formal type
       inst_type = replace_type_vars(t, type_var_insts);
       // Checking to see whether the named parameter has been specified as part of the function call
-      if (has_key(named_params, n))
+      if (has_key(named_args, n))
         // Here the parameter could be either a scalar or a closure
-        par_expr = named_params[n];
+        par_expr = named_args[n];
         //## THIS IS REALLY BAD, BUT HOW CAN WE AVOID IT?
         errs = match (par_expr, inst_type)
           Expr,     Type      = typecheck(par_expr, inst_type),
           ClsExpr,  ClsType   = typecheck(par_expr, inst_type);
-        named_par_errs = named_par_errs & errs;
+        named_arg_errs = named_arg_errs & errs;
       // Now trying among the scalar variables
       elif (has_key(environment, n))
         // The actual parameter is a closure, and the formal parameter too
         // (unless there's a bug in the well-formedness checking code)
         actual_type = environment[n];
         if (not is_subset(actual_type, cast_as_type(inst_type)))
-          named_par_errs = named_par_errs & {invalid_implicit_par_type(signature, n, t, inst_type, actual_type)};
+          named_arg_errs = named_arg_errs & {invalid_implicit_par_type(signature, n, t, inst_type, actual_type)};
         ;
       // Now it can only be a closure, and the formal parameter must be a closure as well
       else
         actual_cls_type = closures[n];
         if (not is_subset(actual_cls_type, cast_as_cls_type(inst_type)))
-          named_par_errs = named_par_errs & {invalid_implicit_par_type(signature, n, t, inst_type, actual_cls_type)};
+          named_arg_errs = named_arg_errs & {invalid_implicit_par_type(signature, n, t, inst_type, actual_cls_type)};
         ;
       ;
     ;
@@ -433,7 +433,7 @@ using
     ret_type_errs = {invalid_return_type(actual_ret_type, exp_type) if not is_subset(actual_ret_type, exp_type)};
 
     //## BAD: HERE I SHOULD PROVIDE MORE INFORMATION ABOUT THESE ERRORS
-    return cls_errs & named_par_errs & ret_type_errs;
+    return cls_errs & named_arg_errs & ret_type_errs;
   }
 
 
@@ -661,7 +661,7 @@ using
       sgns = signatures[(expr.name, expr.arity)];
       assert size(sgns) == 1;
       sgn = only_element(sgns);
-      assert sgn.named_params == ();
+      assert sgn.named_args == ();
       assert not (? p <- set(sgn.params) : not p :: Type);
       sgn_cls = cls_type(cast_as_type_ne_seq(sgn.params), sgn.ret_type);
       return {invalid_cls_param_type(sgn_cls, exp_type) if not is_subset(sgn_cls, exp_type)};
@@ -789,7 +789,7 @@ using
   }
 
 
-  TypeCheckingError* typecheck_let_stmt((NamedPar => Expr) asgnms, [Statement^] body, Type exp_type)
+  TypeCheckingError* typecheck_let_stmt((NamedArg => Expr) asgnms, [Statement^] body, Type exp_type)
   {
     errs = union({typecheck(e, type_any) : e @ v <- asgnms});
     return errs if errs != {};

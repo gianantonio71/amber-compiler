@@ -72,14 +72,14 @@ Type expand_type_ref(TypeSymbol type_symb, (TypeName => Type) typedefs)
 T* retrieve_from_nested_exprs(Expr expr, (Expr -> T*) retrieve):
   LeafObj           = {},
   FloatLit          = {},
-  set_expr(ses?)    = union({retrieve_from_nested_exprs(se, retrieve) : se <- ses}),
-  seq_expr(ses?)    = seq_union([retrieve_from_nested_exprs(se, retrieve) : se <- ses]),
+  set_expr(ses?)    = union({any_expr_retrieve_from_nested_exprs(se, retrieve) : se <- ses}),
+  seq_expr(ses?)    = seq_union([any_expr_retrieve_from_nested_exprs(se, retrieve) : se <- ses]),
   tuple_expr(es?)   = seq_union([retrieve(e) : e <- es]),
   seq_tail_expr()   = retrieve(expr.seq) & seq_union([retrieve(e) : e <- expr.tail]),
   map_expr(es?)     = union({retrieve(e.key) & retrieve(e.value) & if e.cond? then retrieve(e.cond) else {} : e <- es}),
   tag_obj_expr()    = retrieve(expr.tag) & retrieve(expr.obj),
   Var               = {},
-  fn_call()         = union({retrieve_from_nested_exprs(p, retrieve) : p <- set(expr.params) & values(expr.named_params)}),
+  fn_call()         = union({any_expr_retrieve_from_nested_exprs(p, retrieve) : p <- set(expr.params) & values(expr.named_args)}),
   cls_call()        = seq_union([retrieve(p) : p <- expr.params]),
   builtin_call()    = seq_union([retrieve(p) : p <- expr.params]),
   and_expr()        = retrieve(expr.left) & retrieve(expr.right),
@@ -111,10 +111,11 @@ T* retrieve_from_nested_exprs(Expr expr, (Expr -> T*) retrieve):
   range_comp()      = retrieve(expr.expr) & retrieve(expr.bound_expr) & if expr.sel_expr? then retrieve(expr.sel_expr) else {};
 
 
-T* retrieve_from_nested_exprs(CondExpr expr, (Expr -> T*) retrieve) = retrieve(expr.expr) & retrieve(expr.cond);
+T* any_expr_retrieve_from_nested_exprs(Expr expr, (Expr -> T*) retrieve)      = retrieve(expr);
 
+T* any_expr_retrieve_from_nested_exprs(CondExpr expr, (Expr -> T*) retrieve)  = retrieve(expr.expr) & retrieve(expr.cond);
 
-T* retrieve_from_nested_exprs(ClsExpr expr, (Expr -> T*) retrieve):
+T* any_expr_retrieve_from_nested_exprs(ClsExpr expr, (Expr -> T*) retrieve):
   ClsVar      = {},
   fn_ptr()    = {},
   cls_expr()  = retrieve(expr.expr);
@@ -164,7 +165,7 @@ Expr replace_nested_exprs(Expr expr, (Expr -> Expr) replace):
   fn_call()         = fn_call(
                         expr.name,
                         [replace_exprs_in_any_expr(p, replace) : p <- expr.params],
-                        (n => replace_exprs_in_any_expr(e, replace) : e @ n <- expr.named_params)
+                        (n => replace_exprs_in_any_expr(e, replace) : e @ n <- expr.named_args)
                       ),
   cls_call()        = cls_call(expr.name, [replace(p) : p <- expr.params]),
   builtin_call()    = builtin_call(expr.name, [replace(p) : p <- expr.params]),
@@ -298,7 +299,7 @@ Expr replace_external_vars_in_fn_call(FnCallExpr expr, (Var => Var) subst_map) =
   fn_call(
     expr.name,
     [replace_external_vars(p, subst_map) : p <- expr.params],
-    (n => replace_external_vars(e, subst_map) : e @ n <- expr.named_params)
+    (n => replace_external_vars(e, subst_map) : e @ n <- expr.named_args)
   );
 
 
@@ -469,63 +470,6 @@ Bool is_pattern_any(Pattern ptrn):
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-Expr* ordinary_subexprs(Expr expr):
-  object()        = {},
-  float_lit()     = {},
-  seq_expr(ses?)  = union({subexprs(e) : e <- set(ses)}),
-  tuple_expr(es?) = set(es),
-  seq_tail_expr() = {expr.seq} & union({subexprs(e) : e <- set(expr.tail)}),
-  set_expr(ses?)  = union({subexprs(e) : e <- ses}),
-  map_expr(es?)   = union({{e.key, e.value, e.cond if e.cond?} : e <- es}),
-  tag_obj_expr()  = {expr.tag, expr.obj},
-  Var             = {},
-  fn_call()       = {},
-  cls_call()      = set(expr.params), //## BAD
-  builtin_call()  = set(expr.params), //## BAD
-  and_expr()      = {expr.left, expr.right},
-  or_expr()       = {expr.left, expr.right}, //## BAD
-  not_expr(e?)    = {e},
-  eq()            = {expr.left, expr.right}, //## BAD
-  membership()    = {expr.obj},
-  cast_expr()     = {expr.expr},
-  accessor()      = {expr.expr},
-  accessor_test() = {expr.expr},
-  get_output()    = {},
-  test_output()   = {},
-  if_expr()       = {expr.cond, expr.then, expr.else},
-  // Expression that contain "special" subexpressions
-  ex_qual()       = {},
-  set_comp()      = {},
-  map_comp()      = {},
-  seq_comp()      = {expr.src_expr},
-  range_comp()    = {expr.bound_expr},
-  // Expression that require special treatment
-  match_expr()    = set(expr.exprs),
-  do_expr()       = {};
-
-//## FIND BETTER NAME
-Expr* subexprs(Expr expr)     = {expr};
-Expr* subexprs(CondExpr expr) = {expr.expr, expr.cond};
-
-Expr* special_subexprs(Expr expr):
-  ex_qual()       = {expr.sel_expr if expr.sel_expr?},
-  set_comp()      = {expr.expr, expr.sel_expr if expr.sel_expr?},
-  map_comp()      = {expr.key_expr, expr.value_expr, expr.sel_expr if expr.sel_expr?},
-  seq_comp()      = {expr.expr, expr.sel_expr if expr.sel_expr?}, //## BAD
-  range_comp()    = {expr.expr, expr.sel_expr if expr.sel_expr?},
-  _               = {};
-
-Var* gen_vars(Expr expr):
-  ex_qual()       = new_vars(expr.source),
-  set_comp()      = new_vars(expr.source), //## BAD
-  map_comp()      = new_vars(expr.source), //## BAD
-  seq_comp()      = set(expr.vars) & {expr.idx_var if expr.idx_var?},
-  range_comp()    = {expr.var},
-  _               = {};
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
 //## IS THIS CODE OK? IN CALCULATING THE NEW VARS, IT DOESN'T
 //## CONSIDER THE VARIABLES THAT ARE ALREADY DEFINED
 
@@ -552,61 +496,117 @@ Var* new_vars([Statement] stmts) = seq_union([new_vars(s) : s <- stmts]);
 
 ///////////////////////////////////////////////////////////////////////////////
 
-Var* extern_vars(Expr expr)
+Var* extern_vars(Expr expr):
+  Var             = {expr},
+  fn_call()       = union({any_expr_extern_vars(e) : e <- set(expr.params) & values(expr.named_args)}),
+  ex_qual()       = ex_qual_extern_vars(expr),
+  set_comp()      = set_comp_extern_vars(expr),
+  map_comp()      = map_comp_extern_vars(expr),
+  seq_comp()      = seq_comp_extern_vars(expr),
+  range_comp()    = range_comp_extern_vars(expr),
+  do_expr(ss?)    = stmts_extern_vars(ss),
+  match_expr()    = match_expr_extern_vars(expr.exprs, expr.cases),
+  _               = retrieve_from_nested_exprs(expr, extern_vars);
+
+
+Var* ex_qual_extern_vars(ExQualExpr expr)
 {
-  ord_expr_evs  = union({extern_vars(e) : e <- ordinary_subexprs(expr)});
-  spec_expr_evs = union({extern_vars(e) : e <- special_subexprs(expr)}) - gen_vars(expr);
-  spec_case_evs = special_cases(expr);
-
-  return ord_expr_evs & spec_expr_evs & spec_case_evs;
-
-  Var* special_cases(Expr expr):
-      Var            = {expr},
-      fn_call()      = union({extern_vars(e) : e <- set(expr.params)} & {extern_vars(e) : e @ k <- expr.named_params}),
-      ex_qual()      = extern_vars(expr.source),
-      set_comp()     = extern_vars(expr.source), //## BAD
-      map_comp()     = extern_vars(expr.source), //## BAD
-      do_expr(ss?)   = extern_vars(ss),
-      match_expr()   = { vs = {};
-                         for (c : expr.cases)
-                           pvs = seq_union([new_vars(p) : p <- c.ptrns]);
-                           vs  = vs & (extern_vars(c.expr) - pvs);
-                         ;
-                         return vs;
-                       },
-
-      _              = {};
+  source_vars = clause_extern_vars(expr.source);
+  sel_expr_vars = if expr.sel_expr? then extern_vars(expr.sel_expr) - new_vars(expr.source) else {};
+  return source_vars & sel_expr_vars;
 }
 
 
-Var* extern_vars(Clause clause):
+Var* set_comp_extern_vars(SetCompExpr expr)
+{
+  source_vars = clause_extern_vars(expr.source);
+  new_vars = new_vars(expr.source);
+  expr_vars = extern_vars(expr.expr) - new_vars;
+  sel_expr_vars = if expr.sel_expr? then extern_vars(expr.sel_expr) - new_vars else {};
+  return source_vars & expr_vars & sel_expr_vars;
+}
+
+
+Var* map_comp_extern_vars(MapCompExpr expr)
+{
+  source_vars = clause_extern_vars(expr.source);
+  new_vars = new_vars(expr.source);
+  key_expr_vars = extern_vars(expr.key_expr) - new_vars;
+  value_expr_vars = extern_vars(expr.value_expr) - new_vars;
+  sel_expr_vars = if expr.sel_expr? then extern_vars(expr.sel_expr) - new_vars else {};
+  return source_vars & key_expr_vars & value_expr_vars & sel_expr_vars;
+}
+
+
+Var* seq_comp_extern_vars(SeqCompExpr expr)
+{
+  src_expr_vars = extern_vars(expr.src_expr);
+  new_vars = set(expr.vars) & {expr.idx_var if expr.idx_var?};
+  expr_vars = extern_vars(expr.expr) - new_vars;
+  sel_expr_vars = if expr.sel_expr? then extern_vars(expr.sel_expr) - new_vars else {};
+  return src_expr_vars & expr_vars & sel_expr_vars;
+}
+
+
+Var* range_comp_extern_vars(RangeCompExpr expr)
+{
+  bound_expr_vars = extern_vars(expr.bound_expr);
+  new_vars = {expr.var};
+  expr_vars = extern_vars(expr.expr) - new_vars;
+  sel_expr_vars = if expr.sel_expr? then extern_vars(expr.sel_expr) - new_vars else {};
+  return bound_expr_vars & expr_vars & sel_expr_vars;
+}
+
+
+Var* match_expr_extern_vars([Expr^] exprs, [(ptrns: [Pattern^], expr: Expr)^] cases)
+{
+  exprs_vars = seq_union([extern_vars(e) : e <- exprs]);
+  cases_vars = seq_union([extern_vars(c.expr) - seq_union([new_vars(p) : p <- c.ptrns]) : c <- cases]);
+  return exprs_vars & cases_vars;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+Var* any_expr_extern_vars(Expr expr) = extern_vars(expr);
+
+Var* any_expr_extern_vars(ClsExpr expr):
+  ClsVar      = {},
+  fn_ptr()    = {},
+  cls_expr()  = { new_vars = set([fn_par(i) : i < length(expr.params)] & [v : v <- expr.params, v != nil]);
+                  ext_vars = extern_vars(expr.expr) - new_vars;
+                  assert not (? v <- ext_vars : v :: FnPar);
+                  return ext_vars;
+                };
+
+///////////////////////////////////////////////////////////////////////////////
+
+Var* clause_extern_vars(Clause clause):
   in_clause()         = extern_vars(clause.src),
   map_in_clause()     = extern_vars(clause.src),
-  and_clause()        = extern_vars(clause.left) & (extern_vars(clause.right) - new_vars(clause.left)),
-  or_clause()         = extern_vars(clause.left) & extern_vars(clause.right);
+  and_clause()        = clause_extern_vars(clause.left) & (clause_extern_vars(clause.right) - new_vars(clause.left)),
+  or_clause()         = clause_extern_vars(clause.left) & clause_extern_vars(clause.right);
 
 
-Var* extern_vars([Statement] stmts)
+Var* stmts_extern_vars([Statement] stmts)
 {
-  //## BUG BUG WHY IS THIS FUNCTION NEVER CALLED?
   def_vs = {};
   ext_vs = {};
   for (s : stmts)
-    ext_vs = ext_vs & (extern_vars(s) - def_vs);
+    ext_vs = ext_vs & (stmt_extern_vars(s) - def_vs);
     def_vs = def_vs & new_vars(s);
   ;
   return ext_vs;
 }
 
 
-Var* extern_vars(Statement s):
+Var* stmt_extern_vars(Statement s):
   assignment_stmt() = extern_vars(s.value),
   return_stmt       = {},
   return_stmt(e?)   = extern_vars(e),
-  if_stmt()         = extern_vars(s.cond) & extern_vars(s.body) & extern_vars(s.else),
-  loop_stmt(ss?)    = extern_vars(ss),
-  foreach_stmt()    = extern_vars(s.values) & (extern_vars(s.body) - (set(s.vars) & {s.idx_var if s.idx_var?})),
-  for_stmt()        = extern_vars(s.start_val) & extern_vars(s.end_val) & (extern_vars(s.body) - {s.var if s.var?}),
+  if_stmt()         = extern_vars(s.cond) & stmts_extern_vars(s.body) & stmts_extern_vars(s.else),
+  loop_stmt(ss?)    = stmts_extern_vars(ss),
+  foreach_stmt()    = extern_vars(s.values) & (stmts_extern_vars(s.body) - (set(s.vars) & {s.idx_var if s.idx_var?})),
+  for_stmt()        = extern_vars(s.start_val) & extern_vars(s.end_val) & (stmts_extern_vars(s.body) - {s.var if s.var?}),
   break_stmt        = {},
   fail_stmt         = {},
   assert_stmt(e?)   = extern_vars(e),
@@ -615,7 +615,7 @@ Var* extern_vars(Statement s):
   proc_call()       = seq_union([extern_vars(p) : p <- s.params]);
 
 
-Var* extern_vars(ClsExpr expr):
+Var* cls_expr_extern_vars(ClsExpr expr):
   ClsVar      = {},
   fn_ptr()    = {},
   cls_expr()  = extern_vars(expr.expr) - set([v : v <- expr.params, v != nil] & [fn_par(i) : i < length(expr.params)]);

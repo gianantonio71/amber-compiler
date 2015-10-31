@@ -1,13 +1,13 @@
 using
 {
   ClsVar*                       closures,
-  NamedPar*                     named_params,
+  NamedArg*                     named_args,
   MembVar*                      memb_vars,
   (AutoVar => Atom*)            auto_vars_outputs,
   ((FnSymbol, NzNat) => [Nat^]) local_fns,
   Maybe[FnSymbol]               curr_outer_fn, //## BUG: THIS IS NOT ENOUGH TO IDENTIFY THE OUTER FUNCTION...
   (TypeName => Type)            typedefs,
-  ((FnSymbol, Nat) => [Nat])    fn_param_arities;
+  ((FnSymbol, Nat) => [Nat])    fn_arg_arities;
 
 
   Expr desugar_expr(SynExpr expr, Var* def_vars):
@@ -22,8 +22,8 @@ using
     FnPar             = expr,
     cls_par(n?)       = fn_par(n),
     const_or_var(a?)  = desugar_const_or_var_expr(a, def_vars),
-    fn_call()         = desugar_fn_call_expr(expr.name, expr.params, expr.named_params, def_vars),
-    builtin_call()    = builtin_call(expr.name, [desugar_expr(e, def_vars) : e <- expr.params]),
+    fn_call()         = desugar_fn_call_expr(expr.name, expr.args, expr.named_args, def_vars),
+    builtin_call()    = builtin_call(expr.name, [desugar_expr(e, def_vars) : e <- expr.args]),
     and()             = and_expr(desugar_expr(expr.left, def_vars), desugar_expr(expr.right, def_vars)),
     or()              = or_expr(desugar_expr(expr.left, def_vars), desugar_expr(expr.right, def_vars)),
     not(e?)           = not_expr(desugar_expr(e, def_vars)),
@@ -59,7 +59,7 @@ using
     assert not in(cls_var(var_symb), closures);
 
     return var(var_symb) if in(var(var_symb), def_vars);
-    return named_par(var_symb) if in(named_par(var_symb), named_params);
+    return named_arg(var_symb) if in(named_arg(var_symb), named_args);
     return memb_var(var_symb) if in(memb_var(var_symb), memb_vars);
 
     auto_var = auto_var(var_symb);
@@ -76,21 +76,21 @@ using
   }
 
 
-  Expr desugar_fn_call_expr(FnSymbol name, [SynExpr^] params, [(NamedPar, [<var(Atom)>], SynExpr)] expl_named_params, Var* def_vars)
+  Expr desugar_fn_call_expr(FnSymbol name, [SynExpr^] args, [(NamedArg, [<var(Atom)>], SynExpr)] expl_named_args, Var* def_vars)
   {
     //## BAD (BUG?): THIS IS NOT VALID IF THE PARAMETER IS A CLOSURE
     //## VARIABLE OR IF IT'S THE NAME OF A FUNCTION. RIGHT NOW IT
     //## SHOULD NOT FAIL, BUT ONLY BECAUSE THE const_or_var() DOESN'T
     //## DO ANY CHECKING AT THE MOMENT
-    fn_id = (name, length(params));
-    nps = merge([(n => desugar_named_par_expr(e, def_vars, ps)) : n, ps, e <- expl_named_params]);
+    fn_id = (name, length(args));
+    nps = merge([(n => desugar_named_arg_expr(e, def_vars, ps)) : n, ps, e <- expl_named_args]);
 
     // Closures first
     if (name :: <fn_symbol(Atom)>)
       cls_var = cls_var(_obj_(name));
       if (in(cls_var, closures))
         assert nps == ();
-        ps = [desugar_expr(e, def_vars) : e <- params];
+        ps = [desugar_expr(e, def_vars) : e <- args];
         return cls_call(cls_var, ps);
       ;
     ;
@@ -99,27 +99,27 @@ using
     if (has_key(local_fns, fn_id))
       fs = nested_fn_symbol(value(curr_outer_fn), name);
       pas = local_fns[fn_id];
-      eps = [desugar_fn_param(p, a, def_vars) : p, a <- zip(params, pas)];
+      eps = [desugar_fn_arg(p, a, def_vars) : p, a <- zip(args, pas)];
       return fn_call(fs, eps, nps);
     ;
 
     // Then named parameters
     if (name :: <fn_symbol(Atom)>)
-      np  = named_par(_obj_(name));
-      if (in(np, named_params))
+      np  = named_arg(_obj_(name));
+      if (in(np, named_args))
         assert nps == ();
-        ps = [desugar_expr(e, def_vars) : e <- params];
+        ps = [desugar_expr(e, def_vars) : e <- args];
         return cls_call(np, ps);
       ;
     ;
 
     // And last global functions. Here too we have to deal with closures.
-    pas = fn_param_arities[fn_id];
-    eps = [desugar_fn_param(p, a, def_vars) : p, a <- zip(params, pas)];
+    pas = fn_arg_arities[fn_id];
+    eps = [desugar_fn_arg(p, a, def_vars) : p, a <- zip(args, pas)];
     return fn_call(name, eps, nps);
 
 
-    AnyExpr desugar_named_par_expr(SynExpr syn_expr, Var* outside_vars, [<var(Atom)>] cls_pars)
+    AnyExpr desugar_named_arg_expr(SynExpr syn_expr, Var* outside_vars, [<var(Atom)>] cls_pars)
     {
       vars = outside_vars - {v : fn_par() v <- outside_vars} & set(cls_pars) & set([fn_par(i) : i < length(cls_pars)]);
       expr = desugar_expr(syn_expr, vars);
@@ -127,22 +127,22 @@ using
     }
 
 
-    AnyExpr desugar_fn_param(SynExpr syn_param, Nat exp_arity, Var* def_vars)
+    AnyExpr desugar_fn_arg(SynExpr syn_arg, Nat exp_arity, Var* def_vars)
     {
-      if (exp_arity == 0 or not syn_param :: ConstOrVar)
-        param = desugar_expr(syn_param, def_vars);
-        return if exp_arity == 0 then param else cls_expr(exp_arity, param);
+      if (exp_arity == 0 or not syn_arg :: ConstOrVar)
+        arg = desugar_expr(syn_arg, def_vars);
+        return if exp_arity == 0 then arg else cls_expr(exp_arity, arg);
       ;
 
-      symb = _obj_(syn_param);
+      symb = _obj_(syn_arg);
 
       is_loc_var = in(var(symb), def_vars);
-      is_named_par = in(named_par(symb), named_params);
-      is_glob_const = has_key(fn_param_arities, (fn_symbol(symb), 0));
+      is_named_arg = in(named_arg(symb), named_args);
+      is_glob_const = has_key(fn_arg_arities, (fn_symbol(symb), 0));
 
       //## BUG? IS THIS RIGHT? SHOULDN'T GLOBAL CONSTANTS HAVE MINIMUM PRIORITY?
-      if (is_loc_var or is_named_par or is_glob_const)
-        return cls_expr(exp_arity, desugar_expr(syn_param, def_vars));
+      if (is_loc_var or is_named_arg or is_glob_const)
+        return cls_expr(exp_arity, desugar_expr(syn_arg, def_vars));
       else
         cls_var = cls_var(symb);
         return cls_var if in(cls_var, closures);
@@ -337,7 +337,7 @@ using
     proc_call()               = proc_call(
                                   res_var:    stmt.res_var if stmt.res_var?,
                                   proc_name:  stmt.proc_name,
-                                  params:     [desugar_expr(p, def_vars) : p <- stmt.params]
+                                  params:     [desugar_expr(p, def_vars) : p <- stmt.args]
                                 ),
     auto_input_update_stmt()  = auto_input_update_stmt(stmt.var, (i.input => desugar_expr(i.value, def_vars) : i <- set(stmt.inputs)));
 
@@ -359,7 +359,7 @@ using
   Statement desugar_let_stmt(SynLetStmt stmt, Var* def_vars)
   {
     asgnms = merge([(var => desugar_expr(val, def_vars)) : var, val <- stmt.asgnms]);
-    body   = desugar_stmts(stmt.body, def_vars, named_params = named_params & keys(asgnms));
+    body   = desugar_stmts(stmt.body, def_vars, named_args = named_args & keys(asgnms));
     return let_stmt(asgnms, body);
   }
 

@@ -1,0 +1,56 @@
+using
+{
+  (BasicTypeSymbol => Nat+)                           type_arity_map,
+  (NamedArg => Nat)                                   curr_function_named_args,
+  (FnSymbol => (Nat => ([Nat], (NamedArg => Nat)+)))  global_functions,
+  (FnSymbol => (Nat => [Nat]))                        local_functions,
+  (FnSymbol => NzNat)                                 closures,
+  (ProcSymbol => (Nat, Bool))                         procedures,
+  (AutoVar => AutoSymbol)                             auto_vars,
+  (AutoSymbol => SynAutoDef)                          automata,
+  Nat                                                 actual_arg_arity;
+
+
+  [ExprWFError] clause_wf_errors(SynClause clause, Var* def_vars):
+    in_clause()       = ptrn_wf_errors(clause.ptrn, def_vars) & expr_wf_errors(clause.src, def_vars),
+    map_in_clause()   = map_in_clause_wf_errors(clause.key_ptrn, clause.value_ptrn, clause.src, def_vars),
+    eq_clause()       = [clause_var_redef(clause) if in(clause.var, def_vars)] & expr_wf_errors(clause.expr, def_vars), //## BUG BUG BUG
+    and_clause(cs?)   = and_clause_wf_errors(cs, def_vars),
+    or_clause()       = clause_wf_errors(clause.left, def_vars) & clause_wf_errors(clause.right, def_vars);
+
+
+  [ExprWFError] map_in_clause_wf_errors(SynPtrn key_ptrn, SynPtrn value_ptrn, SynExpr src_expr, Var* def_vars)
+  {
+    src_expr_errs = expr_wf_errors(src_expr, def_vars);
+    key_ptrn_errs = ptrn_wf_errors(key_ptrn, def_vars);
+    value_ptrn_errs = ptrn_wf_errors(value_ptrn, def_vars & syn_new_vars(key_ptrn));
+    return key_ptrn_errs & value_ptrn_errs & src_expr_errs;
+  }
+
+
+  [ExprWFError] and_clause_wf_errors([SynClause^] clauses, Var* def_vars)
+  {
+    errs = [];
+    curr_vars = def_vars;
+    for (c : clauses)
+      errs = errs & clause_wf_errors(c, curr_vars);
+      curr_vars = curr_vars & syn_new_vars(c);
+    ;
+    return errs;
+  }
+
+
+  [ExprWFError] ptrn_wf_errors(SynPtrn ptrn, Var* def_vars):
+    ptrn_symbol       = [],
+    ptrn_float        = [],
+    ptrn_seq          = [],
+    ptrn_set          = [],
+    ptrn_map          = [],
+    ptrn_tag_obj      = [],
+    ptrn_any          = [],
+    ptrn_symbol()     = [],
+    ptrn_integer()    = [],
+    ptrn_tag_obj()    = ptrn_wf_errors(ptrn.tag, def_vars) & ptrn_wf_errors(ptrn.obj, def_vars),
+    ptrn_var()        = [ptrn_var_redef(ptrn) if in(ptrn.var, def_vars)] & ptrn_wf_errors(ptrn.ptrn, def_vars & {ptrn.var}), //## BUG BUG BUG
+    ptrn_type(t?)     = type_wf_errors(t, type_arity_map, true);
+}

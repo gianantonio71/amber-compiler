@@ -156,7 +156,7 @@ using
     map_expr(es?)   = gen_eval_code_for_map_expr(es, res_var),
     tag_obj_expr()  = gen_eval_code_for_tag_obj_expr(expr.tag, expr.obj, res_var),
 
-    fn_call()       = gen_eval_code_for_fn_call_expr(expr.name, expr.params, expr.named_params, res_var),
+    fn_call()       = gen_eval_code_for_fn_call_expr(expr.name, expr.params, expr.named_args, res_var),
     cls_call()      = gen_eval_code_for_cls_call(expr.name, expr.params, res_var),
     builtin_call()  = gen_eval_code_for_builtin_call(expr.name, expr.params, res_var),
 
@@ -273,19 +273,19 @@ using
   }
 
 
-  [Instr^] gen_eval_code_for_fn_call_expr(FnSymbol name, [AnyExpr] params, (NamedPar => AnyExpr) named_params, EvalDestVar res_var)
+  [Instr^] gen_eval_code_for_fn_call_expr(FnSymbol name, [AnyExpr] params, (NamedArg => AnyExpr) named_args, EvalDestVar res_var)
   {
-    if (named_params != ())
+    if (named_args != ())
       //## BUG BUG BUG. THE ASSIGNMENTS ARE DONE IN RANDOM ORDER. FIX THIS
-      var = an_elem(nonempty(keys(named_params)));
-      expr = named_params[var];
-      rem_named_pars = (v => e : e @ v <- named_params, v != var);
+      var = an_elem(nonempty(keys(named_args)));
+      expr = named_args[var];
+      rem_named_args = (v => e : e @ v <- named_args, v != var);
 
       if (expr :: Expr)
         backup_var = lvar(next_obj_var_id);
         let (next_obj_var_id = nat(next_obj_var_id + 1))
           info = gen_eval_info(expr);
-          body = gen_eval_code_for_fn_call_expr(name, params, rem_named_pars, res_var, next_obj_var_id=info.next_var_id);
+          body = gen_eval_code_for_fn_call_expr(name, params, rem_named_args, res_var, next_obj_var_id=info.next_var_id);
         ;
         set_up_code = [set_var(backup_var, var), set_var(var, info.expr)];
         tear_down_code = [set_var(var, backup_var)];
@@ -293,7 +293,7 @@ using
 
       else
         bound_cls = gen_non_scalar_par_code(cast_as_cls_expr(expr));
-        body = gen_eval_code_for_fn_call_expr(name, params, rem_named_pars, res_var);
+        body = gen_eval_code_for_fn_call_expr(name, params, rem_named_args, res_var);
         return [cls_scope(var, bound_cls, body)];
       ;
 
@@ -312,7 +312,7 @@ using
   }
 
 
-  [Instr^] gen_eval_code_for_cls_call(<ClsVar, NamedPar> name, [Expr] params, EvalDestVar res_var)
+  [Instr^] gen_eval_code_for_cls_call(<ClsVar, NamedArg> name, [Expr] params, EvalDestVar res_var)
   {
     pars_info = gen_eval_info(params);
     call_code = [call_cls(res_var, name, pars_info.exprs)];
@@ -822,7 +822,7 @@ using
   }
 
 
-  [Instr^] gen_code_for_let_stmt((NamedPar => Expr) asgnms, [Statement^] body, EvalDestVar res_var)
+  [Instr^] gen_code_for_let_stmt((NamedArg => Expr) asgnms, [Statement^] body, EvalDestVar res_var)
   {
     //## THIS SHOULD BE CHECKED IN THE PROPER PLACE, BOTH IN LAYER 1 AND 2
     //## IT'S A TEMPORARY LIMITATION THAT SHOULD BE REMOVED

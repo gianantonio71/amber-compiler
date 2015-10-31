@@ -1,0 +1,126 @@
+using
+{
+  (BasicTypeSymbol => Nat+)                           type_arity_map,
+  (NamedArg => Nat)                                   curr_function_named_args,
+  (FnSymbol => (Nat => ([Nat], (NamedArg => Nat)+)))  global_functions,
+  (FnSymbol => (Nat => [Nat]))                        local_functions,
+  (FnSymbol => NzNat)                                 closures,
+  (ProcSymbol => (Nat, Bool))                         procedures,
+  (AutoVar => AutoSymbol)                             auto_vars,
+  (AutoSymbol => SynAutoDef)                          automata,
+  Nat                                                 actual_arg_arity;
+
+
+  [ExprWFError] fn_call_local_wf_errors(SynFnCall expr, Var* def_vars)
+  {
+    name = expr.name;
+    args = expr.args;
+    named_args = expr.named_args;
+
+    dupl_named_args = dupl_elems([pn : pn, unused_var_1, unused_var_2 <- named_args]); //## UGLY UGLY UGLY
+    return [dupl_named_args(expr, dupl_named_args)] if dupl_named_args != {};
+
+    actual_arity = length(args);
+
+    // Closures have priority
+    if (has_key(closures, name))
+      exp_arity = closures[name];
+      return [
+        wrong_cls_call_arity(expr, exp_arity) if length(args) != exp_arity,
+        named_args_not_allowed(expr)          if named_args != []
+      ];
+    ;
+
+    if (has_key(local_functions, name))
+      arity_to_info = local_functions[name];
+      return [wrong_fn_arity(expr, nonempty(keys(arity_to_info)))] if not has_key(arity_to_info, actual_arity);
+      par_arities = arity_to_info[actual_arity];
+      all_exp_named_args = {curr_function_named_args};
+
+    elif (has_key(global_functions, name))
+      arity_to_info = global_functions[name];
+      return [wrong_fn_arity(expr, nonempty(keys(arity_to_info)))] if not has_key(arity_to_info, actual_arity);
+      par_arities, all_exp_named_args = arity_to_info[actual_arity];
+
+    else
+      return [calling_unknown_function(expr)];
+    ;
+
+    pos_par_errs = join([actual_arg_wf_errors(p, par_arities[i], def_vars) : p @ i <- args]);
+
+    all_named_arg_errs = {named_args_wf_errors(named_args, enps, def_vars) : enps <- all_exp_named_args};
+    named_arg_errs = if in([], all_named_arg_errs) then [] else an_elem(all_named_arg_errs); //## BAD: CHOOSING AN ERROR AT RANDOM...
+
+    return pos_par_errs & named_arg_errs;
+
+
+    [ExprWFError] actual_arg_wf_errors(SynExpr actual_arg, Nat exp_arity, Var* def_vars)
+    {
+      //## WHICH ONE?
+      return expr_wf_errors(actual_arg, def_vars) if exp_arity == 0;
+      // return expr_wf_errors(actual_arg, def_vars, actual_arg_arity=0) if exp_arity == 0;
+      //## f(xs, g(ys, $a == $b))
+
+      //  Here the function expects a closure. The parameter can be:
+      //    1) A normal expression, implicitly defining a constant functions
+      //    2) The name of a an existing closure
+      //    3) The name of a function
+      //    4) A closure expression
+
+      //  Handling cases 1) and 4) above
+      par_errs = expr_wf_errors(actual_arg, def_vars, actual_arg_arity=exp_arity);
+      if (par_errs != [] and actual_arg :: ConstOrVar)
+        cls_symb = fn_symbol(_obj_(actual_arg));
+
+        if (has_key(closures, cls_symb))
+          cls_arity = closures[cls_symb];
+          return [wrong_cls_arg_arity(actual_arg, exp_arity, {cls_arity}) if exp_arity != cls_arity];
+        ;
+
+        if (has_key(local_functions, cls_symb))
+          fns_info = local_functions[cls_symb];
+          //## BUG BUG BUG: I MUST ALSO CHECK THAT IT HAS NO NAMED PARAMETERS
+          return [wrong_cls_arg_arity(actual_arg, exp_arity, nonempty(keys(fns_info))) if not has_key(fns_info, exp_arity)];
+        ;
+
+        if (has_key(global_functions, cls_symb))
+          fns_info = global_functions[cls_symb];
+          //## BUG BUG BUG: I MUST ALSO CHECK THAT IT HAS NO NAMED PARAMETERS
+          return [wrong_cls_arg_arity(actual_arg, exp_arity, nonempty(keys(fns_info))) if not has_key(fns_info, exp_arity)];
+        ;
+      ;
+      return par_errs;
+    }
+
+
+    [ExprWFError] named_args_wf_errors([(NamedArg, [StdVar], SynExpr)] redef_named_args, (NamedArg => Nat)+ all_exp_named_args, Var* def_vars)
+    {
+      errs = {named_args_wf_errors(redef_named_args, enps, def_vars) : enps <- all_exp_named_args};
+      return [] if in([], errs);
+      return an_elem(errs);
+    }
+
+
+    [ExprWFError] named_args_wf_errors([(NamedArg, [StdVar], SynExpr)] redef_named_args, (NamedArg => Nat) exp_named_args, Var* def_vars)
+    {
+      redef_named_args_arity_map = merge(set([(p => length(vs)) : p, vs, unused_var <- redef_named_args]));
+      errs = [];
+      for (p, a : rand_sort_pairs(exp_named_args))
+        if (has_key(redef_named_args_arity_map, p))
+          // Checking arguments explicitly passed arguments first
+          actual_arity = redef_named_args_arity_map[p];
+          errs = [errs | invalid_named_arg_arity(p, a, actual_arity)] if actual_arity != a;
+        else
+          errs = errs & exp_named_arg_errors(p, a, def_vars);
+        ;
+      ;
+
+      for (np, vs, e : redef_named_args)
+        errs = [errs | invalid_named_arg(np)] if not has_key(exp_named_args, np);
+        errs = errs & expr_wf_errors(e, def_vars & set(vs));
+      ;
+
+      return errs;
+    }
+  }
+}

@@ -4,7 +4,7 @@ using
   ((FnSymbol, Nat) => FnType+)    signatures,
   ((FnSymbol, Nat) => FnType*)    aggregated_signatures,
   (Var => Type)                   environment,
-  (<ClsVar, NamedPar> => ClsType) closures,
+  (<ClsVar, NamedArg> => ClsType) closures,
   Var**                           var_aliases;
 
 
@@ -22,7 +22,7 @@ using
     map_expr(es?)     = map_expr_type(es),
     tag_obj_expr()    = tag_obj_expr_type(expr.tag, expr.obj),
     Var               = environment[expr],
-    fn_call()         = fn_call_expr_type(expr.name, expr.params, expr.named_params),
+    fn_call()         = fn_call_expr_type(expr.name, expr.params, expr.named_args),
     cls_call()        = closures[expr.name].out_type,
     builtin_call()    = builtin_call_expr_type(expr.name, expr.params),
     and_expr()        = type_bool,
@@ -103,7 +103,7 @@ using
   }
 
 
-  Type fn_call_expr_type(FnSymbol name, [AnyExpr] params, (NamedPar => AnyExpr) named_params)
+  Type fn_call_expr_type(FnSymbol name, [AnyExpr] params, (NamedArg => AnyExpr) named_args)
   {
     fn_key = (name, length(params));
     param_maybe_types = [if p :: Expr then just(expr_type(p)) else nil : p <- params];
@@ -116,7 +116,7 @@ using
 
     return empty_type if size(candidate_signatures) > 1;
     signature = only_element(candidate_signatures);
-    return fn_call_type(signature, params, named_params);
+    return fn_call_type(signature, params, named_args);
   }
 
 
@@ -300,7 +300,7 @@ using
   }
 
 
-  Type let_stmt_return_type((NamedPar => Expr) asgnms, [Statement^] body)
+  Type let_stmt_return_type((NamedArg => Expr) asgnms, [Statement^] body)
   {
     env_delta = (v => expr_type(e) : e @ v <- asgnms);
     new_env = update(environment, env_delta);
@@ -403,7 +403,7 @@ using
   }
 
 
-  (Var => Type) let_stmt_update_environment((NamedPar => Expr) asgnms, [Statement^] body)
+  (Var => Type) let_stmt_update_environment((NamedArg => Expr) asgnms, [Statement^] body)
   {
     return () if not may_fall_through(body); //## SEE COMMENT FOR loop_stmt() ABOVE
     env_delta = (v => expr_type(e) : e @ v <- asgnms);
@@ -546,7 +546,7 @@ using
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  Type fn_call_type(FnType signature, [AnyExpr] params, (NamedPar => AnyExpr) named_params)//## DO I NEED THE THIRD PARAMETER?
+  Type fn_call_type(FnType signature, [AnyExpr] params, (NamedArg => AnyExpr) named_args)//## DO I NEED THE THIRD PARAMETER?
   {
     type_var_insts = instantiate_type_vars(params, signature.params);
     return replace_type_vars(signature.ret_type, type_var_insts);
