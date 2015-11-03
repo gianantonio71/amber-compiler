@@ -1,8 +1,7 @@
 using
 {
   (TypeName => Type)              typedefs,
-  ((FnSymbol, Nat) => FnType+)    signatures,
-  ((FnSymbol, Nat) => FnType*)    aggregated_signatures,
+  ((FnSymbol, Nat) => SgnSet)     signatures,
   (Var => Type)                   environment,
   (<ClsVar, NamedArg> => ClsType) closures,
   Var**                           var_aliases;
@@ -100,23 +99,6 @@ using
     fail if not tag_types :: <SymbType, atom_type>*;
     obj_type = expr_type(obj_expr);
     return union_type({tag_obj_type(t, obj_type) : t <- tag_types});
-  }
-
-
-  Type fn_call_expr_type(FnSymbol name, [AnyExpr] params, (NamedArg => AnyExpr) named_args)
-  {
-    fn_key = (name, length(params));
-    param_maybe_types = [if p :: Expr then just(expr_type(p)) else nil : p <- params];
-    candidate_signatures = {s : s <- signatures[fn_key], will_dispatch_to(s, params)};
-    if (candidate_signatures == {})
-      candidate_signatures = {s : s <- aggregated_signatures[fn_key], will_dispatch_to(s, params)};
-    ;
-
-    // assert size(candidate_signatures) == 1 or at_least_one([is_subset(value(t), empty_type) : t <- param_maybe_types, t != nil]);
-
-    return empty_type if size(candidate_signatures) > 1;
-    signature = only_element(candidate_signatures);
-    return fn_call_type(signature, params, named_args);
   }
 
 
