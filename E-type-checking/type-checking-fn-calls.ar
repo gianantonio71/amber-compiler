@@ -180,6 +180,13 @@ using
 
   TypeCheckingError* typecheck_fn_call(FnSymbol name, [AnyExpr] args, (NamedArg => AnyExpr) named_args, Type exp_type)
   {
+    // Making sure the arguments typecheck, when the result can be any object
+    arg_errs = {};
+    for (a : args)
+      arg_errs = arg_errs & typecheck(a, type_any) if a :: Expr;
+    ;
+    return arg_errs if arg_errs != {};
+
     // Simple case first. If there's only one signature, we just typecheck that one directly
     fn_key = (name, length(args));
     sgn_set = signatures[fn_key];
@@ -230,9 +237,9 @@ using
     invalid_params = {};
     for (p, t @ i : zip(params, signature.params))
       if (p :: Expr and t :: Type)
-        actual_type = expr_type(p);
-        if (not is_subset(actual_type, replace_type_vars_with_type_any(t))) //## BAD: HERE I SHOULD JUST CALL typecheck()
-          invalid_params = invalid_params & {(i, p, actual_type)};
+        actual_arg_type = expr_type(p);
+        if (not is_subset(actual_arg_type, replace_type_vars_with_type_any(t)))
+          invalid_params = invalid_params & {(i, p, actual_arg_type)};
         ;
       ;
     ;

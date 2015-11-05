@@ -141,14 +141,14 @@ using
     errs = {obj_does_not_belong_to_type([], exp_type) if may_be_empty and not type_contains_obj(exp_type, [])};
     return errs if subexprs == [];
     exp_elem_types = seq_elem_types(exp_type);
-    return errs & if exp_elem_types != {} then typecheck_any(subexprs, exp_elem_types) else {exp_type_not_a_seq_type};
+    return errs & if exp_elem_types != {} then typecheck_any(subexprs, exp_elem_types) else {exp_type_not_a_seq_type(exp_type)};
   }
 
 
   TypeCheckingError* typecheck_seq_tail_expr(Expr seq, [Expr^] tail, Type exp_type)
   {
     exp_elem_types = seq_elem_types(exp_type);
-    return {exp_type_not_a_seq_type} if exp_elem_types == {};
+    return {exp_type_not_a_seq_type(exp_type)} if exp_elem_types == {};
     return typecheck_any(seq, {type_seq(t) : t <- exp_elem_types}) & typecheck_any(tail, exp_elem_types);
   }
 
@@ -478,26 +478,38 @@ using
     exp_src_type = type_seq(if nvars == 1 then type_any else type_tuple(nvars));
     errs = typecheck(src_expr, exp_src_type);
     return errs if errs != {};
-    exp_elem_types = seq_elem_types(exp_type);
-    return {exp_type_not_a_seq_type} if exp_elem_types == {};
     src_type = expr_type(src_expr);
     elem_type = seq_elem_supertype(src_type);
     assert is_subset(src_type, empty_seq_type) or elem_type != empty_type;
-    env_delta = asgnm_env_updates(vars, elem_type) & (value(maybe_idx_var) => type_nat if maybe_idx_var != nil);
-    new_env = update(environment, env_delta);
+    exp_elem_types = seq_elem_types(exp_type);
+    if (exp_elem_types == {})
+      if (type_contains_obj(exp_type, []) and is_subset(src_type, empty_seq_type))
+        //## THIS IS ONLY TEMPORARY, WE CAN DO BETTER HERE
+        return {exp_type_not_a_seq_type(exp_type)};
+      else
+        return {exp_type_not_a_seq_type(exp_type)};
+      ;
+    else
+      env_delta = asgnm_env_updates(vars, elem_type) & (value(maybe_idx_var) => type_nat if maybe_idx_var != nil);
+      new_env = update(environment, env_delta);
+    ;
     if (maybe_sel_expr != nil)
       sel_expr = value(maybe_sel_expr);
       errs = typecheck(sel_expr, type_bool, environment=new_env);
       new_env = left(refine_environment(sel_expr, environment=new_env));
     ;
-    return errs & typecheck_any(expr, exp_elem_types, environment=new_env);
+    errs = errs & typecheck_any(expr, exp_elem_types, environment=new_env);
+    if (type_contains_obj(src_type, []) or maybe_sel_expr != nil)
+      errs = errs & {obj_does_not_belong_to_type([], exp_type)} if not type_contains_obj(exp_type, []);
+    ;
+    return errs;
   }
 
 
   TypeCheckingError* typecheck_range_comp(Expr expr, Var var, Expr upper_bound_expr, Bool includes_upper_bound, Maybe[Expr] maybe_sel_expr, Type exp_type)
   {
     exp_elem_types = seq_elem_types(exp_type);
-    errs = {exp_type_not_a_seq_type if exp_elem_types == {}} & typecheck(upper_bound_expr, integer);
+    errs = {exp_type_not_a_seq_type(exp_type) if exp_elem_types == {}} & typecheck(upper_bound_expr, integer);
     new_env = update(environment, (var => type_nat)); //## BAD: HERE WE COULD TAKE ADVANTAGE OF THE KNOWLEDGE ON THE TYPE OF THE UPPER BOUND
     errs = errs & typecheck(value(maybe_sel_expr), type_bool, environment=new_env) if maybe_sel_expr != nil;
     if (not range_comp_yelds_nonempty_seq(maybe_sel_expr != nil, upper_bound_expr, includes_upper_bound))
