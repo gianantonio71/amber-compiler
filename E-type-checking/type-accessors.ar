@@ -1,6 +1,6 @@
 using (TypeName => Type) typedefs
 {
-  Type* seq_elem_types(Type type) = {t.elem_type : ne_seq_type() t <- split_type(type)};
+  Type* seq_elem_types(Type type) = {t.elem_type : t <- split_type(type), ne_seq_type() << t};
 
   Type seq_elem_supertype(Type type):
     empty_type        = empty_type,
@@ -11,24 +11,25 @@ using (TypeName => Type) typedefs
     union_type(ts?)   = union_superset({seq_elem_supertype(t) : t <- ts});
 
 
-  Type* set_elem_types(Type type) = {t.elem_type : ne_set_type() t <- split_type(type)};
+  Type* set_elem_types(Type type) = {t.elem_type : t <- split_type(type), ne_set_type() << t};
 
   Type set_elem_supertype(Type type) = union_superset(set_elem_types(type));
 
 
-  (Type, Type)* map_key_value_type_pairs(Type type) = {(t.key_type, t.value_type) : ne_map_type() t <- split_type(type)};
+  (Type, Type)* map_key_value_type_pairs(Type type) = {(t.key_type, t.value_type) : t <- split_type(type), ne_map_type() << t};
 
   Type map_key_supertype(Type type)   = union_superset({left(p) : p <- map_key_value_type_pairs(type)});
   Type map_value_supertype(Type type) = union_superset({right(p) : p <- map_key_value_type_pairs(type)});
 
 
-  RecordType* record_types(Type type) = {t : record_type() t <- split_type(type)};
+  RecordType* record_types(Type type) = {t : t <- split_type(type), record_type() << t};
 
 
-  TagObjType* tagged_obj_types(Type type) = {t : tag_obj_type() t <- split_type(type)};
+  TagObjType* tagged_obj_types(Type type) = {t : t <- split_type(type), tag_obj_type() << t};
 
 
   [Type^] tuple_field_supertypes(Type type, <2..*> tuple_length):
+    empty_type        = [empty_type : i < tuple_length],
     type_ref(ts?)     = tuple_field_supertypes(expand_type_ref(ts, typedefs), tuple_length),
     tuple_type(ts?)   = if length(ts) == tuple_length then ts else {fail;},
     union_type(ts?)   = { ftss = {tuple_field_supertypes(t, tuple_length) : t <- ts};
@@ -36,7 +37,7 @@ using (TypeName => Type) typedefs
                         };
 
 
-  [Type^]* tuple_field_types_set(Type type) = {ts : tuple_type(ts) <- split_type(type)};
+  [Type^]* tuple_field_types_set(Type type) = {ts : t <- split_type(type), tuple_type(ts?) << t};
 
   //////////////////////////////////////////////////////////////////////////////
 
@@ -47,7 +48,7 @@ using (TypeName => Type) typedefs
   Bool is_type_var(Type type)
   {
     types = split_type(type);
-    type_vars = {t : type_var() t <- types}; //## SUPER UGLY
+    type_vars = {t : t <- types, type_var() << t}; //## SUPER UGLY
     other_types = types - type_vars;
     assert type_vars & other_types == types;
     assert size(type_vars) <= 1;

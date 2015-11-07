@@ -36,8 +36,8 @@ using
     match_expr()      = match_expr_type(expr.exprs, expr.cases),
     do_expr(ss?)      = return_type(ss),
     ex_qual()         = type_bool,
-    set_comp()        = set_comp_expr_type(expr.expr, expr.source, if expr.sel_expr? then just(expr.sel_expr) else nil),
-    map_comp()        = map_comp_expr_type(expr.key_expr, expr.value_expr, expr.source, if expr.sel_expr? then just(expr.sel_expr) else nil),
+    set_comp()        = ne_set_type(expr_type(expr.expr, environment=generate_env(expr.source))),
+    map_comp()        = map_comp_expr_type(expr.key_expr, expr.value_expr, expr.source),
     seq_comp()        = { maybe_idx_var = if expr.idx_var? then just(expr.idx_var) else nil;
                           maybe_sel_expr = if expr.sel_expr? then just(expr.sel_expr) else nil;
                           return seq_comp_expr_type(expr.expr, expr.vars, maybe_idx_var, expr.src_expr, maybe_sel_expr);
@@ -113,10 +113,11 @@ using
 
   Type accessor_expr_type(Expr expr, SymbObj field)
   {
-    types = for (t <- split_type(expr_type(expr))) {
+    types = {
       match (t)
         record_type()   = t,
         tag_obj_type()  = match (t.obj_type) record_type() ot? = ot
+      : t <- split_type(expr_type(expr))
     };
     return empty_type if types == {};
     assert types :: <RecordType+>;
@@ -149,24 +150,9 @@ using
   }
 
 
-  Type set_comp_expr_type(Expr expr, Clause source, Maybe[Expr] maybe_sel_expr)
+  Type map_comp_expr_type(Expr key_expr, Expr value_expr, Clause source)
   {
-    new_env = refine_environment(source);
-    if (maybe_sel_expr != nil)
-      sel_expr = value(maybe_sel_expr);
-      new_env = left(refine_environment(sel_expr, environment=new_env));
-    ;
-    return ne_set_type(expr_type(expr, environment=new_env));
-  }
-
-
-  Type map_comp_expr_type(Expr key_expr, Expr value_expr, Clause source, Maybe[Expr] maybe_sel_expr)
-  {
-    new_env = refine_environment(source);
-    if (maybe_sel_expr != nil)
-      sel_expr = value(maybe_sel_expr);
-      new_env = left(refine_environment(sel_expr, environment=new_env));
-    ;
+    new_env = generate_env(source);
     key_type = expr_type(key_expr, environment=new_env);
     value_type = expr_type(value_expr, environment=new_env);
     return ne_map_type(key_type, value_type);
@@ -359,7 +345,7 @@ using
   (Var => Type) foreach_stmt_update_environment([Var^] vars, Maybe[Var] maybe_idx_var, Expr values, [Statement^] body)
   {
     elem_type = seq_elem_supertype(expr_type(values));
-    assert elem_type != empty_type;
+    // assert elem_type != empty_type;
     loop_vars = set(vars) & {value(maybe_idx_var) if maybe_idx_var != nil};
     assert disjoint(keys(environment), loop_vars);
     nvars = nz_nat(length(vars));
@@ -506,6 +492,28 @@ using
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
+  (Var => Type) generate_env(Clause cls):
+    set_elem_clause()   = environment & (cls.var => set_elem_supertype(expr_type(cls.src))),
+    map_entry_clause()  = { src_expr_type = expr_type(cls.src);
+                            env_delta = (
+                              cls.key_var => map_key_supertype(src_expr_type),
+                              cls.value_var => map_value_supertype(src_expr_type)
+                            );
+                            return environment & env_delta;
+                          },
+    seq_elem_clause()   = environment & (cls.var => set_elem_supertype(expr_type(cls.src))),
+    and_clause()        = { new_env = generate_env(cls.left);
+                            return generate_env(cls.right, environment=new_env);
+                          },
+    or_clause()         = merge_envs(generate_env(cls.left), generate_env(cls.right)),
+    // match_clause()      = environment & generate_env(cls.ptrn, expr_type(cls.expr)),
+    match_clause()      = update_environment(cls.expr, cls.ptrn),
+    asgnm_clause()      = environment & (cls.var => expr_type(cls.expr)),
+    filter_clause(e?)   = left(refine_environment(e));
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
   // We assume the assignment typechecks
   (Var => Type) asgnm_env_updates([Var^] vars, Type value_type)
   {
@@ -620,49 +628,31 @@ using
 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
-  ////////////// THIS IS ALL STUFF THAT STILL HAS TO BE CLEANED UP /////////////
-  //////////////////////////////////////////////////////////////////////////////
-  //////////////////////////////////////////////////////////////////////////////
-
-
-  //## IS IT CHECKED THAT VARIABLES IN CLAUSES CANNOT OVERRIDE EXISTING VARIABLES?
-  //## WHAT ABOUT SOMETHING LIKE THIS: x <- xs, x => y <- xys?
-  //## BAD: SHOULD CHANGE THE NAME OF THIS FUNCTION, IT DOES A COMPLETELY DIFFERENT
-  //## THING FROM refine_environment(Expr)
-  (Var => Type) refine_environment(Clause cls) = environment & generated_environment(cls);
-
-
-  // We assume that the clause typechecks
-  //## WOULD BE A GOOD IDEA TO ASSERT IT
-  (Var => Type) generated_environment(Clause clause):
-    in_clause()           = generated_environment(clause.ptrn, set_elem_supertype(expr_type(clause.src))),
-    map_in_clause()       = generated_environment(clause.key_ptrn, map_key_supertype(expr_type(clause.src))) &
-                            generated_environment(clause.value_ptrn, map_value_supertype(expr_type(clause.src))),
-    and_clause()          = {
-      left_env = generated_environment(clause.left);
-      return left_env & generated_environment(clause.right, environment=environment & left_env);
-    },
-    or_clause()           = merge_envs(generated_environment(clause.left), generated_environment(clause.right));
-
 
   (Var => Type) update_environment([Expr^] exprs, [Pattern^] ptrns)
   {
     assert length(exprs) == length(ptrns);
     new_env = environment;
     for (expr, ptrn : zip(exprs, ptrns))
-      type = expr_type(expr);
-      if (expr :: Var)
-        refined_type = type_pattern_intersection_superset(type, ptrn);
-        assert refined_type != empty_type;
-        var_group = only_element_or_def_if_empty({as : as <- var_aliases, in(expr, as)}, {expr});
-        new_env = update(new_env, (v => refined_type : v <- var_group));
-      ;
-      if (type == empty_type)
-        new_env = new_env & (v => empty_type : v <- pattern_vars(ptrn));
-      else
-        new_env = new_env & generated_environment(ptrn, type);
-      ;
+      new_env = update_environment(expr, ptrn, environment=new_env);
     ;
     return new_env;
+  }
+
+
+  (Var => Type) update_environment(Expr expr, Pattern ptrn)
+  {
+    new_env = environment;
+    type = expr_type(expr);
+    if (expr :: Var)
+      refined_type = type_pattern_intersection_superset(type, ptrn);
+      assert refined_type != empty_type; //## WHAT IS THIS ASSERTION FOR? WHY CAN'T THE ORIGINAL TYPE ITSELF BE EMPTY?
+      var_group = only_element_or_def_if_empty({as : as <- var_aliases, in(expr, as)}, {expr});
+      new_env = update(new_env, (v => refined_type : v <- var_group));
+    ;
+    //## THE EMPTY TYPE SHOULD NOT BE TREATED AS A SPECIAL CASE HERE.
+    //## AM I SURE generate_env(Pattern, Type) CANNOT ACCEPT THE EMPTY TYPE?
+    env_delta = if type == empty_type then (v => empty_type : v <- pattern_vars(ptrn)) else generate_env(ptrn, type);
+    return new_env & env_delta;
   }
 }

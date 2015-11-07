@@ -83,9 +83,9 @@ using
       if_expr()       = typecheck_if_expr(expr.cond, expr.then, expr.else, exp_type),
       match_expr()    = typecheck_match_expr(expr.exprs, expr.cases, exp_type),
       do_expr(ss?)    = typecheck(ss, exp_type),
-      ex_qual()       = typecheck_ex_qual_expr(expr.source, if expr.sel_expr? then just(expr.sel_expr) else nil, exp_type),
-      set_comp()      = typecheck_set_comp_expr(expr.expr, expr.source, if expr.sel_expr? then just(expr.sel_expr) else nil, exp_type),
-      map_comp()      = typecheck_map_comp_expr(expr.key_expr, expr.value_expr, expr.source, if expr.sel_expr? then just(expr.sel_expr) else nil, exp_type),
+      ex_qual()       = typecheck_ex_qual_expr(expr.source, expr.cond, exp_type),
+      set_comp()      = typecheck_set_comp_expr(expr.expr, expr.source, exp_type),
+      map_comp()      = typecheck_map_comp_expr(expr.key_expr, expr.value_expr, expr.source, exp_type),
       seq_comp()      = { maybe_idx_var = if expr.idx_var? then just(expr.idx_var) else nil;
                           maybe_sel_expr = if expr.sel_expr? then just(expr.sel_expr) else nil;
                           return typecheck_seq_comp(expr.expr, expr.vars, maybe_idx_var, expr.src_expr, maybe_sel_expr, exp_type);
@@ -415,26 +415,20 @@ using
   }
 
 
-  TypeCheckingError* typecheck_ex_qual_expr(Clause source, Maybe[Expr] maybe_sel_expr, Type exp_type)
+  TypeCheckingError* typecheck_ex_qual_expr(Clause source, Expr cond, Type exp_type)
   {
     errs = typecheck(source);
     return errs if errs != {};
-    return {} if maybe_sel_expr == nil;
-    new_env = update(environment, generated_environment(source));
-    return typecheck(value(maybe_sel_expr), type_bool, environment=new_env);
+    new_env = generate_env(source);
+    return typecheck(cond, type_bool, environment=new_env);
   }
 
 
-  TypeCheckingError* typecheck_set_comp_expr(Expr expr, Clause source, Maybe[Expr] maybe_sel_expr, Type exp_type)
+  TypeCheckingError* typecheck_set_comp_expr(Expr expr, Clause source, Type exp_type)
   {
     errs = typecheck(source);
     return errs if errs != {};
-    new_env = refine_environment(source);
-    if (maybe_sel_expr != nil)
-      sel_expr = value(maybe_sel_expr);
-      errs = typecheck(sel_expr, type_bool, environment=new_env);
-      new_env = left(refine_environment(sel_expr, environment=new_env));
-    ;
+    new_env = generate_env(source);
     exp_elem_types = set_elem_types(exp_type);
     return errs & if exp_elem_types != {}
       then typecheck_any(expr, exp_elem_types, environment=new_env)
@@ -442,16 +436,11 @@ using
   }
 
 
-  TypeCheckingError* typecheck_map_comp_expr(Expr key_expr, Expr value_expr, Clause source, Maybe[Expr] maybe_sel_expr, Type exp_type)
+  TypeCheckingError* typecheck_map_comp_expr(Expr key_expr, Expr value_expr, Clause source, Type exp_type)
   {
     errs = typecheck(source);
     return errs if errs != {};
-    new_env = refine_environment(source);
-    if (maybe_sel_expr != nil)
-      sel_expr = value(maybe_sel_expr);
-      errs = typecheck(sel_expr, type_bool, environment=new_env);
-      new_env = left(refine_environment(sel_expr, environment=new_env));
-    ;
+    new_env = generate_env(source);
     exp_key_value_type_pairs = map_key_value_type_pairs(exp_type);
     errs = errs & if exp_key_value_type_pairs != {}
       then typecheck_key_value_any(key_expr, value_expr, exp_key_value_type_pairs, environment=new_env)
@@ -672,11 +661,33 @@ using
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  TypeCheckingError* typecheck(Clause clause):
-    in_clause()           = typecheck(clause.src, type_set),
-    map_in_clause()       = typecheck(clause.src, type_map),
-    and_clause()          = typecheck(clause.left) & typecheck(clause.right, environment=update(environment, generated_environment(clause.left))),
-    or_clause()           = typecheck(clause.left) & typecheck(clause.right);
+  TypeCheckingError* typecheck(Clause cls):
+    set_elem_clause()   = typecheck(cls.src, type_set),
+    map_entry_clause()  = typecheck(cls.src, type_map),
+    seq_elem_clause()   = typecheck(cls.src, type_seq),
+    and_clause()        = typecheck_and_clause(cls.left, cls.right),
+    or_clause()         = typecheck(cls.left) & typecheck(cls.right),
+    match_clause()      = typecheck_match_clause(cls.ptrn, cls.expr),
+    asgnm_clause()      = typecheck(cls.expr, type_any),
+    filter_clause(e?)   = typecheck(e, type_bool);
+
+
+  TypeCheckingError* typecheck_and_clause(Clause left, Clause right)
+  {
+    errs = typecheck(left);
+    return errs if errs != {};
+    new_env = generate_env(left);
+    return typecheck(right, environment=new_env);
+  }
+
+
+  TypeCheckingError* typecheck_match_clause(Pattern ptrn, Expr source)
+  {
+    errs = typecheck(source, type_any);
+    return errs if errs != {};
+    type = expr_type(source);
+    return {ptrn_cannot_match_type(ptrn, type) if type != empty_type and not may_match(ptrn, type)};
+  }
 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////

@@ -1,4 +1,3 @@
-
 //## FIND BETTER NAME
 type FinalMatchAction = set_found_var_and_leave(var: EvalDestVar),
                         eval_expr_and_add_to_set(expr: Expr, stream_var: StreamVar),
@@ -9,14 +8,9 @@ type FinalMatchAction = set_found_var_and_leave(var: EvalDestVar),
                           value_stream_var: StreamVar
                         );
 
-//## FIND BETTER NAME
-type CondMatchAction  = cond_match_action(cond: Expr, action: FinalMatchAction);
+type MatchAction      = FinalMatchAction, match_action(clause: Clause, action: MatchAction);
 
-type MatchAction      = FinalMatchAction,
-                        CondMatchAction,
-                        match_action(clause: Clause, action: MatchAction);
-
-
+////////////////////////////////////////////////////////////////////////////////
 
 FinalMatchAction set_found_var_and_leave(EvalDestVar v) = set_found_var_and_leave(var: v);
 
@@ -31,10 +25,9 @@ FinalMatchAction eval_exprs_and_add_to_map(Expr ke, Expr ve, StreamVar ksv, Stre
     value_stream_var: vsv
   );
 
-CondMatchAction action(Expr c, FinalMatchAction a) = cond_match_action(cond: c, action: a);
-
 MatchAction action(Clause c, MatchAction a) = match_action(clause: c, action: a);
 
+////////////////////////////////////////////////////////////////////////////////
 
 using
 {
@@ -51,8 +44,7 @@ using
 
 
   [Instr^] gen_code(MatchAction action, StdVar* loc_bound_vars):
-    match_action()              = gen_iter_code(action.clause, loc_bound_vars, action.action),
-    cond_match_action()         = gen_code_for_cond_match_action(action.cond, action.action, loc_bound_vars),
+    match_action()              = gen_clause_code(action.clause, loc_bound_vars, action.action),
     set_found_var_and_leave()   = [set_var(action.var, obj_true), exit_block],
     eval_expr_and_add_to_set()  = gen_code_for_eval_expr_and_add_to_set(action.expr, action.stream_var),
     eval_exprs_and_add_to_map() = gen_code_for_eval_exprs_and_add_to_map(action.key_expr, action.value_expr, action.key_stream_var, action.value_stream_var);
@@ -90,70 +82,98 @@ using
   }
 
 
-  [Instr^] gen_iter_code(Clause clause, StdVar* loc_bound_vars, MatchAction action):
-    in_clause()       = gen_iter_code_for_in_clause(clause.ptrn, clause.src, loc_bound_vars, action),
-    map_in_clause()   = gen_iter_code_for_map_in_clause(clause.key_ptrn, clause.value_ptrn, clause.src, loc_bound_vars, action),
-    or_clause()       = nonempty(gen_iter_code(clause.left, loc_bound_vars, action) & gen_iter_code(clause.right, loc_bound_vars, action)),
-    and_clause()      = gen_iter_code(clause.left, loc_bound_vars, action(clause.right, action));
+  [Instr^] gen_clause_code(Clause clause, StdVar* loc_bound_vars, MatchAction action):
+    set_elem_clause()   = gen_set_elem_clause_code(clause.var, clause.src, loc_bound_vars, action),
+    map_entry_clause()  = gen_map_entry_clause_code(clause.key_var, clause.value_var, clause.src, loc_bound_vars, action),
+    seq_elem_clause()   = gen_seq_elem_clause_code(clause.var, clause.src, loc_bound_vars, action),
+    and_clause()        = gen_clause_code(clause.left, loc_bound_vars, action(clause.right, action)),
+    or_clause()         = nonempty(gen_clause_code(clause.left, loc_bound_vars, action) & gen_clause_code(clause.right, loc_bound_vars, action)),
+    match_clause()      = gen_match_clause_code(clause.ptrn, clause.expr, loc_bound_vars, action),
+    asgnm_clause()      = gen_asgnm_clause_code(clause.var, clause.expr, loc_bound_vars, action),
+    filter_clause(e?)   = gen_filter_clause_code(e, loc_bound_vars, action);
 
 
-  [Instr^] gen_iter_code_for_in_clause(Pattern ptrn, Expr src, StdVar* loc_bound_vars, MatchAction action)
+  [Instr^] gen_set_elem_clause_code(StdVar var, Expr src, StdVar* loc_bound_vars, MatchAction action)
   {
     src_var  = lvar(next_obj_var_id);
-    tmp_var  = lvar(nat(next_obj_var_id + 1));
     it_var   = set_it_var(next_set_it_var_id);
 
     let (next_obj_var_id = nat(next_obj_var_id + 1))
       // Variables to avoid: src_var
       src_info = gen_eval_info(src, src_var);
-
       let (next_set_it_var_id = nat(next_set_it_var_id + 1))
         // Variables to avoid: src_var, it_var
-        next_step_code = gen_code(action, loc_bound_vars & new_vars(ptrn));
-
-        let (next_obj_var_id = nat(next_obj_var_id + 1))
-          // Variables to avoid: src_var, it_var, tmp_var
-          match_code = gen_ptrn_matching_code(ptrn, tmp_var, pseudotype_any, loc_bound_vars=loc_bound_vars, on_match_code=next_step_code, tag_vars=());
-        ;
+        next_step_code = gen_code(action, loc_bound_vars & {var});
       ;
     ;
 
-    body_head = [break_if(is_out_of_range(it_var)), set_var(tmp_var, get_curr_obj(it_var))];
-    body_tail = [move_forward(it_var)];
-    body = body_head & match_code & body_tail;
+    body = [break_if(is_out_of_range(it_var)), set_var(var, get_curr_obj(it_var))] & next_step_code & [move_forward(it_var)];
     loop_code = [get_iter(it_var, src_info.expr), repeat(nonempty(body))];
 
     return nonempty(src_info.eval_code & loop_code);
   }
 
 
-  [Instr^] gen_iter_code_for_map_in_clause(Pattern key_ptrn, Pattern value_ptrn, Expr src, StdVar* loc_bound_vars, MatchAction action)
+  [Instr^] gen_map_entry_clause_code(StdVar key_var, StdVar value_var, Expr src, StdVar* loc_bound_vars, MatchAction action)
   {
     src_var  = lvar(next_obj_var_id);
-    tmp_var  = lvar(nat(next_obj_var_id + 1));
     it_var   = map_it_var(next_map_it_var_id);
 
     let (next_obj_var_id = nat(next_obj_var_id + 1))
       // Variables to avoid: src_var
       src_info = gen_eval_info(src, src_var);
-
       let (next_map_it_var_id = nat(next_map_it_var_id + 1))
         // Variables to avoid: src_var, it_var
-        next_step_code = gen_code(action, loc_bound_vars & new_vars(key_ptrn) & new_vars(value_ptrn));
-
-        let (next_obj_var_id = nat(next_obj_var_id + 1))
-          // Variables to avoid: src_var, it_var, tmp_var
-          intermediate_code = gen_ptrn_matching_code(value_ptrn, tmp_var, pseudotype_any, loc_bound_vars=loc_bound_vars, on_match_code=next_step_code, tag_vars=());
-          intermediate_code = nonempty([set_var(tmp_var, get_curr_value(it_var))] & intermediate_code);
-          intermediate_code = gen_ptrn_matching_code(key_ptrn, tmp_var, pseudotype_any, loc_bound_vars=loc_bound_vars, on_match_code=intermediate_code, tag_vars=());
-          match_and_action_code = [set_var(tmp_var, get_curr_key(it_var))] & intermediate_code;
-        ;
+        next_step_code = gen_code(action, loc_bound_vars & {key_var, value_var});
       ;
     ;
 
-    body_code = [break_if(is_out_of_range(it_var))] & match_and_action_code & [move_forward(it_var)];
+    body_head = [
+      break_if(is_out_of_range(it_var)),
+      set_var(key_var, get_curr_key(it_var)),
+      set_var(value_var, get_curr_value(it_var))
+    ];
+    body_code = body_head & next_step_code & [move_forward(it_var)];
     loop_code = [get_iter(it_var, src_info.expr), repeat(nonempty(body_code))];
 
     return nonempty(src_info.eval_code & loop_code);
+  }
+
+
+  [Instr^] gen_seq_elem_clause_code(StdVar var, Expr src, StdVar* loc_bound_vars, MatchAction action)
+  {
+    fail;
+  }
+
+
+  [Instr^] gen_match_clause_code(Pattern ptrn, Expr expr, StdVar* loc_bound_vars, MatchAction action)
+  {
+    src_var  = lvar(next_obj_var_id);
+    let (next_obj_var_id = nat(next_obj_var_id + 1))
+      src_info = gen_eval_info(expr, src_var);
+      next_step_code = gen_code(action, loc_bound_vars & new_vars(ptrn));
+      let (loc_bound_vars=loc_bound_vars, on_match_code=next_step_code, tag_vars=())
+        match_code = gen_ptrn_matching_code(ptrn, src_info.expr, pseudotype_any);
+      ;
+    ;
+    return nonempty(src_info.eval_code & match_code);
+  }
+
+
+  [Instr^] gen_asgnm_clause_code(StdVar var, Expr expr, StdVar* loc_bound_vars, MatchAction action)
+  {
+    exp_eval_code = gen_eval_code(expr, var);
+    action_code = gen_code(action, loc_bound_vars);
+    return nonempty(exp_eval_code & action_code);
+  }
+
+
+  [Instr^] gen_filter_clause_code(Expr cond, StdVar* loc_bound_vars, MatchAction action)
+  {
+    cond_var = lvar(next_obj_var_id);
+    cond_info = gen_eval_info(cond, cond_var, next_obj_var_id = nat(next_obj_var_id + 1));
+    action_code = gen_code(action, loc_bound_vars);
+
+    return nonempty(cond_info.eval_code & [do_if(is_true(cond_info.expr), action_code)]);
   }
 }

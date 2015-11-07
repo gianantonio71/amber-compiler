@@ -178,15 +178,15 @@ using
     match_expr()    = gen_eval_code_for_match_expr(expr.exprs, expr.cases, res_var),
     do_expr(ss?)    = [execute_block(gen_code(ss, res_var))],
 
-    ex_qual()       = gen_eval_code_for_ex_qual_expr(expr.source, maybe_sel_expr(expr), res_var),
-    set_comp()      = gen_eval_code_for_set_comp_expr(expr.expr, expr.source, maybe_sel_expr(expr), res_var),
-    map_comp()      = gen_eval_code_for_map_comp_expr(expr.key_expr, expr.value_expr, expr.source, maybe_sel_expr(expr), res_var),
+    ex_qual()       = gen_eval_code_for_ex_qual_expr(expr.source, expr.cond, res_var),
+    set_comp()      = gen_eval_code_for_set_comp_expr(expr.expr, expr.source, res_var),
+    map_comp()      = gen_eval_code_for_map_comp_expr(expr.key_expr, expr.value_expr, expr.source, res_var),
 
     seq_comp(ei?)   = gen_eval_code_for_seq_comp_expr(ei, res_var),
     range_comp(ei?) = gen_eval_code_for_range_comp_expr(ei, res_var);
 
 
-  Maybe[Expr] maybe_sel_expr(Expr expr) = if expr.sel_expr? then just(expr.sel_expr) else nil;
+  // Maybe[Expr] maybe_sel_expr(Expr expr) = if expr.sel_expr? then just(expr.sel_expr) else nil;
 
 
 
@@ -603,34 +603,30 @@ using
   }
 
 
-  [Instr^] gen_eval_code_for_ex_qual_expr(Clause source, Maybe[Expr] maybe_sel_expr, EvalDestVar res_var)
+  [Instr^] gen_eval_code_for_ex_qual_expr(Clause source, Expr cond, EvalDestVar res_var)
   {
-    action = set_found_var_and_leave(res_var);
-    action = action(value(maybe_sel_expr), action) if maybe_sel_expr != nil;
-    code = gen_iter_code(source, {}, action);
+    action = action(filter_clause(cond), set_found_var_and_leave(res_var));
+    code = gen_clause_code(source, {}, action);
     return [set_var(res_var, obj_false), execute_block(code)];
   }
 
 
-  [Instr^] gen_eval_code_for_set_comp_expr(Expr expr, Clause source, Maybe[Expr] maybe_sel_expr, EvalDestVar res_var)
+  [Instr^] gen_eval_code_for_set_comp_expr(Expr expr, Clause source, EvalDestVar res_var)
   {
     strm_var = svar(next_stream_var_id);
     action = eval_expr_and_add_to_set(expr, strm_var);
-    action = action(value(maybe_sel_expr), action) if maybe_sel_expr != nil;
-    code = gen_iter_code(source, {}, action, next_stream_var_id = nat(next_stream_var_id + 1));
+    code = gen_clause_code(source, {}, action, next_stream_var_id = nat(next_stream_var_id + 1));
     return nonempty([init_stream(strm_var)] & code & [mk_set_from_stream(res_var, strm_var)]);
   }
 
 
-  [Instr^] gen_eval_code_for_map_comp_expr(Expr key_expr, Expr value_expr, Clause source, Maybe[Expr] maybe_sel_expr, EvalDestVar res_var)
+  [Instr^] gen_eval_code_for_map_comp_expr(Expr key_expr, Expr value_expr, Clause source, EvalDestVar res_var)
   {
     key_strm_var   = svar(next_stream_var_id);
     value_strm_var = svar(nat(next_stream_var_id + 1));
 
     action = eval_exprs_and_add_to_map(key_expr, value_expr, key_strm_var, value_strm_var);
-    action = action(value(maybe_sel_expr), action) if maybe_sel_expr != nil;
-
-    code = gen_iter_code(source, {}, action, next_stream_var_id = nat(next_stream_var_id + 2));
+    code = gen_clause_code(source, {}, action, next_stream_var_id = nat(next_stream_var_id + 2));
 
     return nonempty(
       [init_stream(key_strm_var), init_stream(value_strm_var)] & code &

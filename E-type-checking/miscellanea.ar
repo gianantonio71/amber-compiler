@@ -58,7 +58,7 @@ using (TypeName => Type) typedefs
   // Here I just assume that the pattern can actually match objects of the specified type
   // If it cannot, the function is free to fail or return garbage.
   //## WOULD BE GOOD TO ADD AN ASSERTION THAT CHECKS THAT THE PATTERN CAN ACTUALLY MATCH THE TYPE
-  (Var => Type) generated_environment(Pattern ptrn, Type type):
+  (Var => Type) generate_env(Pattern ptrn, Type type):
     ptrn_symbol         = (),
     ptrn_float          = (),
     ptrn_empty_set      = (),
@@ -81,10 +81,10 @@ using (TypeName => Type) typedefs
       type_var()  = {type_tagged_obj},
       _           = tagged_obj_types(type);
 
-    envs = for (t <- tag_types)
-      if (may_match(tag_ptrn, t.tag_type) and may_match(obj_ptrn, t.obj_type)) {
-        generated_environment(tag_ptrn, t.tag_type) & generated_environment(obj_ptrn, t.obj_type)
-      };
+    envs = {
+      generate_env(tag_ptrn, t.tag_type) & generate_env(obj_ptrn, t.obj_type)
+      : t <- tag_types, may_match(tag_ptrn, t.tag_type), may_match(obj_ptrn, t.obj_type)
+    };
 
     return (v => union_superset(ts) : ts @ v <- merge_values(envs));
   }
@@ -93,14 +93,14 @@ using (TypeName => Type) typedefs
   (Var => Type) ptrn_var_gen_env(Var var, Pattern ptrn, Type type)
   {
     assert type == empty_type or may_match(ptrn, type);
-    return (var => type_pattern_intersection_superset(type, ptrn)) & generated_environment(ptrn, type);
+    return (var => type_pattern_intersection_superset(type, ptrn)) & generate_env(ptrn, type);
   }
 
 
   (Var => Type) ptrn_union_gen_env(Pattern+ ptrns, Type type)
   {
     matching_ptrns = {p : p <- ptrns, may_match(p, type)};
-    return (v => union_superset(ts) : ts @ v <- merge_values({generated_environment(p, type) : p <- matching_ptrns}));
+    return (v => union_superset(ts) : ts @ v <- merge_values({generate_env(p, type) : p <- matching_ptrns}));
   }
 }
 

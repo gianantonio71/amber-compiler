@@ -33,9 +33,9 @@ using
     cast_expr()       = cast_expr(desugar_expr(expr.expr, def_vars), syn_type_to_type(expr.type, nil)),
     accessor()        = desugar_accessor(expr.expr, expr.field, def_vars),
     accessor_test()   = desugar_accessor_test(expr.expr, expr.field, def_vars),
-    ex_qual()         = desugar_ex_qual_expr(expr.source, expr.sel_exprs, def_vars),
-    set_comp()        = desugar_set_comp_expr(expr.expr, expr.source, expr.sel_exprs, def_vars),
-    map_comp()        = desugar_map_comp_expr(expr.key_expr, expr.value_expr, expr.source, expr.sel_exprs, def_vars),
+    ex_qual()         = desugar_ex_qual_expr(expr.source, expr.cond, def_vars),
+    set_comp()        = desugar_set_comp_expr(expr.expr, expr.source, def_vars),
+    map_comp()        = desugar_map_comp_expr(expr.key_expr, expr.value_expr, expr.source, def_vars),
     seq_comp()        = desugar_seq_comp_expr(expr, def_vars),
     range_comp()      = desugar_range_comp_expr(expr, def_vars),
     if_expr()         = desugar_if_expr(expr, def_vars),
@@ -45,13 +45,12 @@ using
 
 
   Expr desugar_map_expr(SynMapExprEntry* entries, Var* def_vars) =
-    map_expr(
-      for (e <- entries) {(
+    map_expr({(
         key:   desugar_expr(e.key, def_vars),
         value: desugar_expr(e.value, def_vars),
         cond:  desugar_expr(e.cond, def_vars) if e.cond?
-      )}
-    );
+      ) : e <- entries
+    });
 
 
   Expr desugar_const_or_var_expr(Atom var_symb, Var* def_vars)
@@ -64,11 +63,11 @@ using
 
     auto_var = auto_var(var_symb);
     if (has_key(auto_vars_outputs, auto_var))
-      entries = for (output <- auto_vars_outputs[auto_var]) {(
+      entries = {(
         key:    object(output),
         value:  get_output(auto_var, output),
         cond:   test_output(auto_var, output)
-      )};
+      ) : output <- auto_vars_outputs[auto_var]};
       return map_expr(entries);
     ;
 
@@ -121,7 +120,7 @@ using
 
     AnyExpr desugar_named_arg_expr(SynExpr syn_expr, Var* outside_vars, [<var(Atom)>] cls_pars)
     {
-      vars = outside_vars - {v : fn_par() v <- outside_vars} & set(cls_pars) & set([fn_par(i) : i < length(cls_pars)]);
+      vars = outside_vars - {v : v <- outside_vars, fn_par() << v} & set(cls_pars) & set([fn_par(i) : i < length(cls_pars)]);
       expr = desugar_expr(syn_expr, vars);
       return if cls_pars == [] then expr else cls_expr(cls_pars, expr);
     }
@@ -168,39 +167,25 @@ using
     _                 = accessor_test(desugar_expr(expr, def_vars), field);
 
 
-  Expr desugar_ex_qual_expr([SynClause^] source, [SynExpr] sel_exprs, Var* def_vars)
+  Expr desugar_ex_qual_expr([SynClause^] source, SynExpr cond, Var* def_vars)
   {
     vs = def_vars & syn_new_vars(source);
-    se = [desugar_expr(e, vs) : e <- sel_exprs];
-    return ex_qual(
-      source:   mk_and_clause(source, def_vars),
-      sel_expr: mk_and_expr(se) if se != []
-    );
+    c  = desugar_expr(cond, vs);
+    return ex_qual(mk_and_clause(source, def_vars), c);
   }
 
 
-  Expr desugar_set_comp_expr(SynExpr expr, [SynClause^] source, [SynExpr] sel_exprs, Var* def_vars)
+  Expr desugar_set_comp_expr(SynExpr expr, [SynClause^] source, Var* def_vars)
   {
     vs = def_vars & syn_new_vars(source);
-    se = [desugar_expr(e, vs) : e <- sel_exprs];
-    return set_comp(
-      expr:     desugar_expr(expr, vs),
-      source:   mk_and_clause(source, def_vars),
-      sel_expr: mk_and_expr(se) if se != []
-    );
+    return set_comp(desugar_expr(expr, vs), mk_and_clause(source, def_vars));
   }
 
 
-  Expr desugar_map_comp_expr(SynExpr key_expr, SynExpr value_expr, [SynClause^] source, [SynExpr] sel_exprs, Var* def_vars)
+  Expr desugar_map_comp_expr(SynExpr key_expr, SynExpr value_expr, [SynClause^] source, Var* def_vars)
   {
     vs = def_vars & syn_new_vars(source);
-    se = [desugar_expr(e, vs) : e <- sel_exprs];
-    return map_comp(
-      key_expr:   desugar_expr(key_expr, vs),
-      value_expr: desugar_expr(value_expr, vs),
-      source:     mk_and_clause(source, def_vars),
-      sel_expr:   mk_and_expr(se) if se != []
-    );
+    return map_comp(desugar_expr(key_expr, vs), desugar_expr(value_expr, vs), mk_and_clause(source, def_vars));
   }
 
 
@@ -294,14 +279,15 @@ using
   //## REMEMBER TO CHECK THAT ALL VAR_PTRN() WITH A "BOUND" VARIABLE
   //## DON'T HAVE A PATTERN ASSOCIATED WITH THAT VARIABLE
   
-  Clause desugar_clause(SynClause clause, Var* def_vars):
-    in_clause()         = in_clause(desugar_ptrn(clause.ptrn), desugar_expr(clause.src, def_vars)),
-    map_in_clause()     = map_in_clause(desugar_ptrn(clause.key_ptrn), desugar_ptrn(clause.value_ptrn), desugar_expr(clause.src, def_vars)),
-    eq_clause()         = { assert not in(clause.var, def_vars);
-                            return in_clause(ptrn_var(clause.var, ptrn_any), set_expr({desugar_expr(clause.expr, def_vars)}));
-                          },
+  Clause desugar_clause(SynClause cls, Var* def_vars):
+    set_elem_clause()   = set_elem_clause(cls.var, desugar_expr(cls.src, def_vars)),
+    map_entry_clause()  = map_entry_clause(cls.key_var, cls.value_var, desugar_expr(cls.src, def_vars)),
+    seq_elem_clause()   = seq_elem_clause(cls.var, desugar_expr(cls.src, def_vars)),
     and_clause(cs?)     = mk_and_clause(cs, def_vars),
-    or_clause()         = or_clause(desugar_clause(clause.left, def_vars), desugar_clause(clause.right, def_vars));
+    or_clause()         = or_clause(desugar_clause(cls.left, def_vars), desugar_clause(cls.right, def_vars)),
+    match_clause()      = match_clause(desugar_ptrn(cls.ptrn), desugar_expr(cls.expr, def_vars)),
+    asgnm_clause()      = asgnm_clause(cls.var, desugar_expr(cls.expr, def_vars)),
+    filter_clause()     = filter_clause(desugar_expr(cls.cond, def_vars));
 
   ////////////////////////////////////////////////////////////////////////////////
 

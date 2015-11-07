@@ -33,9 +33,6 @@ type ExprSpecWFError    = already_def_var(Var),
                           not_a_scalar_var(name: Atom),
                           dupl_var_mult_asgnm(StdVar),
 
-                          clause_var_redef(SynClause),  //## THIS TYPE IS TOO LOOSE
-                          ptrn_var_redef(SynPtrn),      //## DITTO
-
                           ro_vars_asgnm(stmt: <SynAsgnStmt, SynProcCallStmt>, vars: Var+),
                           wrong_return(<SynReturnStmt, return_stmt>),
                           vars_redef(stmt: SynForStmt, vars: Var+),
@@ -121,9 +118,6 @@ ExprSpecWFError named_args_not_allowed(SynFnCall c)                     = named_
 ExprSpecWFError not_a_scalar_var(Atom a)                                = not_a_scalar_var(name: a);
 ExprSpecWFError dupl_var_mult_asgnm(StdVar v)                           = :dupl_var_mult_asgnm(v);
 
-ExprSpecWFError clause_var_redef(SynClause c)                           = :clause_var_redef(c);
-ExprSpecWFError ptrn_var_redef(SynPtrn p)                               = :ptrn_var_redef(p);
-
 ExprSpecWFError ro_vars_asgnm(<SynAsgnStmt, SynProcCallStmt> s, Var+ vs)  = ro_vars_asgnm(stmt: s, vars: vs);
 ExprSpecWFError wrong_return(<SynReturnStmt, return_stmt> s)              = :wrong_return(s);
 ExprSpecWFError vars_redef(SynForStmt s, Var+ vs)                         = vars_redef(stmt: s, vars: vs);
@@ -162,9 +156,6 @@ Any anchor_obj(ExprSpecWFError err):
   wrong_cls_call_arity()            = err.expr,
   named_args_not_allowed()          = err.expr,
   not_a_scalar_var()                = nil,
-
-  clause_var_redef(c?)              = c,
-  ptrn_var_redef(p?)                = p,
 
   ro_vars_asgnm()                   = err.stmt,
   wrong_return(s?)                  = s,
@@ -226,30 +217,6 @@ String user_name(SynParTypedef td)  = user_repr(td.name) & "/" & to_str(length(t
 String user_name(SynSgn s)          = match (s.name) named_arg(n?) = _str_(n);
 String user_name(SynFnDef fd)       = user_repr(fd.name) & "/" & to_str(arity(fd));
 String user_name(SynProcDef pd)     = match (pd.name) proc_symbol(n?) = capitalize(_str_(n), false);
-
-
-String user_repr(FnSymbol fn_symb):
-  fn_symbol(a?)         = _str_(a),
-  op_symbol(op?)        = user_repr(op),
-  nested_fn_symbol()    = user_repr(fn_symb.outer) & ":" & user_repr(fn_symb.inner),
-  unique_fn_symbol()    = {fail;};
-
-
-String user_repr(AutoSymbol): auto_symbol(a?) = _str_(a);
-
-
-String user_repr(Operator):
-  plus          = "(_+_)",
-  minus         = "(_-_)", //## BUG BUG BUG: THIS IS WRONG, THERE ARE TWO OPERATORS HERE, THE UNARY AND THE BINARY ONE
-  star          = "(_*_)",
-  slash         = "(_/_)",
-  exp           = "(_^_)",
-  amp           = "(_&_)",
-  lower         = "(_<_)",
-  greater       = "(_>_)",
-  lower_eq      = "(_<=_)",
-  greater_eq    = "(_>=_)",
-  brackets      = "(_[_])";
 
 
 String user_repr(ClsPar):
@@ -376,9 +343,6 @@ String plural(Any+ objs)    = if size(objs)   > 1 then "s" else "";
   wrong_cls_call_arity()      = ["Wrong number of arguments: " & user_repr(err.expr.name) & ", actual arity: " & to_str(err.exp_arity)],
   named_args_not_allowed()    = ["Closures cannot have named parameters: " & user_repr(err.expr.name)],
   not_a_scalar_var()          = ["Invalid use of closure variable: " & _str_(err.name)],
-
-  clause_var_redef(eq_clause() c?)  = ["Variable redefinition: " & user_repr(c.var)],
-  ptrn_var_redef(ptrn_var() p?)     = ["Variable redefinition: " & user_repr(p.var)],
 
   ro_vars_asgnm()             = ["Invalid assignment to read-only variable: " & user_repr(v) : v <- rand_sort(err.vars)],
   wrong_return(s?)            = [if s == return_stmt then "Return value required" else "Cannot return a value"],

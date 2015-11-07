@@ -557,7 +557,7 @@ using String filename
       set_cp        = build_set_cp_expr_ast(block_node(inner_match)),       // rule_set_cp_expr
       map_cp        = build_map_cp_expr_ast(inner_match),                   // rule_map_cp_expr
       seq_cp        = build_seq_cp_expr_ast(inner_match),                   // rule_seq_cp_expr
-      alt_cp        = build_alt_cp_expr_ast(inner_match),                   // rule_alt_cp_expr
+      // alt_cp        = build_alt_cp_expr_ast(inner_match),                   // rule_alt_cp_expr
       if_else       = build_if_else_expr_ast(inner_match),                  // rule_if_expr
       match_expr    = build_match_expr_ast(inner_match),                    // rule_match_expr
       proc          = build_proc_expr_ast(block_node(inner_match)),         // brace_rule(rep_rule(rule_ref_stmt, true))
@@ -621,31 +621,29 @@ using String filename
   SynExpr build_ex_qual_expr_ast(RuleMatch mtc)
   {
     nodes = rule_seq_nodes(block_node(mtc));
-    assert length(nodes) == 3;
+    assert length(nodes) == 4;
     clauses = [build_clause_ast(n) : n <- rep_rule_nodes(nodes[1])];
-    exprs = build_sel_expr_asts(nodes[2]);
-    return syn_ex_qual(nonempty(clauses), exprs);
+    expr = build_expr_ast(nodes[3]);
+    return syn_ex_qual(nonempty(clauses), expr);
   }
 
   SynExpr build_set_cp_expr_ast(RuleMatch mtc)
   {
     nodes = rule_seq_nodes(mtc);
-    assert length(nodes) == 4;
+    assert length(nodes) == 3;
     expr = build_expr_ast(nodes[0]);
     clauses = [build_clause_ast(n) : n <- rep_rule_nodes(nodes[2])];
-    exprs = build_sel_expr_asts(nodes[3]);
-    return syn_set_comp(expr, nonempty(clauses), exprs);
+    return syn_set_comp(expr, nonempty(clauses));
   }
 
   SynExpr build_map_cp_expr_ast(RuleMatch mtc)
   {
     nodes = rule_seq_nodes(block_node(mtc));
-    assert length(nodes) == 6;
+    assert length(nodes) == 5;
     key_expr = build_expr_ast(nodes[0]);
     value_expr = build_expr_ast(nodes[2]);
     clauses = [build_clause_ast(n) : n <- rep_rule_nodes(nodes[4])];
-    exprs = build_sel_expr_asts(nodes[5]);
-    return syn_map_comp(key_expr, value_expr, nonempty(clauses), exprs);
+    return syn_map_comp(key_expr, value_expr, nonempty(clauses));
   }
 
   <SynLCExpr, SynRCExpr> build_seq_cp_expr_ast(RuleMatch mtc)
@@ -693,26 +691,6 @@ using String filename
     ;
   }
 
-  SynExpr build_alt_cp_expr_ast(RuleMatch mtc)
-  {
-    nodes = rule_seq_nodes(mtc);
-    assert length(nodes) == 4;
-    clauses = [build_clause_ast(n) : n <- rep_rule_nodes(block_node(nodes[1]))];
-    if (nodes[2] == null_match)
-      exprs = [];
-    else
-      ns = rule_seq_nodes(nodes[2]);
-      exprs = [build_expr_ast(n) : n <- rep_rule_nodes(block_node(ns[1]))];
-    ;
-    expr_match = block_node(get_rule_match(nodes[3]));
-    if (get_rule_name(nodes[3]) == :set)
-      return syn_set_comp(build_expr_ast(expr_match), nonempty(clauses), exprs);
-    else
-      key_expr = build_expr_ast(rule_seq_node(expr_match, 0));
-      value_expr = build_expr_ast(rule_seq_node(expr_match, 2));
-      return syn_map_comp(key_expr, value_expr, nonempty(clauses), exprs);
-    ;
-  }
 
   SynExpr build_if_else_expr_ast(RuleMatch mtc)
   {
@@ -809,14 +787,6 @@ using String filename
     assert get_lowercase_id(nodes[0]) == :if;
     cond = build_expr_ast(nodes[1]);
     return (key: label, value: expr, cond: cond);
-  }
-
-  //## THIS FUNCTION IS EXTREMELY SPECIAL-PURPOSE, THINK OF A MORE SPECIFIC NAME.
-  [SynExpr] build_sel_expr_asts(RuleMatch mtc)
-  {
-    return [] if mtc == null_match;
-    nodes = rule_seq_nodes(mtc);
-    return [build_expr_ast(n) : n <- rep_rule_nodes(nodes[1])];
   }
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -1053,66 +1023,62 @@ using String filename
 
   SynClause build_clause_ast(RuleMatch mtc)
   {
-    nodes = rule_seq_nodes(get_rule_match(mtc));
-    if (get_rule_name(mtc) == :eq)
-      var  = var(get_lowercase_id(get_rule_match(mtc), 0));
-      expr = build_expr_ast(rule_seq_node(get_rule_match(mtc), 2));
-      return attach_src_code_info(syn_eq_clause(var, expr), mtc);
-    ;
-    assert get_rule_name(mtc) == :in;
-    ptrn = build_clause_ptrn_ast(nodes[0]);
-    expr = build_expr_ast(nodes[3]);
-    return attach_src_code_info(syn_in_clause(ptrn, expr), mtc) if nodes[1] == null_match;
-    nodes = rule_seq_nodes(nodes[1]);
-    key_ptrn = build_clause_ptrn_ast(nodes[1]);
-    return attach_src_code_info(syn_map_in_clause(key_ptrn, ptrn, expr), mtc);
+    inner_mtc = get_rule_match(mtc);
+    clause = match (get_rule_name(mtc))
+      in      = build_set_elem_or_map_entry_clause_ast(inner_mtc),
+      asgnm   = build_asgnm_clause_ast(inner_mtc),
+      match   = build_match_clause_ast(inner_mtc),
+      filter  = syn_filter_clause(build_expr_ast(inner_mtc));
+    return attach_src_code_info(clause, mtc);
   }
 
-  ////////////////////////////////////////////////////////////////////////////////
 
-  SynPtrn build_clause_ptrn_ast(RuleMatch mtc)
-  {
-    inner_match = get_rule_match(mtc);
-    ptrn = match (get_rule_name(mtc))
-      // atomic_rule(underscore)
-      any       = ptrn_any,
-      // rule_seq([atomic_rule(lowercase_id), empty_block_rule(parenthesis), atomic_rule(lowercase_id)])
-      tag_var   = syn_ptrn_var(var(get_lowercase_id(inner_match, 2)), syn_ptrn_tag_obj(get_lowercase_id(inner_match, 0))),
-      // rule_seq([atomic_rule(lowercase_id), empty_block_rule(parenthesis)])
-      tag_only  = syn_ptrn_tag_obj(get_lowercase_id(inner_match, 0)),
-      // rule_seq([atomic_rule(lowercase_id), par_rule(atomic_rule(lowercase_id))])
-      tag_obj   = build_tag_obj_clause_ptrn_ast(inner_match),
-      // atomic_rule(lowercase_id)
-      var       = syn_ptrn_var(var(get_lowercase_id(inner_match)), ptrn_any);
-
-    return attach_src_code_info(ptrn, mtc);
-  }
-
-  SynPtrn build_tag_obj_clause_ptrn_ast(RuleMatch mtc)
+  SynClause build_set_elem_or_map_entry_clause_ast(RuleMatch mtc)
   {
     nodes = rule_seq_nodes(mtc);
-    tag_symb = get_lowercase_id(nodes[0]);
-    var_symb = get_lowercase_id(block_node(nodes[1]));
-    return syn_ptrn_tag_obj(ptrn_symbol(tag_symb), syn_ptrn_var(var(var_symb), ptrn_any));
+    assert length(nodes) == 4;
+    var = var(get_lowercase_id(nodes[0]));
+    expr = build_expr_ast(nodes[3]);
+    return syn_set_elem_clause(var, expr) if nodes[1] == null_match;
+    other_var = var(get_lowercase_id(rule_seq_node(nodes[1], 1)));
+    return syn_map_entry_clause(other_var, var, expr);
+  }
+
+  SynClause build_asgnm_clause_ast(RuleMatch mtc)
+  {
+    nodes = rule_seq_nodes(mtc);
+    assert length(nodes) == 3;
+    var = var(get_lowercase_id(nodes[0]));
+    expr = build_expr_ast(nodes[2]);
+    return syn_asgnm_clause(var, expr);
+  }
+
+  SynClause build_match_clause_ast(RuleMatch mtc)
+  {
+    nodes = rule_seq_nodes(mtc);
+    assert length(nodes) == 3;
+    ptrn = build_ptrn_ast(nodes[0]);
+    expr = build_expr_ast(nodes[2]);
+    return syn_match_clause(ptrn, expr);
   }
 
   ////////////////////////////////////////////////////////////////////////////////
 
-  SynPtrn build_switch_ptrn_ast(RuleMatch mtc)  //## build_try_ptrn_ast? build_match_ptrn_ast?
+  SynPtrn build_ptrn_ast(RuleMatch mtc)
   {
     nodes = rule_seq_nodes(mtc);
     ptrn_match = nodes[0];
     var_match = nodes[1];
-    ptrn = build_switch_ptrn_ast(get_rule_name(ptrn_match), get_rule_match(ptrn_match));
+    ptrn = build_ptrn_ast(get_rule_name(ptrn_match), get_rule_match(ptrn_match));
     ptrn = syn_ptrn_var(var(get_lowercase_id(var_match, 0)), ptrn) if var_match != null_match;
     return attach_src_code_info(ptrn, mtc);
   }
 
-  SynPtrn build_switch_ptrn_ast(Atom name, RuleMatch mtc):  //## build_try_ptrn_ast? build_match_ptrn_ast?
+  SynPtrn build_ptrn_ast(Atom name, RuleMatch mtc):
     type          = syn_ptrn_type(build_type_ast(mtc)),                     //rule_type
     tag_only      = syn_ptrn_tag_obj(get_lowercase_id(mtc, 0)),             //rule_seq([atomic_rule(lowercase_id), empty_block_rule(parenthesis)])
-    tag_obj       = build_switch_ptrn_tag_obj_ast(mtc),                     //rule_seq([atomic_rule(lowercase_id), par_rule(rule_ref_ptrn)])
-    tag_obj_any   = build_switch_ptrn_tag_obj_any_ast(mtc),                 //rule_seq([atomic_rule(lowercase_id), atomic_rule(at), atomic_rule(lowercase_id)])
+    tag_obj       = build_ptrn_tag_obj_ast(mtc),                            //rule_seq([atomic_rule(lowercase_id), par_rule(rule_ref_ptrn)])
+    tag_obj_any   = build_ptrn_tag_obj_any_ast(mtc),                        //rule_seq([atomic_rule(lowercase_id), atomic_rule(at), atomic_rule(lowercase_id)])
     var           = syn_ptrn_var(var(get_lowercase_id(mtc, 0)), ptrn_any),  //rule_seq([atomic_rule(lowercase_id), atomic_rule(question_mark)])
     atom          = ptrn_symbol(get_lowercase_id(mtc)),                     //atomic_rule(lowercase_id)
     integer       = syn_ptrn_integer(get_integer(mtc, 1)),                  //rule_seq([optional_rule(atomic_rule(minus)), atomic_rule(integer)])
@@ -1124,15 +1090,15 @@ using String filename
     set           = syn_ptrn_set,                                           //brace_rule(atomic_rule(triple_dot))
     map           = syn_ptrn_map;                                           //par_rule(atomic_rule(triple_dot))
 
-  SynPtrn build_switch_ptrn_tag_obj_ast(RuleMatch mtc)
+  SynPtrn build_ptrn_tag_obj_ast(RuleMatch mtc)
   {
     nodes = rule_seq_nodes(mtc);
     assert length(nodes) == 2;
     tag_ptrn = ptrn_symbol(get_lowercase_id(nodes[0]));
-    return syn_ptrn_tag_obj(tag_ptrn, build_switch_ptrn_ast(block_node(nodes[1])));
+    return syn_ptrn_tag_obj(tag_ptrn, build_ptrn_ast(block_node(nodes[1])));
   }
 
-  SynPtrn build_switch_ptrn_tag_obj_any_ast(RuleMatch mtc)
+  SynPtrn build_ptrn_tag_obj_any_ast(RuleMatch mtc)
   {
     nodes = rule_seq_nodes(mtc);
     assert length(nodes) == 3;
@@ -1148,7 +1114,7 @@ using String filename
   {
     nodes = rule_seq_nodes(mtc);
     assert length(nodes) == 3;
-    ptrns = [build_switch_ptrn_ast(n) : n <- rep_rule_nodes(nodes[0])];
+    ptrns = [build_ptrn_ast(n) : n <- rep_rule_nodes(nodes[0])];
     expr = build_expr_ast(nodes[2]);
     return syn_case(nonempty(ptrns), expr);
   }
