@@ -1,6 +1,7 @@
-[PrgDecl] build_amber_file_ast(RuleMatch file, String filename) = [build_declaration_ast(m, filename=filename) : m <- rep_rule_nodes(file)];
+[PrgDecl] build_amber_file_ast(RuleMatch file, String filename, [[Nat]] lines) =
+  [build_declaration_ast(m, filename=filename, lines=lines) : m <- rep_rule_nodes(file)];
 
-using String filename
+using String filename, [[Nat]] lines
 {
   PrgDecl build_declaration_ast(RuleMatch mtc)
   {
@@ -955,7 +956,21 @@ using String filename
     return syn_if_stmt(cond, [fail_stmt]);
   }
 
-  SynStmt build_assert_stmt_ast(RuleMatch mtc) = syn_assert_stmt(build_expr_ast(rule_seq_node(mtc, 1)));
+  SynStmt build_assert_stmt_ast(RuleMatch mtc)
+  {
+    cond_node = rule_seq_node(mtc, 1);
+    cond = build_expr_ast(cond_node);
+    start_loc, end_loc = try_value(source_file_location(cond_node));
+    start_line, start_col = start_loc;
+    end_line, end_col = end_loc;
+    if (start_line == end_line)
+      cond_line = lines[start_line-1];
+      cond_text = just(string(subseq(cond_line, start_col-1, end_col-start_col+1)));
+    else
+      cond_text = nil;
+    ;
+    return syn_assert_stmt(cond, filename, start_line, cond_text);
+  }
 
   SynStmt build_print_stmt_ast(RuleMatch mtc)
   {

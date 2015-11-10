@@ -35,7 +35,9 @@ using
   Nat next_vector_var_id,
   Nat next_stream_var_id,
 
-  (AutoVar => AutoSymbol) auto_vars_types;
+  (AutoVar => AutoSymbol) auto_vars_types,
+
+  Bool ignore_assertions;
 
 
   (EvalVar, Nat) pick_temp_var(EvalDestVar res_var) =
@@ -796,11 +798,10 @@ using
     break_stmt                = [break_loop],
     fail_stmt                 = [terminate],
     loop_stmt(ss?)            = [repeat(gen_code(ss, res_var))],
-    assert_stmt(e?)           = {info = gen_eval_info(e); return nonempty(info.eval_code & [runtime_check(info.expr)]);},
-    // assert_stmt(e?)           = [no_op],
     print_stmt(e?)            = {info = gen_eval_info(e); return nonempty(info.eval_code & [print_obj(info.expr)]);},
     return_stmt               = [exit_block],
-    return_stmt(e?)           = gen_code_for_ret_stmt(e, res_var),
+    return_stmt(e?)           = nonempty(gen_eval_code(e, res_var) & [exit_block]),
+    assert_stmt()             = gen_code_for_assert_stmt(stmt.cond, stmt.file, stmt.line, stmt.text),
     let_stmt()                = gen_code_for_let_stmt(stmt.asgnms, stmt.body, res_var),
     assignment_stmt()         = gen_code_for_assignment_stmt(stmt.vars, stmt.value, res_var),
     imp_update_stmt()         = gen_code_for_imp_update_stmt(stmt.obj, stmt.idx, stmt.value, res_var),
@@ -811,10 +812,12 @@ using
     auto_input_update_stmt()  = gen_code_for_auto_input_update_stmt(stmt.var, stmt.inputs);
 
 
-
-  [Instr^] gen_code_for_ret_stmt(Expr expr, EvalDestVar res_var)
+  [Instr^] gen_code_for_assert_stmt(Expr cond, String file, NzNat line, Maybe[String] text)
   {
-    return nonempty(gen_eval_code(expr, res_var) & [exit_block]);
+    return [no_op] if ignore_assertions; //## WHY RETURNING [no_op] INSTEAD OF JUST []?
+    info = gen_eval_info(cond);
+    vs = {v : v <- extern_vars(cond), v :: <StdVar, NamedArg>};
+    return nonempty(info.eval_code & [runtime_check(info.expr, file, line, text, vs)]);
   }
 
 

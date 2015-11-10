@@ -451,7 +451,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
     pop_call_info         = mk_call("pop_call_info", []),
 
-    runtime_check()       = mk_call("runtime_check", [instr.cond]),
+    runtime_check()       = compile_runtime_check_to_c(instr.cond, instr.file, instr.line, instr.text, instr.vars),
 
     branch()              = compile_branch_to_c(instr.cond, instr.when_true, instr.when_false, block_id),
 
@@ -466,6 +466,8 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     set_input()           = [input_set_method_name(instr.type, instr.input) & "(&" & to_c_var_name(instr.var) & ", " & to_c_expr(instr.value) & ");"],
 
     update_inputs()       = [update_method_name(instr.type) & "(&" & to_c_var_name(instr.var) & ", env);"];
+
+
 
 
   [String] compile_to_c(FloatExpr expr, ObjVar var):
@@ -642,6 +644,23 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     code = ["{"] & indent_lines(code) & ["}"];
 
     return code;
+  }
+
+
+  [String] compile_runtime_check_to_c(AtomicExpr cond, String file, NzNat line, Maybe[String] text, <StdVar, NamedArg>* vars)
+  {
+    text_arg = if text != nil then quote(value(text)) else "0";
+    header = [
+      "if (" & to_c_expr(cond) & " == False_S)",
+      "{",
+      "  print_assertion_failed_msg(" & quote(file) & ", " & to_str(line) & ", " & text_arg & ");"
+    ];
+    vars_content = ["  dump_var(" & quote(_str_(name(v))) & ", " & to_c_var_name(v) & ");" : v <- rand_sort(vars)];
+    footer = [
+      "  hard_fail(0);",
+      "}"
+    ];
+    return header & vars_content & footer;
   }
 
   ///////////////////////////////////////////////////////////////////////////////

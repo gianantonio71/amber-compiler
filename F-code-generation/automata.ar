@@ -29,7 +29,7 @@ AutoNodeType cond_node(Nat id, Expr c, Maybe[(id: Nat, trigger: Bool)] p, Update
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Block gen_auto_code(Automaton automaton)
+Block gen_auto_code(Automaton automaton, CompilationOptions options)
 {
   nodes = gen_auto_nodes(automaton);
   fail if nodes == []; //## BUG BUG BUG
@@ -45,7 +45,7 @@ Block gen_auto_code(Automaton automaton)
   node_count_var = ivar(2);
   curr_node_var = ivar(3);
 
-  let (nodes_idxs = nodes_idxs, nodes_levels = nodes_levels, next_int_var_id = 4)
+  let (nodes_idxs = nodes_idxs, nodes_levels = nodes_levels, next_int_var_id = 4, options = options)
     nodes_code = [gen_node_code(n, l, ds) : l, ds, n <- nodes];
   ;
 
@@ -82,13 +82,16 @@ Block gen_auto_code(Automaton automaton)
   param_deps = (a => {match (v) var(n?) = n : v <- extern_vars(e)} : e @ a <- automaton.params);
   assert not (? ts @ s <- param_deps, t <- ts : not in(t, param_ids));
   sorted_params = topological_sort(param_deps);
-  params_init_code = [[gen_eval_code(automaton.params[p], memb_var(p), 0, 0, 0) : p <- rand_sort(ps)] : ps <- sorted_params];
+  let (options = options)
+    params_init_code = [[gen_eval_code(automaton.params[p], memb_var(p), 0, 0, 0) : p <- rand_sort(ps)] : ps <- sorted_params];
+  ;
 
   state_vars_deps = (a => {match (v) var(n?) = n : v <- extern_vars(s.init_value)} - param_ids : s @ a <- automaton.state);
   assert not (? ts @ s <- state_vars_deps, t <- ts : not in(t, state_var_ids));
   sorted_state_vars = topological_sort(state_vars_deps);
-  state_vars_init_code = [[gen_eval_code(automaton.state[sv].init_value, memb_var(sv), 0, 0, 0) : sv <- rand_sort(svs)] : svs <- sorted_state_vars];
-
+  let (options = options)
+    state_vars_init_code = [[gen_eval_code(automaton.state[sv].init_value, memb_var(sv), 0, 0, 0) : sv <- rand_sort(svs)] : svs <- sorted_state_vars];
+  ;
 
   init_code = join([join(cfs) : cfs <- params_init_code & state_vars_init_code]) &
               [clear_var(memb_var(a))  : a <- rand_sort(input_ids & rule_ids)] &
@@ -133,7 +136,7 @@ Block gen_auto_code(Automaton automaton)
 
 ////////////////////////////////////////////////////////////////////////////////
 
-using (<Atom, Nat> => Nat) nodes_idxs, (<Atom, Nat> => Nat) nodes_levels, Nat next_int_var_id
+using (<Atom, Nat> => Nat) nodes_idxs, (<Atom, Nat> => Nat) nodes_levels, Nat next_int_var_id, CompilationOptions options
 {
   [Instr] gen_node_code(AutoNodeType node_type, Nat level, <Atom, Nat>* dep_nodes)
   {
@@ -277,21 +280,24 @@ using (<Atom, Nat> => Nat) nodes_idxs, (<Atom, Nat> => Nat) nodes_levels, Nat ne
   }
 }
 
-
-[Instr^] gen_eval_code(Expr expr, EvalDestVar res_var, Nat next_obj_var_id, Nat next_int_var_id, Nat next_bool_var_id) =
-  gen_eval_code(
-    expr,
-    res_var,
-    next_obj_var_id = next_obj_var_id,
-    next_int_var_id = next_int_var_id,
-    next_bool_var_id = next_bool_var_id,
-    next_set_it_var_id = 0,
-    next_seq_it_var_id = 0,
-    next_map_it_var_id = 0,
-    next_vector_var_id = 0,
-    next_stream_var_id = 0,
-    auto_vars_types = ()
-  );
+using CompilationOptions options
+{
+  [Instr^] gen_eval_code(Expr expr, EvalDestVar res_var, Nat next_obj_var_id, Nat next_int_var_id, Nat next_bool_var_id) =
+    gen_eval_code(
+      expr,
+      res_var,
+      next_obj_var_id     = next_obj_var_id,
+      next_int_var_id     = next_int_var_id,
+      next_bool_var_id    = next_bool_var_id,
+      next_set_it_var_id  = 0,
+      next_seq_it_var_id  = 0,
+      next_map_it_var_id  = 0,
+      next_vector_var_id  = 0,
+      next_stream_var_id  = 0,
+      auto_vars_types     = (),
+      ignore_assertions   = options.ignore_assertions
+    );
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
