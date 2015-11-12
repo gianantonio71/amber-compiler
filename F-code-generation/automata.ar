@@ -1,4 +1,3 @@
-
 type AutoNodeType = input(Atom),
                     derived(id: Atom, expr: Expr),
                     state(id: Atom, exprs: [Expr]),
@@ -34,18 +33,29 @@ Block gen_auto_code(Automaton automaton, CompilationOptions options)
   nodes = gen_auto_nodes(automaton);
   fail if nodes == []; //## BUG BUG BUG
 
+  change_tracked_members = {a : v <- change_tracked_memb_vars(automaton), memb_var(a?) << v};
+
   nodes_idxs = merge([(get_id(t) => i) : unused_var_1, unused_var_2, t @ i <- nodes]);
   nodes_levels = merge([(get_id(t) => l) : l, unused_var_1, t <- nodes]);
 
   levels_count = nz_nat(max(nonempty(values(nodes_levels))) + 1);
   max_level_size = nat(max(nonempty(values(bag([l : l, unused_var_1, unused_var_2 <- nodes])))));
 
+  param_ids = keys(automaton.params);
+  input_ids = keys(automaton.inputs);
+  state_var_ids = keys(automaton.state);
+  rule_ids = keys(automaton.rules);
+  cond_nodes = {t : t <- set([t : unused_var_1, unused_var_2, t <- nodes]), cond_node() << t}; //## BIT UGLY.
+  cond_ids = {c.id : c <- cond_nodes};
+  nested_cond_ids = {c.id : c <- cond_nodes, c.parent != nil};
+
   lev_var = ivar(0);
   node_idx_var = ivar(1);
   node_count_var = ivar(2);
   curr_node_var = ivar(3);
 
-  let (nodes_idxs = nodes_idxs, nodes_levels = nodes_levels, next_int_var_id = 4, options = options)
+  let (nodes_idxs = nodes_idxs, nodes_levels = nodes_levels, change_tracked_members = change_tracked_members,
+       nested_cond_ids = nested_cond_ids, next_int_var_id = 4, options = options)
     nodes_code = [gen_node_code(n, l, ds) : l, ds, n <- nodes];
   ;
 
@@ -66,16 +76,14 @@ Block gen_auto_code(Automaton automaton, CompilationOptions options)
     ])
   ];
 
-  param_ids = keys(automaton.params);
-  input_ids = keys(automaton.inputs);
-  state_var_ids = keys(automaton.state);
-  rule_ids = keys(automaton.rules);
-  cond_ids = {t.id : t <- set([t : unused_var_1, unused_var_2, t <- nodes]), cond_node() << t}; //## BIT UGLY.
+  update_code = update_code & [set_bvar(has_changed_var(a), false) : a <- rand_sort(change_tracked_members)];
+  update_code = update_code & gen_has_changed_reset_code(nodes, options = options);
 
   memb_obj_vars  = {memb_var(a) : a <- param_ids & input_ids & state_var_ids & rule_ids} & {new_input(a) : a <- input_ids};
   memb_int_vars  = {update_source_var(a) : a <- state_var_ids};
-  memb_bool_vars = {cond_expr_up_to_date_var(n) : n <- cond_ids} &
-                   {cond_expr_value_var(n) : n <- cond_ids} &
+  memb_bool_vars = {has_changed_var(a) : a <- change_tracked_members} &
+                   {cond_expr_up_to_date_var(n) : n <- nested_cond_ids} &
+                   {cond_expr_value_var(n) : n <- nested_cond_ids} &
                    {cond_value_var(n) : n <- cond_ids} &
                    {marked_for_update_var(id) : id <- param_ids & input_ids & state_var_ids & rule_ids & cond_ids};
 
@@ -136,8 +144,61 @@ Block gen_auto_code(Automaton automaton, CompilationOptions options)
 
 ////////////////////////////////////////////////////////////////////////////////
 
-using (<Atom, Nat> => Nat) nodes_idxs, (<Atom, Nat> => Nat) nodes_levels, Nat next_int_var_id, CompilationOptions options
+using CompilationOptions options
 {
+  [Instr] gen_has_changed_reset_code([(Nat, <Atom, Nat>*, AutoNodeType)] nodes)
+  {
+    code = [];
+    changed_tracked_parent_ids = {};
+    for (l, ds, n : nodes)
+      if (n :: <cond_node(id: Nat, cond: Expr, parent: Maybe[(id: Nat, trigger: Bool)], updates: UpdateInfo*)>) //## BAD BAD BAD
+        parent = n.parent;
+        parent_is_change_tracked = parent != nil and in(parent.id, changed_tracked_parent_ids);
+        is_change_tracked = parent_is_change_tracked or change_tracked_memb_vars_in_expr(n.cond) != {};
+        if (is_change_tracked)
+          code = code & gen_has_changed_reset_code(n.id, n.cond, parent);
+          changed_tracked_parent_ids = changed_tracked_parent_ids & {n.id};
+        ;
+      ;
+    ;
+    return code;
+  }
+
+
+  [Instr] gen_has_changed_reset_code(Nat id, Expr cond, Maybe[(id: Nat, trigger: Bool)] parent)
+  {
+    l0 = lvar(0);
+    id_var = cond_value_var(id);
+    cv_var = cond_expr_value_var(id);
+
+    code = [];
+
+    // If the condition contains has-changed variables, then we refresh it
+    is_change_tracked = change_tracked_memb_vars_in_expr(cond) != {};
+    if (is_change_tracked)
+      target_var = if parent != nil then cv_var else id_var;
+      code = gen_eval_code(cond, l0, 1, 0, 0) & [set_bvar(target_var, inline_is_eq(l0, obj_true))];
+    ;
+
+    // Refreshing the overall condition, if this is a nested condition
+    code = code & [set_bvar(id_var, and([cv_var, is_eq(cond_value_var(parent.id), parent.trigger)]))] if parent != nil;
+
+    return code;
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+using
+{
+  (<Atom, Nat> => Nat)  nodes_idxs,
+  (<Atom, Nat> => Nat)  nodes_levels,
+  Atom*                 change_tracked_members,
+  Nat*                  nested_cond_ids,
+  Nat                   next_int_var_id,
+  CompilationOptions    options;
+
+
   [Instr] gen_node_code(AutoNodeType node_type, Nat level, <Atom, Nat>* dep_nodes)
   {
     code = match (node_type)
@@ -160,11 +221,16 @@ using (<Atom, Nat> => Nat) nodes_idxs, (<Atom, Nat> => Nat) nodes_levels, Nat ne
     l0 = lvar(0);
     l1 = lvar(1);
     memb_var = memb_var(id);
+    body = [
+      set_var(memb_var, l0),
+      set_bvar(has_changed_var(id), true) if in(id, change_tracked_members)
+    ];
+    body = body & [mark_for_update(n, false) : n <- rand_sort(dep_nodes)];
     return [
       get_new_input(l0, id),
       clear_var(new_input(id)),
       set_var(l1, memb_var),
-      do_if_not(is_eq(l0, l1), [set_var(memb_var, l0)] & [mark_for_update(n, false) : n <- rand_sort(dep_nodes)])
+      do_if_not(is_eq(l0, l1), body)
     ];
   }
 
@@ -175,7 +241,11 @@ using (<Atom, Nat> => Nat) nodes_idxs, (<Atom, Nat> => Nat) nodes_levels, Nat ne
     nv_var = lvar(0);
     eval_code = gen_eval_code(expr, nv_var, 1, next_int_var_id, 0);
     cond = neg(is_eq(var, nv_var));
-    body = [set_var(var, nv_var)] & [mark_for_update(n, false) : n <- rand_sort(dep_nodes)];
+    body = [
+      set_var(var, nv_var),
+      set_bvar(has_changed_var(id), true) if in(id, change_tracked_members)
+    ];
+    body = body & [mark_for_update(n, false) : n <- rand_sort(dep_nodes)];
     return [eval_code | do_if(cond, body)];
   }
 
@@ -186,7 +256,11 @@ using (<Atom, Nat> => Nat) nodes_idxs, (<Atom, Nat> => Nat) nodes_levels, Nat ne
     nv_var = lvar(0);
     eval_instr = switch_on_nat(update_source_var(id), [gen_eval_code(e, nv_var, 1, next_int_var_id, 0) : e <- nonempty(exprs)]);
     cond = neg(is_eq(var, nv_var));
-    body = [set_var(var, nv_var)] & [mark_for_update(n, false) : n <- rand_sort(dep_nodes)];
+    body = [
+      set_var(var, nv_var),
+      set_bvar(has_changed_var(id), true) if in(id, change_tracked_members)
+    ];
+    body = body & [mark_for_update(n, false) : n <- rand_sort(dep_nodes)];
     return [eval_instr, do_if(cond, body)];
   }
 
@@ -212,7 +286,7 @@ using (<Atom, Nat> => Nat) nodes_idxs, (<Atom, Nat> => Nat) nodes_levels, Nat ne
       // else
       //   assert <id> == true
       //   // b0 = true --- Assuming here <id> == true //## IS THIS AT ALL TRUE?
-      //   b0 = <id> != false = <id> == true = <id>
+      //   b0 = <id> == true = <id> != false = <id>
       //   <id> = false
 
       cond_refresh_code = gen_eval_code(cond, l0, 1, next_int_var_id, 2) & [
@@ -275,7 +349,7 @@ using (<Atom, Nat> => Nat) nodes_idxs, (<Atom, Nat> => Nat) nodes_levels, Nat ne
       set_ivar(idx_var, count_var),
       set_ivar(nodes_var, index),
       set_ivar(count_var, add(idx_var, 1)),
-      set_bvar(cond_expr_up_to_date_var(node_id), false) if node_id :: Nat and not from_cond
+      set_bvar(cond_expr_up_to_date_var(node_id), false) if node_id :: Nat and not from_cond and in(node_id, nested_cond_ids)
     ]);
   }
 }
