@@ -135,7 +135,14 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     init_decl = [init_sgn & ";"];
     init_proc = [init_sgn, "{"] & indent_lines(init_body) &
                 //## BETTER: memset(self->update_count, 0, sizeof(self->update_count));
-                ["  int i;", "  for (i=0 ; i < " & levels_str & " ; i++)", "    self->update_count[i] = 0;", "}"];
+                [ "  int i;",
+                  "  self->update_count[0] = " & to_text(length(block.inputs)) & ";",
+                  "  for (i=1 ; i < " & levels_str & " ; i++)",
+                  "    self->update_count[i] = 0;",
+                  "  for (i=0 ; i < " & to_text(length(block.inputs)) & " ; i++)",
+                  "    self->nodes_to_update[0][i] = i;",
+                  "}"
+                ];
 
     cleanup_body = compile_to_c(block.cleanup_code, nil);
     cleanup_sgn = "void " & cleanup_method_name(block.name) & "(" & name_str & " *self)";
@@ -147,15 +154,19 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     update_decl = [update_sgn & ";"];
     update_proc = [update_sgn, "{"] & indent_lines(update_body) & ["}"];
 
+    queue_methods_decls_and_impls = {gen_queue_update_method(block.name, id, body) : body @ id <- block.queue_update_code};
+    queue_methods_decls, queue_methods_impls = unzip(rand_sort(queue_methods_decls_and_impls));
+    queue_methods_impls = join(intermix(queue_methods_impls, ["", ""]));
+
     input_decls, input_impls = unzip([gen_input_setter(block.name, id, i) : id @ i <- block.inputs]);
     input_impls = join(intermix(input_impls, ["", ""]));
 
     output_decls, output_impls = unzip([gen_output_getter(block.name, o) : o <- rand_sort(block.outputs)]);
     output_impls = join(intermix(output_impls, ["", ""]));
 
-    header = join(intermix([decl, init_decl, update_decl, cleanup_decl, input_decls, output_decls], ["", ""]));
+    header = join(intermix([decl, init_decl, update_decl, cleanup_decl, input_decls, output_decls, queue_methods_decls], ["", ""]));
 
-    body = join(intermix([init_proc, update_proc, cleanup_proc, input_impls, output_impls], ["", ""]));
+    body = join(intermix([init_proc, update_proc, cleanup_proc, input_impls, output_impls, queue_methods_impls], ["", ""]));
 
     return (body: body, header: header);
 
@@ -170,13 +181,13 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
         "{",
         "  if (" & marked_for_update_var & ")",
         "  {",
-        "    internal_fail_if(" & new_input_var_str & " == null_obj);",
+        // "    internal_fail_if(" & new_input_var_str & " == null_obj);",
         "    release(" & new_input_var_str & ");",
         "    " & new_input_var_str & " = new_val;",
         "  }",
         "  else",
         "  {",
-        "    internal_fail_if(" & new_input_var_str & " != null_obj);",
+        // "    internal_fail_if(" & new_input_var_str & " != null_obj);",
         "    " & new_input_var_str & " = new_val;",
         "    int idx = self->update_count[0];",
         "    self->nodes_to_update[0][idx] = " & to_str(node_idx) & ";",
@@ -187,6 +198,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
       ];
       return (sgn & ";", body);
     }
+
 
     (String, [String]) gen_output_getter(AutoSymbol block_name, Atom output_name)
     {
@@ -200,6 +212,25 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
         "}"
       ];
       return (sgn & ";", body);
+    }
+
+
+    (String, [String]) gen_queue_update_method(AutoSymbol block_name, Atom memb_id, [Instr] body)
+    {
+      method_name = queue_update_method_name(memb_id, block_name);
+      sgn = "void " & method_name & "(" & to_c_name(block_name) & " *self)";
+      body_text = gen_vars_decls(body) & [""] & compile_to_c(body, nil);
+      return (sgn & ";", [sgn, "{"] & indent_lines(body_text) & ["}"]);
+    }
+
+
+    (String, [String]) gen_queue_update_method(AutoSymbol block_name, Nat cond_id, [Instr] body)
+    {
+      method_name = queue_update_method_name(cond_id, block_name);
+      inval_cache_var_name = to_c_var_name(invalidate_cond_expr_cache);
+      sgn = "void " & method_name & "(" & to_c_name(block_name) & " *self, bool " & inval_cache_var_name & ")";
+      body_text = gen_vars_decls(body) & [""] & compile_to_c(body, nil);
+      return (sgn & ";", [sgn, "{"] & indent_lines(body_text) & ["}"]);
     }
   }
 
@@ -403,7 +434,10 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
     set_rc_var()          = compile_to_c(instr.value, instr.var),
 
-    clear_var(v?)         = [to_c_var_name(v) & " = null_obj;"],
+    init_memb_var(v?)     = [to_c_var_name(v) & " = blank_obj;"],
+
+    clear_memb_var(v?)    = [to_c_var_name(v) & " = null_obj;"],
+    clear_loc_var(v?)     = [to_c_var_name(v) & " = null_obj;"],
 
     terminate             = ["fail();"],
 
@@ -462,6 +496,10 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
                                 ClsVar      = {fail;}, //## THIS SHOULD NOT BE POSSIBLE FOR NOW
                                 bound_cls() = compile_cls_scope_to_c(instr.var, bound_cls.cls, bound_cls.env, instr.body, block_id);
                             },
+
+    queue_update()        = [queue_update_method_name(instr.id, instr.type) & "(self);"],
+
+    queue_cond_update()   = [queue_update_method_name(instr.id, instr.type) & "(self, " & to_c_expr(instr.inval_cache) & ");"],
 
     set_input()           = [input_set_method_name(instr.type, instr.input) & "(&" & to_c_var_name(instr.var) & ", " & to_c_expr(instr.value) & ");"],
 
@@ -759,6 +797,8 @@ using String typesymb2name(TypeSymbol)
 
     memb_is_def(v?)       = parentesize(to_c_var_name(v) & " != null_obj", parentesised),
 
+    loc_var_is_def(v?)    = parentesize(to_c_var_name(v) & " != null_obj", parentesised),
+
     output_is_def()       = parentesize(
                               to_c_var_name(expr.var) & "." & to_c_var_name(memb_var(expr.output), true) & " != null_obj",
                               parentesised
@@ -819,6 +859,11 @@ using String typesymb2name(TypeSymbol)
 
   String cleanup_method_name(AutoSymbol name) = to_c_name(name) & "_cleanup";
 
+  String queue_update_method_name(Atom member, AutoSymbol auto) =
+    to_c_name(auto) & "_" & upper_camel_case(member) & "_queue_update";
+
+  String queue_update_method_name(Nat cond_id, AutoSymbol auto) =
+    to_c_name(auto) & "_" & to_str(cond_id) & "_queue_update";
 
   //## USE AnyVar?
   String to_c_var_name(ObjVar v)      = to_c_var_name(v, false);
@@ -855,12 +900,16 @@ using String typesymb2name(TypeSymbol)
     prefix = if decl then "" else "self->";
     return match (v)
       bvar(n?)                        = "b" & to_str(n),
+      invalidate_cond_expr_cache      = "inval_cache",
       has_changed_var(a?)             = prefix & upper_camel_case(a) & "_has_changed",
-      cond_value_var(n?)              = prefix & "condition_" & to_str(n),
-      cond_expr_up_to_date_var(n?)    = prefix & "condition_" & to_str(n) & "_expr_up_to_date",
-      cond_expr_value_var(n?)         = prefix & "condition_" & to_str(n) & "_expr",
+      cond_value_var(n?)              = prefix & "cond_" & to_str(n),
+      cond_expr_up_to_date_var(n?)    = prefix & "cond_" & to_str(n) & "_expr_up_to_date",
+      cond_expr_value_var(n?)         = prefix & "cond_" & to_str(n) & "_expr",
+      cond_expr_is_def_var(n?)        = prefix & "cond_" & to_str(n) & "_expr_is_def",
+      cond_is_def_var(n?)             = prefix & "cond_" & to_str(n) & "_is_def",
       marked_for_update_var(Atom a?)  = prefix & upper_camel_case(a) & "_marked_for_update",
-      marked_for_update_var(Nat n?)   = prefix & "condition_" & to_str(n) & "_marked_for_update";
+      marked_for_update_var(Nat n?)   = prefix & "cond_" & to_str(n) & "_marked_for_update",
+      auto_is_new                     = prefix & "auto_is_new";
   }
 
 

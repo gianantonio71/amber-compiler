@@ -33,9 +33,11 @@ Block gen_auto_code(Automaton automaton, CompilationOptions options)
   nodes = gen_auto_nodes(automaton);
   fail if nodes == []; //## BUG BUG BUG
 
+  nodes_types = [t : unused_var_1, unused_var_2, t <- nodes];
+
   change_tracked_members = {a : v <- change_tracked_memb_vars(automaton), memb_var(a?) << v};
 
-  nodes_idxs = merge([(get_id(t) => i) : unused_var_1, unused_var_2, t @ i <- nodes]);
+  nodes_idxs = merge([(get_id(t) => i) : t @ i <- nodes_types]);
   nodes_levels = merge([(get_id(t) => l) : l, unused_var_1, t <- nodes]);
 
   levels_count = nz_nat(max(nonempty(values(nodes_levels))) + 1);
@@ -49,12 +51,15 @@ Block gen_auto_code(Automaton automaton, CompilationOptions options)
   cond_ids = {c.id : c <- cond_nodes};
   nested_cond_ids = {c.id : c <- cond_nodes, c.parent != nil};
 
+  state_update_expr_count = (t.id => length(t.exprs) : t <- set(nodes_types), state() << t);
+
   lev_var = ivar(0);
   node_idx_var = ivar(1);
   node_count_var = ivar(2);
   curr_node_var = ivar(3);
 
-  let (nodes_idxs = nodes_idxs, nodes_levels = nodes_levels, change_tracked_members = change_tracked_members,
+  let (auto_name = automaton.name, nodes_idxs = nodes_idxs, nodes_levels = nodes_levels,
+       change_tracked_members = change_tracked_members, state_update_expr_count = state_update_expr_count,
        nested_cond_ids = nested_cond_ids, next_int_var_id = 4, options = options)
     nodes_code = [gen_node_code(n, l, ds) : l, ds, n <- nodes];
   ;
@@ -73,7 +78,8 @@ Block gen_auto_code(Automaton automaton, CompilationOptions options)
       ]),
       set_ivar(update_count_var(lev_var), 0),
       set_ivar(lev_var, add(lev_var, 1))
-    ])
+    ]),
+    set_bvar(auto_is_new, false)
   ];
 
   update_code = update_code & [set_bvar(has_changed_var(a), false) : a <- rand_sort(change_tracked_members)];
@@ -81,35 +87,43 @@ Block gen_auto_code(Automaton automaton, CompilationOptions options)
 
   memb_obj_vars  = {memb_var(a) : a <- param_ids & input_ids & state_var_ids & rule_ids} & {new_input(a) : a <- input_ids};
   memb_int_vars  = {update_source_var(a) : a <- state_var_ids};
-  memb_bool_vars = {has_changed_var(a) : a <- change_tracked_members} &
-                   {cond_expr_up_to_date_var(n) : n <- nested_cond_ids} &
+  memb_bool_vars = {cond_value_var(n) : n <- cond_ids} &
+                   {cond_is_def_var(n) : n <- cond_ids} &
                    {cond_expr_value_var(n) : n <- nested_cond_ids} &
-                   {cond_value_var(n) : n <- cond_ids} &
-                   {marked_for_update_var(id) : id <- param_ids & input_ids & state_var_ids & rule_ids & cond_ids};
+                   {cond_expr_is_def_var(n) : n <- nested_cond_ids} &
+                   {cond_expr_up_to_date_var(n) : n <- nested_cond_ids} &
+                   {has_changed_var(a) : a <- change_tracked_members} &
+                   {marked_for_update_var(id) : id <- param_ids & input_ids & state_var_ids & rule_ids & cond_ids} &
+                   {auto_is_new};
 
   param_deps = (a => {match (v) var(n?) = n : v <- extern_vars(e)} : e @ a <- automaton.params);
   assert not (? ts @ s <- param_deps, t <- ts : not in(t, param_ids));
   sorted_params = topological_sort(param_deps);
-  let (options = options)
-    params_init_code = [[gen_eval_code(automaton.params[p], memb_var(p), 0, 0, 0) : p <- rand_sort(ps)] : ps <- sorted_params];
+  let (next_obj_var_id = 0, next_int_var_id = 0, next_bool_var_id = 0, options = options)
+    params_init_code = [[gen_safe_eval_code(automaton.params[p], memb_var(p)) : p <- rand_sort(ps)] : ps <- sorted_params];
   ;
 
   state_vars_deps = (a => {match (v) var(n?) = n : v <- extern_vars(s.init_value)} - param_ids : s @ a <- automaton.state);
   assert not (? ts @ s <- state_vars_deps, t <- ts : not in(t, state_var_ids));
   sorted_state_vars = topological_sort(state_vars_deps);
-  let (options = options)
-    state_vars_init_code = [[gen_eval_code(automaton.state[sv].init_value, memb_var(sv), 0, 0, 0) : sv <- rand_sort(svs)] : svs <- sorted_state_vars];
+  let (next_obj_var_id = 0, next_int_var_id = 0, next_bool_var_id = 0, options = options)
+    state_vars_init_code = [[gen_safe_eval_code(automaton.state[sv].init_value, memb_var(sv)) : sv <- rand_sort(svs)] : svs <- sorted_state_vars];
   ;
 
   init_code = join([join(cfs) : cfs <- params_init_code & state_vars_init_code]) &
-              [clear_var(memb_var(a))  : a <- rand_sort(input_ids & rule_ids)] &
+              [init_memb_var(memb_var(a))  : a <- rand_sort(input_ids & rule_ids)] &
               [clear_var(new_input(a)) : a <- rand_sort(input_ids)] &
               [set_ivar(v, -1) : v <- rand_sort(memb_int_vars)] &
-              [set_bvar(v, false) : v <- rand_sort(memb_bool_vars)];
+              [set_bvar(v, bool_memb_var_init_value(v, input_ids)) : v <- rand_sort(memb_bool_vars)];
 
   memb_vars_to_rel = param_ids & input_ids & state_var_ids & rule_ids;
   vars_to_rel = {memb_var(id) : id <- memb_vars_to_rel} & {new_input(id) : id <- input_ids};
   cleanup_code = [do_if(memb_is_def(v), [release(v), clear_var(v)]) : v <- rand_sort(vars_to_rel)];
+
+  node_ids = [get_id(t) : unused_var_1, unused_var_2, t <- nodes];
+  let (nodes_idxs = nodes_idxs, nodes_levels = nodes_levels, nested_cond_ids = nested_cond_ids, next_int_var_id = 0)
+    queue_update_code = (id => queue_update_method_body(id) : id <- set(node_ids));
+  ;
 
   assert {
     inputs_count = size(automaton.inputs);
@@ -125,21 +139,28 @@ Block gen_auto_code(Automaton automaton, CompilationOptions options)
     ;
     return true;
   };
-  sorted_input_ids = subseq([get_id(t) : unused_var_1, unused_var_2, t <- nodes], 0, size(automaton.inputs));
+  sorted_input_ids = subseq(node_ids, 0, size(automaton.inputs));
   fail if not sorted_input_ids :: [Atom]; //## BAD: RUNTIME TYPE CHECKING SHOULD NOT BE NEEDED HERE
 
-
   return block(
-    name:           automaton.name,
-    inputs:         sorted_input_ids,
-    outputs:        keys(automaton.outputs),
-    memb_vars:      memb_obj_vars & memb_int_vars & memb_bool_vars,
-    levels:         levels_count,
-    max_level_size: max_level_size,
-    init_code:      init_code,
-    update_code:    update_code,
-    cleanup_code:   cleanup_code
+    name:               automaton.name,
+    inputs:             sorted_input_ids,
+    outputs:            keys(automaton.outputs),
+    memb_vars:          memb_obj_vars & memb_int_vars & memb_bool_vars,
+    levels:             levels_count,
+    max_level_size:     max_level_size,
+    init_code:          init_code,
+    update_code:        update_code,
+    cleanup_code:       cleanup_code,
+    queue_update_code:  queue_update_code
   );
+
+  Bool bool_memb_var_init_value(MembBoolVar, Atom* input_ids):
+    cond_is_def_var()                 = true,
+    auto_is_new                       = true,
+    marked_for_update_var(Atom id?)   = in(id, input_ids),
+    // cond_expr_is_def_var()            = ???,
+    _                                 = false;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -170,19 +191,37 @@ using CompilationOptions options
     l0 = lvar(0);
     id_var = cond_value_var(id);
     cv_var = cond_expr_value_var(id);
+    id_is_def_var = cond_is_def_var(id);
+    cv_is_def_var = cond_expr_is_def_var(id);
 
     code = [];
 
     // If the condition contains has-changed variables, then we refresh it
     is_change_tracked = change_tracked_memb_vars_in_expr(cond) != {};
     if (is_change_tracked)
-      target_var = if parent != nil then cv_var else id_var;
-      code = gen_eval_code(cond, l0, 1, 0, 0) & [set_bvar(target_var, inline_is_eq(l0, obj_true))];
+      eval_expr_code = gen_safe_eval_code(cond, l0, next_obj_var_id = 1, next_int_var_id = 0, next_bool_var_id = 0);
+      if (parent != nil)
+        pid_var = cond_value_var(parent.id);
+        pid_is_def_var = cond_is_def_var(parent.id);
+
+        eval_cond_code = [
+          set_bvar(cv_var, inline_is_eq(l0, obj_true)),
+          set_bvar(cv_is_def_var, inline_is_eq(l0, obj_true)),
+          set_bvar(id_var, and([cv_var, is_eq(pid_var, parent.trigger)])),
+          branch(
+            pid_is_def_var,
+            [set_bvar(cond_is_def_var(id), or([loc_var_is_def(l0), neg(is_eq(pid_var, parent.trigger))]))],
+            [set_bvar(cond_is_def_var(id), inline_is_eq(l0, obj_false))]
+          )
+        ];
+      else
+        eval_cond_code = [
+          set_bvar(id_var, inline_is_eq(l0, obj_true)),
+          set_bvar(id_is_def_var, loc_var_is_def(l0))
+        ];
+      ;
+      code = eval_expr_code & eval_cond_code;
     ;
-
-    // Refreshing the overall condition, if this is a nested condition
-    code = code & [set_bvar(id_var, and([cv_var, is_eq(cond_value_var(parent.id), parent.trigger)]))] if parent != nil;
-
     return code;
   }
 }
@@ -191,9 +230,11 @@ using CompilationOptions options
 
 using
 {
+  AutoSymbol            auto_name,
   (<Atom, Nat> => Nat)  nodes_idxs,
   (<Atom, Nat> => Nat)  nodes_levels,
   Atom*                 change_tracked_members,
+  (Atom => Nat)         state_update_expr_count,
   Nat*                  nested_cond_ids,
   Nat                   next_int_var_id,
   CompilationOptions    options;
@@ -239,7 +280,7 @@ using
   {
     var = memb_var(id);
     nv_var = lvar(0);
-    eval_code = gen_eval_code(expr, nv_var, 1, next_int_var_id, 0);
+    eval_code = gen_safe_eval_code(expr, nv_var, next_obj_var_id = 1, next_bool_var_id = 0);
     cond = neg(is_eq(var, nv_var));
     body = [
       set_var(var, nv_var),
@@ -254,7 +295,10 @@ using
   {
     var = memb_var(id);
     nv_var = lvar(0);
-    eval_instr = switch_on_nat(update_source_var(id), [gen_eval_code(e, nv_var, 1, next_int_var_id, 0) : e <- nonempty(exprs)]);
+    let (next_obj_var_id = 1, next_bool_var_id = 0)
+      cases = nonempty([gen_safe_eval_code(e, nv_var) : e <- exprs] & [[clear_loc_var(nv_var)]]);
+      eval_instr = switch_on_nat(update_source_var(id), cases);
+    ;
     cond = neg(is_eq(var, nv_var));
     body = [
       set_var(var, nv_var),
@@ -273,52 +317,41 @@ using
     id_var = cond_value_var(id);
     cv_var = cond_expr_value_var(id);
     utd_var = cond_expr_up_to_date_var(id);
+    cond_is_def_var = cond_is_def_var(id);
 
     if (parent != nil)
-      // if <parent.id> == parent.trigger
-      //   assert <id> == false
-      //   if not <utd(id)>
-      //     l0 = <<cond>>
-      //     <cv(id)> = l0 == True
-      //     <utd(id)> = true
-      //   b0 = <id> != <cv(id)>
-      //   <id> = <cv(id)>
-      // else
-      //   assert <id> == true
-      //   // b0 = true --- Assuming here <id> == true //## IS THIS AT ALL TRUE?
-      //   b0 = <id> == true = <id> != false = <id>
-      //   <id> = false
+      cond_expr_is_def_var = cond_expr_is_def_var(id);
 
-      cond_refresh_code = gen_eval_code(cond, l0, 1, next_int_var_id, 2) & [
+      pd_var = cond_is_def_var(parent.id);
+      pid_var = cond_value_var(parent.id);
+
+      cond_refresh_body = gen_safe_eval_code(cond, l0, next_obj_var_id = 1, next_bool_var_id = 2) & [
         set_bvar(cv_var, inline_is_eq(l0, obj_true)),
+        set_bvar(cond_expr_is_def_var, loc_var_is_def(l0)),
         set_bvar(utd_var, true)
       ];
 
-      then_body = [
-        // runtime_check(is_eq(id_var, false)),
-        do_if(neg(utd_var), cond_refresh_code),
-        set_bvar(b0, neg(is_eq(id_var, cv_var))),
-        set_bvar(id_var, cv_var)
+      cond_refresh_else_body = [
+        branch(
+          cond_expr_is_def_var,
+          [set_var(l0, to_obj(id_var))],
+          [clear_loc_var(l0)]
+        )
       ];
 
-      else_body = [
-        // runtime_check(is_eq(id_var, true)),
-        set_bvar(b0, id_var),
-        set_bvar(id_var, false)
+      cond_refresh_cond = and([pd_var, is_eq(pid_var, parent.trigger), neg(utd_var)]);
+
+      cond_eval_code = [
+        branch(cond_refresh_cond, cond_refresh_body, cond_refresh_else_body),
+        branch(
+          pd_var,
+          [do_if_not(is_eq(pid_var, parent.trigger), [set_var(l0, obj_false)])],
+          [do_if_not(inline_is_eq(l0, obj_false), [clear_loc_var(l0)])]
+        )
       ];
 
-      eval_code = [branch(is_eq(cond_value_var(parent.id), parent.trigger), then_body, else_body)];
     else
-      //  l0 = <<cond>>
-      //  b1 = l0 == True
-      //  b0 = <id> != b1
-      //  <id> = b1
-
-      eval_code = gen_eval_code(cond, l0, 1, next_int_var_id, 2) & [
-        set_bvar(b1, inline_is_eq(l0, obj_true)),
-        set_bvar(b0, neg(is_eq(id_var, b1))),
-        set_bvar(id_var, b1)
-      ];
+      cond_eval_code = gen_safe_eval_code(cond, l0, next_obj_var_id = 1, next_bool_var_id = 2);
     ;
 
     state_update_code = branch(
@@ -326,15 +359,44 @@ using
       join(rand_sort({gen_update_code(u.state, u.value_idx) : u <- updates, u.trigger == true})),
       join(rand_sort({gen_update_code(u.state, u.value_idx) : u <- updates, u.trigger == false}))
     );
+    queue_dep_nodes_updates_code = [mark_for_update(n, true) : n <- rand_sort(dep_nodes)];
+    checked_state_update_code = [do_if(b0, [state_update_code] & queue_dep_nodes_updates_code)];
 
-    return eval_code & [do_if(b0, [state_update_code] & [mark_for_update(n, true) : n <- rand_sort(dep_nodes)])];
+    on_becoming_undef_code = join(rand_sort({gen_clear_code(u.state) : u <- updates}));
+    cond_is_undef_branch = [do_if(cond_is_def_var, [set_bvar(cond_is_def_var, false)] & on_becoming_undef_code)];
+
+    cond_stays_def_branch = [
+      set_bvar(b1, inline_is_eq(l0, obj_true)),
+      set_bvar(b0, neg(is_eq(id_var, b1))),
+      set_bvar(id_var, b1)
+    ] & checked_state_update_code;
+
+    cond_becomes_def_branch = [
+      set_bvar(id_var, inline_is_eq(l0, obj_true)),
+      set_bvar(cond_is_def_var, true)
+    ] & queue_dep_nodes_updates_code;
+
+    cond_is_def_branch = [branch(cond_is_def_var, cond_stays_def_branch, cond_becomes_def_branch)];
+
+    return cond_eval_code & [branch(loc_var_is_def(l0), cond_is_def_branch, cond_is_undef_branch)];
   }
 
 
   [Instr^] gen_update_code(Atom state, Nat src_idx) = [set_ivar(update_source_var(state), src_idx), mark_for_update(state, false)];
 
 
-  Instr mark_for_update(<Atom, Nat> node_id, Bool from_cond)
+  [Instr^] gen_clear_code(Atom state) = gen_update_code(state, state_update_expr_count[state]);
+
+
+  Instr mark_for_update(<Atom, Nat> node_id, Bool from_cond):
+    +   = queue_update(auto_name, node_id),
+    *   = queue_cond_update(auto_name, node_id, not from_cond and in(node_id, nested_cond_ids));
+}
+
+
+using (<Atom, Nat> => Nat) nodes_idxs, (<Atom, Nat> => Nat) nodes_levels, Nat* nested_cond_ids, Nat next_int_var_id
+{
+  [Instr] queue_update_method_body(<Atom, Nat> node_id)
   {
     index = nodes_idxs[node_id];
     level = nodes_levels[node_id];
@@ -344,25 +406,79 @@ using
     count_var = update_count_var(level);
     nodes_var = nodes_to_update_var(level, idx_var);
 
-    return do_if(neg(mark_var), [
+    code = [do_if(neg(mark_var), [
       set_bvar(mark_var, true),
       set_ivar(idx_var, count_var),
       set_ivar(nodes_var, index),
-      set_ivar(count_var, add(idx_var, 1)),
-      set_bvar(cond_expr_up_to_date_var(node_id), false) if node_id :: Nat and not from_cond and in(node_id, nested_cond_ids)
-    ]);
+      set_ivar(count_var, add(idx_var, 1))
+    ])];
+
+    if (node_id :: Nat and in(node_id, nested_cond_ids))
+      inv_cache_instr = do_if(invalidate_cond_expr_cache, set_bvar(cond_expr_up_to_date_var(node_id), false));
+      code = [code | inv_cache_instr];
+    ;
+
+    return code;
   }
 }
 
-using CompilationOptions options
+
+
+using Nat next_obj_var_id, Nat next_int_var_id, Nat next_bool_var_id, CompilationOptions options
 {
-  [Instr^] gen_eval_code(Expr expr, EvalDestVar res_var, Nat next_obj_var_id, Nat next_int_var_id, Nat next_bool_var_id) =
-    gen_eval_code(
+  [Instr^] gen_safe_eval_code(Expr expr, <MembVar, LocVar> res_var):
+    and_expr()    = gen_safe_eval_code_for_and_expr(expr.left, expr.right, res_var),
+    or_expr()     = gen_safe_eval_code_for_or_expr(expr.left, expr.right, res_var),
+    _             = gen_default_safe_eval_code(expr, res_var);
+
+
+  [Instr^] gen_safe_eval_code_for_and_expr(Expr left_expr, Expr right_expr, <MembVar, LocVar> res_var)
+  {
+    left_tmp_var = lvar(next_obj_var_id);
+    right_tmp_var = lvar(nat(next_obj_var_id + 1));
+    let (next_obj_var_id = nat(next_obj_var_id + 2))
+      left_eval_code = gen_safe_eval_code(left_expr, left_tmp_var);
+      right_eval_code = gen_safe_eval_code(right_expr, right_tmp_var);
+    ;
+    // If the left term is false, there's no need to compute the right value
+    if_false_code = [set_var(res_var, obj_false)];
+    // If the left term is true, the right one decides the final value
+    if_true_code = [set_var(res_var, right_tmp_var)];
+    // If the left term is undefined, then we need to check the value of the right term
+    if_undef_code = [branch(is_false(right_tmp_var), [set_var(res_var, obj_false)], [clear_var(res_var)])];
+    // true + undefined cases, they both require the evaluation of the right term
+    if_not_false_code = [right_eval_code | branch(is_true(left_tmp_var), if_true_code, if_undef_code)];
+    // Putting it all together
+    return [left_eval_code | branch(is_false(left_tmp_var), if_false_code, if_not_false_code)];
+  }
+
+
+  [Instr^] gen_safe_eval_code_for_or_expr(Expr left_expr, Expr right_expr, <MembVar, LocVar> res_var)
+  {
+    left_tmp_var = lvar(next_obj_var_id);
+    right_tmp_var = lvar(nat(next_obj_var_id + 1));
+    let (next_obj_var_id = nat(next_obj_var_id + 2))
+      left_eval_code = gen_safe_eval_code(left_expr, left_tmp_var);
+      right_eval_code = gen_safe_eval_code(right_expr, right_tmp_var);
+    ;
+    // If the left term is true, there's no need to compute the right value
+    if_true_code = [set_var(res_var, obj_true)];
+    // If the left term is false, the right one decides the final value
+    if_false_code = [set_var(res_var, right_tmp_var)];
+    // If the left term is undefined, then we need to check the value of the right term
+    if_undef_code = [branch(is_true(right_tmp_var), [set_var(res_var, obj_true)], [clear_var(res_var)])];
+    // false + undefined cases, they both require the evaluation of the right term
+    if_not_true_code = [right_eval_code | branch(is_false(left_tmp_var), if_false_code, if_undef_code)];
+    // Putting it all together
+    return [left_eval_code | branch(is_true(left_tmp_var), if_true_code, if_not_true_code)];
+  }
+
+
+  [Instr^] gen_default_safe_eval_code(Expr expr, <MembVar, LocVar> res_var)
+  {
+    eval_code = gen_eval_code(
       expr,
       res_var,
-      next_obj_var_id     = next_obj_var_id,
-      next_int_var_id     = next_int_var_id,
-      next_bool_var_id    = next_bool_var_id,
       next_set_it_var_id  = 0,
       next_seq_it_var_id  = 0,
       next_map_it_var_id  = 0,
@@ -371,6 +487,23 @@ using CompilationOptions options
       auto_vars_types     = (),
       ignore_assertions   = options.ignore_assertions
     );
+
+    vars_to_safeguard = non_nullable_vars(expr);
+    if (vars_to_safeguard != {})
+      cond = and([memb_is_def(v) : v <- rand_sort(vars_to_safeguard)]);
+      eval_code = [branch(cond, eval_code, [clear_var(res_var)])];
+    ;
+
+    return eval_code;
+  }
+}
+
+
+MembVar* non_nullable_vars(Expr expr)
+{
+  //## BUG BUG BUG: THIS IS WRONG. VARIABLES IN has-changed OR is-def EXPRESSIONS SHOULD NOT BE COUNTED HERE
+  vs = extern_vars(expr);
+  return {v : v <- vs, v :: MembVar};
 }
 
 ////////////////////////////////////////////////////////////////////////////////

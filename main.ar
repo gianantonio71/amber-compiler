@@ -56,7 +56,7 @@ String error_pos_msg(String filename, NzNat line, NzNat col) =
                               };
 
 
-Maybe[CCodeOutput] Compile((String => [Nat]) src_files, Bool run_typechecking, Bool ignore_assertions, Bool print_intermediate, Bool print_times)
+Maybe[CCodeOutput] Compile((String => [Nat]) src_files, Bool run_typechecking, Bool add_ref_counting, Bool ignore_assertions, Bool print_intermediate, Bool print_times)
 {
   t0 = _ticks_(nil);
 
@@ -146,13 +146,18 @@ Maybe[CCodeOutput] Compile((String => [Nat]) src_files, Bool run_typechecking, B
     FileWrite("dump_opt_code.txt", false, _obj_(to_text(opt_code, 100, 1)));
   ;
 
-  rc_code = compiled_prg(
-    opt_code.bool_procs,
-    {add_ref_counting(pd) : pd <- opt_code.procs},
-    {add_ref_counting(b)  : b  <- opt_code.blocks}
-  );
+  if (add_ref_counting)
+    rc_code = compiled_prg(
+      opt_code.bool_procs,
+      {add_ref_counting(pd) : pd <- opt_code.procs},
+      {add_ref_counting(b)  : b  <- opt_code.blocks}
+    );
+    Print("Reference counting added\n");
+  else
+    rc_code = opt_code;
+  ;
+
   t7 = _ticks_(nil);
-  Print("Reference counting added\n");
 
   if (print_intermediate)
     FileWrite("dump_rc_code.txt", false, _obj_(to_text(rc_code, 100, 1)));
@@ -174,7 +179,9 @@ Maybe[CCodeOutput] Compile((String => [Nat]) src_files, Bool run_typechecking, B
     ;
     Print("Code generation:     " & to_str(t5-t4) & "ms\n");
     Print("Code optimization:   " & to_str(t6-t5) & "ms\n");
-    Print("Reference counting:  " & to_str(t7-t6) & "ms\n");
+    if (add_ref_counting)
+      Print("Reference counting:  " & to_str(t7-t6) & "ms\n");
+    ;
     Print("C code generation:   " & to_str(t8-t7) & "ms\n");
     Print("Total time elapsed:  " & to_str(t8-t0) & "ms\n");
   ;
@@ -225,7 +232,7 @@ Int Main([String] args)
   options = subseq(args, 0, argc-1);
 
   run_typechecking = true;
-
+  add_ref_counting = true;
   ignore_assertions = false;
 
   print_intermediate = false;
@@ -235,6 +242,8 @@ Int Main([String] args)
   for (o : options)
     if (o == "-stc")
       run_typechecking = false;
+    elif (o == "-nrc")
+      add_ref_counting = false;
     elif (o == "-ia")
       ignore_assertions = true;
     elif (o == "-p")
@@ -270,7 +279,7 @@ Int Main([String] args)
     src_files = src_files & (fn => value(fc));
   ;
 
-  output = Compile(src_files, run_typechecking, ignore_assertions, print_intermediate, print_times);
+  output = Compile(src_files, run_typechecking, add_ref_counting, ignore_assertions, print_intermediate, print_times);
 
   if (output != nil)
     output = value(output);
