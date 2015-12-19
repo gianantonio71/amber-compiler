@@ -151,11 +151,12 @@ Int min(Int+ ns)
   return min;
 }
 
-Int max(Int+ ns)
+Int max(Int+ ns) = max(rand_sort(ns));
+
+Int max([Int^] ns)
 {
-  ns_seq = rand_sort(ns);
-  max = ns_seq[0];
-  for (n : ns_seq)
+  max = ns[0];
+  for (n : ns)
     max = n if n > max;
   ;
   return max;
@@ -514,28 +515,19 @@ T2* values((T1 => T2) map) = {v : v @ unused_var <- map};
 //## THERE'S A BUG HERE, PROBABLY WHEN ONE OF THE SET OF TARGETS IS EMPTY
 (T => T*) transitive_closure((T => T*) map)
 {
-  assert {
-    all_starts = keys(map);
-    all_refs   = union(values(map));
+  // assert union(values(map)) - keys(map) == {};
 
-    missing = all_refs - all_starts;
+  all_nodes = keys(map) & union(values(map));
 
-    return true if missing == {};
-    print "------------------------------------------------------------------------------";
-    print map;
-    print missing;
-    return false;
-  };
-
-  closure = map;
+  curr_map = (n => lookup(map, n, {}) : n <- keys(map) & union(values(map)));
 
   loop
-    new_closure = (n => next_step(rs, closure) : rs @ n <- closure);
-    return closure if (new_closure == closure);
-    closure = new_closure;
+    new_map = (n => rs & union({curr_map[r] : r <- rs}) : rs @ n <- curr_map);
+    break if (new_map == curr_map);
+    curr_map = new_map;
   ;
 
-  T* next_step(T* rs, (T => T*) map) = rs & union({map[r] : r <- rs});
+  return (n => curr_map[n] : n <- keys(map));
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -1163,4 +1155,60 @@ T++ equiv_groups(T+ xs, (T, T -> Bool) eq)
     rem_xs = rest;
   ;
   return set(nonempty([set(nonempty(g)) : g <- groups]));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[T] array_map((Nat => T) map) = if map == () then [] else [map[i] : i <= max(nonempty(keys(map)))];
+
+
+[Nat] count_vector([Nat] seq)
+{
+  res = count_vector_impl(seq);
+
+  for (c @ v : res)
+    c2 = 0;
+    for (n : seq)
+      c2 = c2 + 1 if n == v;
+    ;
+    //## TODO: FIX ASSERT ERROR *******************************************
+    assert c == c2;
+  ;
+  assert if seq == [] then res == [] else max(seq) < length(seq);
+  return res;
+
+
+  [Nat] count_vector_impl([Nat] seq)
+  {
+    return [] if seq == [];
+    len = length(seq);
+    sorted_seq = sort(seq, $a < $b);
+    max = rev_at(seq, 0);
+    counters = [];
+    cursor = 0;
+    for (val <= max)
+      new_cursor = cursor;
+      while (new_cursor < len and sorted_seq[new_cursor] == val)
+        new_cursor = new_cursor + 1;
+      ;
+      counters = [counters | nat(new_cursor-cursor)];
+      cursor = new_cursor;
+    ;
+    return counters;
+  }
+}
+
+
+//## WOULD NEED SUBSIGNATURES HERE: [Nat] -> [Nat], [Int] -> [Int], [Float -> Float]
+//## AND THE TYPE OF THE ELEMENTS SHOULD BE PARAMETRIC
+[Nat] partial_sums([Nat] xs)
+{
+  sum = 0;
+  sums = [];
+  for (x : xs)
+    sum = nat(sum + x);
+    sums = [sums | sum];
+  ;
+  return sums;
 }

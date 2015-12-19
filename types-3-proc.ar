@@ -6,7 +6,7 @@ type ObjVar         = Var, LocVar, ElemVar;
 
 type ReadOnlyObjVar = FnPar, CaptVar;
 type WriteObjVar    = RWObjVar, ElemVar;
-type RWObjVar       = StdVar, LocVar, MembVar;
+type RWObjVar       = StdVar, LocVar, MembVar, MembCopyVar;
 
 type StdObjVar      = RWObjVar, NamedArg, ReadOnlyObjVar;
 
@@ -17,15 +17,18 @@ type MembBoolVar    = cond_value_var(Nat),
                       cond_expr_value_var(Nat),
                       cond_expr_is_def_var(Nat),
                       cond_expr_up_to_date_var(Nat),
-                      has_changed_var(Atom),
                       marked_for_update_var(<Atom, Nat>),
-                      auto_is_new;
+                      is_new;
 
-type MembIntVar     = update_source_var(Atom), update_count_var(IntExpr), nodes_to_update_var(level: IntExpr, index: IntExpr);
+type MembIntVar     = update_source_var(Atom),
+                      update_count_var(IntExpr),
+                      nodes_to_update_var(level: IntExpr, index: IntExpr);
+
+type MembIntVectVar = nodes_to_update_vect_var(level: Nat, size: NzNat); //## BAD: <size> SHOULD BE OF TYPE <3..*>
 
 type SpecialLocVar  = invalidate_cond_expr_cache; //## FIND BETTER NAME
 
-type BoolVar        = bvar(Nat), SpecialLocVar, MembBoolVar;
+type BoolVar        = bvar(Nat), memb_has_changed(Atom), SpecialLocVar, MembBoolVar;
 type IntVar         = ivar(Nat), MembIntVar;
 
 type StreamVar      = svar(Nat); //## DOES THIS NEED CLEANUP?
@@ -67,8 +70,7 @@ type NatBoolOp      = is_symb(ObjExpr),
                       is_le(expr1: IntExpr, expr2: IntExpr),
                       inline_is_eq(expr: ObjExpr, value: InlineObj),
                       is_out_of_range(ItVar),
-                      memb_is_def(<MembVar, MembObjVar>),
-                      loc_var_is_def(LocVar),
+                      var_is_def(<MembVar, MembObjVar, MembCopyVar, LocVar>),
                       output_is_def(var: AutoVar, output: Atom);
 
 type NatIntOp       = get_int_val(ObjExpr),
@@ -215,7 +217,7 @@ type JumpInstr      = break_loop,
                       terminate;
 
 type CompInstr      = branch(cond: BoolExpr, when_true: [Instr^], when_false: [Instr]),
-                      switch_on_nat(value: IntVar, cases: [[Instr]^]),
+                      switch_on_nat(value: IntExpr, cases: [[Instr]^]),
                       repeat([Instr^]),
                       execute_block([Instr^]),
                       cls_scope(var: NamedArg, bound_cls: BoundCls, body: [Instr^]); //## BAD: BoundCls IS TOO LOOSE A TYPE HERE, BECAUSE A ClsVar CANNOT APPEAR HERE
@@ -248,9 +250,7 @@ type Block          = block(
                         name:               AutoSymbol,
                         inputs:             [Atom],
                         outputs:            Atom*,
-                        memb_vars:          <MembVar, MembObjVar, MembIntVar, MembBoolVar>*,
-                        levels:             Nat,
-                        max_level_size:     Nat,
+                        memb_vars:          <MembVar, MembObjVar, MembIntVar, MembIntVectVar, MembBoolVar>*,
                         init_code:          [Instr],
                         update_code:        [Instr],
                         cleanup_code:       [Instr],

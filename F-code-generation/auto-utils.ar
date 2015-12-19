@@ -1,28 +1,24 @@
-MembVar* change_tracked_memb_vars(Automaton auto)
+MembCopyVar* memb_copy_vars(Automaton auto)
 {
-  assert not (? s <- values(auto.state)  : change_tracked_memb_vars_in_expr(s.init_value) != {});
-  assert not (? p <- values(auto.params) : change_tracked_memb_vars_in_expr(p) != {});
-  assert not (? r <- values(auto.rules)  : change_tracked_memb_vars_in_expr(r) != {});
-  return union({change_tracked_memb_vars(a) : a <- auto.actions});
+  assert not (? s <- values(auto.state)  : memb_copy_vars_in_expr(s.init_value) != {});
+  assert not (? p <- values(auto.params) : memb_copy_vars_in_expr(p) != {});
+
+  return union({memb_copy_vars_in_expr(r) : r <- values(auto.rules)} & {memb_copy_vars(a) : a <- auto.actions});
 }
 
 
-MembVar* change_tracked_memb_vars(AutoAction action)
+MembCopyVar* memb_copy_vars(AutoAction action)
 {
-  cond_vars = change_tracked_memb_vars_in_expr(action.cond);
-  body_vars = union({change_tracked_memb_vars(sa) : sa <- action.body});
-  else_vars = union({change_tracked_memb_vars(sa) : sa <- action.else});
+  cond_vars = memb_copy_vars_in_expr(action.cond);
+  body_vars = union({memb_copy_vars(sa) : sa <- action.body});
+  else_vars = union({memb_copy_vars(sa) : sa <- action.else});
   return cond_vars & body_vars & else_vars;
 }
 
 
-MembVar* change_tracked_memb_vars(AutoUpdate update)
-{
-  vars = change_tracked_memb_vars_in_expr(update.value);
-  assert vars == {};
-  return vars;
-}
+MembCopyVar* memb_copy_vars(AutoUpdate update) = memb_copy_vars_in_expr(update.value);
 
-MembVar* change_tracked_memb_vars_in_expr(Expr expr):
-  has_changed(v?)   = {v},
-  _                 = retrieve_from_nested_exprs(expr, change_tracked_memb_vars_in_expr);
+
+MembCopyVar* memb_copy_vars_in_expr(Expr expr):
+  memb_copy_var()   = {expr},
+  _                 = retrieve_from_nested_exprs(expr, memb_copy_vars_in_expr);

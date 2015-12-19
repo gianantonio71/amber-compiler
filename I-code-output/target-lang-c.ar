@@ -119,12 +119,8 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
   CCodeOutput compile_block_to_c(Block block)
   {
     name_str = to_c_name(block.name);
-    levels_str = to_str(block.levels);
 
-    vars_decl = [var_c_type(v) & " " & to_c_var_name(v, true) & ";" : v <- rand_sort(block.memb_vars)] &
-                [ "int update_count[" & levels_str & "];",
-                  "int nodes_to_update[" & levels_str & "][" & to_str(block.max_level_size) & "];"
-                ];
+    vars_decl = [var_c_type(v) & " " & to_c_var_name(v, true) & ";" : v <- rand_sort(block.memb_vars)];
 
     decl = ["struct " & name_str, "{"] & indent_lines(vars_decl) & ["};"];
 
@@ -133,16 +129,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     init_body = init_vars_decl & compile_to_c(block.init_code, nil);
     init_sgn = "void " & init_method_name(block.name) & "(" & name_str & " *self, Env &env)";
     init_decl = [init_sgn & ";"];
-    init_proc = [init_sgn, "{"] & indent_lines(init_body) &
-                //## BETTER: memset(self->update_count, 0, sizeof(self->update_count));
-                [ "  int i;",
-                  "  self->update_count[0] = " & to_text(length(block.inputs)) & ";",
-                  "  for (i=1 ; i < " & levels_str & " ; i++)",
-                  "    self->update_count[i] = 0;",
-                  "  for (i=0 ; i < " & to_text(length(block.inputs)) & " ; i++)",
-                  "    self->nodes_to_update[0][i] = i;",
-                  "}"
-                ];
+    init_proc = [init_sgn, "{"] & indent_lines(init_body) & ["}"];
 
     cleanup_body = compile_to_c(block.cleanup_code, nil);
     cleanup_sgn = "void " & cleanup_method_name(block.name) & "(" & name_str & " *self)";
@@ -189,9 +176,9 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
         "  {",
         // "    internal_fail_if(" & new_input_var_str & " != null_obj);",
         "    " & new_input_var_str & " = new_val;",
-        "    int idx = self->update_count[0];",
-        "    self->nodes_to_update[0][idx] = " & to_str(node_idx) & ";",
-        "    self->update_count[0] = idx + 1;",
+        "    int idx = self->update_count_0;",
+        "    self->nodes_to_update_0[idx] = " & to_str(node_idx) & ";",
+        "    self->update_count_0 = idx + 1;",
         "    " & marked_for_update_var & " = true;",
         "  }",
         "}"
@@ -471,7 +458,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
                                 ["case " & to_str(i) & ":"] & indent_lines([compile_to_c(c, block_id) | "break;"] & [""])
                                 : c @ i <- instr.cases
                               ];
-                              return ["switch (" & to_c_var_name(instr.value) & ")", "{"] & indent_lines(join(cases_code)) & ["}"];
+                              return ["switch (" & to_c_expr(instr.value) & ")", "{"] & indent_lines(join(cases_code)) & ["}"];
                             },
 
     call_proc()           = compile_call_proc_to_c(if instr.var? then just(instr.var) else nil, instr.name, instr.params, block_id),
@@ -795,9 +782,7 @@ using String typesymb2name(TypeSymbol)
 
     is_out_of_range(v?)   = "is_out_of_range(" & to_c_var_name(v) & ")",
 
-    memb_is_def(v?)       = parentesize(to_c_var_name(v) & " != null_obj", parentesised),
-
-    loc_var_is_def(v?)    = parentesize(to_c_var_name(v) & " != null_obj", parentesised),
+    var_is_def(v?)        = parentesize(to_c_var_name(v) & " != null_obj", parentesised),
 
     output_is_def()       = parentesize(
                               to_c_var_name(expr.var) & "." & to_c_var_name(memb_var(expr.output), true) & " != null_obj",
@@ -884,24 +869,24 @@ using String typesymb2name(TypeSymbol)
   String to_c_var_name(<ObjVar, MembObjVar> v, Bool decl) = to_c_var_name(v, if decl then "" else "self->");
 
   String to_c_var_name(<ObjVar, MembObjVar> v, String prefix):
-    var(Atom a?)          = upper_camel_case(a) & "_V",
-    fn_par(Nat n?)        = "p"   & to_str(n),
-    named_arg(Atom a?)    = "env.n_"  & _str_(a),
-    cls_ext_par(Nat n?)   = "C["  & to_str(n) & "]",
-    memb_var(Atom a?)     = prefix & upper_camel_case(a),
-    lvar(Nat n?)          = "l"   & to_str(n),
-    evar()                = "V" & to_str(v.id) & "[" & to_c_expr(v.idx) & "]",
-    new_input(Atom a?)    = prefix & upper_camel_case(a) & "_new";
+    var(Atom a?)            = upper_camel_case(a) & "_V",
+    fn_par(Nat n?)          = "p"   & to_str(n),
+    named_arg(Atom a?)      = "env.n_"  & _str_(a),
+    cls_ext_par(Nat n?)     = "C["  & to_str(n) & "]",
+    memb_var(Atom a?)       = prefix & upper_camel_case(a),
+    memb_copy_var(Atom a?)  = upper_camel_case(a) & "_O",
+    lvar(Nat n?)            = "l"   & to_str(n),
+    evar()                  = "V" & to_str(v.id) & "[" & to_c_expr(v.idx) & "]",
+    new_input(Atom a?)      = prefix & upper_camel_case(a) & "_new";
 
   String to_c_var_name(AutoVar v) = upper_camel_case(name(v)) & "_A";
-
   String to_c_var_name(BoolVar v, Bool decl)
   {
     prefix = if decl then "" else "self->";
     return match (v)
       bvar(n?)                        = "b" & to_str(n),
+      memb_has_changed(id?)           = upper_camel_case(id) & "_has_changed",
       invalidate_cond_expr_cache      = "inval_cache",
-      has_changed_var(a?)             = prefix & upper_camel_case(a) & "_has_changed",
       cond_value_var(n?)              = prefix & "cond_" & to_str(n),
       cond_expr_up_to_date_var(n?)    = prefix & "cond_" & to_str(n) & "_expr_up_to_date",
       cond_expr_value_var(n?)         = prefix & "cond_" & to_str(n) & "_expr",
@@ -909,7 +894,7 @@ using String typesymb2name(TypeSymbol)
       cond_is_def_var(n?)             = prefix & "cond_" & to_str(n) & "_is_def",
       marked_for_update_var(Atom a?)  = prefix & upper_camel_case(a) & "_marked_for_update",
       marked_for_update_var(Nat n?)   = prefix & "cond_" & to_str(n) & "_marked_for_update",
-      auto_is_new                     = prefix & "auto_is_new";
+      is_new                          = prefix & "is_new";
   }
 
 
@@ -919,15 +904,23 @@ using String typesymb2name(TypeSymbol)
     return match (v)
       ivar(n?)                = "i" & to_str(n),
       update_source_var(a?)   = prefix & upper_camel_case(a) & "_update_source",
-      update_count_var(iv?)   = {assert not decl; return prefix & "update_count[" & to_c_expr(iv) & "]";},
-      nodes_to_update_var()   = {assert not decl; return prefix & "nodes_to_update[" & to_c_expr(v.level) & "][" & to_c_expr(v.index) & "]";};
+      update_count_var(iv?)   = prefix & "update_count_" & to_c_expr(iv),
+      nodes_to_update_var()   = {assert not decl; return prefix & "nodes_to_update_" & to_c_expr(v.level) & "[" & to_c_expr(v.index) & "]";};
   }
 
 
-  String var_c_type(ObjVar)     = "Obj";
-  String var_c_type(MembObjVar) = "Obj";
-  String var_c_type(IntVar)     = "int";
-  String var_c_type(BoolVar)    = "bool";
+  String to_c_var_name(MembIntVectVar v, Bool decl)
+  {
+    assert decl;
+    return "nodes_to_update_" & to_text(v.level) & "[" & to_text(v.size) & "]";
+  }
+
+
+  String var_c_type(ObjVar)         = "Obj";
+  String var_c_type(MembObjVar)     = "Obj";
+  String var_c_type(IntVar)         = "int";
+  String var_c_type(MembIntVectVar) = "int";
+  String var_c_type(BoolVar)        = "bool";
 
   ///////////////////////////////////////////////////////////////////////////////
   ///////////////////////////////////////////////////////////////////////////////

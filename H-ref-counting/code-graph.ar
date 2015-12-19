@@ -1,6 +1,6 @@
 type NodeInfo       = std_node(<BasicInstr, JumpInstr>),
                       branch_node(BoolExpr),
-                      switch_node(IntVar),
+                      switch_node(IntExpr),
                       set_cls_par_node(var: NamedArg, cls: BoundCls);
 
 type CodeTree       = std_node(Nat),
@@ -13,7 +13,7 @@ type CodeTree       = std_node(Nat),
 
 type RCNodeInfo     = std_node([Instr]),
                       branch_node(cond: BoolExpr, if_post_instrs: [Instr], else_post_instrs: [Instr]),
-                      switch_node(var: IntVar, cases_instrs: [[Instr]^]),
+                      switch_node(index: IntExpr, cases_instrs: [[Instr]^]),
                       set_cls_par_node(var: NamedArg, cls: BoundCls, post_instrs: [Instr]);
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -21,7 +21,7 @@ type RCNodeInfo     = std_node([Instr]),
 
 NodeInfo std_node(<BasicInstr, JumpInstr> i)          = :std_node(i);
 NodeInfo branch_node(BoolExpr e)                      = :branch_node(e);
-NodeInfo switch_node(IntVar v)                        = :switch_node(v);
+NodeInfo switch_node(IntExpr e)                       = :switch_node(e);
 NodeInfo set_cls_par_node(NamedArg var, BoundCls cls) = set_cls_par_node(var: var, cls: cls);
 
 
@@ -36,7 +36,7 @@ CodeTree root_node([CodeTree^] b)                           = :root_node(b);
 
 RCNodeInfo std_node([Instr] instrs)                             = :std_node(instrs);
 RCNodeInfo branch_node(BoolExpr c, [Instr] iis, [Instr] eis)    = branch_node(cond: c, if_post_instrs: iis, else_post_instrs: eis);
-RCNodeInfo switch_node(IntVar v, [[Instr]^] is)                 = switch_node(var: v, cases_instrs: is);
+RCNodeInfo rc_switch_node(IntExpr e, [[Instr]^] is)             = switch_node(index: e, cases_instrs: is);
 RCNodeInfo set_cls_par_node(NamedArg v, BoundCls c, [Instr] is) = set_cls_par_node(var: v, cls: c, post_instrs: is);
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -69,7 +69,7 @@ RCNodeInfo set_cls_par_node(NamedArg v, BoundCls c, [Instr] is) = set_cls_par_no
 }
 
 
-([NodeInfo^], CodeTree) build_switch_on_nat_code_graph(IntVar value, [[Instr]^] cases, Nat offset)
+([NodeInfo^], CodeTree) build_switch_on_nat_code_graph(IntExpr value, [[Instr]^] cases, Nat offset)
 {
   leaf_nodes = [switch_node(value)];
   code_trees = [];
@@ -146,9 +146,9 @@ Instr reconstruct_branch(Nat idx, [CodeTree^] if_code_trees, [CodeTree] else_cod
 
 Instr reconstruct_switch(Nat idx, [[CodeTree]^] case_code_trees, [RCNodeInfo^] rc_nodes)
 {
-  var, instrs = match (rc_nodes[idx]) switch_node() n? = (n.var, n.cases_instrs); //## UGLY UGLY UGLY
+  index, instrs = match (rc_nodes[idx]) switch_node() n? = (n.index, n.cases_instrs); //## UGLY UGLY UGLY
   cases_code = [instrs[i] & reconstruct(ct, rc_nodes) : ct @ i <- case_code_trees];
-  return switch_on_nat(var, cases_code);
+  return switch_on_nat(index, cases_code);
 }
 
 
