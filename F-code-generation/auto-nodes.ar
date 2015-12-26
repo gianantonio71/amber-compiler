@@ -1,0 +1,158 @@
+type AutoNodeType = input(Atom),
+                    derived(id: Atom, expr: Expr),
+                    state(id: Atom, exprs: [Expr]),
+                    cond_node(
+                      id:       Nat,
+                      cond:     Expr,
+                      parent:   Maybe[(id: Nat, trigger: Bool)],
+                      updates:  UpdateInfo*
+                    ),
+                    rep_cond_node(
+                      id:           Nat,
+                      cond:         Expr,
+                      value_idx:    Nat,
+                      state_var_id: Atom
+                    );
+
+type UpdateInfo   = (state: Atom, value_idx: Nat, trigger: Bool);
+
+////////////////////////////////////////////////////////////////////////////////
+
+AutoNodeType input(Atom id)             = :input(id);
+AutoNodeType derived(Atom id, Expr e)   = derived(id: id, expr: e);
+AutoNodeType state(Atom id, [Expr] es)  = state(id: id, exprs: es);
+AutoNodeType cond_node(Nat id, Expr c, Maybe[(id: Nat, trigger: Bool)] p, UpdateInfo* us) = cond_node(id: id, cond: c, parent: p, updates: us);
+AutoNodeType rep_cond_node(Nat id, Expr c, Nat vi, Atom s) = rep_cond_node(id: id, cond: c, value_idx: vi, state_var_id: s);
+
+////////////////////////////////////////////////////////////////////////////////
+
+<Atom, Nat> get_id(AutoNodeType node_type):
+  input(id?)      = id,
+  derived()       = node_type.id,
+  state()         = node_type.id,
+  cond_node()     = node_type.id,
+  rep_cond_node() = node_type.id;
+
+////////////////////////////////////////////////////////////////////////////////
+
+type CondInfo     = ( cond:         Expr,
+                      parent:       Maybe[(id: Nat, trigger: Bool)],
+                      nested_conds: (id: Nat, trigger: Bool)*,
+                      updates:      (state_id: Atom, new_value: Expr, trigger: Bool)*
+                    );
+
+type RepCondInfo  = (cond: Expr, state_var_id: Atom, new_value: Expr);
+
+
+[(Nat, <Atom, Nat>*, AutoNodeType)] gen_auto_nodes(Automaton automaton)
+{
+  next_id = 0;
+
+  cond_nodes = ();
+  for (a : rand_sort(automaton.actions))
+    action_conds, next_id = gen_action_nodes(a, next_id, nil);
+    cond_nodes = cond_nodes & action_conds;
+  ;
+
+  rep_cond_nodes = ();
+  for (a @ i : rand_sort(automaton.rep_actions))
+    info = (cond: a.cond, state_var_id: a.target, new_value: a.value);
+    rep_cond_nodes = rep_cond_nodes & (nat(next_id + i) => info);
+  ;
+
+  conds_deps = (id => cond_deps(c) : c @ id <- cond_nodes);
+  rep_cond_deps = (id => {unsafe_name(v) : v <- extern_vars(c.cond)} : c @ id <- rep_cond_nodes);
+  state_trigger_deps = merge_values(
+    {(u.state_id => id) : c @ id <- cond_nodes, u <- c.updates} &
+    {(c.state_var_id => id : c @ id <- rep_cond_nodes)}
+  );
+  state_value_deps = merge_value_sets(
+    {(u.state_id => expr_deps(u.new_value)) : c @ unused_var <- cond_nodes, u <- c.updates} &
+    {(c.state_var_id => expr_deps(c.new_value) : c @ unused_var <- rep_cond_nodes)}
+  );
+  rules_deps = (a => {unsafe_name(v) : v <- extern_vars(e)} : e @ a <- automaton.rules);
+
+  trigger_dep_map = conds_deps & rep_cond_deps & state_trigger_deps & rules_deps;
+  value_dep_map = conds_deps & rep_cond_deps & rules_deps & merge_value_sets({state_trigger_deps, state_value_deps});
+
+  rev_trigger_dep_map = reverse_multi(trigger_dep_map);
+
+  params = keys(automaton.params);
+  inputs = keys(automaton.inputs);
+  level_0 = params & inputs;
+
+  nodes_by_level = topological_sort((s => new_ts : ts @ s <- value_dep_map, new_ts = ts - level_0 - {s}));
+
+  sorted_nodes = [(0, lookup(rev_trigger_dep_map, i, {}), input(i)) : i <- rand_sort(inputs)];
+
+  update_values = merge_values(
+    {(u.state_id => u.new_value) : c @ unused_var <- cond_nodes, u <- c.updates} &
+    {(c.state_var_id => c.new_value) : c @ unused_var <- rep_cond_nodes}
+  );
+  update_values = (s => rand_sort(vs) : vs @ s <- update_values);
+
+  state_vars_ids = keys(automaton.state);
+
+  for (l @ i : nodes_by_level)
+    nodes = rand_sort(l);
+    for (n : nodes)
+      level = nat(i + 1);
+      dependent_nodes = lookup(rev_trigger_dep_map, n, {}) - state_vars_ids;
+      if (has_key(automaton.rules, n))
+        fail if not n :: Atom;
+        info = derived(n, automaton.rules[n]);
+      elif (has_key(automaton.state, n))
+        fail if not n :: Atom;
+        info = state(n, update_values[n]);
+      elif (has_key(cond_nodes, n))
+        fail if not n :: Nat;
+        cond_node = cond_nodes[n];
+        cond_updates = {(state: u.state_id, value_idx: index_first(u.new_value, update_values[u.state_id]), trigger: u.trigger) : u <- cond_node.updates};
+        info = cond_node(n, cond_node.cond, cond_node.parent, cond_updates);
+      elif (has_key(rep_cond_nodes, n))
+        fail if not n :: Nat;
+        node = rep_cond_nodes[n];
+        value_idx = index_first(node.new_value, update_values[node.state_var_id]);
+        info = rep_cond_node(n, node.cond, value_idx, node.state_var_id);
+      else
+        fail;
+      ;
+      new_node_info = (level, dependent_nodes, info);
+      sorted_nodes = [sorted_nodes | new_node_info];
+    ;
+  ;
+
+  return sorted_nodes;
+
+
+  <Atom, Nat>* cond_deps(CondInfo cond)
+  {
+    parent = cond.parent;
+    return expr_deps(cond.cond) & {value(parent).id if parent != nil};
+  }
+
+  Atom* expr_deps(Expr e) = {unsafe_name(v) : v <- extern_vars(e)};
+}
+
+
+((Nat => CondInfo), Nat) gen_action_nodes(AutoCondAction action, Nat root_id, Maybe[(id: Nat, trigger: Bool)] parent)
+{
+  next_id = nat(root_id + 1);
+
+  updates = {};
+  conditions = ();
+  nested_conds = {};
+
+  for (a, tv : rand_sort({(a, true) : a <- action.body} & {(a, false) : a <- action.else}))
+    if (a :: AutoUpdate)
+      updates = updates & {(state_id: a.target, new_value: a.value, trigger: tv)};
+
+    elif (a :: AutoCondAction) //## BAD BAD: THE TYPECHECKER SHOULD AUTOMATICALLY INFER THE TYPE OF <a> IF WE TAKE THIS BRANCH
+      nested_conds = nested_conds & {(id: next_id, trigger: tv)};
+      subconds, next_id = gen_action_nodes(a, next_id, just(id: root_id, trigger: tv));
+      conditions = conditions & subconds;
+    ;
+  ;
+
+  return (conditions & (root_id => (cond: action.cond, parent: parent, nested_conds: nested_conds, updates: updates)), next_id);
+}

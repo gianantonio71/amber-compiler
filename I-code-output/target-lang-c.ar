@@ -145,7 +145,8 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     queue_methods_decls, queue_methods_impls = unzip(rand_sort(queue_methods_decls_and_impls));
     queue_methods_impls = join(intermix(queue_methods_impls, ["", ""]));
 
-    input_decls, input_impls = unzip([gen_input_setter(block.name, id, i) : id @ i <- block.inputs]);
+    queue_input_updates = length(block.inputs) > 2; //## BAD BAD BAD: THE NUMBER 2 IS REPEATED IN THE CODE GENERATION PHASE
+    input_decls, input_impls = unzip([gen_input_setter(block.name, id, i, queue_input_updates) : id @ i <- block.inputs]);
     input_impls = join(intermix(input_impls, ["", ""]));
 
     output_decls, output_impls = unzip([gen_output_getter(block.name, o) : o <- rand_sort(block.outputs)]);
@@ -158,7 +159,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     return (body: body, header: header);
 
 
-    (String, [String]) gen_input_setter(AutoSymbol block_name, Atom input_name, Nat node_idx)
+    (String, [String]) gen_input_setter(AutoSymbol block_name, Atom input_name, Nat node_idx, Bool queue_node)
     {
       sgn = "void " & input_set_method_name(block_name, input_name) & "(" & to_c_name(block_name) & " *self, Obj new_val)";
       new_input_var_str = to_c_var_name(new_input(input_name));
@@ -176,9 +177,9 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
         "  {",
         // "    internal_fail_if(" & new_input_var_str & " != null_obj);",
         "    " & new_input_var_str & " = new_val;",
-        "    int idx = self->update_count_0;",
-        "    self->nodes_to_update_0[idx] = " & to_str(node_idx) & ";",
-        "    self->update_count_0 = idx + 1;",
+        "    int idx = self->update_count_0;" if queue_node,
+        "    self->nodes_to_update_0[idx] = " & to_str(node_idx) & ";" if queue_node,
+        "    self->update_count_0 = idx + 1;" if queue_node,
         "    " & marked_for_update_var & " = true;",
         "  }",
         "}"

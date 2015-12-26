@@ -144,12 +144,14 @@ using (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_arg_arities
 
     memb_vars = {memb_var(d.name) : d <- decls};
 
-    syn_state_vars  = {d : d <- decls, syn_state()      << d};
-    syn_plain_rules = {d : d <- decls, syn_plain_rule() << d};
-    syn_cond_rules  = {d : d <- decls, syn_cond_rule()  << d};
+    syn_state_vars    = {d : d <- decls, syn_state()        << d};
+    syn_plain_rules   = {d : d <- decls, syn_plain_rule()   << d};
+    syn_cond_rules    = {d : d <- decls, syn_cond_rule()    << d};
+    syn_foreach_rules = {d : d <- decls, syn_foreach_rule() << d};
 
     state_vars = (v.name => (type: syn_type_to_type(v.type, nil), init_value: syn_expr_to_expr(v.init_value, memb_vars)) : v <- syn_state_vars);
     actions = {cond_rule_to_action(r.name, r.branches, memb_vars) : r <- syn_cond_rules};
+    rep_actions = {foreach_rule_to_repeated_action(r, memb_vars) : r <- syn_foreach_rules};
     rules = (r.name => syn_expr_to_expr(r.expr, memb_vars) : r <- syn_plain_rules);
 
     arg_ids = {};
@@ -163,18 +165,19 @@ using (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_arg_arities
     rules = remove_keys(rules, arg_ids);
 
     return automaton(
-      name:       auto_def.name,
-      pos_params: auto_def.pos_args,
-      params:     args,
-      inputs:     inputs(auto_def),
-      outputs:    outputs(auto_def),
-      state:      state_vars,
-      rules:      rules,
-      actions:    actions
+      name:         auto_def.name,
+      pos_params:   auto_def.pos_args,
+      params:       args,
+      inputs:       inputs(auto_def),
+      outputs:      outputs(auto_def),
+      state:        state_vars,
+      rules:        rules,
+      actions:      actions,
+      rep_actions:  rep_actions
     );
 
 
-    AutoAction cond_rule_to_action(Atom name, [(expr: SynExpr, cond: SynExpr)^] branches, MembVar* memb_vars)
+    AutoCondAction cond_rule_to_action(Atom name, [(expr: SynExpr, cond: SynExpr)^] branches, MembVar* memb_vars)
     {
       outer_branch = head(branches);
       inner_branches = tail(branches);
@@ -186,6 +189,15 @@ using (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_arg_arities
       action = update(name, expr);
 
       return cond_action(cond, {action}, else_actions);
+    }
+
+
+    AutoRepeatedAction foreach_rule_to_repeated_action(SynForeachRule action, MembVar* memb_vars)
+    {
+      value = syn_expr_to_expr(action.value, memb_vars);
+      cond = or_expr([not_expr(eq(memb_var(s), memb_copy_var(s))) : s <- action.signals]);
+      cond = and_expr(cond, syn_expr_to_expr(action.cond, memb_vars)) if action.cond?;
+      return repeated_action(action.name, value, cond);
     }
 
 

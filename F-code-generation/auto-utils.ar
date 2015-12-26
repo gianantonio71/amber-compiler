@@ -3,11 +3,15 @@ MembCopyVar* memb_copy_vars(Automaton auto)
   assert not (? s <- values(auto.state)  : memb_copy_vars_in_expr(s.init_value) != {});
   assert not (? p <- values(auto.params) : memb_copy_vars_in_expr(p) != {});
 
-  return union({memb_copy_vars_in_expr(r) : r <- values(auto.rules)} & {memb_copy_vars(a) : a <- auto.actions});
+  return union(
+    {memb_copy_vars_in_expr(r) : r <- values(auto.rules)} &
+    {memb_copy_vars(a) : a <- auto.actions} &
+    {memb_copy_vars(a) : a <- auto.rep_actions}
+  );
 }
 
 
-MembCopyVar* memb_copy_vars(AutoAction action)
+MembCopyVar* memb_copy_vars(AutoCondAction action)
 {
   cond_vars = memb_copy_vars_in_expr(action.cond);
   body_vars = union({memb_copy_vars(sa) : sa <- action.body});
@@ -19,6 +23,97 @@ MembCopyVar* memb_copy_vars(AutoAction action)
 MembCopyVar* memb_copy_vars(AutoUpdate update) = memb_copy_vars_in_expr(update.value);
 
 
+MembCopyVar* memb_copy_vars(AutoRepeatedAction action)  = memb_copy_vars_in_expr(action.value) &
+                                                          memb_copy_vars_in_expr(action.cond);
+
+
 MembCopyVar* memb_copy_vars_in_expr(Expr expr):
   memb_copy_var()   = {expr},
   _                 = retrieve_from_nested_exprs(expr, memb_copy_vars_in_expr);
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+using Nat next_obj_var_id, Nat next_int_var_id, Nat next_bool_var_id, CompilationOptions options
+{
+  [Instr^] gen_safe_eval_code(Expr expr, <MembVar, LocVar> res_var):
+    and_expr()    = gen_safe_eval_code_for_and_expr(expr.left, expr.right, res_var),
+    or_expr()     = gen_safe_eval_code_for_or_expr(expr.left, expr.right, res_var),
+    _             = gen_default_safe_eval_code(expr, res_var);
+
+
+  [Instr^] gen_safe_eval_code_for_and_expr(Expr left_expr, Expr right_expr, <MembVar, LocVar> res_var)
+  {
+    left_tmp_var = lvar(next_obj_var_id);
+    right_tmp_var = lvar(nat(next_obj_var_id + 1));
+    let (next_obj_var_id = nat(next_obj_var_id + 2))
+      left_eval_code = gen_safe_eval_code(left_expr, left_tmp_var);
+      right_eval_code = gen_safe_eval_code(right_expr, right_tmp_var);
+    ;
+    // If the left term is false, there's no need to compute the right value
+    if_false_code = [set_var(res_var, obj_false)];
+    // If the left term is true, the right one decides the final value
+    if_true_code = [set_var(res_var, right_tmp_var)];
+    // If the left term is undefined, then we need to check the value of the right term
+    if_undef_code = [branch(is_false(right_tmp_var), [set_var(res_var, obj_false)], [clear_var(res_var)])];
+    // true + undefined cases, they both require the evaluation of the right term
+    if_not_false_code = [right_eval_code | branch(is_true(left_tmp_var), if_true_code, if_undef_code)];
+    // Putting it all together
+    return [left_eval_code | branch(is_false(left_tmp_var), if_false_code, if_not_false_code)];
+  }
+
+
+  [Instr^] gen_safe_eval_code_for_or_expr(Expr left_expr, Expr right_expr, <MembVar, LocVar> res_var)
+  {
+    left_tmp_var = lvar(next_obj_var_id);
+    right_tmp_var = lvar(nat(next_obj_var_id + 1));
+    let (next_obj_var_id = nat(next_obj_var_id + 2))
+      left_eval_code = gen_safe_eval_code(left_expr, left_tmp_var);
+      right_eval_code = gen_safe_eval_code(right_expr, right_tmp_var);
+    ;
+    // If the left term is true, there's no need to compute the right value
+    if_true_code = [set_var(res_var, obj_true)];
+    // If the left term is false, the right one decides the final value
+    if_false_code = [set_var(res_var, right_tmp_var)];
+    // If the left term is undefined, then we need to check the value of the right term
+    if_undef_code = [branch(is_true(right_tmp_var), [set_var(res_var, obj_true)], [clear_var(res_var)])];
+    // false + undefined cases, they both require the evaluation of the right term
+    if_not_true_code = [right_eval_code | branch(is_false(left_tmp_var), if_false_code, if_undef_code)];
+    // Putting it all together
+    return [left_eval_code | branch(is_true(left_tmp_var), if_true_code, if_not_true_code)];
+  }
+
+
+  [Instr^] gen_default_safe_eval_code(Expr expr, <MembVar, LocVar> res_var)
+  {
+    eval_code = gen_eval_code(
+      expr,
+      res_var,
+      next_set_it_var_id  = 0,
+      next_seq_it_var_id  = 0,
+      next_map_it_var_id  = 0,
+      next_vector_var_id  = 0,
+      next_stream_var_id  = 0,
+      auto_vars_types     = (),
+      ignore_assertions   = options.ignore_assertions
+    );
+
+    vars_to_safeguard = non_nullable_vars(expr);
+    if (vars_to_safeguard != {})
+      cond = and([var_is_def(v) : v <- rand_sort(vars_to_safeguard)]);
+      eval_code = [branch(cond, eval_code, [clear_var(res_var)])];
+    ;
+
+    return eval_code;
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+//## THIS FUNCTION HAS A REALLY STRANGE NAME. SHOULDN'T IT BE THE OPPOSITE?
+<MembVar, MembCopyVar>* non_nullable_vars(Expr expr)
+{
+  //## BUG BUG BUG: THIS IS WRONG. VARIABLES IN is-def EXPRESSIONS SHOULD NOT BE COUNTED HERE
+  vs = extern_vars(expr);
+  return {v : v <- vs, v :: <MembVar, MembCopyVar>};
+}
