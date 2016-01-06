@@ -1,0 +1,183 @@
+[T] sort_set(T* s, (T, T -> Bool) lt) = sort(rand_sort(s), lt);
+
+
+[T] sort([T] s, (T, T -> Bool) lt) = mergesort(s, lt);
+
+
+[T] mergesort([T] seq, (T, T -> Bool) lt)
+{
+  len = length(seq);
+  return seq if len <= 1;
+  ss = [[x] : x <- seq];
+  while (len > 1)
+    nss = [];
+    idx = 0;
+    //## BAD BAD BAD DOESN'T WORK WELL WITH A ROPE
+    while (len > idx+1)
+      nss = [merge(ss[idx], ss[idx+1], lt)] & nss;
+      idx = idx + 2;
+    ;
+    assert idx == length(ss) or idx == length(ss) - 1;
+    ss  = if len > idx then [ss[idx]] & nss else nss;
+    len = length(ss); //## SHOULD BE len = (len + 1) / 2;
+  ;
+  return ss[0];
+
+
+  [T] merge([T] seq1, [T] seq2, (T, T -> Bool) lt)
+  {
+    l1 = length(seq1);
+    l2 = length(seq2);
+    rs = [];
+    i1 = 0;
+    i2 = 0;
+    while (i1 < l1 or i2 < l2)
+      if (i1 == l1 or (i2 < l2 and lt(seq2[i2], seq1[i1])))
+        rs = [seq2[i2]] & rs;
+        i2 = i2 + 1;
+      else
+        rs = [seq1[i1]] & rs;
+        i1 = i1 + 1;
+      ;
+    ;
+    assert i1 <= l1 and i2 <= l2;
+    return reverse(rs);
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+//## THERE'S A BUG HERE, PROBABLY WHEN ONE OF THE SET OF TARGETS IS EMPTY
+(T => T*) transitive_closure((T => T*) map)
+{
+  // assert union(values(map)) - keys(map) == {};
+
+  all_nodes = keys(map) & union(values(map));
+
+  curr_map = (n => lookup(map, n, {}) : n <- keys(map) & union(values(map)));
+
+  loop
+    new_map = (n => rs & union({curr_map[r] : r <- rs}) : rs @ n <- curr_map);
+    break if (new_map == curr_map);
+    curr_map = new_map;
+  ;
+
+  return (n => curr_map[n] : n <- keys(map));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[[Nat]] reverse_adj_list([[Nat]] adj_list)
+{
+  rev_edges = join([[(t, s) : t <- ts] : ts @ s <- adj_list]);
+  rev_edges = sort(rev_edges, lower($a, $b));
+  rev_adj_list = [];
+  idx = 0;
+  for (i < length(adj_list))
+    ts = [];
+    while (idx < length(rev_edges) and left(rev_edges[idx]) == i)
+      ts = [ts | right(rev_edges[idx])];
+      idx = idx + 1;
+    ;
+    rev_adj_list = [rev_adj_list | ts];
+  ;
+  return rev_adj_list;
+
+
+  Bool lower((Nat, Nat) x, (Nat, Nat) y)
+  {
+    lx, rx = x;
+    ly, ry = y;
+    return if lx != ly then lx < ly else rx < ry;
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[T+] topological_sort((T => T*) edges)
+{
+  return [] if edges == ();
+  all_nodes = union({{s} & ts : ts @ s <- edges});
+  done_nodes = {n : n <- all_nodes, not has_key(edges, n) or edges[n] == {}};
+  layers = [done_nodes];
+  rem_edges = (s => ts : ts @ s <- edges, ts != {});
+  while (rem_edges != ())
+    cleaned_edges = (s => ts - done_nodes : ts @ s <- rem_edges);
+    new_layer = {s : ts @ s <- cleaned_edges, ts == {}};
+    assert new_layer != {};
+    layers = [layers | new_layer];
+    done_nodes = done_nodes & new_layer;
+    rem_edges = (s => ts : ts @ s <- cleaned_edges, ts != {});
+  ;
+  return layers;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+T++ equiv_groups(T+ xs, (T, T -> Bool) eq)
+{
+  groups = [];
+  rem_xs = rand_sort(xs);
+  while (rem_xs != [])
+    head = head(rem_xs);
+    group = [head];
+    rest = [];
+    for (i = 1..length(rem_xs))
+      x = rem_xs[i];
+      if (eq(head, x))
+        group = [group | x];
+      else
+        rest = [rest | x];
+      ;
+    ;
+    groups = [groups | group];
+    rem_xs = rest;
+  ;
+  return set(nonempty([set(nonempty(g)) : g <- groups]));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[Nat] count_vector([Nat] seq)
+{
+  res = count_vector_impl(seq);
+
+  for (c @ v : res)
+    c2 = 0;
+    for (n : seq)
+      c2 = c2 + 1 if n == v;
+    ;
+    //## TODO: FIX ASSERT ERROR *******************************************
+    assert c == c2;
+  ;
+  assert if seq == [] then res == [] else max(seq) < length(seq);
+  return res;
+
+
+  [Nat] count_vector_impl([Nat] seq)
+  {
+    return [] if seq == [];
+    len = length(seq);
+    sorted_seq = sort(seq, $a < $b);
+    max = rev_at(seq, 0);
+    counters = [];
+    cursor = 0;
+    for (val <= max)
+      new_cursor = cursor;
+      while (new_cursor < len and sorted_seq[new_cursor] == val)
+        new_cursor = new_cursor + 1;
+      ;
+      counters = [counters | nat(new_cursor-cursor)];
+      cursor = new_cursor;
+    ;
+    return counters;
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////

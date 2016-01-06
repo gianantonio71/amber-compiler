@@ -16,7 +16,7 @@
 {
   // symbs = (select SymbObj in prg end - {obj_true, obj_false}) & {:object(:string)};
   // symbs = [obj_true, obj_false] & sort_set(symbs, $a < $b);
-  symbs = select(prg, $ :: SymbObj) & {obj_true, obj_false, :object(:string)};
+  symbs = select(prg, $ :: SymbObj) & {obj_true, obj_false, :object(:string), :object(:just)};
   fail if not symbs :: SymbObj+;
   return nonempty(sort_set(symbs, $a < $b));
 }
@@ -77,3 +77,43 @@ String uppercase_encoding(Nat n)
   ;
   return string(chs);
 }
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+Any* select(Any obj, (Any -> Bool) cond) =
+  if cond(obj)
+    then {obj}
+    else match (obj)
+      +           = {},
+      *           = {},
+      ^           = {},
+      {...}       = union({select(x, cond) : x <- obj}),
+      [...]       = union({select(x, cond) : x <- set(obj)}),
+      (...)       = union({select(k, cond) & select(v, cond) : v @ k <- obj}),
+      tag @ iobj  = select(iobj, cond); //## SHOULD I EXTEND THE SEARCH TO THE TAG AS WELL?
+
+
+Any* select_rec(Any obj, (Any -> Bool) cond) =
+  {obj if cond(obj)} &
+  match (obj)
+      +           = {},
+      *           = {},
+      ^           = {},
+      {...}       = union({select_rec(x, cond) : x <- obj}),
+      [...]       = union({select_rec(x, cond) : x <- set(obj)}),
+      (...)       = union({select_rec(k, cond) & select_rec(v, cond) : v @ k <- obj}),
+      tag @ iobj  = select_rec(iobj, cond); //## SHOULD I EXTEND THE SEARCH TO THE TAG AS WELL?
+
+
+// Any replace(Any obj, (Any -> Bool) cond, (Any -> Any) eval) =
+//   if cond(obj)
+//     then eval(obj)
+//     else match (obj)
+//       +           = obj,
+//       *           = obj, //## BAD
+//       ^           = obj, //## BAD
+//       {...}       = {replace(x, cond, eval) : x <- obj},
+//       [...]       = [replace(x, cond, eval) : x <- obj],
+//       (...)       = (replace(k, cond, eval) => replace(v, cond, eval) : v @ k <- obj),
+//       tag @ iobj  = tag @ replace(iobj, cond, eval); //## SHOULD I EXTEND THE REPLACEMENT TO THE TAG AS WELL?
