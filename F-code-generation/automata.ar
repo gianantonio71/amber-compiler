@@ -255,7 +255,7 @@ using
       derived()       = gen_derived_node_code(node_type.id, node_type.expr, dep_nodes),
       state()         = gen_state_node_code(node_type.id, node_type.exprs, dep_nodes),
       cond_node()     = gen_cond_node_code(node_type.id, node_type.cond, node_type.parent, node_type.updates, dep_nodes),
-      rep_cond_node() = gen_rep_node_code(node_type.id, node_type.cond, node_type.value_idx, node_type.state_var_id, dep_nodes);
+      rep_cond_node() = gen_rep_cond_node_code(node_type.id, node_type.cond, node_type.parent, node_type.updates, dep_nodes);
     return code & [set_bvar(marked_for_update_var(get_id(node_type)), false)];
   }
 
@@ -309,86 +309,192 @@ using
     b0 = bvar(0);
     b1 = bvar(1);
     id_var = cond_value_var(id);
-    cv_var = cond_expr_value_var(id);
-    utd_var = cond_expr_up_to_date_var(id);
     cond_is_def_var = cond_is_def_var(id);
 
-    if (parent != nil)
-      cond_expr_is_def_var = cond_expr_is_def_var(id);
+    // Evaluating the condition and storing the result in l0
+    cond_eval_code = gen_cond_eval_code(id, cond, parent);
 
-      pd_var = cond_is_def_var(parent.id);
-      pid_var = cond_value_var(parent.id);
+    // Propagating the update to dependent conditions
+    dep_conds_update_prop_code = [mark_for_update(n, true) : n <- rand_sort(dep_nodes)];
 
-      cond_refresh_body = gen_safe_eval_code(cond, l0, next_obj_var_id = 1, next_bool_var_id = 2) & [
-        set_bvar(cv_var, inline_is_eq(l0, obj_true)),
-        set_bvar(cond_expr_is_def_var, var_is_def(l0)),
-        set_bvar(utd_var, true)
-      ];
-
-      cond_refresh_else_body = [
-        branch(
-          cond_expr_is_def_var,
-          [set_var(l0, to_obj(id_var))],
-          [clear_loc_var(l0)]
-        )
-      ];
-
-      cond_refresh_cond = and([pd_var, is_eq(pid_var, parent.trigger), neg(utd_var)]);
-
-      cond_eval_code = [
-        branch(cond_refresh_cond, cond_refresh_body, cond_refresh_else_body),
-        branch(
-          pd_var,
-          [do_if_not(is_eq(pid_var, parent.trigger), [set_var(l0, obj_false)])],
-          [do_if_not(inline_is_eq(l0, obj_false), [clear_loc_var(l0)])]
-        )
-      ];
-
-    else
-      cond_eval_code = gen_safe_eval_code(cond, l0, next_obj_var_id = 1, next_bool_var_id = 2);
-    ;
-
-    state_update_code = branch(
-      b1,
-      join(rand_sort({gen_update_code(u.state, u.value_idx) : u <- updates, u.trigger == true})),
-      join(rand_sort({gen_update_code(u.state, u.value_idx) : u <- updates, u.trigger == false}))
-    );
-    queue_dep_nodes_updates_code = [mark_for_update(n, true) : n <- rand_sort(dep_nodes)];
-    checked_state_update_code = [do_if(and([b0, neg(is_new)]), [state_update_code] & queue_dep_nodes_updates_code)];
-
-    on_becoming_undef_code = [do_if_not(is_new, join(rand_sort({gen_clear_code(u.state) : u <- updates})))];
-    cond_is_undef_branch = [do_if(cond_is_def_var, [set_bvar(cond_is_def_var, false)] & on_becoming_undef_code)];
-
+    // Base case, the condition stays defined. b1 holds the value of the condition, b0 whether it has changed
+    // If the condition has changed, we queue the updates for the appropriate branch
     cond_stays_def_branch = [
       set_bvar(b1, inline_is_eq(l0, obj_true)),
       set_bvar(b0, neg(is_eq(id_var, b1))),
-      set_bvar(id_var, b1)
-    ] & checked_state_update_code;
+      set_bvar(id_var, b1),
+      do_if(
+        and([b0, neg(is_new)]),
+        [ branch_or_no_op(
+            b1,
+            join(rand_sort({gen_update_code(u.state, u.value_idx) : u <- updates, u.trigger == true})),
+            join(rand_sort({gen_update_code(u.state, u.value_idx) : u <- updates, u.trigger == false}))
+          )
+        ]
+      )
+    ];
 
-    cond_becomes_def_branch = [
-      set_bvar(id_var, inline_is_eq(l0, obj_true)),
-      set_bvar(cond_is_def_var, true)
-    ] & queue_dep_nodes_updates_code;
+    // If the condition is now defined. If it was already defined before, we run the
+    // standard code. Otherwise, there's nothing to do, except storing its new value.
+    // In either case, we propagate the update to all dependent nodes
+    cond_is_def_branch = [
+      branch(
+        cond_is_def_var,
+        cond_stays_def_branch,
+        [ set_bvar(id_var, inline_is_eq(l0, obj_true)),
+          set_bvar(cond_is_def_var, true)
+        ]
+      )
+    ] & dep_conds_update_prop_code;
 
-    cond_is_def_branch = [branch(cond_is_def_var, cond_stays_def_branch, cond_becomes_def_branch)];
+    // The condition is undefined. If it already was, there's nothing we need to do.
+    // If, on the other hand, it has just become undefined, we need execute all the
+    // assignments with a null value. We also propagate the update to all dependent conditions.
+    cond_is_undef_branch = [
+      do_if(
+        cond_is_def_var,
+        [ set_bvar(cond_is_def_var, false),
+          do_if_not(is_new, join(rand_sort({gen_clear_code(u.state) : u <- updates})))
+        ] & dep_conds_update_prop_code
+      )
+    ];
 
     return cond_eval_code & [branch(var_is_def(l0), cond_is_def_branch, cond_is_undef_branch)];
   }
 
 
-  [Instr^] gen_rep_node_code(Nat id, Expr cond, Nat value_idx, Atom state_var_id, <Atom, Nat>* dep_nodes)
+  [Instr] gen_rep_cond_node_code(Nat id, Expr cond, Maybe[(id: Nat, trigger: Bool)] parent, UpdateInfo* updates, <Atom, Nat>* dep_nodes)
   {
     l0 = lvar(0);
 
+    // Evaluating the condition and storing the result in l0
+    cond_eval_code = gen_rep_cond_eval_code(id, cond, parent, dep_nodes != {});
+
+    // Executing all the actions associated with the condition
+    action_exec_code = [
+      branch(
+        var_is_def(l0),
+        // The condition is defined, we run the normal actions
+        [ branch_or_no_op(
+            inline_is_eq(l0, obj_true),
+            // The condition is true, running the 'then' branch
+            join(rand_sort({gen_update_code(u.state, u.value_idx) : u <- updates, u.trigger == true})),
+            // The condition is false, running the 'else' branch
+            join(rand_sort({gen_update_code(u.state, u.value_idx) : u <- updates, u.trigger == false}))
+          )
+        ],
+        // The condition is not defined, we execute all assignments with a null value
+        join(rand_sort({gen_clear_code(u.state) : u <- updates}))
+      )
+    ];
+
+    // Propagating the update to all dependent condition nodes
+    update_prop_code = [mark_for_update(n, true) : n <- rand_sort(dep_nodes)];
+
+    return [do_if_not(is_new, cond_eval_code & action_exec_code & update_prop_code)];
+  }
+
+
+  [Instr] gen_cond_eval_code(Nat id, Expr cond, Maybe[(id: Nat, trigger: Bool)] parent)
+  {
+    l0 = lvar(0);
+
+    // Evaluating the local condition. If there's no parent, that's all we need to do
+    loc_cond_eval_code = gen_safe_eval_code(cond, l0, next_obj_var_id = 1, next_bool_var_id = 0);
+    return loc_cond_eval_code if parent == nil;
+
+    // Local condition variables
+    cv_var = cond_expr_value_var(id);
+    cd_var = cond_expr_is_def_var(id);
+    utd_var = cond_expr_up_to_date_var(id);
+
+    // Overall condition variables
+    id_var = cond_value_var(id);
+
+    // Parent condition variables
+    pd_var = cond_is_def_var(parent.id);
+    pid_var = cond_value_var(parent.id);
+
+    return [
+      // Getting the value of the local condition in l0.
+      // The value is not necessarly the correct one,
+      // when the and condition is determined by the parent anyway
+      branch(
+        // No need to refresh the local condition if it's not up-to-date
+        // Also, if the parent is defined and not equal to the trigger value,
+        // the overall condition is false anyway, so no need to refresh
+        and([pd_var, is_eq(pid_var, parent.trigger), neg(utd_var)]),
+
+        // Evaluating the local condition and permanently storing its value
+        loc_cond_eval_code & [
+          set_bvar(cv_var, inline_is_eq(l0, obj_true)),
+          set_bvar(cd_var, var_is_def(l0)),
+          set_bvar(utd_var, true)
+        ],
+
+        // Pulling the stored, and not necessarly up-to-date, value into l0
+        [ branch(
+            cd_var,
+            [set_var(l0, to_obj(id_var))],
+            [clear_loc_var(l0)]
+          )
+        ]
+      ),
+
+      // Evaluating the overall condition by anding the local condition and its parent
+      branch(
+        pd_var,
+        [do_if_not(is_eq(pid_var, parent.trigger), [set_var(l0, obj_false)])],
+        [do_if_not(inline_is_eq(l0, obj_false), [clear_loc_var(l0)])]
+      )
+    ];
+  }
+
+
+  [Instr] gen_rep_cond_eval_code(Nat id, Expr cond, Maybe[(id: Nat, trigger: Bool)] parent, Bool has_deps)
+  {
+    l0 = lvar(0);
+
+    // Evaluating the local condition.
     cond_eval_code = gen_safe_eval_code(cond, l0, next_obj_var_id = 1, next_bool_var_id = 0);
 
-    state_update_code = gen_update_code(state_var_id, value_idx);
-    queue_dep_nodes_updates_code = [mark_for_update(n, true) : n <- rand_sort(dep_nodes)];
-    checked_state_update_code = [do_if(inline_is_eq(l0, obj_true), state_update_code & queue_dep_nodes_updates_code)];
+    // Anding the local condition with the 'parent == trigger' one, if a parent exists
+    if (parent != nil)
+      pcv_var = rep_cond_value_var(parent.id);
+      pcd_var = rep_cond_is_def_var(parent.id);
 
-    null_proof_code = [branch(var_is_def(l0), checked_state_update_code, gen_clear_code(state_var_id))];
+      cond_eval_code = [
+        branch(
+          // If the parent variable is defined and different from
+          // the trigger value then the overall condition is false
+          and([pcd_var, neg(is_eq(pcv_var, parent.trigger))]),
+          [set_var(l0, obj_false)],
+          // Otherwise, we first calculate the local condition,
+          // which is the same as the overall condition unless the
+          // parent is undefined and the local condition is true
+          [ cond_eval_code |
+            do_if(
+              and([neg(pcd_var), is_eq(l0, obj_true)]),
+              clear_loc_var(l0)
+            )
+          ]
+        )
+      ];
+    ;
 
-    return [do_if_not(is_new, nonempty(cond_eval_code & null_proof_code))];
+    // Saving the value of the condition for dependent condition, if there are any
+    if (has_deps)
+      cv_var = rep_cond_value_var(id);
+      cd_var = rep_cond_is_def_var(id);
+
+      cond_eval_code = [
+        cond_eval_code |
+        set_bvar(cv_var, is_eq(l0, obj_true)),
+        set_bvar(cd_var, var_is_def(l0))
+      ];
+    ;
+
+    return cond_eval_code;
   }
 
 
