@@ -175,7 +175,8 @@ using
     accessor_test() = gen_eval_code_for_accessor_test_expr(expr.expr, expr.field, res_var),
 
     get_output()    = [read_output(res_var, expr.var, auto_vars_types[expr.var], expr.output)],
-    test_output()   = [set_var(res_var, to_obj(output_is_def(expr.var, expr.output)))],
+    output_is_set() = [set_var(res_var, to_obj(field_is_set(expr.var, expr.output)))],
+    output_is_def() = [set_var(res_var, to_obj(field_is_def(expr.var, expr.output)))],
 
     if_expr()       = gen_eval_code_for_if_expr(expr.cond, expr.then, expr.else, res_var),
     match_expr()    = gen_eval_code_for_match_expr(expr.exprs, expr.cases, res_var),
@@ -188,11 +189,7 @@ using
     seq_comp(ei?)   = gen_eval_code_for_seq_comp_expr(ei, res_var),
     range_comp(ei?) = gen_eval_code_for_range_comp_expr(ei, res_var),
 
-    is_def(v?)      = {fail;};
-
-
-  // Maybe[Expr] maybe_sel_expr(Expr expr) = if expr.sel_expr? then just(expr.sel_expr) else nil;
-
+    is_set(v?)      = [set_var(res_var, to_obj(var_is_set(v)))];
 
 
   [Instr^] gen_eval_code_for_set_expr(SubExpr* subexprs, EvalDestVar res_var)
@@ -812,7 +809,8 @@ using
     for_stmt()                = gen_code_for_for_stmt(if stmt.var? then just(stmt.var) else nil, stmt.start_val, stmt.end_val, stmt.end_val_incl, stmt.body, res_var),
     foreach_stmt()            = gen_code_for_foreach_stmt(stmt.vars, if stmt.idx_var? then just(stmt.idx_var) else nil, stmt.values, stmt.body, res_var),
     proc_call()               = gen_code_for_proc_call_stmt(if stmt.res_var? then just(stmt.res_var) else nil, stmt.proc_name, stmt.params),
-    auto_input_update_stmt()  = gen_code_for_auto_input_update_stmt(stmt.var, stmt.inputs);
+    auto_set_input_stmt()     = gen_code_for_auto_set_input_stmt(stmt.var, stmt.input, stmt.value),
+    auto_update_stmt()        = [update_inputs(stmt.var, auto_vars_types[stmt.var])];
 
 
   [Instr^] gen_code_for_assert_stmt(Expr cond, String file, NzNat line, Maybe[String] text)
@@ -988,20 +986,14 @@ using
   }
 
 
-  [Instr^] gen_code_for_auto_input_update_stmt(AutoVar var, (Atom => (value: Expr, cond: Expr?)) inputs)
+  [Instr^] gen_code_for_auto_set_input_stmt(AutoVar var, Atom input, Maybe[Expr] value)
   {
-    var_type = auto_vars_types[var];
-    code = [];
-    for (n : rand_sort(keys(inputs)))
-      i = inputs[n];
-      val_info = gen_eval_info(i.value);
-      set_input_code = val_info.eval_code & [set_input(var, var_type, n, val_info.expr)];
-      if (i.cond?)
-        cond_info = gen_eval_info(i.cond);
-        set_input_code = cond_info.eval_code & [do_if(is_true(cond_info.expr), set_input_code)];
-      ;
-      code = code & set_input_code;
+    auto_type = auto_vars_types[var];
+    if (value != nil)
+      val_info = gen_eval_info(value(value));
+      return nonempty(val_info.eval_code & [set_input(var, auto_type, input, just(val_info.expr))]);
+    else
+      return [set_input(var, auto_type, input, nil)];
     ;
-    return nonempty(code & [update_inputs(var, var_type)]);
   }
 }

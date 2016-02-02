@@ -23,7 +23,7 @@ Program rem_syntax(SynPrg prg)
 
   desugared_automata = {syn_auto_def_to_auto_def(a, typedefs=typedefs, fn_arg_arities=fn_arg_arities) : a <- automata};
 
-  auto_vars_outputs = (a.name => keys(a.outputs) : a <- desugared_automata);
+  auto_vars_outputs = (a.name => {(name: n, discrete: o.discrete) : o @ n <- a.outputs} : a <- desugared_automata);
   desugared_proc_defs = {syn_proc_def_to_proc_def(pd, typedefs, fn_arg_arities, auto_vars_outputs) : pd <- proc_defs};
 
   return program(
@@ -113,7 +113,7 @@ FnDef* syn_fndef_to_fndefs(SynFnDef fndef, SynSgn* named_args, (TypeName => Type
 
 
 ProcDef2 syn_proc_def_to_proc_def(SynProcDef pd, (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_arg_arities,
-                                  (AutoSymbol => Atom*) auto_outputs)
+                                  (AutoSymbol => (name: Atom, discrete: Bool)*) auto_outputs)
 {
   args = [(var: p.var, type: syn_type_to_type(p.type, nil)) : p <- pd.args];
   maybe_ret_type = if pd.res_type != nil then just(syn_type_to_type(value(pd.res_type), nil)) else nil;
@@ -142,7 +142,9 @@ using (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_arg_arities
   {
     decls = set(auto_def.decls);
 
+    //## NEITHER OF THESE IS AT ALL SAFE, IF I END UP MAKING ANY CHANGES TO AutoDecl
     memb_vars = {memb_var(d.name) : d <- decls};
+    disc_signals = set([d.name : d <- auto_def.decls, d.discrete? and d.discrete]);
 
     syn_state_vars    = {d : d <- decls, syn_state()        << d};
     syn_plain_rules   = {d : d <- decls, syn_plain_rule()   << d};
@@ -150,9 +152,22 @@ using (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_arg_arities
     syn_foreach_rules = {d : d <- decls, syn_foreach_rule() << d};
 
     state_vars = (v.name => (type: syn_type_to_type(v.type, nil), init_value: syn_expr_to_expr(v.init_value, memb_vars)) : v <- syn_state_vars);
-    actions = {cond_rule_to_action(r.name, r.branches, memb_vars) : r <- syn_cond_rules};
-    rep_actions = {foreach_rule_to_repeated_action(r, memb_vars) : r <- syn_foreach_rules};
-    rules = (r.name => syn_expr_to_expr(r.expr, memb_vars) : r <- syn_plain_rules);
+
+    // Desugaring plain rules, which can have implicit repeated conditions
+    plain_rules_output = {desugar_plain_rule(r, memb_vars, disc_signals) : r <- syn_plain_rules};
+    rules = merge({value(r) : o <- plain_rules_output, r = left(o), r != nil});
+    rep_actions_1 = {value(a) : o <- plain_rules_output, a = right(o), a != nil};
+
+    // Desugaring conditional rules, which can have additional repeated conditions
+    cond_rule_output = {desugar_cond_rule(r, memb_vars, disc_signals) : r <- syn_cond_rules};
+    actions = {value(a) : o <- cond_rule_output, a = left(o), a != nil};
+    rep_actions_2 = {value(a) : o <- cond_rule_output, a = right(o), a != nil};
+
+    // Foreach rules can only lead to repeated actions
+    rep_actions_3 = {foreach_rule_to_repeated_action(r, memb_vars, disc_signals) : r <- syn_foreach_rules};
+
+    // Pulling all repeated actions together
+    rep_actions = rep_actions_1 & rep_actions_2 & rep_actions_3;
 
     arg_ids = {};
     loop
@@ -177,28 +192,95 @@ using (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_arg_arities
     );
 
 
-    AutoCondAction cond_rule_to_action(Atom name, [(expr: SynExpr, cond: SynExpr)^] branches, MembVar* memb_vars)
+    (Maybe[(Atom => Expr)], Maybe[AutoRepAction]) desugar_plain_rule(SynPlainRule rule, MembVar* memb_vars, Atom* disc_signals)
+    {
+      expr = syn_expr_to_expr(rule.expr, memb_vars);
+      vars = extern_vars(expr);
+      input_signals = {match (v) memb_var(id?) = id : v <- vars};
+      disc_input_signals = intersection(input_signals, disc_signals);
+
+      // If a plain rule does not contain any discrete signals,
+      // then it defines a continuous intermediate signal
+      assert not (rule.discrete and disc_input_signals == {});
+      return (just((rule.name => expr)), nil) if disc_input_signals == {};
+
+      // Now it's either a discrete signals definition or a state variable update
+      cond = and_expr([is_set(memb_var(ds)) : ds <- rand_sort(disc_input_signals)]);
+      action = if rule.discrete then set_discrete(rule.name, expr) else update(rule.name, expr);
+      return (nil, just(rep_action(cond, {action}, {})));
+    }
+
+
+    (Maybe[AutoCondAction], Maybe[AutoRepAction]) desugar_cond_rule(SynCondRule rule, MembVar* memb_vars, Atom* disc_signals)
+    {
+      target = rule.name;
+      branches = rule.branches;
+
+      if (length(branches) == 1)
+        branch = branches[0];
+        cond = syn_expr_to_expr(branch.cond, memb_vars);
+        expr = syn_expr_to_expr(branch.expr, memb_vars);
+        ss = {match (v) memb_var(id?) = id : v <- extern_vars(cond) & extern_vars(expr)};
+        dss = [memb_var(s) : s <- rand_sort(intersection(ss, disc_signals))];
+        if (dss != [])
+          if (rule.discrete)
+            action = set_discrete(target, expr);
+          else
+            action = update(target, expr);
+          ;
+
+          outer_cond = or_expr([is_set(s) : s <- dss]);
+
+          if (length(dss) > 1)
+            inner_cond = and_expr([is_set(s) : s <- dss]);
+            cond = and_expr(inner_cond, cond);
+          ;
+
+          return (nil, just(rep_action(outer_cond, {rep_action(cond, {action}, {})}, {})));
+        ;
+      ;
+
+      return (just(cond_rule_to_action(target, branches, rule.discrete, memb_vars)), nil);
+    }
+
+
+    AutoCondAction cond_rule_to_action(Atom name, [(expr: SynExpr, cond: SynExpr)^] branches, Bool discrete, MembVar* memb_vars)
     {
       outer_branch = head(branches);
       inner_branches = tail(branches);
 
-      else_actions = if inner_branches != [] then {cond_rule_to_action(name, inner_branches, memb_vars)} else {};
+      else_actions = {cond_rule_to_action(name, inner_branches, discrete, memb_vars) if inner_branches != []};
 
       cond = syn_expr_to_expr(outer_branch.cond, memb_vars);
       expr = syn_expr_to_expr(outer_branch.expr, memb_vars);
-      action = update(name, expr);
+      if (discrete)
+        action = set_discrete(name, expr);
+      else
+        action = update(name, expr);
+      ;
 
       return cond_action(cond, {action}, else_actions);
     }
 
 
-    AutoRepAction foreach_rule_to_repeated_action(SynForeachRule action, MembVar* memb_vars)
+    AutoRepAction foreach_rule_to_repeated_action(SynForeachRule rule, MembVar* memb_vars, Atom* disc_signals)
     {
-      value = syn_expr_to_expr(action.value, memb_vars);
-      nested_action = update(action.name, value);
-      nested_action = rep_action(syn_expr_to_expr(action.cond, memb_vars), {nested_action}, {}) if action.cond?;
-      change_cond = or_expr([not_expr(eq(memb_var(s), memb_copy_var(s))) : s <- action.signals]);
-      return rep_action(change_cond, {nested_action}, {});
+      value = syn_expr_to_expr(rule.value, memb_vars);
+      if (rule.discrete)
+        action = set_discrete(rule.name, value);
+      else
+        action = update(rule.name, value);
+      ;
+      action = rep_action(syn_expr_to_expr(rule.cond, memb_vars), {action}, {}) if rule.cond?;
+
+      change_cond = or_expr([
+        if in(s, disc_signals)
+          then is_set(memb_var(s))
+          else not_expr(eq(memb_var(s), memb_copy_var(s)))
+       : s <- rule.signals
+      ]);
+
+      return rep_action(change_cond, {action}, {});
     }
 
 

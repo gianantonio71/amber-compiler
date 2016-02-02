@@ -76,8 +76,16 @@ type NatBoolOp      = is_symb(ObjExpr),
                       is_le(expr1: IntExpr, expr2: IntExpr),
                       inline_is_eq(expr: ObjExpr, value: InlineObj),
                       is_out_of_range(ItVar),
-                      var_is_def(<MembVar, MembObjVar, MembCopyVar, LocVar>),
-                      output_is_def(var: AutoVar, output: Atom);
+                      //## EITHER var_is_set(v) SHOULD NOT BE CALLED IF var_is_def(v) IS NOT TRUE OR VICE VERSA.
+                      //## FIGURE THIS OUT AND ADD ALL THE NECESSARY CHECKS
+                      var_is_set(MembVar),
+                      var_is_def(<MembVar, MembObjVar, MembCopyVar, LocVar>), // We should never feed it a blank variable
+                      // It should not be possible to call field_is_set(v, s) if field_is_def(v, s) is not true.
+                      // This is because field_is_set(...) is not defined is field_is_def(...) is false,
+                      // and outside automata the language cannot deal with undefined values.
+                      //## TODO: ADD ALL THE NECESSARY CHECKS
+                      field_is_set(var: AutoVar, field: Atom),
+                      field_is_def(var: AutoVar, field: Atom);
 
 type NatIntOp       = get_int_val(ObjExpr),
                       get_set_size(ObjExpr),
@@ -190,8 +198,8 @@ type BasicInstr     = init_stream(StreamVar),
 
                       set_rc_var(var: WriteObjVar, value: <FloatExpr, RefObjExpr>),
 
-                      clear_memb_var(<MembVar, MembObjVar>),
-                      init_memb_var(MembVar),
+                      init_memb_var(var: <MembVar, MembObjVar>, new_state: <blank, undefined>),
+                      reset_memb_var(var: MembVar, new_state: <blank, undefined>),
                       clear_loc_var(LocVar), //## BAD: I DON'T LIKE THE ABILITY TO CLEAR A NON-MEMBER VARIABLE
 
                       add_ref(ObjVar),
@@ -207,8 +215,8 @@ type BasicInstr     = init_stream(StreamVar),
                       queue_update(type: AutoSymbol, id: Atom),
                       queue_cond_update(type: AutoSymbol, id: Nat, inval_cache: Bool),
 
-                      set_input(var: AutoVar, type: AutoSymbol, input: Atom, value: AtomicExpr),
-                      update_inputs(var: AutoVar, type: AutoSymbol),
+                      set_input(var: AutoVar, type: AutoSymbol, input: Atom, value: Maybe[AtomicExpr]),
+                      update_inputs(var: AutoVar?, type: AutoSymbol),
 
                       push_call_info(fn_name: ObjFnName, params: [Maybe[FnPar]]),
                       pop_call_info,

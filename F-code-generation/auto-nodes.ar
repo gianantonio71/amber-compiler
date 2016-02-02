@@ -1,37 +1,65 @@
-type AutoNodeType = input(Atom),
-                    derived(id: Atom, expr: Expr),
-                    state(id: Atom, exprs: [Expr]),
-                    cond_node(
-                      id:       Nat,
-                      cond:     Expr,
-                      parent:   Maybe[(id: Nat, trigger: Bool)],
-                      updates:  UpdateInfo*
-                    ),
-                    rep_cond_node(
-                      id:       Nat,
-                      cond:     Expr,
-                      parent:   Maybe[(id: Nat, trigger: Bool)],
-                      updates:  UpdateInfo*
-                    );
+type AutoNode = AutoInputNode, AutoDerivedNode, AutoStateNode, AutoDiscDerivedNode, AutoCondNode, AutoRepCondNode;
 
-type UpdateInfo   = (state: Atom, value_idx: Nat, trigger: Bool);
+type AutoInputNode        = input(id: Atom, discrete: Bool, dep_nodes: <Atom, Nat>*, level: Nat);
+
+type AutoDerivedNode      = derived(id: Atom, expr: Expr, dep_nodes: <Atom, Nat>*, level: Nat);
+
+type AutoStateNode        = state(id: Atom, exprs: [Expr], dep_nodes: <Atom, Nat>*, level: Nat);
+
+type AutoDiscDerivedNode  = derived_disc(id: Atom, exprs: [Expr], dep_nodes: <Atom, Nat>*, level: Nat);
+
+type AutoCondNode         = cond_node(
+                              id:         Nat,
+                              cond:       Expr,
+                              parent:     Maybe[(id: Nat, trigger: Bool)],
+                              actions:    (AutoNodeAction*, AutoNodeAction*),
+                              subconds:   (Nat*, Nat*),
+                              level:      Nat
+                            );
+
+type AutoRepCondNode      = rep_cond_node(
+                              id:         Nat,
+                              cond:       Expr,
+                              parent:     Maybe[(id: Nat, trigger: Bool)],
+                              actions:    (AutoNodeAction*, AutoNodeAction*),
+                              subconds:   (Nat*, Nat*),
+                              level:      Nat
+                            );
+
+
+type AutoNodeAction = (target: Atom, value_idx: Nat);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-AutoNodeType input(Atom id)             = :input(id);
-AutoNodeType derived(Atom id, Expr e)   = derived(id: id, expr: e);
-AutoNodeType state(Atom id, [Expr] es)  = state(id: id, exprs: es);
-AutoNodeType cond_node(Nat id, Expr c, Maybe[(id: Nat, trigger: Bool)] p, UpdateInfo* us)     = cond_node(id: id, cond: c, parent: p, updates: us);
-AutoNodeType rep_cond_node(Nat id, Expr c, Maybe[(id: Nat, trigger: Bool)] p, UpdateInfo* us) = rep_cond_node(id: id, cond: c, parent: p, updates: us);
+AutoNode input(Atom id, Bool d, <Atom, Nat>* ns, Nat l) =
+  input(id: id, discrete: d, dep_nodes: ns, level: l);
+
+AutoNode derived(Atom id, Expr e, <Atom, Nat>* ns, Nat l) =
+  derived(id: id, expr: e, dep_nodes: ns, level: l);
+
+AutoNode state(Atom id, [Expr] es, <Atom, Nat>* ns, Nat l) =
+  state(id: id, exprs: es, dep_nodes: ns, level: l);
+
+AutoNode derived_disc(Atom id, [Expr] es, <Atom, Nat>* ns, Nat l) =
+  derived_disc(id: id, exprs: es, dep_nodes: ns, level: l);
+
+AutoNode cond_node(Nat id, Expr c, Maybe[(id: Nat, trigger: Bool)] p,
+                    AutoNodeAction* tas, AutoNodeAction* eas, Nat* tcs, Nat* ecs, Nat l) =
+  cond_node(id: id, cond: c, parent: p, actions: (tas, eas), subconds: (tcs, ecs), level: l);
+
+AutoNode rep_cond_node(Nat id, Expr c, Maybe[(id: Nat, trigger: Bool)] p,
+                        AutoNodeAction* tas, AutoNodeAction* eas, Nat* tcs, Nat* ecs, Nat l) =
+  rep_cond_node(id: id, cond: c, parent: p, actions: (tas, eas), subconds: (tcs, ecs), level: l);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-<Atom, Nat> get_id(AutoNodeType node_type):
-  input(id?)      = id,
-  derived()       = node_type.id,
-  state()         = node_type.id,
-  cond_node()     = node_type.id,
-  rep_cond_node() = node_type.id;
+<Atom, Nat>* dep_nodes_ids(AutoNode node):
+  input()         = node.dep_nodes,
+  derived()       = node.dep_nodes,
+  state()         = node.dep_nodes,
+  derived_disc()  = node.dep_nodes,
+  cond_node()     = {tscs, escs = node.subconds; return tscs & escs;},
+  rep_cond_node() = {tscs, escs = node.subconds; return tscs & escs;};
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -42,7 +70,7 @@ type CondInfo     = ( cond:         Expr,
                     );
 
 
-[(Nat, <Atom, Nat>*, AutoNodeType)] gen_auto_nodes(Automaton automaton)
+[AutoNode] gen_auto_nodes(Automaton automaton)
 {
   next_id = 0;
 
@@ -81,7 +109,7 @@ type CondInfo     = ( cond:         Expr,
 
   nodes_by_level = topological_sort((s => new_ts : ts @ s <- value_dep_map, new_ts = ts - level_0 - {s}));
 
-  sorted_nodes = [(0, lookup(rev_trigger_dep_map, i, {}), input(i)) : i <- rand_sort(inputs)];
+  sorted_nodes = [input(i, automaton.inputs[i].discrete, lookup(rev_trigger_dep_map, i, {}), 0) : i <- rand_sort(inputs)];
 
   update_values = merge_values(
     {(u.state_id => u.new_value) : c @ unused_var <- cond_nodes, u <- c.updates} &
@@ -91,33 +119,49 @@ type CondInfo     = ( cond:         Expr,
 
   state_vars_ids = keys(automaton.state);
 
+  disc_var_ids = union({updated_disc_vars_ids(a) : a <- automaton.actions & automaton.rep_actions});
+
   for (l @ i : nodes_by_level)
     nodes = rand_sort(l);
     for (n : nodes)
       level = nat(i + 1);
-      dependent_nodes = lookup(rev_trigger_dep_map, n, {}) - state_vars_ids;
+      dep_nodes = lookup(rev_trigger_dep_map, n, {}) - state_vars_ids;
       if (has_key(automaton.rules, n))
         fail if not n :: Atom;
-        info = derived(n, automaton.rules[n]);
+        info = derived(n, automaton.rules[n], dep_nodes, level);
       elif (has_key(automaton.state, n))
         fail if not n :: Atom;
-        info = state(n, update_values[n]);
-      elif (has_key(cond_nodes, n))
-        fail if not n :: Nat;
-        node = cond_nodes[n];
-        updates = {(state: u.state_id, value_idx: index_first(u.new_value, update_values[u.state_id]), trigger: u.trigger) : u <- node.updates};
-        info = cond_node(n, node.cond, node.parent, updates);
-      elif (has_key(rep_cond_nodes, n))
-        fail if not n :: Nat;
-        node = rep_cond_nodes[n];
-        // value_idx = index_first(node.new_value, update_values[node.state_var_id]);
-        updates = {(state: u.state_id, value_idx: index_first(u.new_value, update_values[u.state_id]), trigger: u.trigger) : u <- node.updates};
-        info = rep_cond_node(n, node.cond, node.parent, updates);
+        info = state(n, update_values[n], dep_nodes, level);
+      elif (in(n, disc_var_ids))
+        fail if not n :: Atom;
+        info = derived_disc(n, update_values[n], dep_nodes, level);
       else
-        fail;
+        assert has_key(cond_nodes, n) or has_key(rep_cond_nodes, n);
+        fail if not n :: Nat;
+        is_rep = has_key(rep_cond_nodes, n);
+        node = if is_rep then rep_cond_nodes[n] else cond_nodes[n];
+        then_actions = {
+          ( target: u.state_id,
+            value_idx: index_first(u.new_value, update_values[u.state_id])
+          ) : u <- node.updates, u.trigger == true
+        };
+        else_actions = {
+          ( target: u.state_id,
+            value_idx: index_first(u.new_value, update_values[u.state_id])
+          ) : u <- node.updates, u.trigger == false
+        };
+        then_nested_conds = {c.id : c <- node.nested_conds, c.trigger == true};
+        else_nested_conds = {c.id : c <- node.nested_conds, c.trigger == false};
+        //## UGLY UGLY UGLY: THE TWO CALLS ARE BASICALLY THE SAME
+        if (is_rep)
+          info = rep_cond_node(n, node.cond, node.parent, then_actions, else_actions,
+                                then_nested_conds, else_nested_conds, level);
+        else
+          info = cond_node(n, node.cond, node.parent, then_actions, else_actions,
+                                then_nested_conds, else_nested_conds, level);
+        ;
       ;
-      new_node_info = (level, dependent_nodes, info);
-      sorted_nodes = [sorted_nodes | new_node_info];
+      sorted_nodes = [sorted_nodes | info];
     ;
   ;
 
@@ -155,3 +199,14 @@ type CondInfo     = ( cond:         Expr,
 
   return (conditions & (root_id => (cond: action.cond, parent: parent, nested_conds: nested_conds, updates: updates)), next_id);
 }
+
+
+
+Atom* updated_disc_vars_ids(AutoAtomicAction action):
+  update()        = {},
+  set_discrete()  = {action.target};
+
+
+Atom* updated_disc_vars_ids(<AutoCondAction, AutoRepAction> action) =
+  union({updated_disc_vars_ids(a) : a <- action.body}) &
+  union({updated_disc_vars_ids(a) : a <- action.else});

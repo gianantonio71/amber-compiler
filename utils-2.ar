@@ -104,7 +104,8 @@ T* retrieve_from_nested_exprs(Expr expr, (Expr -> T*) retrieve):
   accessor()        = retrieve(expr.expr),
   accessor_test()   = retrieve(expr.expr),
   get_output()      = {},
-  test_output()     = {},
+  output_is_set()   = {},
+  output_is_def()   = {},
   if_expr()         = retrieve(expr.cond) & retrieve(expr.then) & retrieve(expr.else),
   match_expr()      = seq_union([retrieve(e) : e <- expr.exprs]) &
                       seq_union([retrieve(c.expr) : c <- expr.cases]),
@@ -114,7 +115,7 @@ T* retrieve_from_nested_exprs(Expr expr, (Expr -> T*) retrieve):
   map_comp()        = retrieve_from_nested_exprs(expr.source, retrieve) & retrieve(expr.key_expr) & retrieve(expr.value_expr),
   seq_comp()        = retrieve(expr.expr) & retrieve(expr.src_expr)   & if expr.sel_expr? then retrieve(expr.sel_expr) else {},
   range_comp()      = retrieve(expr.expr) & retrieve(expr.bound_expr) & if expr.sel_expr? then retrieve(expr.sel_expr) else {},
-  is_def()          = {};
+  is_set()          = {};
 
 
 T* any_expr_retrieve_from_nested_exprs(Expr expr, (Expr -> T*) retrieve)      = retrieve(expr);
@@ -143,7 +144,8 @@ T* retrieve_from_nested_exprs(Statement stmt, (Expr -> T*) retrieve):
   imp_update_stmt()         = retrieve(stmt.idx) & retrieve(stmt.value),
   return_stmt               = {},
   proc_call()               = seq_union([retrieve(p) : p <- stmt.params]),
-  auto_input_update_stmt()  = union({retrieve(i.value) & if i.cond? then retrieve(i.cond) else {} : i @ unused_var <- stmt.inputs});
+  auto_set_input_stmt()     = {val = stmt.value; return if val != nil then retrieve(value(val)) else {};},
+  auto_update_stmt()        = {};
 
 
 T* retrieve_from_nested_exprs([Statement] stmts, (Expr -> T*) retrieve) = seq_union([retrieve_from_nested_exprs(s, retrieve) : s <- stmts]);
@@ -188,7 +190,8 @@ Expr replace_nested_exprs(Expr expr, (Expr -> Expr) replace):
   accessor()        = accessor(replace(expr.expr), expr.field),
   accessor_test()   = accessor_test(replace(expr.expr), expr.field),
   get_output()      = expr,
-  test_output()     = expr,
+  output_is_set()   = expr,
+  output_is_def()   = expr,
   if_expr()         = if_expr(replace(expr.cond), replace(expr.then), replace(expr.else)),
   match_expr()      = match_expr([replace(e) : e <- expr.exprs], [(ptrns: c.ptrns, expr: replace(c.expr)) : c <- expr.cases]),
   do_expr(ss?)      = do_expr(replace_exprs_in_stmts(ss, replace)),
@@ -209,7 +212,7 @@ Expr replace_nested_exprs(Expr expr, (Expr -> Expr) replace):
                         inclusive:  expr.inclusive,
                         sel_expr:   expr.sel_expr if expr.sel_expr?
                       ),
-  is_def()          = expr;
+  is_set()          = expr;
 
 
 CondExpr replace_exprs_in_cond_expr(CondExpr expr, (Expr -> Expr) replace) = cond_expr(replace(expr.expr), replace(expr.cond));
@@ -295,7 +298,7 @@ Expr replace_external_vars(Expr expr, (Var => Var) subst_map):
   map_comp()      = replace_external_vars_in_map_comp(expr, subst_map),
   seq_comp()      = replace_external_vars_in_seq_comp(expr, subst_map),
   range_comp()    = replace_external_vars_in_range_comp(expr, subst_map),
-  is_def(v?)      = {nv = lookup(subst_map, v, v); fail if not nv :: MembVar; return is_def(nv);},      //## BAD BAD BAD
+  is_set(v?)      = {nv = lookup(subst_map, v, v); fail if not nv :: MembVar; return is_set(nv);}, //## BAD BAD BAD
   _               = replace_nested_exprs(expr, replace_external_vars($, subst_map));
 
 
@@ -538,7 +541,7 @@ Var* extern_vars(Expr expr):
   range_comp()    = range_comp_extern_vars(expr),
   do_expr(ss?)    = stmts_extern_vars(ss),
   match_expr()    = match_expr_extern_vars(expr.exprs, expr.cases),
-  is_def(v?)      = {v},
+  is_set(v?)      = {v},
   _               = retrieve_from_nested_exprs(expr, extern_vars);
 
 

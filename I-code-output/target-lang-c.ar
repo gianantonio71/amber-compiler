@@ -422,9 +422,8 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
     set_rc_var()          = compile_to_c(instr.value, instr.var),
 
-    init_memb_var(v?)     = [to_c_var_name(v) & " = blank_obj;"],
-
-    clear_memb_var(v?)    = [to_c_var_name(v) & " = null_obj;"],
+    init_memb_var()       = [to_c_var_name(instr.var) & " = " & to_c_const(instr.new_state) & ";"],
+    reset_memb_var()      = [to_c_var_name(instr.var) & " = " & to_c_const(instr.new_state) & ";"],
     clear_loc_var(v?)     = [to_c_var_name(v) & " = null_obj;"],
 
     terminate             = ["fail();"],
@@ -489,11 +488,15 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
     queue_cond_update()   = [queue_update_method_name(instr.id, instr.type) & "(self, " & to_c_expr(instr.inval_cache) & ");"],
 
-    set_input()           = [input_set_method_name(instr.type, instr.input) & "(&" & to_c_var_name(instr.var) & ", " & to_c_expr(instr.value) & ");"],
+    set_input()           = { value = instr.value;
+                              value_str = if value != nil then to_c_expr(value(value)) else "null_obj";
+                              method_name = input_set_method_name(instr.type, instr.input);
+                              return [method_name & "(&" & to_c_var_name(instr.var) & ", " & value_str & ");"];
+                            },
 
-    update_inputs()       = [update_method_name(instr.type) & "(&" & to_c_var_name(instr.var) & ", env);"];
-
-
+    update_inputs()       = { var_str = if instr.var? then "&" & to_c_var_name(instr.var) else "self";
+                              return [update_method_name(instr.type) & "(" & var_str & ", env);"];
+                            };
 
 
   [String] compile_to_c(FloatExpr expr, ObjVar var):
@@ -783,10 +786,19 @@ using String typesymb2name(TypeSymbol)
 
     is_out_of_range(v?)   = "is_out_of_range(" & to_c_var_name(v) & ")",
 
+    //## ONE OF THESE TWO TEST SHOULD NEVER BE CALLED IF THE OTHER IS NOT TRUE.
+    //## FIGURE THIS OUT AND ADD A CHECK.
+    var_is_set(v?)        = parentesize(to_c_var_name(v) & " != blank_obj", parentesised),
     var_is_def(v?)        = parentesize(to_c_var_name(v) & " != null_obj", parentesised),
 
-    output_is_def()       = parentesize(
-                              to_c_var_name(expr.var) & "." & to_c_var_name(memb_var(expr.output), true) & " != null_obj",
+    //## field_is_set() SHOULD NEVER BE CALLED IF field_is_def() IS NOT TRUE.
+    //## ADD THE REQUIRED CHECK.
+    field_is_set()        = parentesize(
+                              to_c_var_name(expr.var) & "." & to_c_var_name(memb_var(expr.field), true) & " != blank_obj",
+                              parentesised
+                            ),
+    field_is_def()        = parentesize(
+                              to_c_var_name(expr.var) & "." & to_c_var_name(memb_var(expr.field), true) & " != null_obj",
                               parentesised
                             ),
 
@@ -956,4 +968,8 @@ using String typesymb2name(TypeSymbol)
     unique_fn_symbol()  = fn_name_to_str(fn_symb.symbol); //## BAD: THE DISPATCH FUNCTION WILL APPEAR ON THE STACK, AND IT WILL BE INDISTINGUISHABLE FROM ONE OF THE REAL FUNCTIONS
 
   String fn_name_to_str(ProcSymbol proc_symbol): proc_symbol(s?) = capitalize(_str_(s), false); //## UGLY UGLY UGLY
+
+
+  String to_c_const(<blank, undefined> state) = if state == :blank then "blank_obj" else "null_obj";
+
 }

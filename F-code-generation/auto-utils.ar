@@ -51,7 +51,7 @@ using Nat next_obj_var_id, Nat next_int_var_id, Nat next_bool_var_id, Compilatio
     // If the left term is true, the right one decides the final value
     if_true_code = [set_var(res_var, right_tmp_var)];
     // If the left term is undefined, then we need to check the value of the right term
-    if_undef_code = [branch(is_false(right_tmp_var), [set_var(res_var, obj_false)], [clear_var(res_var)])];
+    if_undef_code = [branch(is_false(right_tmp_var), [set_var(res_var, obj_false)], [make_var_undef(res_var)])];
     // true + undefined cases, they both require the evaluation of the right term
     if_not_false_code = [right_eval_code | branch(is_true(left_tmp_var), if_true_code, if_undef_code)];
     // Putting it all together
@@ -72,7 +72,7 @@ using Nat next_obj_var_id, Nat next_int_var_id, Nat next_bool_var_id, Compilatio
     // If the left term is false, the right one decides the final value
     if_false_code = [set_var(res_var, right_tmp_var)];
     // If the left term is undefined, then we need to check the value of the right term
-    if_undef_code = [branch(is_true(right_tmp_var), [set_var(res_var, obj_true)], [clear_var(res_var)])];
+    if_undef_code = [branch(is_true(right_tmp_var), [set_var(res_var, obj_true)], [make_var_undef(res_var)])];
     // false + undefined cases, they both require the evaluation of the right term
     if_not_true_code = [right_eval_code | branch(is_false(left_tmp_var), if_false_code, if_undef_code)];
     // Putting it all together
@@ -97,7 +97,7 @@ using Nat next_obj_var_id, Nat next_int_var_id, Nat next_bool_var_id, Compilatio
     vars_to_safeguard = non_nullable_vars(expr);
     if (vars_to_safeguard != {})
       cond = and([var_is_def(v) : v <- rand_sort(vars_to_safeguard)]);
-      eval_code = [branch(cond, eval_code, [clear_var(res_var)])];
+      eval_code = [branch(cond, eval_code, [make_var_undef(res_var)])];
     ;
 
     return eval_code;
@@ -112,4 +112,21 @@ using Nat next_obj_var_id, Nat next_int_var_id, Nat next_bool_var_id, Compilatio
   //## BUG BUG BUG: THIS IS WRONG. VARIABLES IN is-def EXPRESSIONS SHOULD NOT BE COUNTED HERE
   vs = extern_vars(expr);
   return {v : v <- vs, v :: <MembVar, MembCopyVar>};
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+Atom* discrete_signals(Automaton auto)
+{
+  return {id : info @ id <- auto.inputs, info.discrete} &
+         union({discrete_signals(a) : a <- auto.actions & auto.rep_actions});
+
+
+  Atom* discrete_signals(<AutoCondAction, AutoRepAction> action) =
+    union({discrete_signals(a) : a <- action.body & action.else});
+
+  Atom* discrete_signals(AutoUpdate) = {};
+
+  Atom* discrete_signals(AutoSetDiscrete action) = {action.target};
 }

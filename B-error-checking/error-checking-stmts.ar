@@ -78,8 +78,10 @@ using
       imp_update_stmt()         = expr_wf_errors(stmt.idx, all_vars) & expr_wf_errors(stmt.value, all_vars),
       return_stmt               = [],
       proc_call()               = join([expr_wf_errors(e, all_vars) : e <- stmt.args]),
-      auto_input_update_stmt()  = join([expr_wf_errors(a.value, all_vars) : a <- stmt.inputs]) &
-                                  join([expr_wf_errors(a.cond, all_vars) : a <- stmt.inputs, a.cond?]),
+      auto_set_input_stmt()     = { val = stmt.value;
+                                    return if val != nil then expr_wf_errors(value(val), all_vars) else [];
+                                  },
+      auto_update_stmt()        = [],
       fn_def_stmt()             = {fail;};
 
 
@@ -134,7 +136,8 @@ using
     proc_call()               = proc_call_stmt_local_wf_errors(stmt, ro_vars, rw_vars),
     return_stmt               = ret_stmt_local_wf_errors(stmt, false),
     break_stmt                = [break_outside_loop(stmt) if not is_inside_loop],
-    auto_input_update_stmt()  = auto_input_update_stmt_local_wf_errors(stmt.var, stmt.inputs, ro_vars, rw_vars),
+    auto_set_input_stmt()     = auto_set_input_stmt_local_wf_errors(stmt.var, stmt.input, ro_vars, rw_vars),
+    auto_update_stmt()        = auto_var_errors(stmt.var, ro_vars, rw_vars),
     fn_def_stmt()             = {fail;},
     assert_stmt(e?)           = [],
     print_stmt(e?)            = [],
@@ -203,11 +206,15 @@ using
   }
 
 
-  [ExprWFError] auto_input_update_stmt_local_wf_errors(AutoVar var, [(input: Atom, value: SynExpr, cond: SynExpr?)] input_asgnms, Var* ro_vars, StdVar* rw_vars)
+  [ExprWFError] auto_set_input_stmt_local_wf_errors(AutoVar var, Atom input, Var* ro_vars, StdVar* rw_vars)
   {
-    return [auto_var_not_defined(var, already_def(name(var), ro_vars & rw_vars))] if not has_key(auto_vars, var);
+    errs = auto_var_errors(var, ro_vars, rw_vars);
+    return errs if errs != [];
     auto_def = automata[auto_vars[var]];
-    inputs = inputs(auto_def);
-    return [unknown_input(a.input, auto_def) : a <- input_asgnms, not has_key(inputs, a.input)];
+    return [unknown_input(input, auto_def) if not has_key(inputs(auto_def), input)];
   }
+
+
+  [ExprWFError] auto_var_errors(AutoVar var, Var* ro_vars, StdVar* rw_vars) =
+    [auto_var_not_defined(var, already_def(name(var), ro_vars & rw_vars)) if not has_key(auto_vars, var)];
 }
