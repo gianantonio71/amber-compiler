@@ -22,6 +22,9 @@ Block gen_auto_code(Automaton automaton, CompilationOptions options)
   nested_cond_ids = {c.id : c <- cond_nodes, c.parent != nil};
   disc_inputs_ids = intersection(input_ids, disc_sgns_ids);
 
+  continuous_derived_nodes_ids = rule_ids - disc_sgns_ids;
+
+
   memb_copy_vars = memb_copy_vars(automaton);
   memb_copy_var_ids = {name(v) : v <- memb_copy_vars};
 
@@ -102,16 +105,20 @@ Block gen_auto_code(Automaton automaton, CompilationOptions options)
                         {marked_for_update_var(id) : id <- obj_memb_var_ids & cond_ids & rep_cond_ids} &
                         {is_new};
 
-  //## SOME INITIALIZATIONS ARE REDUNDANT OR UNNECESSARY
-  init_code = gen_init_method_body(
-    obj_memb_var_ids,
-    input_ids - disc_sgns_ids,
-    intersection(input_ids, disc_sgns_ids),
-    state_var_ids & disc_sgns_ids,
-    memb_bool_vars,
-    levels_sizes,
-    (id => nodes_idxs[id] : id <- input_ids) // Global node index and level node index are the same for level 0 nodes (inputs)
-  );
+
+  let ( obj_memb_ids            = obj_memb_var_ids,
+
+        cont_inputs_ids         = input_ids - disc_sgns_ids,
+        disc_inputs_ids         = intersection(input_ids, disc_sgns_ids),
+        state_vars_ids          = state_var_ids,
+        cont_derived_vars_ids   = continuous_derived_nodes_ids,
+        disc_derived_vars_ids   = disc_sgns_ids - disc_inputs_ids,
+
+        nodes_ids_by_level      = [set([id : unused_var, id <- l]) : l <- nodes_code_and_ids_by_level], // [<Atom, Nat>+]
+        nodes_idxs              = nodes_idxs)  // (<Atom, Nat> => Nat)
+
+    init_code = gen_init_method_body(memb_bool_vars);
+  ;
 
   memb_vars_to_rel = param_ids & input_ids & state_var_ids & disc_sgns_ids & rule_ids;
   vars_to_rel = {memb_var(id) : id <- memb_vars_to_rel} & {new_input(id) : id <- input_ids};
@@ -205,46 +212,77 @@ Block gen_auto_code(Automaton automaton, CompilationOptions options)
   }
 
 
-  [Instr] gen_init_method_body(Atom* obj_memb_ids, Atom* cont_inputs, Atom* disc_inputs,
-    Atom* update_nodes_ids, MembBoolVar* memb_bool_vars, [Nat] levels_sizes,
-    (Atom => Nat) input_node_index)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+using
+{
+  Atom*                   obj_memb_ids,
+
+  Atom*                   cont_inputs_ids,
+  Atom*                   disc_inputs_ids,
+  Atom*                   state_vars_ids,
+  Atom*                   cont_derived_vars_ids,
+  Atom*                   disc_derived_vars_ids,
+
+  [<Atom, Nat>+]          nodes_ids_by_level,
+  (<Atom, Nat> => Nat)    nodes_idxs;
+
+
+  [Instr] gen_init_method_body(MembBoolVar* memb_bool_vars)
   {
     // Initializing all object member variables (save for new inputs) to blank
     code_0 = [init_memb_var(memb_var(a), :blank) : a <- rand_sort(obj_memb_ids)];
 
     // Initializing new inputs to undefined (if countinuous) or blank (if discrete)
-    code_1 = [init_memb_var(new_input(a), :undefined) : a <- rand_sort(cont_inputs)] &
-             [init_memb_var(new_input(a), :blank) : a <- rand_sort(disc_inputs)];
+    code_1 = [init_memb_var(new_input(a), :undefined) : a <- rand_sort(cont_inputs_ids)] &
+             [init_memb_var(new_input(a), :blank) : a <- rand_sort(disc_inputs_ids)];
 
     // Initializing all boolean member variables
-    code_2 = [set_bvar(v, bool_memb_var_init_value(v, cont_inputs)) : v <- rand_sort(memb_bool_vars)];
+    code_2 = [set_bvar(v, bool_memb_var_init_value(v)) : v <- rand_sort(memb_bool_vars)];
 
     // Initializing the update_source_var()
-    code_3 = [set_ivar(update_source_var(id), -1) : id <- rand_sort(update_nodes_ids)];
+    code_3 = [set_ivar(update_source_var(id), -1) : id <- rand_sort(state_vars_ids & disc_derived_vars_ids)];
+
+    // This is the list of nodes that have to be initialized through the normal mechanism
+    // during the first update. It consists of all continous inputs and derived signals,
+    // plus all the coditions, but it does not include state variables, which are
+    // initialized separately, and discrete signals, which are ignored the first time
+    nodes_to_init_by_level = [
+      {n : n <- ns, n :: Nat or in(n, cont_inputs_ids) or in(n, cont_derived_vars_ids)}
+      : ns <- nodes_ids_by_level
+    ];
 
     // Initializing variables that keep track of the number of nodes to update
-    code_4 = [set_ivar(update_count_var(l), if l == 0 then size(cont_inputs) else 0) : s @ l <- levels_sizes, s > 2];
-
-    assert levels_sizes[0] == size(cont_inputs) + size(disc_inputs);
+    // For every level that has more than 2 nodes (the threshold for having a switch case)
+    // we add all continuous inputs or derived signals to the update list
+    code_4 = [set_ivar(update_count_var(l), size(ns)) : ns @ l <- nodes_to_init_by_level, size(nodes_ids_by_level[l]) > 2];
 
     // Initializing variables that contain the list of nodes that must be updated.
     // Initially only continuous inputs are marked for update
-    cont_input_idxs = sort_set({input_node_index[a] : a <- cont_inputs}, $a < $b);
     code_5 = join([
-      [set_ivar(nodes_to_update_var(l, i), if l == 0 then at(cont_input_idxs, i, -1) else -1) : i < s]
-      : s @ l <- levels_sizes, s > 2
+      [set_ivar(nodes_to_update_var(l, i), nodes_idxs[n]) : n @ i <- rand_sort(ns)]
+      : ns @ l <- nodes_to_init_by_level, size(nodes_ids_by_level[l]) > 2
     ]);
 
     return join([code_0, code_1, code_2, code_3, code_4, code_5]);
   }
 
 
-  Bool bool_memb_var_init_value(MembBoolVar, Atom* continuous_input_ids):
-    cond_is_def_var()                 = true,
-    is_new                            = true,
-    marked_for_update_var(Atom id?)   = in(id, continuous_input_ids),
-    // cond_expr_is_def_var()            = ???,
-    _                                 = false;
+  Bool bool_memb_var_init_value(MembBoolVar):
+    cond_is_def_var()               = true,
+    is_new                          = true,
+    marked_for_update_var(Nat id?)  = true,
+    // Variable type            Initially marked for update
+    //   continuous input         true
+    //   discrete input           false
+    //   state variable           false
+    //   continuous derived       true
+    //   discrete derived         false
+    marked_for_update_var(Atom id?) = in(id, cont_inputs_ids) or in(id, cont_derived_vars_ids),
+    // cond_expr_is_def_var()          = ???,
+    _                               = false;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -279,6 +317,7 @@ Block gen_auto_code(Automaton automaton, CompilationOptions options)
 
   early_init_vars = {s : ts @ s <- deep_input_dep_map, ts == {}};
   late_init_vars = {s : ts @ s <- deep_input_dep_map, ts != {}};
+
 
   early_init_vars_dep_map = (v => dep_map[v] : v <- early_init_vars);
   assert not (? ts @ s <- early_init_vars_dep_map : not subset(ts, early_init_vars));
