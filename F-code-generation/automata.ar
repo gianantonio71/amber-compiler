@@ -8,6 +8,7 @@ Block gen_auto_code(Automaton automaton, CompilationOptions options)
   nodes_deps = merge([(n.id => dep_nodes_ids(n)) : n <- nodes]);
 
   levels_sizes = count_vector([n.level : n <- nodes]);
+  fail if not levels_sizes :: [NzNat]; //## UGLY UGLY UGLY
   levels_offsets = [0] & partial_sums(levels_sizes);
 
   param_ids = keys(automaton.params);
@@ -23,72 +24,6 @@ Block gen_auto_code(Automaton automaton, CompilationOptions options)
   disc_inputs_ids = intersection(input_ids, disc_sgns_ids);
 
   continuous_derived_nodes_ids = rule_ids - disc_sgns_ids;
-
-
-  memb_copy_vars = memb_copy_vars(automaton);
-  memb_copy_var_ids = {name(v) : v <- memb_copy_vars};
-
-  //## BAD: I SHOULD BE USING A UNION PATTERN, JUST LIKE THIS:
-  // multivalue_node_expr_count = (t.id => length(t.exprs) : t <- set(node_types), state() | derived_disc() << t);
-  multivalue_node_expr_count = (t.id => length(t.exprs) : t <- set(nodes), state() << t) &
-                               (t.id => length(t.exprs) : t <- set(nodes), derived_disc() << t);
-
-  node_idx_var = ivar(0);
-  node_count_var = ivar(1);
-
-  let (auto_name = automaton.name, nodes_idxs = nodes_idxs, nodes_levels = nodes_levels,
-       multivalue_node_expr_count = multivalue_node_expr_count, memb_copy_var_ids = memb_copy_var_ids,
-       nested_cond_ids = nested_cond_ids, next_int_var_id = 2, options = options)
-
-    nodes_code = [gen_any_node_code(n) : n <- nodes];
-
-    queue_memb_copy_updates_code = [
-      do_if(
-        memb_has_changed(id),
-        [mark_for_update(d, false) : d <- rand_sort(nodes_deps[id])]
-      ) : id <- rand_sort(memb_copy_var_ids)
-    ];
-  ;
-
-  params_init_code = gen_params_init_code(automaton, options);
-  state_vars_early_init_code, late_state_vars_init_code = gen_state_vars_init_code(automaton, options);
-
-  nodes_code_and_ids_by_level = nodes_code_and_ids_by_level(nodes, nodes_code);
-
-  levels_code = [gen_level_code(node_data, i, levels_offsets[i], node_idx_var, node_count_var, disc_inputs_ids) : node_data @ i <- nodes_code_and_ids_by_level];
-
-  init_code = params_init_code & state_vars_early_init_code & late_state_vars_init_code;
-  if (init_code != [])
-    before_init = [head(levels_code) if levels_code != []];
-    after_init = if length(levels_code) > 1 then right_subseq(levels_code, 1) else [];
-    levels_code = before_init & [[do_if(is_new, init_code)]] & after_init;
-  ;
-
-  first_pass_finish_code = [set_bvar(is_new, false)];
-  if (disc_inputs_ids != {})
-    if (levels_sizes[0] > 2)
-      counter_var = ivar(0); //## ivar(0) IS ALREADY USED ELSEWHERE
-      first_pass_finish_code = [first_pass_finish_code | set_ivar(counter_var, 0)];
-      for (id : rand_sort(disc_inputs_ids))
-        first_pass_finish_code = [first_pass_finish_code |
-          do_if(
-            marked_for_update_var(id),
-            [ set_ivar(nodes_to_update_var(0, counter_var), nodes_idxs[id]), // For input nodes, the global index and the level index coincide
-              set_ivar(counter_var, add(counter_var, 1))
-            ]
-          )];
-      ;
-      first_pass_finish_code = [first_pass_finish_code | set_ivar(update_count_var(0), counter_var)];
-    ;
-    first_pass_finish_code = [first_pass_finish_code | update_inputs(automaton.name)];
-  ;
-
-  update_code = [reset_memb_var(memb_var(id), :blank) : id <- rand_sort(disc_sgns_ids)] &
-                [set_var(v, memb_var(name(v))) : v <- rand_sort(memb_copy_vars)] &
-                join(levels_code) & [do_if(is_new, first_pass_finish_code)];
-
-  init_memb_copies_code = [set_bvar(memb_has_changed(id), false) : id <- rand_sort(memb_copy_var_ids)];
-  update_code = init_memb_copies_code & update_code & queue_memb_copy_updates_code;
 
   obj_memb_var_ids = param_ids & input_ids & state_var_ids & disc_sgns_ids & rule_ids;
 
@@ -106,7 +41,11 @@ Block gen_auto_code(Automaton automaton, CompilationOptions options)
                         {is_new};
 
 
-  let ( obj_memb_ids            = obj_memb_var_ids,
+  let ( automaton               = automaton,
+        options                 = options,
+
+        obj_memb_ids            = obj_memb_var_ids,
+        disc_sgns_ids           = disc_sgns_ids,
 
         cont_inputs_ids         = input_ids - disc_sgns_ids,
         disc_inputs_ids         = intersection(input_ids, disc_sgns_ids),
@@ -114,10 +53,17 @@ Block gen_auto_code(Automaton automaton, CompilationOptions options)
         cont_derived_vars_ids   = continuous_derived_nodes_ids,
         disc_derived_vars_ids   = disc_sgns_ids - disc_inputs_ids,
 
-        nodes_ids_by_level      = [set([id : unused_var, id <- l]) : l <- nodes_code_and_ids_by_level], // [<Atom, Nat>+]
-        nodes_idxs              = nodes_idxs)  // (<Atom, Nat> => Nat)
+        nodes_by_id             = merge(set([(n.id => n) : n <- nodes])),
+        nodes_ids_by_level      = [set(l) : l <- nodes_ids_by_level(nodes)],
 
-    init_code = gen_init_method_body(memb_bool_vars);
+        nodes_idxs              = nodes_idxs,
+        nodes_levels            = nodes_levels,
+        levels_offsets          = levels_offsets,
+        levels_sizes            = levels_sizes)
+
+    init_code = gen_init_method_body(memb_bool_vars, (id => sv.init_value : sv @ id <- automaton.state));
+
+    update_code = gen_update_method_body(nodes, nested_cond_ids, nodes_deps);
   ;
 
   memb_vars_to_rel = param_ids & input_ids & state_var_ids & disc_sgns_ids & rule_ids;
@@ -159,37 +105,195 @@ Block gen_auto_code(Automaton automaton, CompilationOptions options)
   );
 
 
-  [[([Instr], <Atom, Nat>)^]] nodes_code_and_ids_by_level([AutoNode] nodes, [[Instr]] nodes_code)
+  [[<Atom, Nat>^]] nodes_ids_by_level([AutoNode] nodes)
   {
     curr_level = 0;
-    curr_level_data = [];
-    node_data_by_level = [];
+    curr_level_ids = [];
+    node_ids_by_level = [];
     for (n @ i : nodes)
       if (n.level != curr_level)
         assert n.level == curr_level + 1;
-        node_data_by_level = [node_data_by_level | nonempty(curr_level_data)];
+        node_ids_by_level = [node_ids_by_level | nonempty(curr_level_ids)];
         curr_level = curr_level + 1;
-        curr_level_data = [];
+        curr_level_ids = [];
       ;
-      curr_level_data = [curr_level_data | (nodes_code[i], n.id)];
+      curr_level_ids = [curr_level_ids | n.id];
     ;
-    node_data_by_level = [node_data_by_level | nonempty(curr_level_data)] if nodes != [];
-    return node_data_by_level;
+    node_ids_by_level = [node_ids_by_level | nonempty(curr_level_ids)] if nodes != [];
+    return node_ids_by_level;
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+using
+{
+  Automaton                   automaton,
+  CompilationOptions          options,
+
+  Atom*                       obj_memb_ids,
+  Atom*                       disc_sgns_ids,
+
+  Atom*                       cont_inputs_ids,
+  Atom*                       disc_inputs_ids,
+  Atom*                       state_vars_ids,
+  Atom*                       cont_derived_vars_ids,
+  Atom*                       disc_derived_vars_ids,
+
+  (<Atom, Nat> => AutoNode)   nodes_by_id,
+  [<Atom, Nat>+]              nodes_ids_by_level,
+
+  (<Atom, Nat> => Nat)        nodes_levels,
+  (<Atom, Nat> => Nat)        nodes_idxs,
+  [Nat]                       levels_offsets,
+  [NzNat]                     levels_sizes;
+
+
+  [Instr] gen_init_method_body(MembBoolVar* memb_bool_vars, (Atom => Expr) state_vars_init_value)
+  {
+    // Initializing all object member variables (save for new inputs) to blank
+    code_0 = [init_memb_var(memb_var(a), :blank) : a <- rand_sort(obj_memb_ids)];
+
+    // Initializing new inputs to undefined (if countinuous) or blank (if discrete)
+    code_1 = [init_memb_var(new_input(a), :undefined) : a <- rand_sort(cont_inputs_ids)] &
+             [init_memb_var(new_input(a), :blank) : a <- rand_sort(disc_inputs_ids)];
+
+    // Initializing all boolean member variables
+    code_2 = [set_bvar(v, bool_memb_var_init_value(v)) : v <- rand_sort(memb_bool_vars)];
+
+    // Initializing the update_source_var()
+    code_3 = [
+      set_ivar(update_source_var(id), state_var_update_source_idx(id, state_vars_init_value[id]))
+      : id <- rand_sort(state_vars_ids)
+    ] & [set_ivar(update_source_var(id), -1) : id <- rand_sort(disc_derived_vars_ids)];
+
+    // This is the list of nodes that have to be initialized through the normal mechanism
+    // during the first update. It consists of all continous inputs and derived signals,
+    // state variables and all the coditions, but it does not include discrete signals,
+    // which are ignored the first time
+    nodes_to_init_by_level = [
+      {n : n <- ns, n :: Nat or in(n, cont_inputs_ids) or in(n, cont_derived_vars_ids) or in(n, state_vars_ids)}
+      : ns <- nodes_ids_by_level
+    ];
+
+    // Initializing variables that keep track of the number of nodes to update
+    // For every level that has more than 2 nodes (the threshold for having a switch case)
+    // we add all continuous inputs or derived signals to the update list
+    code_4 = [set_ivar(update_count_var(l), size(ns)) : ns @ l <- nodes_to_init_by_level, size(nodes_ids_by_level[l]) > 2];
+
+    // Initializing variables that contain the list of nodes that must be updated.
+    // Initially only continuous inputs are marked for update
+    code_5 = join([
+      [set_ivar(nodes_to_update_var(l, i), nodes_idxs[n]) : n @ i <- rand_sort(ns)]
+      : ns @ l <- nodes_to_init_by_level, size(nodes_ids_by_level[l]) > 2
+    ]);
+
+    // Now initializing all parameters.
+    //## THESE VARIABLES HAVE ALREADY BEEN INITIALIZED TO BLANK, AND THAT'S REDUNDANT
+    code_6 = gen_params_init_code(automaton, options);
+
+    return join([code_0, code_1, code_2, code_3, code_4, code_5, code_6]);
+
+
+    Nat state_var_update_source_idx(Atom id, Expr init_val)
+    {
+      node = nodes_by_id[id];
+      return match (node)
+        state() = index_first(init_val, node.exprs);
+    }
+
+
+    Bool bool_memb_var_init_value(MembBoolVar):
+      cond_is_def_var()               = true,
+      is_new                          = true,
+      marked_for_update_var(Nat id?)  = true,
+      // Variable type            Initially marked for update
+      //   continuous input         true
+      //   discrete input           false
+      //   state variable           true
+      //   continuous derived       true
+      //   discrete derived         false
+      marked_for_update_var(Atom id?) = in(id, cont_inputs_ids) or
+                                        in(id, cont_derived_vars_ids) or
+                                        in(id, state_vars_ids),
+      // cond_expr_is_def_var()          = ???,
+      _                               = false;
   }
 
 
-  [Instr] gen_level_code([([Instr], <Atom, Nat>)^] nodes_data, Nat level_idx, Nat level_offset, IntVar node_idx_var, IntVar node_count_var, Atom* disc_inputs_ids)
+  [Instr] gen_update_method_body([AutoNode^] nodes, Nat* nested_cond_ids, (<Atom, Nat> => <Atom, Nat>*) nodes_deps)
+  {
+    memb_copy_vars = memb_copy_vars(automaton);
+    memb_copy_var_ids = {name(v) : v <- memb_copy_vars};
+
+    //## BAD: I SHOULD BE USING A UNION PATTERN, JUST LIKE THIS:
+    // multivalue_node_expr_count = (t.id => length(t.exprs) : t <- set(node_types), state() | derived_disc() << t);
+    multivalue_node_expr_count = (t.id => length(t.exprs) : t <- set(nodes), state() << t) &
+                                 (t.id => length(t.exprs) : t <- set(nodes), derived_disc() << t);
+
+    node_idx_var = ivar(0);
+    node_count_var = ivar(1);
+
+    let (auto_name                  = automaton.name,
+         multivalue_node_expr_count = multivalue_node_expr_count,
+         memb_copy_var_ids          = memb_copy_var_ids,
+         nested_cond_ids            = nested_cond_ids,
+         next_int_var_id            = 2)
+
+      nodes_code_by_id = merge([(n.id => gen_any_node_code(n)) : n <- nodes]);
+
+      queue_memb_copy_updates_code = [
+        do_if(
+          memb_has_changed(id),
+          [mark_for_update(d, false) : d <- rand_sort(nodes_deps[id])]
+        ) : id <- rand_sort(memb_copy_var_ids)
+      ];
+    ;
+
+    levels_code = [gen_level_code(rand_sort(ids), nodes_code_by_id, i, levels_offsets[i], node_idx_var, node_count_var) : ids @ i <- nodes_ids_by_level];
+
+    first_pass_finish_code = [set_bvar(is_new, false)];
+    if (disc_inputs_ids != {})
+      if (levels_sizes[0] > 2)
+        counter_var = ivar(0); //## ivar(0) IS ALREADY USED ELSEWHERE
+        first_pass_finish_code = [first_pass_finish_code | set_ivar(counter_var, 0)];
+        for (id : rand_sort(disc_inputs_ids))
+          first_pass_finish_code = [first_pass_finish_code |
+            do_if(
+              marked_for_update_var(id),
+              [ set_ivar(nodes_to_update_var(0, counter_var), nodes_idxs[id]), // For input nodes, the global index and the level index coincide
+                set_ivar(counter_var, add(counter_var, 1))
+              ]
+            )];
+        ;
+        first_pass_finish_code = [first_pass_finish_code | set_ivar(update_count_var(0), counter_var)];
+      ;
+      first_pass_finish_code = [first_pass_finish_code | update_inputs(automaton.name)];
+    ;
+
+    update_code = [reset_memb_var(memb_var(id), :blank) : id <- rand_sort(disc_sgns_ids)] &
+                  [set_var(v, memb_var(name(v))) : v <- rand_sort(memb_copy_vars)] &
+                  join(levels_code) & [do_if(is_new, first_pass_finish_code)];
+
+    init_memb_copies_code = [set_bvar(memb_has_changed(id), false) : id <- rand_sort(memb_copy_var_ids)];
+
+    return init_memb_copies_code & update_code & queue_memb_copy_updates_code;
+  }
+
+
+  [Instr] gen_level_code([<Atom, Nat>^] nodes_ids, (<Atom, Nat> => [Instr]) nodes_code_by_id, Nat level_idx, Nat level_offset, IntVar node_idx_var, IntVar node_count_var)
   {
     update_count_var = update_count_var(level_idx);
-    node_count = length(nodes_data);
+    node_count = length(nodes_ids);
 
     nodes_code = [
-      if level_idx == 0 and in(id, disc_inputs_ids)
-        then [do_if(neg(is_new), code)]
-        else code
-      : code, id <- nodes_data
+      { code = nodes_code_by_id[id];
+        return if level_idx == 0 and in(id, disc_inputs_ids)
+          then [do_if(neg(is_new), code)]
+          else code;
+      }
+      : id <- nodes_ids
     ];
-    nodes_ids = [id : unused_var, id <- nodes_data];
 
     if (node_count > 2)
       switch_expr = sub(nodes_to_update_var(level_idx, node_idx_var), level_offset);
@@ -210,79 +314,6 @@ Block gen_auto_code(Automaton automaton, CompilationOptions options)
 
     return code;
   }
-
-
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-using
-{
-  Atom*                   obj_memb_ids,
-
-  Atom*                   cont_inputs_ids,
-  Atom*                   disc_inputs_ids,
-  Atom*                   state_vars_ids,
-  Atom*                   cont_derived_vars_ids,
-  Atom*                   disc_derived_vars_ids,
-
-  [<Atom, Nat>+]          nodes_ids_by_level,
-  (<Atom, Nat> => Nat)    nodes_idxs;
-
-
-  [Instr] gen_init_method_body(MembBoolVar* memb_bool_vars)
-  {
-    // Initializing all object member variables (save for new inputs) to blank
-    code_0 = [init_memb_var(memb_var(a), :blank) : a <- rand_sort(obj_memb_ids)];
-
-    // Initializing new inputs to undefined (if countinuous) or blank (if discrete)
-    code_1 = [init_memb_var(new_input(a), :undefined) : a <- rand_sort(cont_inputs_ids)] &
-             [init_memb_var(new_input(a), :blank) : a <- rand_sort(disc_inputs_ids)];
-
-    // Initializing all boolean member variables
-    code_2 = [set_bvar(v, bool_memb_var_init_value(v)) : v <- rand_sort(memb_bool_vars)];
-
-    // Initializing the update_source_var()
-    code_3 = [set_ivar(update_source_var(id), -1) : id <- rand_sort(state_vars_ids & disc_derived_vars_ids)];
-
-    // This is the list of nodes that have to be initialized through the normal mechanism
-    // during the first update. It consists of all continous inputs and derived signals,
-    // plus all the coditions, but it does not include state variables, which are
-    // initialized separately, and discrete signals, which are ignored the first time
-    nodes_to_init_by_level = [
-      {n : n <- ns, n :: Nat or in(n, cont_inputs_ids) or in(n, cont_derived_vars_ids)}
-      : ns <- nodes_ids_by_level
-    ];
-
-    // Initializing variables that keep track of the number of nodes to update
-    // For every level that has more than 2 nodes (the threshold for having a switch case)
-    // we add all continuous inputs or derived signals to the update list
-    code_4 = [set_ivar(update_count_var(l), size(ns)) : ns @ l <- nodes_to_init_by_level, size(nodes_ids_by_level[l]) > 2];
-
-    // Initializing variables that contain the list of nodes that must be updated.
-    // Initially only continuous inputs are marked for update
-    code_5 = join([
-      [set_ivar(nodes_to_update_var(l, i), nodes_idxs[n]) : n @ i <- rand_sort(ns)]
-      : ns @ l <- nodes_to_init_by_level, size(nodes_ids_by_level[l]) > 2
-    ]);
-
-    return join([code_0, code_1, code_2, code_3, code_4, code_5]);
-  }
-
-
-  Bool bool_memb_var_init_value(MembBoolVar):
-    cond_is_def_var()               = true,
-    is_new                          = true,
-    marked_for_update_var(Nat id?)  = true,
-    // Variable type            Initially marked for update
-    //   continuous input         true
-    //   discrete input           false
-    //   state variable           false
-    //   continuous derived       true
-    //   discrete derived         false
-    marked_for_update_var(Atom id?) = in(id, cont_inputs_ids) or in(id, cont_derived_vars_ids),
-    // cond_expr_is_def_var()          = ???,
-    _                               = false;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -300,377 +331,4 @@ using
     ];
   ;
   return join([join(cfs) : cfs <- params_init_code]);
-}
-
-
-([Instr], [Instr]) gen_state_vars_init_code(Automaton automaton, CompilationOptions options)
-{
-  param_ids = keys(automaton.params);
-  input_ids = keys(automaton.inputs);
-  state_var_ids = keys(automaton.state);
-
-  dep_map = (a => {unsafe_name(v) : v <- extern_vars(s.init_value)} - param_ids : s @ a <- automaton.state);
-  assert not (? ts @ s <- dep_map, t <- ts : not in(t, state_var_ids) and not in(t, input_ids));
-
-  shallow_input_dep_map = (s => intersection(ts, input_ids) : ts @ s <- dep_map);
-  deep_input_dep_map = (s => intersection(ts, input_ids) : ts @ s <- transitive_closure(shallow_input_dep_map));
-
-  early_init_vars = {s : ts @ s <- deep_input_dep_map, ts == {}};
-  late_init_vars = {s : ts @ s <- deep_input_dep_map, ts != {}};
-
-
-  early_init_vars_dep_map = (v => dep_map[v] : v <- early_init_vars);
-  assert not (? ts @ s <- early_init_vars_dep_map : not subset(ts, early_init_vars));
-  sorted_early_init_vars = [intersection(ns, state_var_ids) : ns <- topological_sort(early_init_vars_dep_map)];
-
-  late_init_vars_dep_map = (v => dep_map[v] - early_init_vars : v <- late_init_vars);
-  sorted_late_init_vars = [intersection(ns, state_var_ids) : ns <- topological_sort(late_init_vars_dep_map)];
-
-  let (next_obj_var_id = 0, next_int_var_id = 0, next_bool_var_id = 0, options = options)
-    early_init_code = [
-      [gen_safe_eval_code(automaton.state[sv].init_value, memb_var(sv)) : sv <- rand_sort(svs)]
-      : svs <- sorted_early_init_vars
-    ];
-
-    late_init_code = [
-      [gen_safe_eval_code(automaton.state[sv].init_value, memb_var(sv)) : sv <- rand_sort(svs)]
-      : svs <- sorted_late_init_vars
-    ];
-  ;
-
-  return (join([join(cfs) : cfs <- early_init_code]), join([join(cfs) : cfs <- late_init_code]));
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-using
-{
-  AutoSymbol            auto_name,
-  (<Atom, Nat> => Nat)  nodes_idxs,
-  (<Atom, Nat> => Nat)  nodes_levels,
-  (Atom => Nat)         multivalue_node_expr_count,
-  Atom*                 memb_copy_var_ids,
-  Nat*                  nested_cond_ids,
-  Nat                   next_int_var_id,
-  CompilationOptions    options;
-
-
-  [Instr] gen_any_node_code(AutoNode node) = gen_node_code(node) & [set_bvar(marked_for_update_var(node.id), false)];
-
-
-  [Instr^] gen_node_code(AutoInputNode node)
-  {
-    id = node.id;
-
-    l0 = lvar(0);
-    l1 = lvar(1);
-    memb_var = memb_var(id);
-    body = [set_var(memb_var, l0), set_bvar(memb_has_changed(id), true) if in(id, memb_copy_var_ids)] &
-           [mark_for_update(n, false) : n <- rand_sort(node.dep_nodes)];
-
-    return nonempty([get_new_input(l0, id), init_memb_var(new_input(id), :blank)] & body) if node.discrete;
-
-    return [
-      get_new_input(l0, id),
-      init_memb_var(new_input(id), :blank),
-      set_var(l1, memb_var),
-      do_if_not(is_eq(l0, l1), body)
-    ];
-  }
-
-
-  [Instr^] gen_node_code(AutoDerivedNode node)
-  {
-    id = node.id;
-
-    var = memb_var(id);
-    nv_var = lvar(0);
-    eval_code = gen_safe_eval_code(node.expr, nv_var, next_obj_var_id = 1, next_bool_var_id = 0);
-    cond = neg(is_eq(var, nv_var));
-    body = [set_var(var, nv_var), set_bvar(memb_has_changed(id), true) if in(id, memb_copy_var_ids)] &
-           [mark_for_update(n, false) : n <- rand_sort(node.dep_nodes)];
-    return [eval_code | do_if(cond, body)];
-  }
-
-
-  [Instr^] gen_node_code(AutoStateNode node)
-  {
-    id = node.id;
-
-    var = memb_var(id);
-    nv_var = lvar(0);
-    let (next_obj_var_id = 1, next_bool_var_id = 0)
-      cases = nonempty([gen_safe_eval_code(e, nv_var) : e <- node.exprs] & [[clear_loc_var(nv_var)]]);
-      eval_instr = switch_on_nat(update_source_var(id), cases);
-    ;
-    cond = neg(is_eq(var, nv_var));
-    body = [set_var(var, nv_var), set_bvar(memb_has_changed(id), true) if in(id, memb_copy_var_ids)] &
-           [mark_for_update(n, false) : n <- rand_sort(node.dep_nodes)];
-    return [eval_instr, do_if(cond, body)];
-  }
-
-
-  [Instr^] gen_node_code(AutoDiscDerivedNode node)
-  {
-    id = node.id;
-
-    var = memb_var(id);
-    nv_var = lvar(0);
-    let (next_obj_var_id = 1, next_bool_var_id = 0)
-      cases = nonempty([gen_safe_eval_code(e, nv_var) : e <- node.exprs] & [[clear_loc_var(nv_var)]]);
-      eval_instr = switch_on_nat(update_source_var(id), cases);
-    ;
-    return nonempty([eval_instr, set_var(var, nv_var)] & [mark_for_update(n, false) : n <- rand_sort(node.dep_nodes)]);
-  }
-
-
-  [Instr] gen_node_code(AutoCondNode node)
-  {
-    id = node.id;
-    then_actions, else_actions = node.actions;
-    all_actions = then_actions & else_actions;
-    all_subcond_ids = seq_union(node.subconds);
-
-    l0 = lvar(0);
-    b0 = bvar(0);
-    b1 = bvar(1);
-    id_var = cond_value_var(id);
-    cond_is_def_var = cond_is_def_var(id);
-
-    // Evaluating the condition and storing the result in l0
-    cond_eval_code = gen_cond_eval_code(id, node.cond, node.parent);
-
-    // Propagating the update to dependent conditions
-    dep_conds_update_prop_code = [mark_for_update(n, true) : n <- rand_sort(all_subcond_ids)];
-
-    // Base case, the condition stays defined. b1 holds the value of the condition, b0 whether it has changed
-    // If the condition has changed, we queue the updates for the appropriate branch
-    cond_stays_def_branch = [
-      set_bvar(b1, inline_is_eq(l0, obj_true)),
-      set_bvar(b0, neg(is_eq(id_var, b1))),
-      set_bvar(id_var, b1),
-      do_if(
-        and([b0, neg(is_new)]),
-        [ branch_or_no_op(
-            b1,
-            join(rand_sort({gen_update_code(a.target, a.value_idx) : a <- then_actions})),
-            join(rand_sort({gen_update_code(a.target, a.value_idx) : a <- else_actions}))
-          )
-        ]
-      )
-    ];
-
-    // If the condition is now defined. If it was already defined before, we run the
-    // standard code. Otherwise, there's nothing to do, except storing its new value.
-    // In either case, we propagate the update to all dependent nodes
-    cond_is_def_branch = [
-      branch(
-        cond_is_def_var,
-        cond_stays_def_branch,
-        [ set_bvar(id_var, inline_is_eq(l0, obj_true)),
-          set_bvar(cond_is_def_var, true)
-        ]
-      )
-    ] & dep_conds_update_prop_code;
-
-    // The condition is undefined. If it already was, there's nothing we need to do.
-    // If, on the other hand, it has just become undefined, we need execute all the
-    // assignments with a null value. We also propagate the update to all dependent conditions.
-    cond_is_undef_branch = [
-      do_if(
-        cond_is_def_var,
-        [ set_bvar(cond_is_def_var, false),
-          do_if_not(is_new, join([gen_clear_code(a.target) : a <- rand_sort(all_actions)]))
-        ] & dep_conds_update_prop_code
-      )
-    ];
-
-    return cond_eval_code & [branch(var_is_def(l0), cond_is_def_branch, cond_is_undef_branch)];
-  }
-
-
-  [Instr] gen_node_code(AutoRepCondNode node)
-  {
-    id = node.id;
-    then_actions, else_actions = node.actions;
-    all_actions = then_actions & else_actions;
-    then_subcond_ids, else_subcond_ids = node.subconds;
-    all_subcond_ids = then_subcond_ids & else_subcond_ids;
-
-    l0 = lvar(0);
-
-    // Evaluating the condition and storing the result in l0
-    cond_eval_code = gen_rep_cond_eval_code(id, node.cond, node.parent, all_subcond_ids != {});
-
-    // Executing all the actions associated with the condition
-    action_exec_code = [
-      branch(
-        var_is_def(l0),
-        // The condition is defined, we run the normal actions
-        [ branch_or_no_op(
-            inline_is_eq(l0, obj_true),
-            // The condition is true, running the 'then' branch
-            join(rand_sort({gen_update_code(a.target, a.value_idx) : a <- then_actions})) &
-            [mark_for_update(n, true) : n <- rand_sort(then_subcond_ids)],
-            // The condition is false, running the 'else' branch
-            join(rand_sort({gen_update_code(a.target, a.value_idx) : a <- else_actions})) &
-            [mark_for_update(n, true) : n <- rand_sort(else_subcond_ids)]
-          )
-        ],
-        // The condition is not defined, we execute all assignments with a null value
-        join(rand_sort({gen_clear_code(a.target) : a <- all_actions})) &
-        [mark_for_update(n, true) : n <- rand_sort(all_subcond_ids)]
-      )
-    ];
-
-    return [do_if_not(is_new, cond_eval_code & action_exec_code)];
-  }
-
-
-  [Instr] gen_cond_eval_code(Nat id, Expr cond, Maybe[(id: Nat, trigger: Bool)] parent)
-  {
-    l0 = lvar(0);
-
-    // Evaluating the local condition. If there's no parent, that's all we need to do
-    loc_cond_eval_code = gen_safe_eval_code(cond, l0, next_obj_var_id = 1, next_bool_var_id = 0);
-    return loc_cond_eval_code if parent == nil;
-
-    // Local condition variables
-    cv_var = cond_expr_value_var(id);
-    cd_var = cond_expr_is_def_var(id);
-    utd_var = cond_expr_up_to_date_var(id);
-
-    // Overall condition variables
-    id_var = cond_value_var(id);
-
-    // Parent condition variables
-    pd_var = cond_is_def_var(parent.id);
-    pid_var = cond_value_var(parent.id);
-
-    return [
-      // Getting the value of the local condition in l0.
-      // The value is not necessarly the correct one,
-      // when the and condition is determined by the parent anyway
-      branch(
-        // No need to refresh the local condition if it's not up-to-date
-        // Also, if the parent is defined and not equal to the trigger value,
-        // the overall condition is false anyway, so no need to refresh
-        and([pd_var, is_eq(pid_var, parent.trigger), neg(utd_var)]),
-
-        // Evaluating the local condition and permanently storing its value
-        loc_cond_eval_code & [
-          set_bvar(cv_var, inline_is_eq(l0, obj_true)),
-          set_bvar(cd_var, var_is_def(l0)),
-          set_bvar(utd_var, true)
-        ],
-
-        // Pulling the stored, and not necessarly up-to-date, value into l0
-        [ branch(
-            cd_var,
-            [set_var(l0, to_obj(id_var))],
-            [clear_loc_var(l0)]
-          )
-        ]
-      ),
-
-      // Evaluating the overall condition by anding the local condition and its parent
-      branch(
-        pd_var,
-        [do_if_not(is_eq(pid_var, parent.trigger), [set_var(l0, obj_false)])],
-        [do_if_not(inline_is_eq(l0, obj_false), [clear_loc_var(l0)])]
-      )
-    ];
-  }
-
-
-  [Instr] gen_rep_cond_eval_code(Nat id, Expr cond, Maybe[(id: Nat, trigger: Bool)] parent, Bool has_deps)
-  {
-    l0 = lvar(0);
-
-    // Evaluating the local condition.
-    cond_eval_code = gen_safe_eval_code(cond, l0, next_obj_var_id = 1, next_bool_var_id = 0);
-
-    // Anding the local condition with the 'parent == trigger' one, if a parent exists
-    if (parent != nil)
-      pcv_var = rep_cond_value_var(parent.id);
-      pcd_var = rep_cond_is_def_var(parent.id);
-
-      cond_eval_code = [
-        branch(
-          // If the parent variable is defined and different from
-          // the trigger value then the overall condition is false
-          and([pcd_var, neg(is_eq(pcv_var, parent.trigger))]),
-          [set_var(l0, obj_false)],
-          // Otherwise, we first calculate the local condition,
-          // which is the same as the overall condition unless the
-          // parent is undefined and the local condition is true
-          [ cond_eval_code |
-            do_if(
-              and([neg(pcd_var), is_eq(l0, obj_true)]),
-              clear_loc_var(l0)
-            )
-          ]
-        )
-      ];
-    ;
-
-    // Saving the value of the condition for dependent condition, if there are any
-    if (has_deps)
-      cv_var = rep_cond_value_var(id);
-      cd_var = rep_cond_is_def_var(id);
-
-      cond_eval_code = [
-        cond_eval_code |
-        set_bvar(cv_var, is_eq(l0, obj_true)),
-        set_bvar(cd_var, var_is_def(l0))
-      ];
-    ;
-
-    return cond_eval_code;
-  }
-
-
-  [Instr^] gen_update_code(Atom state, Nat src_idx) = [
-      set_ivar(update_source_var(state), src_idx),
-      mark_for_update(state, false)
-    ];
-
-
-  [Instr^] gen_clear_code(Atom state) = gen_update_code(state, multivalue_node_expr_count[state]);
-
-
-  Instr mark_for_update(<Atom, Nat> node_id, Bool from_cond):
-    +   = queue_update(auto_name, node_id),
-    *   = queue_cond_update(auto_name, node_id, not from_cond and in(node_id, nested_cond_ids));
-}
-
-
-using (<Atom, Nat> => Nat) nodes_idxs, (<Atom, Nat> => Nat) nodes_levels, [Nat] levels_sizes, Nat* nested_cond_ids, Nat next_int_var_id
-{
-  [Instr] queue_update_method_body(<Atom, Nat> node_id)
-  {
-    index = nodes_idxs[node_id];
-    level = nodes_levels[node_id];
-    level_size = levels_sizes[level];
-
-    idx_var = ivar(next_int_var_id);
-    mark_var = marked_for_update_var(node_id);
-    count_var = update_count_var(level);
-    nodes_var = nodes_to_update_var(level, idx_var);
-
-    extra_code = if level_size > 2 then [ set_ivar(idx_var, count_var),
-                                          set_ivar(nodes_var, index),
-                                          set_ivar(count_var, add(idx_var, 1))
-                                        ]
-                                   else [];
-
-    code = [do_if(neg(mark_var), [set_bvar(mark_var, true)] & extra_code)];
-
-    if (node_id :: Nat and in(node_id, nested_cond_ids))
-      inv_cache_instr = do_if(invalidate_cond_expr_cache, set_bvar(cond_expr_up_to_date_var(node_id), false));
-      code = [code | inv_cache_instr];
-    ;
-
-    return code;
-  }
 }

@@ -1,0 +1,331 @@
+using
+{
+  AutoSymbol            auto_name,
+  (<Atom, Nat> => Nat)  nodes_idxs,
+  (<Atom, Nat> => Nat)  nodes_levels,
+  (Atom => Nat)         multivalue_node_expr_count,
+  Atom*                 memb_copy_var_ids,
+  Nat*                  nested_cond_ids,
+  Nat                   next_int_var_id,
+  CompilationOptions    options;
+
+
+  [Instr] gen_any_node_code(AutoNode node) = gen_node_code(node) & [set_bvar(marked_for_update_var(node.id), false)];
+
+
+  [Instr^] gen_node_code(AutoInputNode node)
+  {
+    id = node.id;
+
+    l0 = lvar(0);
+    l1 = lvar(1);
+    memb_var = memb_var(id);
+    body = [set_var(memb_var, l0), set_bvar(memb_has_changed(id), true) if in(id, memb_copy_var_ids)] &
+           [mark_for_update(n, false) : n <- rand_sort(node.dep_nodes)];
+
+    return nonempty([get_new_input(l0, id), init_memb_var(new_input(id), :blank)] & body) if node.discrete;
+
+    return [
+      get_new_input(l0, id),
+      init_memb_var(new_input(id), :blank),
+      set_var(l1, memb_var),
+      do_if_not(is_eq(l0, l1), body)
+    ];
+  }
+
+
+  [Instr^] gen_node_code(AutoDerivedNode node)
+  {
+    id = node.id;
+
+    var = memb_var(id);
+    nv_var = lvar(0);
+    eval_code = gen_safe_eval_code(node.expr, nv_var, next_obj_var_id = 1, next_bool_var_id = 0);
+    cond = neg(is_eq(var, nv_var));
+    body = [set_var(var, nv_var), set_bvar(memb_has_changed(id), true) if in(id, memb_copy_var_ids)] &
+           [mark_for_update(n, false) : n <- rand_sort(node.dep_nodes)];
+    return [eval_code | do_if(cond, body)];
+  }
+
+
+  [Instr^] gen_node_code(AutoStateNode node)
+  {
+    id = node.id;
+
+    var = memb_var(id);
+    nv_var = lvar(0);
+    let (next_obj_var_id = 1, next_bool_var_id = 0)
+      cases = nonempty([gen_safe_eval_code(e, nv_var) : e <- node.exprs] & [[clear_loc_var(nv_var)]]);
+      eval_instr = switch_on_nat(update_source_var(id), cases);
+    ;
+    cond = neg(is_eq(var, nv_var));
+    body = [set_var(var, nv_var), set_bvar(memb_has_changed(id), true) if in(id, memb_copy_var_ids)] &
+           [mark_for_update(n, false) : n <- rand_sort(node.dep_nodes)];
+    return [eval_instr, do_if(cond, body)];
+  }
+
+
+  [Instr^] gen_node_code(AutoDiscDerivedNode node)
+  {
+    id = node.id;
+
+    var = memb_var(id);
+    nv_var = lvar(0);
+    let (next_obj_var_id = 1, next_bool_var_id = 0)
+      cases = nonempty([gen_safe_eval_code(e, nv_var) : e <- node.exprs] & [[clear_loc_var(nv_var)]]);
+      eval_instr = switch_on_nat(update_source_var(id), cases);
+    ;
+    return nonempty([eval_instr, set_var(var, nv_var)] & [mark_for_update(n, false) : n <- rand_sort(node.dep_nodes)]);
+  }
+
+
+  [Instr] gen_node_code(AutoCondNode node)
+  {
+    id = node.id;
+    then_actions, else_actions = node.actions;
+    all_actions = then_actions & else_actions;
+    all_subcond_ids = seq_union(node.subconds);
+
+    l0 = lvar(0);
+    b0 = bvar(0);
+    b1 = bvar(1);
+    id_var = cond_value_var(id);
+    cond_is_def_var = cond_is_def_var(id);
+
+    // Evaluating the condition and storing the result in l0
+    cond_eval_code = gen_cond_eval_code(id, node.cond, node.parent);
+
+    // Propagating the update to dependent conditions
+    dep_conds_update_prop_code = [mark_for_update(n, true) : n <- rand_sort(all_subcond_ids)];
+
+    // Base case, the condition stays defined. b1 holds the value of the condition, b0 whether it has changed
+    // If the condition has changed, we queue the updates for the appropriate branch
+    cond_stays_def_branch = [
+      set_bvar(b1, inline_is_eq(l0, obj_true)),
+      set_bvar(b0, neg(is_eq(id_var, b1))),
+      set_bvar(id_var, b1),
+      do_if(
+        and([b0, neg(is_new)]),
+        [ branch_or_no_op(
+            b1,
+            join(rand_sort({gen_update_code(a.target, a.value_idx) : a <- then_actions})),
+            join(rand_sort({gen_update_code(a.target, a.value_idx) : a <- else_actions}))
+          )
+        ]
+      )
+    ];
+
+    // If the condition is now defined. If it was already defined before, we run the
+    // standard code. Otherwise, there's nothing to do, except storing its new value.
+    // In either case, we propagate the update to all dependent nodes
+    cond_is_def_branch = [
+      branch(
+        cond_is_def_var,
+        cond_stays_def_branch,
+        [ set_bvar(id_var, inline_is_eq(l0, obj_true)),
+          set_bvar(cond_is_def_var, true)
+        ]
+      )
+    ] & dep_conds_update_prop_code;
+
+    // The condition is undefined. If it already was, there's nothing we need to do.
+    // If, on the other hand, it has just become undefined, we need execute all the
+    // assignments with a null value. We also propagate the update to all dependent conditions.
+    cond_is_undef_branch = [
+      do_if(
+        cond_is_def_var,
+        [ set_bvar(cond_is_def_var, false),
+          do_if_not(is_new, join([gen_clear_code(a.target) : a <- rand_sort(all_actions)]))
+        ] & dep_conds_update_prop_code
+      )
+    ];
+
+    return cond_eval_code & [branch(var_is_def(l0), cond_is_def_branch, cond_is_undef_branch)];
+  }
+
+
+  [Instr] gen_node_code(AutoRepCondNode node)
+  {
+    id = node.id;
+    then_actions, else_actions = node.actions;
+    all_actions = then_actions & else_actions;
+    then_subcond_ids, else_subcond_ids = node.subconds;
+    all_subcond_ids = then_subcond_ids & else_subcond_ids;
+
+    l0 = lvar(0);
+
+    // Evaluating the condition and storing the result in l0
+    cond_eval_code = gen_rep_cond_eval_code(id, node.cond, node.parent, all_subcond_ids != {});
+
+    // Executing all the actions associated with the condition
+    action_exec_code = [
+      branch(
+        var_is_def(l0),
+        // The condition is defined, we run the normal actions
+        [ branch_or_no_op(
+            inline_is_eq(l0, obj_true),
+            // The condition is true, running the 'then' branch
+            join(rand_sort({gen_update_code(a.target, a.value_idx) : a <- then_actions})) &
+            [mark_for_update(n, true) : n <- rand_sort(then_subcond_ids)],
+            // The condition is false, running the 'else' branch
+            join(rand_sort({gen_update_code(a.target, a.value_idx) : a <- else_actions})) &
+            [mark_for_update(n, true) : n <- rand_sort(else_subcond_ids)]
+          )
+        ],
+        // The condition is not defined, we execute all assignments with a null value
+        join(rand_sort({gen_clear_code(a.target) : a <- all_actions})) &
+        [mark_for_update(n, true) : n <- rand_sort(all_subcond_ids)]
+      )
+    ];
+
+    return [do_if_not(is_new, cond_eval_code & action_exec_code)];
+  }
+
+
+  [Instr] gen_cond_eval_code(Nat id, Expr cond, Maybe[(id: Nat, trigger: Bool)] parent)
+  {
+    l0 = lvar(0);
+
+    // Evaluating the local condition. If there's no parent, that's all we need to do
+    loc_cond_eval_code = gen_safe_eval_code(cond, l0, next_obj_var_id = 1, next_bool_var_id = 0);
+    return loc_cond_eval_code if parent == nil;
+
+    // Local condition variables
+    cv_var = cond_expr_value_var(id);
+    cd_var = cond_expr_is_def_var(id);
+    utd_var = cond_expr_up_to_date_var(id);
+
+    // Overall condition variables
+    id_var = cond_value_var(id);
+
+    // Parent condition variables
+    pd_var = cond_is_def_var(parent.id);
+    pid_var = cond_value_var(parent.id);
+
+    return [
+      // Getting the value of the local condition in l0.
+      // The value is not necessarly the correct one,
+      // when the and condition is determined by the parent anyway
+      branch(
+        // No need to refresh the local condition if it's not up-to-date
+        // Also, if the parent is defined and not equal to the trigger value,
+        // the overall condition is false anyway, so no need to refresh
+        and([pd_var, is_eq(pid_var, parent.trigger), neg(utd_var)]),
+
+        // Evaluating the local condition and permanently storing its value
+        loc_cond_eval_code & [
+          set_bvar(cv_var, inline_is_eq(l0, obj_true)),
+          set_bvar(cd_var, var_is_def(l0)),
+          set_bvar(utd_var, true)
+        ],
+
+        // Pulling the stored, and not necessarly up-to-date, value into l0
+        [ branch(
+            cd_var,
+            [set_var(l0, to_obj(id_var))],
+            [clear_loc_var(l0)]
+          )
+        ]
+      ),
+
+      // Evaluating the overall condition by anding the local condition and its parent
+      branch(
+        pd_var,
+        [do_if_not(is_eq(pid_var, parent.trigger), [set_var(l0, obj_false)])],
+        [do_if_not(inline_is_eq(l0, obj_false), [clear_loc_var(l0)])]
+      )
+    ];
+  }
+
+
+  [Instr] gen_rep_cond_eval_code(Nat id, Expr cond, Maybe[(id: Nat, trigger: Bool)] parent, Bool has_deps)
+  {
+    l0 = lvar(0);
+
+    // Evaluating the local condition.
+    cond_eval_code = gen_safe_eval_code(cond, l0, next_obj_var_id = 1, next_bool_var_id = 0);
+
+    // Anding the local condition with the 'parent == trigger' one, if a parent exists
+    if (parent != nil)
+      pcv_var = rep_cond_value_var(parent.id);
+      pcd_var = rep_cond_is_def_var(parent.id);
+
+      cond_eval_code = [
+        branch(
+          // If the parent variable is defined and different from
+          // the trigger value then the overall condition is false
+          and([pcd_var, neg(is_eq(pcv_var, parent.trigger))]),
+          [set_var(l0, obj_false)],
+          // Otherwise, we first calculate the local condition,
+          // which is the same as the overall condition unless the
+          // parent is undefined and the local condition is true
+          [ cond_eval_code |
+            do_if(
+              and([neg(pcd_var), is_eq(l0, obj_true)]),
+              clear_loc_var(l0)
+            )
+          ]
+        )
+      ];
+    ;
+
+    // Saving the value of the condition for dependent condition, if there are any
+    if (has_deps)
+      cv_var = rep_cond_value_var(id);
+      cd_var = rep_cond_is_def_var(id);
+
+      cond_eval_code = [
+        cond_eval_code |
+        set_bvar(cv_var, is_eq(l0, obj_true)),
+        set_bvar(cd_var, var_is_def(l0))
+      ];
+    ;
+
+    return cond_eval_code;
+  }
+
+
+  [Instr^] gen_update_code(Atom state, Nat src_idx) = [
+      set_ivar(update_source_var(state), src_idx),
+      mark_for_update(state, false)
+    ];
+
+
+  [Instr^] gen_clear_code(Atom state) = gen_update_code(state, multivalue_node_expr_count[state]);
+
+
+  Instr mark_for_update(<Atom, Nat> node_id, Bool from_cond):
+    +   = queue_update(auto_name, node_id),
+    *   = queue_cond_update(auto_name, node_id, not from_cond and in(node_id, nested_cond_ids));
+}
+
+
+using (<Atom, Nat> => Nat) nodes_idxs, (<Atom, Nat> => Nat) nodes_levels, [Nat] levels_sizes, Nat* nested_cond_ids, Nat next_int_var_id
+{
+  [Instr] queue_update_method_body(<Atom, Nat> node_id)
+  {
+    index = nodes_idxs[node_id];
+    level = nodes_levels[node_id];
+    level_size = levels_sizes[level];
+
+    idx_var = ivar(next_int_var_id);
+    mark_var = marked_for_update_var(node_id);
+    count_var = update_count_var(level);
+    nodes_var = nodes_to_update_var(level, idx_var);
+
+    extra_code = if level_size > 2 then [ set_ivar(idx_var, count_var),
+                                          set_ivar(nodes_var, index),
+                                          set_ivar(count_var, add(idx_var, 1))
+                                        ]
+                                   else [];
+
+    code = [do_if(neg(mark_var), [set_bvar(mark_var, true)] & extra_code)];
+
+    if (node_id :: Nat and in(node_id, nested_cond_ids))
+      inv_cache_instr = do_if(invalidate_cond_expr_cache, set_bvar(cond_expr_up_to_date_var(node_id), false));
+      code = [code | inv_cache_instr];
+    ;
+
+    return code;
+  }
+}
