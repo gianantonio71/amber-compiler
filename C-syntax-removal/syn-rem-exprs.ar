@@ -3,6 +3,7 @@ using
   ClsVar*                                     closures,
   NamedArg*                                   named_args,
   MembVar*                                    memb_vars,
+  MethodArg*                                  method_args,
   (AutoVar => (name: Atom, discrete: Bool)*)  auto_vars_outputs,
   ((FnSymbol, NzNat) => [Nat^])               local_fns,
   Maybe[FnSymbol]                             curr_outer_fn, //## BUG: THIS IS NOT ENOUGH TO IDENTIFY THE OUTER FUNCTION...
@@ -63,6 +64,7 @@ using
     return var(var_symb) if in(var(var_symb), def_vars);
     return named_arg(var_symb) if in(named_arg(var_symb), named_args);
     return memb_var(var_symb) if in(memb_var(var_symb), memb_vars);
+    return method_arg(var_symb) if in(method_arg(var_symb), method_args);
 
     auto_var = auto_var(var_symb);
     if (has_key(auto_vars_outputs, auto_var))
@@ -337,7 +339,9 @@ using
                                     nil       = nil,
                                     just(e?)  = just(desugar_expr(e, def_vars))
                                 ),
-    auto_update_stmt()        = stmt;
+    auto_update_stmt()        = if stmt.call?
+                                  then auto_update_stmt(stmt.var, stmt.call.name, [desugar_expr(e, def_vars) : e <- stmt.call.args])
+                                  else auto_update_stmt(stmt.var);
 
 
   Statement desugar_if_stmt(SynIfStmt stmt, Var* def_vars)

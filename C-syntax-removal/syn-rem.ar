@@ -3,15 +3,16 @@ Program rem_syntax(SynPrg prg)
 {
   decls = set(_obj_(prg));
   
-  tdefs         = {d : d <- decls, typedef()      << d};
-  par_tdefs     = {d : d <- decls, par_typedef()  << d};
-  fndefs        = {d : d <- decls, syn_fn_def()   << d};
-  proc_defs     = {d : d <- decls, syn_proc_def() << d};
-  ublocks       = {d : d <- decls, using_block()  << d};
-  subtype_decls = {d : d <- decls, subtype_decl() << d};
-  automata      = {d : d <- decls, syn_auto_def() << d};
+  tdefs         = {d : d <- decls, typedef()        << d};
+  par_tdefs     = {d : d <- decls, par_typedef()    << d};
+  fndefs        = {d : d <- decls, syn_fn_def()     << d};
+  proc_defs     = {d : d <- decls, syn_proc_def()   << d};
+  ublocks       = {d : d <- decls, using_block()    << d};
+  subtype_decls = {d : d <- decls, subtype_decl()   << d};
+  automata      = {d : d <- decls, syn_auto_def()   << d};
+  methods       = {d : d <- decls, syn_method_def() << d};
 
-  assert tdefs & par_tdefs & fndefs & proc_defs & ublocks & subtype_decls & automata == decls;
+  assert tdefs & par_tdefs & fndefs & proc_defs & ublocks & subtype_decls & automata & methods == decls;
 
   typedefs = create_type_map(tdefs, par_tdefs);
   fn_arg_arities = get_fn_arg_arities(fndefs, ublocks);
@@ -21,7 +22,10 @@ Program rem_syntax(SynPrg prg)
       {syn_fndef_to_fndefs(fd, set(ub.signatures), typedefs, fn_arg_arities) : ub <- ublocks, fd <- set(ub.fn_defs)}
   );
 
-  desugared_automata = {syn_auto_def_to_auto_def(a, typedefs=typedefs, fn_arg_arities=fn_arg_arities) : a <- automata};
+  methods_by_automaton = merge_values({(m.automaton => m) : m <- methods});
+  let (typedefs=typedefs, fn_arg_arities=fn_arg_arities)
+    desugared_automata = {syn_auto_def_to_auto_def(a, lookup(methods_by_automaton, a.name, {})) : a <- automata};
+  ;
 
   auto_vars_outputs = (a.name => {(name: n, discrete: o.discrete) : o @ n <- a.outputs} : a <- desugared_automata);
   desugared_proc_defs = {syn_proc_def_to_proc_def(pd, typedefs, fn_arg_arities, auto_vars_outputs) : pd <- proc_defs};
@@ -71,6 +75,7 @@ FnDef* syn_fndef_to_fndefs(SynFnDef fndef, SynSgn* named_args, (TypeName => Type
       closures          = {cls_var(p.var_name) : p <- set(fndef.args), p.var_name?, p.type?, p.type :: SynClsType},
       named_args        = {np.name : np <- named_args}, //## BAD BAD BAD
       memb_vars         = {},
+      method_args       = {},
       auto_vars_outputs = (),
       local_fns         = lfns,
       curr_outer_fn     = just(outer_fn),
@@ -125,6 +130,7 @@ ProcDef2 syn_proc_def_to_proc_def(SynProcDef pd, (TypeName => Type) typedefs, ((
     closures          = {},
     named_args        = {},
     memb_vars         = {},
+    method_args       = {},
     auto_vars_outputs = auto_vars_outputs,
     local_fns         = (),
     curr_outer_fn     = nil,
@@ -138,7 +144,7 @@ ProcDef2 syn_proc_def_to_proc_def(SynProcDef pd, (TypeName => Type) typedefs, ((
 
 using (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_arg_arities
 {
-  Automaton syn_auto_def_to_auto_def(SynAutoDef auto_def)
+  Automaton syn_auto_def_to_auto_def(SynAutoDef auto_def, SynMethodDef* methods)
   {
     decls = set(auto_def.decls);
 
@@ -188,8 +194,18 @@ using (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_arg_arities
       state:        state_vars,
       rules:        rules,
       actions:      actions,
-      rep_actions:  rep_actions
+      rep_actions:  rep_actions,
+      methods:      {desugar_method(m, memb_vars) : m <- methods}
     );
+
+
+    Method desugar_method(SynMethodDef syn_method, MembVar* memb_vars)
+    {
+      args = [(syn_type_to_type(t, nil), v) : t, v <- syn_method.args];
+      arg_vars = set([v : unused_var, v <- args]);
+      asgnms = merge([(a => syn_expr_to_expr(e, memb_vars, arg_vars)) : a, e <- syn_method.assignments]);
+      return method(syn_method.name, args, asgnms);
+    }
 
 
     (Maybe[(Atom => Expr)], Maybe[AutoRepAction]) desugar_plain_rule(SynPlainRule rule, MembVar* memb_vars, Atom* disc_signals)
@@ -284,13 +300,16 @@ using (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_arg_arities
     }
 
 
-    Expr syn_expr_to_expr(SynExpr expr, MembVar* memb_vars) =
+    Expr syn_expr_to_expr(SynExpr expr, MembVar* memb_vars) = syn_expr_to_expr(expr, memb_vars, {});
+
+    Expr syn_expr_to_expr(SynExpr expr, MembVar* memb_vars, MethodArg* method_args) =
       desugar_expr(
         expr,
         {},
         closures = {},
         named_args = {},
         memb_vars = memb_vars,
+        method_args = method_args,
         auto_vars_outputs = (),
         local_fns = (),
         curr_outer_fn = nil, //## UGLY UGLY UGLY
