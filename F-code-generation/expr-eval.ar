@@ -810,15 +810,38 @@ using
     foreach_stmt()            = gen_code_for_foreach_stmt(stmt.vars, if stmt.idx_var? then just(stmt.idx_var) else nil, stmt.values, stmt.body, res_var),
     proc_call()               = gen_code_for_proc_call_stmt(if stmt.res_var? then just(stmt.res_var) else nil, stmt.proc_name, stmt.params),
     auto_set_input_stmt()     = gen_code_for_auto_set_input_stmt(stmt.var, stmt.input, stmt.value),
-    auto_update_stmt()        = gen_code_for_auto_update_stmt(stmt.var, if stmt.call? then just(stmt.call) else nil);
+    auto_update_stmt()        = gen_code_for_auto_update_stmt(stmt);
 
 
-  [Instr^] gen_code_for_auto_update_stmt(AutoVar var, Maybe[(name: MethodSymbol, args: [Expr])] call)
+  [Instr^] gen_code_for_auto_update_stmt(AutoUpdateStmt stmt)
   {
+    var = stmt.var;
     type = auto_vars_types[var];
-    return [update_inputs(var, type)] if call == nil;
-    args_eval_info = gen_eval_info(call.args);
-    return nonempty(args_eval_info.eval_code & [update_inputs(var, type, call.name, args_eval_info.exprs)]);
+
+    if (stmt.elapsed_time?)
+      time_eval_info = gen_eval_info(stmt.elapsed_time);
+      code = time_eval_info.eval_code;
+      time = get_int_val(time_eval_info.expr);
+    else
+      code = [];
+      time = 0;
+    ;
+
+    if (stmt.call?)
+      call = stmt.call;
+      args_eval_info = gen_eval_info(call.args);
+      code = code & args_eval_info.eval_code;
+      instr = update_inputs(
+        var:          var,
+        type:         type,
+        call:         (name: call.name, args: args_eval_info.exprs),
+        elapsed_time: time
+      );
+    else
+      instr = update_inputs(var: var, type: type, elapsed_time: time);
+    ;
+
+    return [code | instr];
   }
 
 

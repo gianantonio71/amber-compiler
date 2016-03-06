@@ -152,12 +152,26 @@ using (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_arg_arities
     memb_vars = {memb_var(d.name) : d <- decls};
     disc_signals = set([d.name : d <- auto_def.decls, d.discrete? and d.discrete]);
 
-    syn_state_vars    = {d : d <- decls, syn_state()        << d};
-    syn_plain_rules   = {d : d <- decls, syn_plain_rule()   << d};
-    syn_cond_rules    = {d : d <- decls, syn_cond_rule()    << d};
-    syn_foreach_rules = {d : d <- decls, syn_foreach_rule() << d};
+    syn_state_vars          = {d : d <- decls, syn_state()              << d};
+    syn_plain_rules         = {d : d <- decls, syn_plain_rule()         << d};
+    syn_cond_rules          = {d : d <- decls, syn_cond_rule()          << d};
+    syn_foreach_rules       = {d : d <- decls, syn_foreach_rule()       << d};
+    syn_time_varying_rules  = {d : d <- decls, syn_time_varying_rule()  << d};
 
     state_vars = (v.name => (type: syn_type_to_type(v.type, nil), init_value: syn_expr_to_expr(v.init_value, memb_vars)) : v <- syn_state_vars);
+
+    // Reducing time-varying expressions with a constant time expression to plain rules
+    fake_time_varying_rules = {
+      syn_plain_rule(
+        r.name,
+        if initial_value(r.value.time_expr) == true then r.value.cond else object(false),
+        false
+      ) :
+      r <- syn_time_varying_rules,
+      is_const(r.value.time_expr)
+    };
+    syn_plain_rules = syn_plain_rules & fake_time_varying_rules;
+    syn_time_varying_rules = {r : r <- syn_time_varying_rules, not is_const(r.value.time_expr)};
 
     // Desugaring plain rules, which can have implicit repeated conditions
     plain_rules_output = {desugar_plain_rule(r, memb_vars, disc_signals) : r <- syn_plain_rules};
@@ -174,6 +188,12 @@ using (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_arg_arities
 
     // Pulling all repeated actions together
     rep_actions = rep_actions_1 & rep_actions_2 & rep_actions_3;
+
+    // Desugaring time-varying rules
+    time_rules = (
+      r.name => time_varying_cond(e, r.value.time_expr) :
+      r <- syn_time_varying_rules, e = syn_expr_to_expr(r.value.cond, memb_vars)
+    );
 
     arg_ids = {};
     loop
@@ -193,6 +213,7 @@ using (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_arg_arities
       outputs:      outputs(auto_def),
       state:        state_vars,
       rules:        rules,
+      time_rules:   time_rules,
       actions:      actions,
       rep_actions:  rep_actions,
       methods:      {desugar_method(m, memb_vars) : m <- methods}

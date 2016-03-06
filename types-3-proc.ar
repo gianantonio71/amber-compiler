@@ -14,28 +14,38 @@ type VecVar         = vvar(id: Nat, size: NzNat);
 
 type MembBoolVar    = cond_value_var(Nat),
                       cond_is_def_var(Nat),
-                      cond_expr_value_var(Nat),
-                      cond_expr_is_def_var(Nat),
-                      cond_expr_up_to_date_var(Nat),
+                      cond_expr_value_var(<Nat, Atom>),
+                      cond_expr_is_def_var(<Nat, Atom>),
+                      cond_expr_up_to_date_var(<Nat, Atom>),
                       marked_for_update_var(<Atom, Nat>),
                       is_new;
 
 type MembIntVar     = update_source_var(Atom),
-                      update_count_var(IntExpr),
-                      nodes_to_update_var(level: IntExpr, index: IntExpr);
+                      update_count_var(Nat),
+                      nodes_to_update_var(level: IntExpr, index: IntExpr),
+                      next_trigger_time_var(Atom),
+                      curr_time_slot_var(Atom),
+                      time_triggers_count_var,
+                      trigger_times_heap_var(IntExpr),
+                      time_varying_cond_ids_heap_var(IntExpr),
+                      last_update_time;
+
+type IntConst       = time_slot_length(automaton: AutoSymbol, expr_id: Atom, time_slot: IntExpr);
 
 type MembIntVectVar = nodes_to_update_vect_var(level: Nat, size: NzNat); //## BAD: <size> SHOULD BE OF TYPE <3..*>
 
-type SpecialLocVar  = invalidate_cond_expr_cache; //## FIND BETTER NAME
+type BoolArgVar     = invalidate_cond_expr_cache; //## FIND BETTER NAME
 
 type BoolVar        = bvar(Nat),
                       memb_has_changed(Atom),
                       rep_cond_value_var(Nat),
                       rep_cond_is_def_var(Nat),
-                      SpecialLocVar,
-                      MembBoolVar;
+                      MembBoolVar,
+                      BoolArgVar;
 
-type IntVar         = ivar(Nat), MembIntVar;
+type IntArgVar      = elapsed_time;
+
+type IntVar         = ivar(Nat), curr_time, update_time, MembIntVar, IntArgVar;
 
 type StreamVar      = svar(Nat); //## DOES THIS NEED CLEANUP?
 
@@ -128,7 +138,7 @@ type BoolExpr       = AtomicBoolExpr,
                       or_else([BoolExpr^]),
                       eval_bool_fn(name: BoolFnName, params: [AnyTypeExpr^]);
 
-type IntExpr        = Int, IntVar, NatIntOp;
+type IntExpr        = Int, IntConst, IntVar, NatIntOp;
 
 type ObjExpr        = AtomicExpr, NatObjOp;
 
@@ -213,10 +223,18 @@ type BasicInstr     = init_stream(StreamVar),
                       call_cls(var: WriteObjVar, cls_var: <ClsVar, NamedArg>, params: [AtomicExpr]),
 
                       queue_update(type: AutoSymbol, id: Atom),
-                      queue_cond_update(type: AutoSymbol, id: Nat, inval_cache: Bool),
+                      queue_cond_update(type: AutoSymbol, id: <Atom, Nat>, inval_cache: Bool),
+
+                      insert_timer(type: AutoSymbol, idx: IntExpr, time: IntExpr),
+                      clear_timer(type: AutoSymbol, idx: IntExpr),
 
                       set_input(var: AutoVar, type: AutoSymbol, input: Atom, value: Maybe[AtomicExpr]),
-                      update_inputs(var: AutoVar?, type: AutoSymbol, call: (name: MethodSymbol, args: [AtomicExpr])?),
+                      update_inputs(
+                        var:          AutoVar?,
+                        type:         AutoSymbol,
+                        call:         (name: MethodSymbol, args: [AtomicExpr])?,
+                        elapsed_time: IntExpr
+                      ),
 
                       push_call_info(fn_name: ObjFnName, params: [Maybe[FnPar]]),
                       pop_call_info,
@@ -260,6 +278,8 @@ type BoolProcDef    = bool_proc_def(
 
 type ProcDef        = ObjProcDef, BoolProcDef;
 
+type ConstBlockData = time_slots_len(expr_id: Atom, lengths: [Nat^]);
+
 type Block          = block(
                         name:               AutoSymbol,
                         inputs:             [Atom],
@@ -268,8 +288,10 @@ type Block          = block(
                         init_code:          [Instr],
                         update_code:        [Instr],
                         cleanup_code:       [Instr],
-                        queue_update_code:  (<Atom, Nat> => [Instr]),
-                        methods_code:       ((MethodSymbol, Nat) => [Instr])
+                        queue_update_code:  (<Atom, Nat> => (body: [Instr], two_level_update: Bool)),
+                        methods_code:       ((MethodSymbol, Nat) => [Instr]),
+                        const_data:         ConstBlockData*,
+                        time_rules_count:   Nat
                       );
 
 type CompiledPrg    = compiled_prg(bool_procs: BoolProcDef*, procs: ObjProcDef*, blocks: Block*);

@@ -223,7 +223,9 @@ type Statement  = assignment_stmt(vars: [StdVar^], value: Expr),
                   return_stmt,
                   proc_call(res_var: StdVar?, proc_name: ProcSymbol, params: [Expr]),
                   auto_set_input_stmt(var: AutoVar, input: Atom, value: Maybe[Expr]),
-                  auto_update_stmt(var: AutoVar, call: (name: MethodSymbol, args: [Expr])?);
+                  AutoUpdateStmt;
+
+type AutoUpdateStmt = auto_update_stmt(var: AutoVar, call: (name: MethodSymbol, args: [Expr])?, elapsed_time: Expr?);
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -254,6 +256,15 @@ type ProcDef2   = proc_def(
 
 ///////////////////////////////////////////////////////////////////////////////
 
+type BasicTimeExpr  = at_least(nanosecs: Nat),
+                      time_neg(BasicTimeExpr),
+                      time_and(left: BasicTimeExpr, right: BasicTimeExpr),
+                      time_or(left: BasicTimeExpr, right: BasicTimeExpr);
+
+type CyclicTimeExpr = every(expr: BasicTimeExpr, nanosecs: NzNat);
+
+type TimeExpr       = BasicTimeExpr, CyclicTimeExpr;
+
 type AutoUpdate         = update(target: Atom, value: Expr);
 type AutoSetDiscrete    = set_discrete(target: Atom, value: Expr);
 type AutoAtomicAction   = AutoUpdate, AutoSetDiscrete;
@@ -264,7 +275,9 @@ type AutoAnyCondAction  = AutoAtomicAction, AutoCondAction;
 type AutoRepAction      = rep_action(cond: Expr, body: AutoAnyRepAction*, else: AutoAnyRepAction*);
 type AutoAnyRepAction   = AutoAtomicAction, AutoRepAction;
 
-type Method     = method(name: MethodSymbol, args: [(Type, MethodArg)], assignments: (Atom => Expr));
+type Method             = method(name: MethodSymbol, args: [(Type, MethodArg)], assignments: (Atom => Expr));
+
+type TimeVaryingCond    = time_varying_cond(cond: Expr, time_expr: TimeExpr);
 
 type Automaton  = automaton(
                     name:         AutoSymbol,
@@ -274,6 +287,7 @@ type Automaton  = automaton(
                     state:        (Atom => (type: NeType, init_value: Expr)),
                     params:       (Atom => Expr),
                     rules:        (Atom => Expr),
+                    time_rules:   (Atom => TimeVaryingCond),
                     actions:      AutoCondAction*,
                     rep_actions:  AutoRepAction*,
                     methods:      Method*

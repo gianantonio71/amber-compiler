@@ -1045,15 +1045,27 @@ using String filename, [[Nat]] lines
   SynStmt build_auto_update_stmt(RuleMatch mtc)
   {
     nodes = rule_seq_nodes(mtc);
-    assert length(nodes) == 4;
+    assert length(nodes) == 5;
     var = auto_var(get_lowercase_id(nodes[1]));
     call_node = nodes[2];
-    return syn_auto_update_stmt(var) if call_node == null_match;
-    nodes = rule_seq_nodes(call_node);
-    assert length(nodes) == 3;
-    name = method_symbol(get_lowercase_id(nodes[1]));
-    args = [build_expr_ast(n) : n <- rep_rule_nodes(block_node(nodes[2]))];
-    return syn_auto_update_stmt(var, name, args);
+    if (call_node != null_match)
+      call_nodes = rule_seq_nodes(call_node);
+      assert length(call_nodes) == 3;
+      name = method_symbol(get_lowercase_id(call_nodes[1]));
+      args = [build_expr_ast(n) : n <- rep_rule_nodes(block_node(call_nodes[2]))];
+      call = (name: name, args: args);
+    else
+      call = nil;
+    ;
+    time_node = nodes[3];
+    if (time_node != null_match)
+      time_nodes = rule_seq_nodes(time_node);
+      assert length(time_nodes) == 2;
+      time = build_expr_ast(time_nodes[1]);
+    else
+      time = nil;
+    ;
+    return auto_update_stmt(var: var, call: call if call != nil, elapsed_time: time if time != nil);
   }
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -1271,7 +1283,8 @@ using String filename, [[Nat]] lines
       state         = build_state_decl_asts(inner_match),
       plain_rule    = [build_plain_rule_ast(inner_match)],
       cond_rule     = [build_cond_rule_ast(inner_match)],
-      foreach_rule  = [build_foreach_rule_ast(inner_match)];
+      foreach_rule  = [build_foreach_rule_ast(inner_match)],
+      time_varying_rule = [build_time_varying_rule(inner_match)];
     return decls;
   }
 
@@ -1298,6 +1311,70 @@ using String filename, [[Nat]] lines
     asgnm_nodes = rep_rule_nodes(block_node(nodes[4]));
     asgnms = [(get_lowercase_id(n, 0), build_expr_ast(rule_seq_node(n, 2))) : n <- asgnm_nodes];
     return syn_method_def(automaton, name, args, asgnms);
+  }
+
+  SynTimeVaryingRule build_time_varying_rule(RuleMatch mtc)
+  {
+    nodes = rule_seq_nodes(mtc);
+    assert length(nodes) == 6;
+    name = get_lowercase_id(nodes[0]);
+    cond = build_expr_ast(nodes[2]);
+    time_expr = build_time_expr_ast(nodes[4]);
+    return syn_time_varying_rule(name, syn_time_varying_cond(cond, time_expr));
+  }
+
+  TimeExpr build_time_expr_ast(RuleMatch mtc)
+  {
+    nodes = rule_seq_nodes(mtc);
+    assert length(nodes) == 2;
+    time_expr = build_basic_time_expr_ast(nodes[0]);
+    node_every = nodes[1];
+    if (node_every != null_match)
+      nanosecs = match (get_token(rule_seq_node(node_every, 1))) nanoseconds(n?) = n;
+      time_expr = every(time_expr, nanosecs);
+    ;
+    return time_expr;
+  }
+
+  BasicTimeExpr build_basic_time_expr_ast(RuleMatch mtc)
+  {
+    nodes = rep_rule_nodes(mtc);
+    assert mod(length(nodes), 2) == 1;
+    expr = build_time_expr_1_ast(nodes[0]);
+    i = 1;
+    while (i < length(nodes)) //## WOULD BE NICE TO HAVE A C-STYLE LOOP HERE
+      right_expr = build_time_expr_1_ast(nodes[i+1]);
+      op = get_lowercase_id(nodes[i]);
+      if (op == :and)
+        expr = time_and(expr, right_expr);
+      else
+        assert op == :or;
+        expr = time_or(expr, right_expr);
+      ;
+      i = i + 2;
+    ;
+    return expr;
+  }
+
+  BasicTimeExpr build_time_expr_1_ast(RuleMatch mtc)
+  {
+    nodes = rule_seq_nodes(mtc);
+    assert length(nodes) == 2;
+    expr = build_time_expr_0_ast(nodes[1]);
+    return if nodes[0] != null_match then time_neg(expr) else expr;
+  }
+
+  BasicTimeExpr build_time_expr_0_ast(RuleMatch mtc)
+  {
+    name = get_rule_name(mtc);
+    inner_match = get_rule_match(mtc);
+    if (name == :at_least)
+      nanosecs = match (get_token(inner_match)) nanoseconds(n?) = n;
+      return at_least(nanosecs);
+    else
+      assert name == :par;
+      return build_basic_time_expr_ast(block_node(inner_match));
+    ;
   }
 }
 

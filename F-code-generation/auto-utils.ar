@@ -130,3 +130,51 @@ Atom* discrete_signals(Automaton auto)
 
   Atom* discrete_signals(AutoSetDiscrete action) = {action.target};
 }
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+[Nat] trigger_times_table(BasicTimeExpr time_expr)
+{
+  trigger_times = trigger_times(time_expr);
+  assert trigger_times != [];
+  interval_lengths = [nz_nat(t - if i == 0 then 0 else trigger_times[i-1]) : t @ i <- trigger_times];
+  return [interval_lengths | 0]; //## DO I REALLY NEED TO ADD THAT 0 AT THE END?
+}
+
+
+IntConst time_slot_length(BasicTimeExpr time_expr, AutoSymbol auto_name, Atom expr_id, IntExpr time_slot_expr) =
+  time_slot_length(auto_name, expr_id, time_slot_expr);
+
+
+[Nat] trigger_times_table(CyclicTimeExpr time_expr)
+{
+  trigger_times = trigger_times(time_expr);
+  return [] if trigger_times == [];
+  interval_lengths = [nz_nat(t - if i == 0 then 0 else trigger_times[i-1]) : t @ i <- trigger_times];
+  count = length(trigger_times);
+  if (mod(count, 2) != 0)
+    head_seq = interval_lengths;
+    tail_elem = nat(time_expr.nanosecs - last(trigger_times));
+  else
+    head_seq = tail(interval_lengths);
+    tail_elem = nat(time_expr.nanosecs - last(trigger_times) + head(interval_lengths));
+  ;
+
+  return [head_seq | tail_elem];
+}
+
+
+IntConst time_slot_length(CyclicTimeExpr time_expr, AutoSymbol auto_name, Atom expr_id, IntExpr time_slot_expr)
+{
+  trigger_times = trigger_times(time_expr);
+  assert trigger_times != [];
+  fail if trigger_times == [];
+  count = length(trigger_times);
+  if (mod(count, 2) != 0)
+    final_time_slot_expr = mod_op(time_slot_expr, count + 1);
+  else
+    final_time_slot_expr = mod_op(sub(time_slot_expr, 1), count);
+  ;
+  return time_slot_length(auto_name, expr_id, final_time_slot_expr);
+}

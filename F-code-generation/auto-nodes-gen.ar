@@ -1,4 +1,5 @@
-type AutoNode = AutoInputNode, AutoDerivedNode, AutoStateNode, AutoDiscDerivedNode, AutoCondNode, AutoRepCondNode;
+type AutoNode = AutoInputNode, AutoDerivedNode, AutoStateNode, AutoDiscDerivedNode,
+                AutoCondNode, AutoRepCondNode, AutoTimeVaryingNode;
 
 type AutoInputNode        = input(id: Atom, discrete: Bool, dep_nodes: <Atom, Nat>*, level: Nat);
 
@@ -26,6 +27,13 @@ type AutoRepCondNode      = rep_cond_node(
                               level:      Nat
                             );
 
+type AutoTimeVaryingNode  = time_varying_node(
+                              id:         Atom,
+                              cond:       Expr,
+                              time_expr:  TimeExpr,
+                              dep_nodes:  <Atom, Nat>*,
+                              level:      Nat
+                            );
 
 type AutoNodeAction = (target: Atom, value_idx: Nat);
 
@@ -51,15 +59,19 @@ AutoNode rep_cond_node(Nat id, Expr c, Maybe[(id: Nat, trigger: Bool)] p,
                         AutoNodeAction* tas, AutoNodeAction* eas, Nat* tcs, Nat* ecs, Nat l) =
   rep_cond_node(id: id, cond: c, parent: p, actions: (tas, eas), subconds: (tcs, ecs), level: l);
 
+AutoNode time_varying_node(Atom id, Expr c, TimeExpr te, <Atom, Nat>* ns, Nat l) =
+  time_varying_node(id: id, cond: c, time_expr: te, dep_nodes: ns, level: l);
+
 ////////////////////////////////////////////////////////////////////////////////
 
 <Atom, Nat>* dep_nodes_ids(AutoNode node):
-  input()         = node.dep_nodes,
-  derived()       = node.dep_nodes,
-  state()         = node.dep_nodes,
-  derived_disc()  = node.dep_nodes,
-  cond_node()     = {tscs, escs = node.subconds; return tscs & escs;},
-  rep_cond_node() = {tscs, escs = node.subconds; return tscs & escs;};
+  input()             = node.dep_nodes,
+  derived()           = node.dep_nodes,
+  state()             = node.dep_nodes,
+  derived_disc()      = node.dep_nodes,
+  cond_node()         = {tscs, escs = node.subconds; return tscs & escs;},
+  rep_cond_node()     = {tscs, escs = node.subconds; return tscs & escs;},
+  time_varying_node() = node.dep_nodes;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -99,8 +111,10 @@ type CondInfo     = ( cond:         Expr,
   );
   rules_deps = (a => {unsafe_name(v) : v <- extern_vars(e)} : e @ a <- automaton.rules);
 
-  trigger_dep_map = conds_deps & rep_cond_deps & state_trigger_deps & rules_deps;
-  value_dep_map = conds_deps & rep_cond_deps & rules_deps & merge_value_sets({state_trigger_deps, state_value_deps});
+  time_rules_deps = (a => {unsafe_name(v) : v <- extern_vars(c.cond)} : c @ a <- automaton.time_rules);
+
+  trigger_dep_map = conds_deps & rep_cond_deps & state_trigger_deps & rules_deps & time_rules_deps;
+  value_dep_map = conds_deps & rep_cond_deps & rules_deps & time_rules_deps & merge_value_sets({state_trigger_deps, state_value_deps});
 
   rev_trigger_dep_map = reverse_multi(trigger_dep_map);
 
@@ -132,6 +146,10 @@ type CondInfo     = ( cond:         Expr,
       if (has_key(automaton.rules, n))
         fail if not n :: Atom;
         info = derived(n, automaton.rules[n], dep_nodes, level);
+      elif (has_key(automaton.time_rules, n))
+        fail if not n :: Atom;
+        time_cond = automaton.time_rules[n];
+        info = time_varying_node(n, time_cond.cond, time_cond.time_expr, dep_nodes, level);
       elif (has_key(automaton.state, n))
         fail if not n :: Atom;
         info = state(n, lookup(update_values, n, []), dep_nodes, level);

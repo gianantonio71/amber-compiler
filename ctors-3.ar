@@ -13,21 +13,33 @@ BoolVar rep_cond_is_def_var(Nat id) = :rep_cond_is_def_var(id);
 BoolVar memb_has_changed(Atom id)   = :memb_has_changed(id);
 BoolVar invalidate_cond_expr_cache  = :invalidate_cond_expr_cache;
 
-MembBoolVar cond_value_var(Nat n)                 = :cond_value_var(n);
-MembBoolVar cond_is_def_var(Nat n)                = :cond_is_def_var(n);
-MembBoolVar cond_expr_value_var(Nat n)            = :cond_expr_value_var(n);
-MembBoolVar cond_expr_is_def_var(Nat n)           = :cond_expr_is_def_var(n);
-MembBoolVar cond_expr_up_to_date_var(Nat n)       = :cond_expr_up_to_date_var(n);
+MembBoolVar cond_value_var(Nat n)                   = :cond_value_var(n);
+MembBoolVar cond_is_def_var(Nat n)                  = :cond_is_def_var(n);
+MembBoolVar cond_expr_value_var(<Nat, Atom> id)     = :cond_expr_value_var(id);
+MembBoolVar cond_expr_is_def_var(<Nat, Atom> id)    = :cond_expr_is_def_var(id);
+MembBoolVar cond_expr_up_to_date_var(<Nat, Atom> n) = :cond_expr_up_to_date_var(n);
 
 MembBoolVar marked_for_update_var(<Atom, Nat> n)  = :marked_for_update_var(n);
 
-MembBoolVar is_new                                = :is_new;
+MembBoolVar is_new    = :is_new;
 
-IntVar ivar(Nat n)                                = :ivar(n);
+IntVar curr_time      = :curr_time;
+IntVar update_time    = :update_time;
+IntVar elapsed_time   = :elapsed_time;
+
+IntVar ivar(Nat n)    = :ivar(n);
 
 MembIntVar update_source_var(Atom n)                  = :update_source_var(n);
-MembIntVar update_count_var(IntExpr l)                = :update_count_var(l);
+MembIntVar update_count_var(Nat l)                    = :update_count_var(l);
 MembIntVar nodes_to_update_var(IntExpr l, IntExpr i)  = nodes_to_update_var(level: l, index: i);
+MembIntVar next_trigger_time_var(Atom a)              = :next_trigger_time_var(a);
+MembIntVar curr_time_slot_var(Atom a)                 = :curr_time_slot_var(a);
+MembIntVar time_triggers_count_var                    = :time_triggers_count_var;
+MembIntVar trigger_times_heap_var(IntExpr i)          = :trigger_times_heap_var(i);
+MembIntVar time_varying_cond_ids_heap_var(IntExpr i)  = :time_varying_cond_ids_heap_var(i);
+MembIntVar last_update_time                           = :last_update_time;
+
+IntConst time_slot_length(AutoSymbol a, Atom id, IntExpr i) = time_slot_length(automaton: a, expr_id: id, time_slot: i);
 
 MembIntVectVar nodes_to_update_vect_var(Nat l, NzNat s)  = nodes_to_update_vect_var(level: l, size: s);
 
@@ -217,16 +229,16 @@ Instr switch_on_nat(IntExpr e, [[Instr]^] cs)  = switch_on_nat(value: e, cases: 
 Instr call_proc(WriteObjVar v, ObjFnName n, [<AtomicExpr, BoundCls>] ps) = call_proc(var: v, name: n, params: ps);
 Instr call_cls(WriteObjVar v, <ClsVar, NamedArg> cv, [AtomicExpr] ps)    = call_cls(var: v, cls_var: cv, params: ps);
 
-Instr queue_update(AutoSymbol s, Atom a)              = queue_update(type: s, id: a);
-Instr queue_cond_update(AutoSymbol s, Nat n, Bool b)  = queue_cond_update(type: s, id: n, inval_cache: b);
+Instr queue_update(AutoSymbol s, Atom a)                      = queue_update(type: s, id: a);
+Instr queue_cond_update(AutoSymbol s, <Atom, Nat> id, Bool b) = queue_cond_update(type: s, id: id, inval_cache: b);
+
+Instr insert_timer(AutoSymbol a, Nat i, IntExpr t)  = insert_timer(type: a, idx: i, time: t);
+Instr clear_timer(AutoSymbol a, IntExpr i)          = clear_timer(type: a, idx: i);
 
 Instr set_input(AutoVar v, AutoSymbol t, Atom i, Maybe[AtomicExpr] e)  = set_input(var: v, type: t, input: i, value: e);
 
-Instr update_inputs(AutoVar v, AutoSymbol t)  = update_inputs(var: v, type: t);
-Instr update_inputs(AutoSymbol t)             = update_inputs(type: t);
-
-Instr update_inputs(AutoVar v, AutoSymbol t, MethodSymbol n, [AtomicExpr] as) =
-  update_inputs(var: v, type: t, call: (name: n, args: as));
+Instr update_inputs(AutoVar v, AutoSymbol t, IntExpr et)  = update_inputs(var: v, type: t, elapsed_time: et);
+Instr update_inputs(AutoSymbol t, IntExpr et)             = update_inputs(type: t, elapsed_time: et);
 
 Instr push_call_info(ObjFnName fn_name, [Maybe[FnPar]] params) = push_call_info(fn_name: fn_name, params: params);
 Instr pop_call_info = :pop_call_info;
@@ -269,6 +281,8 @@ CompiledPrg compiled_prg(BoolProcDef* bps, ObjProcDef* ps, Block* bs) =
     blocks:     bs
   );
 
+ConstBlockData time_slots_len(Atom id, [Nat^] ls) = time_slots_len(expr_id: id, lengths: ls);
+
 //////////////////// Derived expressions  ////////////////////
 
 BoolExpr and(BoolExpr e1, BoolExpr e2)      = and([e1, e2]);
@@ -292,6 +306,9 @@ BoolExpr is_false(ObjExpr e) = is_eq(e, obj_false);
 
 BoolExpr is_bool(ObjExpr e)  = or(is_true(e), is_false(e));
 
+BoolExpr is_even(IntExpr e) = is_eq(mod_op(e, 2), 0);
+BoolExpr is_odd(IntExpr e)  = is_eq(mod_op(e, 2), 1);
+
 SymbObj obj_true  = :object(true);
 SymbObj obj_false = :object(false);
 
@@ -301,7 +318,8 @@ SymbObj obj_nil   = :object(nil);
 
 Instr repeat_while(BoolExpr cond, [Instr^] body) = repeat(nonempty([do_if_not(cond, break_loop)] & body));
 
-Instr increment(IntVar v) = set_ivar(v, add(v, 1));
+Instr increment(IntVar v, IntExpr a)  = set_ivar(v, add(v, a));
+Instr increment(IntVar v)             = increment(v, 1);
 
 Instr do_if(BoolExpr cond, [Instr] instrs)      = branch(cond, instrs, []);
 Instr do_if_not(BoolExpr cond, [Instr] instrs)  = branch(cond, [], instrs);

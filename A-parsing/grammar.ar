@@ -14,8 +14,10 @@ ParsingRule keyword_assert    = rule_keyword(:assert);
 ParsingRule keyword_auto      = rule_keyword(:auto);
 ParsingRule keyword_break     = rule_keyword(:break);
 ParsingRule keyword_discrete  = rule_keyword(:discrete);
+ParsingRule keyword_elapsed   = rule_keyword(:elapsed);
 ParsingRule keyword_elif      = rule_keyword(:elif);
 ParsingRule keyword_else      = rule_keyword(:else);
+ParsingRule keyword_every     = rule_keyword(:every);
 ParsingRule keyword_fail      = rule_keyword(:fail);
 ParsingRule keyword_false     = rule_keyword(:false);
 ParsingRule keyword_for       = rule_keyword(:for);
@@ -48,14 +50,15 @@ ParsingRule ops_prec_ord      = rule_ops([lower, greater, lower_eq, greater_eq])
 ParsingRule ops_prec_sum      = rule_ops([plus, minus, ampersand]);
 ParsingRule ops_prec_prod     = rule_ops([asterisk, slash]);
 
-ParsingRule rule_ref_type         = rule_ref(:type);
-ParsingRule rule_ref_pretype      = rule_ref(:pretype);
-ParsingRule rule_ref_expr         = rule_ref(:expr);
+ParsingRule rule_ref_type                 = rule_ref(:type);
+ParsingRule rule_ref_pretype              = rule_ref(:pretype);
+ParsingRule rule_ref_expr                 = rule_ref(:expr);
 ParsingRule rule_ref_stmt(<fn, proc> ctx) = if ctx == :fn then rule_ref(:stmt) else rule_ref(:proc_stmt);
-ParsingRule rule_ref_ptrn         = rule_ref(:ptrn);
-ParsingRule rule_ref_fndef        = rule_ref(:fndef);
-ParsingRule rule_ref_fndef_proc   = rule_ref(:fndef_proc);
-ParsingRule rule_ref_fndef_switch = rule_ref(:fndef_switch);
+ParsingRule rule_ref_ptrn                 = rule_ref(:ptrn);
+ParsingRule rule_ref_fndef                = rule_ref(:fndef);
+ParsingRule rule_ref_fndef_proc           = rule_ref(:fndef_proc);
+ParsingRule rule_ref_fndef_switch         = rule_ref(:fndef_switch);
+ParsingRule rule_ref_basic_time_expr      = rule_ref(:basic_time_expr);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -479,6 +482,10 @@ ParsingRule rule_auto_update_stmt =
       rule_lc_id,
       par_rule(opt_comma_sep_seq(rule_expr))
     ]),
+    optional_rule_seq([
+      keyword_elapsed,
+      rule_expr
+    ]),
     rule_semicolon
   ]);
 
@@ -753,12 +760,13 @@ ParsingRule rule_auto_def =
 
 ParsingRule rule_auto_decl =
   rule_choice([
-    (:input,          rule_input_decl),
-    (:output,         rule_output_decl),
-    (:state,          rule_state_decl),
-    (:plain_rule,     rule_plain_rule),
-    (:cond_rule,      rule_cond_rule),
-    (:foreach_rule,   rule_foreach_rule)
+    (:input,              rule_input_decl),
+    (:output,             rule_output_decl),
+    (:state,              rule_state_decl),
+    (:plain_rule,         rule_plain_rule),
+    (:cond_rule,          rule_cond_rule),
+    (:foreach_rule,       rule_foreach_rule),
+    (:time_varying_rule,  rule_time_varying_rule)
   ]);
 
 ParsingRule rule_input_decl =
@@ -825,4 +833,28 @@ ParsingRule rule_method_def =
     rule_lc_id,
     par_rule(opt_comma_sep_seq(rule_seq([rule_type, rule_lc_id]))),
     brace_rule(rep_rule(rule_seq([rule_lc_id, rule_equals, rule_expr, rule_semicolon])))
+  ]);
+
+ParsingRule rule_time_varying_rule =
+  rule_seq([
+    rule_lc_id,
+    rule_equals,
+    rule_expr,
+    keyword_for,
+    rule_time_expr,
+    rule_semicolon
+  ]);
+
+ParsingRule rule_time_span = atomic_rule(time_span);
+
+ParsingRule rule_time_expr = rule_seq([rule_basic_time_expr, optional_rule_seq([keyword_every, rule_time_span])]);
+
+ParsingRule rule_basic_time_expr = rep_rule(rule_basic_time_expr_1, ops_prec_log, true, true);
+
+ParsingRule rule_basic_time_expr_1 = rule_seq([optional_rule(keyword_not), rule_basic_time_expr_0]);
+
+ParsingRule rule_basic_time_expr_0 =
+  rule_choice([
+    (:at_least,     rule_time_span),
+    (:par,          par_rule(rule_ref_basic_time_expr))
   ]);

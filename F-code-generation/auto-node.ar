@@ -4,6 +4,7 @@ using
   (<Atom, Nat> => Nat)  nodes_idxs,
   (<Atom, Nat> => Nat)  nodes_levels,
   (Atom => Nat)         multivalue_node_expr_count,
+  (Atom => Nat)         time_varying_node_idxs,
   Atom*                 memb_copy_var_ids,
   Nat*                  nested_cond_ids,
   Nat                   next_int_var_id,
@@ -182,6 +183,121 @@ using
   }
 
 
+  [Instr] gen_node_code(AutoTimeVaryingNode node)
+  {
+    id = node.id;
+    time_expr = node.time_expr;
+
+    time_varying_node_idx = time_varying_node_idxs[id];
+
+    init_val = initial_value(time_expr);
+    init_slot_len = initial_slot_length(time_expr);
+
+    i0 = ivar(next_int_var_id);
+    i1 = ivar(nat(next_int_var_id + 1));
+    i2 = ivar(nat(next_int_var_id + 2));
+    i3 = ivar(nat(next_int_var_id + 3));
+
+    l0 = lvar(0);
+    cond_var = memb_var(id);
+
+    inner_cond_value_var = cond_expr_value_var(id);
+    inner_cond_is_def_var = cond_expr_is_def_var(id);
+    inner_cond_up_to_date_var = cond_expr_up_to_date_var(id);
+
+    next_trigger_time_var = next_trigger_time_var(id);
+    curr_time_slot_var = curr_time_slot_var(id);
+
+    // Updating the inner condition, if it's not up-to-date already
+    inner_cond_updating_code = [
+      do_if(
+        neg(inner_cond_up_to_date_var),
+        gen_safe_eval_code(node.cond, l0, next_obj_var_id = 1, next_bool_var_id = 0) &
+        [ branch(
+            var_is_def(l0),
+            [ branch(
+                inner_cond_is_def_var,
+                [ branch(
+                    inner_cond_value_var,
+                    [ do_if(
+                        is_eq(l0, obj_false),
+                        [ set_bvar(inner_cond_value_var, false),
+                          clear_timer(auto_name, time_varying_node_idx)
+                        ]
+                      )
+                    ],
+                    [ do_if(
+                        is_eq(l0, obj_true),
+                        [ set_bvar(inner_cond_value_var, true),
+                          set_ivar(curr_time_slot_var, 0),
+                          set_ivar(i0, add(curr_time, init_slot_len)),
+                          set_ivar(next_trigger_time_var, i0),
+                          insert_timer(auto_name, time_varying_node_idx, i0)
+                        ]
+                      )
+                    ]
+                  )
+                ],
+                [ do_if(
+                    is_eq(l0, obj_false),
+                    [ set_bvar(inner_cond_value_var, false), set_bvar(inner_cond_is_def_var, true)]
+                  )
+                ]
+              )
+            ],
+            [ do_if(
+                inner_cond_is_def_var,
+                [ do_if(inner_cond_value_var, clear_timer(auto_name, time_varying_node_idx)),
+                  set_bvar(inner_cond_is_def_var, false)
+                ]
+              )
+            ]
+          ),
+          set_bvar(inner_cond_up_to_date_var, true)
+        ]
+      )
+    ];
+
+    // Now calculating the overall condition, based on the time expression
+    outer_cond_update_code = [
+      branch(
+        inner_cond_is_def_var,
+        [ branch(
+            inner_cond_value_var,
+            [ set_ivar(i0, next_trigger_time_var),
+              do_if(
+                is_eq(i0, curr_time),
+                [ set_ivar(i1, add(curr_time_slot_var, 1)),
+                  set_ivar(curr_time_slot_var, i1),
+                  set_ivar(i2, time_slot_length(time_expr, auto_name, id, i1)),
+                  do_if(
+                    neg(is_eq(i2, 0)),
+                    [ set_ivar(i3, add(curr_time, i2)),
+                      set_ivar(next_trigger_time_var, i3),
+                      insert_timer(auto_name, time_varying_node_idx, i3)
+                    ]
+                  )
+                ]
+              ),
+              set_var(l0, to_obj(if init_val == true then is_even(curr_time_slot_var) else is_odd(curr_time_slot_var)))
+            ],
+            [set_var(l0, obj_false)]
+          )
+        ],
+        [clear_loc_var(l0)]
+      ),
+
+      do_if(
+        neg(is_eq(cond_var, l0)),
+        [set_var(cond_var, l0)] & [mark_for_update(n, false) : n <- rand_sort(node.dep_nodes)]
+      )
+    ];
+
+    // Putting it all together
+    return inner_cond_updating_code & outer_cond_update_code;
+  }
+
+
   [Instr] gen_cond_eval_code(Nat id, Expr cond, Maybe[(id: Nat, trigger: Bool)] parent)
   {
     l0 = lvar(0);
@@ -295,13 +411,23 @@ using
 
 
   Instr mark_for_update(<Atom, Nat> node_id, Bool from_cond):
-    +   = queue_update(auto_name, node_id),
+    +   = if has_key(time_varying_node_idxs, node_id)
+            then queue_cond_update(auto_name, node_id, true)
+            else queue_update(auto_name, node_id),
     *   = queue_cond_update(auto_name, node_id, not from_cond and in(node_id, nested_cond_ids));
 }
 
 
-using (<Atom, Nat> => Nat) nodes_idxs, (<Atom, Nat> => Nat) nodes_levels, [Nat] levels_sizes, Nat* nested_cond_ids, Nat next_int_var_id
+using
 {
+  (<Atom, Nat> => Nat)  nodes_idxs,
+  (<Atom, Nat> => Nat)  nodes_levels,
+  [Nat]                 levels_sizes,
+  Nat*                  nested_cond_ids,
+  Atom*                 time_rules_ids,
+  Nat                   next_int_var_id;
+
+
   [Instr] queue_update_method_body(<Atom, Nat> node_id)
   {
     index = nodes_idxs[node_id];
@@ -321,7 +447,7 @@ using (<Atom, Nat> => Nat) nodes_idxs, (<Atom, Nat> => Nat) nodes_levels, [Nat] 
 
     code = [do_if(neg(mark_var), [set_bvar(mark_var, true)] & extra_code)];
 
-    if (node_id :: Nat and in(node_id, nested_cond_ids))
+    if (in(node_id, nested_cond_ids) or in(node_id, time_rules_ids))
       inv_cache_instr = do_if(invalidate_cond_expr_cache, set_bvar(cond_expr_up_to_date_var(node_id), false));
       code = [code | inv_cache_instr];
     ;
