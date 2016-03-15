@@ -189,9 +189,9 @@ ExprWFError attach_anchor_obj_if_needed(ExprWFError error, SynExpr anchor_obj)
 
 ////////////////////////////////////////////////////////////////////////////////
 
-(String, NzNat, NzNat) source_code_location(PrgDecl decl)
+(String, NzNat, NzNat) source_code_location(<PrgDecl, SynSgn> decl_or_sgn)
 {
-  data = _fetch_(decl);
+  data = _fetch_(decl_or_sgn);
   print data if not data :: (String, NzNat, NzNat)* or size(data) != 1;
   return ("Unknown source file", 1, 1) if data == {};
   fail if not data :: (String, NzNat, NzNat)+;
@@ -199,16 +199,20 @@ ExprWFError attach_anchor_obj_if_needed(ExprWFError error, SynExpr anchor_obj)
 }
 
 
-String source_code_loc_str(PrgDecl decl)
+String source_code_loc_str(<PrgDecl, SynSgn> decl_or_sgn)
 {
-  fn, sl, el = source_code_location(decl);
+  fn, sl, el = source_code_location(decl_or_sgn);
   return "file " & fn & " line" & if sl == el then " " & to_str(sl) else "s " & to_str(sl) & "-" & to_str(el);
 }
 
 
 String source_code_loc_str(SynSgn sgn1, SynSgn sgn2)
 {
-  return "";
+  fn1, sl1, el1 = source_code_location(sgn1);
+  fn2, sl2, el2 = source_code_location(sgn2);
+  ls1_str = if sl1 == el1 then to_str(sl1) else to_str(sl1) & "-" & to_str(el1);
+  ls2_str = if sl2 == el2 then to_str(sl2) else to_str(sl2) & "-" & to_str(el2);
+  return "file " & fn1 & " lines " & ls1_str & " and " & ls2_str;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -236,6 +240,7 @@ String plural(Any+ objs)    = if size(objs)   > 1 then "s" else "";
   dupl_typedef(tds?)                  = create_dupl_typedef_error_msg(left(tds), right(tds)),
   typedef_errors()                    = create_typedef_error_msg(err.typedef, err.errors),
   dupl_using_block_param(ss?)         = create_dupl_using_block_param_err_msg(left(ss), right(ss)),
+  signature_errors()                  = create_signature_errors_err_msg(err.sgn, err.errors),
   incomp_pos_args()                   = create_incomp_pos_pars_err_msg(left(err.fndefs), right(err.fndefs), err.arg_indexes),
   overlapping_pos_args_types(fds?)    = create_overlapping_pos_pars_types_err_msg(left(fds), right(fds)),
   fndef_errors()                      = create_fndef_errs_msg(err.fndef, err.errors),
@@ -257,6 +262,10 @@ String plural(Any+ objs)    = if size(objs)   > 1 then "s" else "";
 
 [String] create_dupl_using_block_param_err_msg(SynSgn sgn1, SynSgn sgn2) =
   ["Duplicate using block parameter: " & user_name(sgn1), source_code_loc_str(sgn1, sgn2)];
+
+
+[String] create_signature_errors_err_msg(SynSgn sgn, [TypeWFError^] errs) =
+  [join([create_error_msg(e) : e <- errs]) | "    " & source_code_loc_str(sgn)];
 
 
 [String] create_incomp_pos_pars_err_msg(SynFnDef fd1, SynFnDef fd2, [Nat^] par_idxs) = [
