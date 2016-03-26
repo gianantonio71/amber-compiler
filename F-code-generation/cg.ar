@@ -5,12 +5,26 @@ CompiledPrg gen_prg_code(Program prg, CompilationOptions options)
 {
   simpl_prg  = generate_dispatch_functions(prg);
 
+  auto_input_is_disc    = (a.name => (id => input.discrete  : input  @ id <- a.inputs)  : a <- simpl_prg.auto_defs);
+  auto_output_is_disc   = (a.name => (id => output.discrete : output @ id <- a.outputs) : a <- simpl_prg.auto_defs);
+  time_sensitive_autos  = time_sensitive_autos(simpl_prg.auto_defs);
+
   memb_tests  = gen_needed_memb_test_fns(simpl_prg);
   fndefs      = {gen_fn_code(fd, options) : fd <- simpl_prg.fndefs};
   proc_defs   = {gen_proc_code(pd, options) : pd <- simpl_prg.proc_defs};
-  blocks      = {gen_auto_code(ad, options) : ad <- simpl_prg.auto_defs};
+  blocks      = {gen_auto_code(ad, auto_input_is_disc, auto_output_is_disc, time_sensitive_autos, options) : ad <- simpl_prg.auto_defs};
 
   return compiled_prg(memb_tests, fndefs & proc_defs, blocks);
+}
+
+
+AutoSymbol* time_sensitive_autos(Automaton* automata)
+{
+  autos_with_time_rules = {a.name : a <- automata, a.time_rules != ()};
+  auto_shallow_deps = (a.name => {na.type : na @ unused_var <- a.nested_autos} : a <- automata);
+  auto_deep_deps = transitive_closure(auto_shallow_deps);
+  autos_with_time_sensitive_nested_autos =  {a.name : a <- automata, not disjoint(auto_deep_deps[a.name], autos_with_time_rules)};
+  return autos_with_time_rules & autos_with_time_sensitive_nested_autos;
 }
 
 

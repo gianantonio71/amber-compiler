@@ -330,12 +330,12 @@ using String filename, [[Nat]] lines
       body:       body
     );
 
-    (var: AutoVar, type: Atom) build_auto_var_decl(RuleMatch mtc)
+    (var: LocAutoVar, type: Atom) build_auto_var_decl(RuleMatch mtc)
     {
       nodes = rule_seq_nodes(mtc);
       assert length(nodes) == 4;
       type = get_lowercase_id(nodes[1]);
-      var = auto_var(get_lowercase_id(nodes[2]));
+      var = loc_auto_var(get_lowercase_id(nodes[2]));
       return (var: var, type: type);
     }
   }
@@ -523,7 +523,7 @@ using String filename, [[Nat]] lines
     assert length(nodes) == 5;
     var = get_lowercase_id(nodes[0]);
     field = get_lowercase_id(nodes[2]);
-    return output_is_def(auto_var(var), field);
+    return output_is_def(loc_auto_var(var), field);
   }
 
   SynExpr build_expr_1_sub_dot_seq_ast(RuleMatch mtc)
@@ -1036,7 +1036,7 @@ using String filename, [[Nat]] lines
   {
     nodes = rule_seq_nodes(mtc);
     assert length(nodes) == 6;
-    var = auto_var(get_lowercase_id(nodes[0]));
+    var = loc_auto_var(get_lowercase_id(nodes[0]));
     input = get_lowercase_id(nodes[2]);
     value = build_expr_ast(nodes[4]);
     return syn_auto_set_input_stmt(var, input, just(value));
@@ -1046,7 +1046,7 @@ using String filename, [[Nat]] lines
   {
     nodes = rule_seq_nodes(mtc);
     assert length(nodes) == 5;
-    var = auto_var(get_lowercase_id(nodes[1]));
+    var = loc_auto_var(get_lowercase_id(nodes[1]));
     call_node = nodes[2];
     if (call_node != null_match)
       call_nodes = rule_seq_nodes(call_node);
@@ -1278,13 +1278,14 @@ using String filename, [[Nat]] lines
   {
     inner_match = get_rule_match(mtc);
     decls = match (get_rule_name(mtc))
-      input         = build_input_decl_asts(inner_match),
-      output        = build_output_decl_asts(inner_match),
-      state         = build_state_decl_asts(inner_match),
-      plain_rule    = [build_plain_rule_ast(inner_match)],
-      cond_rule     = [build_cond_rule_ast(inner_match)],
-      foreach_rule  = [build_foreach_rule_ast(inner_match)],
-      time_varying_rule = [build_time_varying_rule(inner_match)];
+      input             = build_input_decl_asts(inner_match),
+      output            = build_output_decl_asts(inner_match),
+      state             = build_state_decl_asts(inner_match),
+      plain_rule        = [build_plain_rule_ast(inner_match)],
+      cond_rule         = [build_cond_rule_ast(inner_match)],
+      foreach_rule      = [build_foreach_rule_ast(inner_match)],
+      time_varying_rule = [build_time_varying_rule(inner_match)],
+      nested_auto       = [build_nested_auto_ast(inner_match)];
     return decls;
   }
 
@@ -1375,6 +1376,16 @@ using String filename, [[Nat]] lines
       assert name == :par;
       return build_basic_time_expr_ast(block_node(inner_match));
     ;
+  }
+
+  SynNestedAuto build_nested_auto_ast(RuleMatch mtc)
+  {
+    nodes = rule_seq_nodes(mtc);
+    assert length(nodes) == 5;
+    name = get_lowercase_id(nodes[0]);
+    auto_name = get_lowercase_id(nodes[2]);
+    args = [(get_lowercase_id(ns, 0), build_expr_ast(rule_seq_node(ns, 2))) : ns <- rep_rule_nodes(block_node(nodes[3]))];
+    return syn_nested_auto(name, auto_name, args);
   }
 }
 

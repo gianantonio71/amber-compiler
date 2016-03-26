@@ -1,14 +1,14 @@
 using
 {
-  ClsVar*                                     closures,
-  NamedArg*                                   named_args,
-  MembVar*                                    memb_vars,
-  MethodArg*                                  method_args,
-  (AutoVar => (name: Atom, discrete: Bool)*)  auto_vars_outputs,
-  ((FnSymbol, NzNat) => [Nat^])               local_fns,
-  Maybe[FnSymbol]                             curr_outer_fn, //## BUG: THIS IS NOT ENOUGH TO IDENTIFY THE OUTER FUNCTION...
-  (TypeName => Type)                          typedefs,
-  ((FnSymbol, Nat) => [Nat])                  fn_arg_arities;
+  ClsVar*                                       closures,
+  NamedArg*                                     named_args,
+  MembVar*                                      memb_vars,
+  MethodArg*                                    method_args,
+  (AnyAutoVar => (name: Atom, discrete: Bool)*) auto_vars_outputs,
+  ((FnSymbol, NzNat) => [Nat^])                 local_fns,
+  Maybe[FnSymbol]                               curr_outer_fn, //## BUG: THIS IS NOT ENOUGH TO IDENTIFY THE OUTER FUNCTION...
+  (TypeName => Type)                            typedefs,
+  ((FnSymbol, Nat) => [Nat])                    fn_arg_arities;
 
 
   Expr desugar_expr(SynExpr expr, Var* def_vars):
@@ -66,7 +66,7 @@ using
     return memb_var(var_symb) if in(memb_var(var_symb), memb_vars);
     return method_arg(var_symb) if in(method_arg(var_symb), method_args);
 
-    auto_var = auto_var(var_symb);
+    auto_var = loc_auto_var(var_symb);
     if (has_key(auto_vars_outputs, auto_var))
       entries = {(
         key:    object(output.name),
@@ -161,16 +161,24 @@ using
 
 
   Expr desugar_accessor(SynExpr expr, SymbObj field, Var* def_vars):
-    const_or_var(n?)  = if has_key(auto_vars_outputs, auto_var(n))
-                          then get_output(auto_var(n), match (field) object(f?) = f)
-                          else accessor(desugar_expr(expr, def_vars), field),
+    const_or_var(n?)  = { for (v : [loc_auto_var(n), memb_auto_var(n)])
+                            if (has_key(auto_vars_outputs, v))
+                              return get_output(v, match (field) object(f?) = f);
+                            ;
+                          ;
+                          return accessor(desugar_expr(expr, def_vars), field);
+                        },
     _                 = accessor(desugar_expr(expr, def_vars), field);
 
 
   Expr desugar_accessor_test(SynExpr expr, SymbObj field, Var* def_vars):
-    const_or_var(n?)  = if has_key(auto_vars_outputs, auto_var(n))
-                          then output_is_set(auto_var(n), match (field) object(f?) = f)
-                          else accessor_test(desugar_expr(expr, def_vars), field),
+    const_or_var(n?)  = { for (v : [loc_auto_var(n), memb_auto_var(n)])
+                            if (has_key(auto_vars_outputs, v))
+                              return output_is_set(v, match (field) object(f?) = f);
+                            ;
+                          ;
+                          return accessor_test(desugar_expr(expr, def_vars), field);
+                        },
     _                 = accessor_test(desugar_expr(expr, def_vars), field);
 
 

@@ -93,7 +93,9 @@ type MembVar      = memb_var(Atom);
 type MembCopyVar  = memb_copy_var(Atom); //## FIND BETTER NAME...
 type MethodArg    = method_arg(Atom);
 
-type AutoVar      = auto_var(Atom);
+type LocAutoVar   = loc_auto_var(Atom);
+type MembAutoVar  = memb_auto_var(Atom);
+type AnyAutoVar   = LocAutoVar, MembAutoVar;
 
 type Var      = StdVar, FnPar, NamedArg, CaptVar, MembVar, MembCopyVar, MethodArg;
 
@@ -144,9 +146,9 @@ type CastExpr       = cast_expr(expr: Expr, type: Type);
 type AccExpr        = accessor(expr: Expr, field: SymbObj);      //## SHOULD <field> BE AN OBJECT OR JUST A PLAIN SYMBOL?
 type AccTestExpr    = accessor_test(expr: Expr, field: SymbObj); //## DITTO
 
-type GetOutputExpr    = get_output(var: AutoVar, output: Atom);
-type OutputIsSetExpr  = output_is_set(var: AutoVar, output: Atom);
-type OutputIsDefExpr  = output_is_def(var: AutoVar, output: Atom);
+type GetOutputExpr    = get_output(var: AnyAutoVar, output: Atom);
+type OutputIsSetExpr  = output_is_set(var: AnyAutoVar, output: Atom);
+type OutputIsDefExpr  = output_is_def(var: LocAutoVar, output: Atom);
 
 type IfExpr         = if_expr(cond: Expr, then: Expr, else: Expr);
 type MatchExpr      = match_expr(exprs: [Expr^], cases: [(ptrns: [Pattern^], expr: Expr)^]);
@@ -222,10 +224,10 @@ type Statement  = assignment_stmt(vars: [StdVar^], value: Expr),
                   //## BAD: MIXING PURE AND IMPURE STATEMENTS
                   return_stmt,
                   proc_call(res_var: StdVar?, proc_name: ProcSymbol, params: [Expr]),
-                  auto_set_input_stmt(var: AutoVar, input: Atom, value: Maybe[Expr]),
+                  auto_set_input_stmt(var: LocAutoVar, input: Atom, value: Maybe[Expr]),
                   AutoUpdateStmt;
 
-type AutoUpdateStmt = auto_update_stmt(var: AutoVar, call: (name: MethodSymbol, args: [Expr])?, elapsed_time: Expr?);
+type AutoUpdateStmt = auto_update_stmt(var: LocAutoVar, call: (name: MethodSymbol, args: [Expr])?, elapsed_time: Expr?);
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -250,7 +252,7 @@ type ProcDef2   = proc_def(
                     name:             ProcSymbol,
                     params:           [(var: StdVar, type: Type)],
                     res_type:         Maybe[Type],
-                    auto_vars_types:  (AutoVar => AutoSymbol),
+                    auto_vars_types:  (LocAutoVar => AutoSymbol),
                     body:             [Statement]
                   );
 
@@ -290,6 +292,7 @@ type Automaton  = automaton(
                     time_rules:   (Atom => TimeVaryingCond),
                     actions:      AutoCondAction*,
                     rep_actions:  AutoRepAction*,
+                    nested_autos: (Atom => (type: AutoSymbol, args: (Atom => Expr))),
                     methods:      Method*
                   );
 

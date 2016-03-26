@@ -1,14 +1,17 @@
 using
 {
-  AutoSymbol            auto_name,
-  (<Atom, Nat> => Nat)  nodes_idxs,
-  (<Atom, Nat> => Nat)  nodes_levels,
-  (Atom => Nat)         multivalue_node_expr_count,
-  (Atom => Nat)         time_varying_node_idxs,
-  Atom*                 memb_copy_var_ids,
-  Nat*                  nested_cond_ids,
-  Nat                   next_int_var_id,
-  CompilationOptions    options;
+  AutoSymbol                  auto_name,
+  (MembAutoVar => AutoSymbol) auto_vars_types,
+  AutoSymbol*                 time_sensitive_autos,
+  (BlockNodeId => Nat)        nodes_idxs,
+  (BlockNodeId => Nat)        nodes_levels,
+  (StdBlockNodeId => Nat)     multivalue_node_expr_count,
+  (StdBlockNodeId => Nat)     time_varying_node_idxs,
+  Atom*                       memb_copy_var_ids,
+  Nat*                        nested_cond_ids,
+  Nat                         next_int_var_id,
+  CompilationOptions          options;
+
 
 
   [Instr] gen_any_node_code(AutoNode node) = gen_node_code(node) & [set_bvar(marked_for_update_var(node.id), false)];
@@ -16,7 +19,7 @@ using
 
   [Instr^] gen_node_code(AutoInputNode node)
   {
-    id = node.id;
+    id = get_inner_id(node.id);
 
     l0 = lvar(0);
     l1 = lvar(1);
@@ -37,7 +40,7 @@ using
 
   [Instr^] gen_node_code(AutoDerivedNode node)
   {
-    id = node.id;
+    id = get_inner_id(node.id);
 
     var = memb_var(id);
     nv_var = lvar(0);
@@ -51,7 +54,7 @@ using
 
   [Instr^] gen_node_code(AutoStateNode node)
   {
-    id = node.id;
+    id = get_inner_id(node.id);
 
     var = memb_var(id);
     nv_var = lvar(0);
@@ -68,7 +71,7 @@ using
 
   [Instr^] gen_node_code(AutoDiscDerivedNode node)
   {
-    id = node.id;
+    id = get_inner_id(node.id);
 
     var = memb_var(id);
     nv_var = lvar(0);
@@ -82,7 +85,8 @@ using
 
   [Instr] gen_node_code(AutoCondNode node)
   {
-    id = node.id;
+    id = get_inner_id(node.id);
+
     then_actions, else_actions = node.actions;
     all_actions = then_actions & else_actions;
     all_subcond_ids = seq_union(node.subconds);
@@ -185,10 +189,11 @@ using
 
   [Instr] gen_node_code(AutoTimeVaryingNode node)
   {
-    id = node.id;
+    node_id = node.id;
+    id = get_inner_id(node_id);
     time_expr = node.time_expr;
 
-    time_varying_node_idx = time_varying_node_idxs[id];
+    time_varying_node_idx = time_varying_node_idxs[node_id];
 
     init_val = initial_value(time_expr);
     init_slot_len = initial_slot_length(time_expr);
@@ -298,7 +303,68 @@ using
   }
 
 
-  [Instr] gen_cond_eval_code(Nat id, Expr cond, Maybe[(id: Nat, trigger: Bool)] parent)
+  [Instr] gen_node_code(AutoNestedAutoInputNode node)
+  {
+    nv_var = lvar(0);
+    node_id = node.id;
+    auto_var = memb_auto_var(node_id.auto);
+
+    eval_code = gen_safe_eval_code(node.value, nv_var, next_obj_var_id = 1, next_bool_var_id = 0);
+
+    set_var_code = [
+      //## SHOULD I CHECK THAT THE INPUT IS NOT NULL BEFORE SETTING IT, OR IS THIS ALREADY DONE
+      //## INSIDE THE NESTED AUTOMATON?
+      set_input(auto_var, auto_vars_types[auto_var], node_id.input, just(nv_var)),
+      mark_for_update(std_block_node_id(node_id.auto), false)
+    ];
+
+    code = eval_code & set_var_code;
+
+    for (av, o : rand_sort(node.disc_nested_auto_outputs))
+      tmp_var = lvar(1);
+      code = [
+        read_output(tmp_var, av, auto_vars_types[av], o),
+        do_if(var_is_set(tmp_var), code)
+      ];
+    ;
+
+    disc_vars = rand_sort(node.disc_vars);
+    if (disc_vars != [])
+      cond = and([var_is_set(v) : v <- disc_vars]);
+      code = [do_if(cond, code)];
+    ;
+
+    return code;
+  }
+
+
+  [Instr] gen_node_code(AutoNestedAutoNode node)
+  {
+    auto_var = memb_auto_var(get_inner_id(node.id));
+    auto_type = auto_vars_types[auto_var];
+
+    elapsed_time_expr = if in(auto_type, time_sensitive_autos)
+      then sub(curr_time, nested_auto_int_var(auto_var, last_update_time))
+      else 0;
+
+    call_code = [update_inputs(auto_var, auto_type, elapsed_time_expr)];
+    //## CURRENTLY WE PROPAGATE THE UPDATE WITHOUT CHECKING WHAT INPUTS (IF ANY) HAVE CHANGED. FIX
+    prop_code = [mark_for_update(id, false) : id <- rand_sort(union(values(node.dep_nodes)))];
+
+    triggers_count_var = nested_auto_int_var(auto_var, time_triggers_count_var);
+    first_trigger_var  = nested_auto_int_var(auto_var, trigger_times_heap_var(0));
+    timer_code = [
+      do_if(
+        is_gt(triggers_count_var, 0),
+        insert_timer(auto_name, time_varying_node_idxs[node.id], first_trigger_var)
+      ) if in(auto_type, time_sensitive_autos)
+    ];
+
+    return call_code & prop_code & timer_code;
+  }
+
+
+  [Instr] gen_cond_eval_code(Nat id, Expr cond, Maybe[(id: CondNodeId, trigger: Bool)] parent)
   {
     l0 = lvar(0);
 
@@ -315,8 +381,8 @@ using
     id_var = cond_value_var(id);
 
     // Parent condition variables
-    pd_var = cond_is_def_var(parent.id);
-    pid_var = cond_value_var(parent.id);
+    pd_var = cond_is_def_var(get_inner_id(parent.id));
+    pid_var = cond_value_var(get_inner_id(parent.id));
 
     return [
       // Getting the value of the local condition in l0.
@@ -354,7 +420,7 @@ using
   }
 
 
-  [Instr] gen_rep_cond_eval_code(Nat id, Expr cond, Maybe[(id: Nat, trigger: Bool)] parent, Bool has_deps)
+  [Instr] gen_rep_cond_eval_code(CondNodeId node_id, Expr cond, Maybe[(id: CondNodeId, trigger: Bool)] parent, Bool has_deps)
   {
     l0 = lvar(0);
 
@@ -363,8 +429,8 @@ using
 
     // Anding the local condition with the 'parent == trigger' one, if a parent exists
     if (parent != nil)
-      pcv_var = rep_cond_value_var(parent.id);
-      pcd_var = rep_cond_is_def_var(parent.id);
+      pcv_var = rep_cond_value_var(get_inner_id(parent.id));
+      pcd_var = rep_cond_is_def_var(get_inner_id(parent.id));
 
       cond_eval_code = [
         branch(
@@ -387,6 +453,7 @@ using
 
     // Saving the value of the condition for dependent condition, if there are any
     if (has_deps)
+      id = get_inner_id(node_id);
       cv_var = rep_cond_value_var(id);
       cd_var = rep_cond_is_def_var(id);
 
@@ -402,33 +469,34 @@ using
 
 
   [Instr^] gen_update_code(Atom state, Nat src_idx) = [
-      do_if(neg(marked_for_update_var(state)), set_ivar(update_source_var(state), src_idx)),
-      mark_for_update(state, false)
+      do_if(neg(marked_for_update_var(std_block_node_id(state))), set_ivar(update_source_var(state), src_idx)),
+      mark_for_update(std_block_node_id(state), false)
     ];
 
 
-  [Instr^] gen_clear_code(Atom state) = gen_update_code(state, multivalue_node_expr_count[state]);
+  [Instr^] gen_clear_code(Atom state) = gen_update_code(state, multivalue_node_expr_count[std_block_node_id(state)]);
 
 
-  Instr mark_for_update(<Atom, Nat> node_id, Bool from_cond):
-    +   = if has_key(time_varying_node_idxs, node_id)
-            then queue_cond_update(auto_name, node_id, true)
-            else queue_update(auto_name, node_id),
-    *   = queue_cond_update(auto_name, node_id, not from_cond and in(node_id, nested_cond_ids));
+  Instr mark_for_update(BlockNodeId node_id, Bool from_cond):
+    std_block_node_id(a?)   = if has_key(time_varying_node_idxs, node_id) and not has_key(auto_vars_types, memb_auto_var(a))
+                                then queue_cond_update(auto_name, node_id, true)
+                                else queue_update(auto_name, node_id),
+    cond_node_id(n?)        = queue_cond_update(auto_name, node_id, not from_cond and in(n, nested_cond_ids)),
+    nested_auto_input_id()  = queue_update(auto_name, node_id);
 }
 
 
 using
 {
-  (<Atom, Nat> => Nat)  nodes_idxs,
-  (<Atom, Nat> => Nat)  nodes_levels,
+  (BlockNodeId => Nat)  nodes_idxs,
+  (BlockNodeId => Nat)  nodes_levels,
   [Nat]                 levels_sizes,
   Nat*                  nested_cond_ids,
   Atom*                 time_rules_ids,
   Nat                   next_int_var_id;
 
 
-  [Instr] queue_update_method_body(<Atom, Nat> node_id)
+  [Instr] queue_update_method_body(<StdBlockNodeId, CondNodeId, NestedAutoInputNodeId> node_id)
   {
     index = nodes_idxs[node_id];
     level = nodes_levels[node_id];
@@ -439,19 +507,26 @@ using
     count_var = update_count_var(level);
     nodes_var = nodes_to_update_var(level, idx_var);
 
-    extra_code = if level_size > 2 then [ set_ivar(idx_var, count_var),
-                                          set_ivar(nodes_var, index),
-                                          set_ivar(count_var, add(idx_var, 1))
-                                        ]
-                                   else [];
+    extra_code = if level_size > 2
+      then [
+        set_ivar(idx_var, count_var),
+        set_ivar(nodes_var, index),
+        set_ivar(count_var, add(idx_var, 1))
+      ]
+      else [];
 
     code = [do_if(neg(mark_var), [set_bvar(mark_var, true)] & extra_code)];
 
-    if (in(node_id, nested_cond_ids) or in(node_id, time_rules_ids))
-      inv_cache_instr = do_if(invalidate_cond_expr_cache, set_bvar(cond_expr_up_to_date_var(node_id), false));
-      code = [code | inv_cache_instr];
-    ;
+    return match (node_id)
+      std_block_node_id(a?)   = if in(a, time_rules_ids)  then add_clear_cache_code(code, a) else code,
+      cond_node_id(n?)        = if in(n, nested_cond_ids) then add_clear_cache_code(code, n) else code,
+      nested_auto_input_id()  = code;
 
-    return code;
+
+    [Instr] add_clear_cache_code([Instr] code, <Atom, Nat> id)
+    {
+      inv_cache_instr = do_if(invalidate_cond_expr_cache, set_bvar(cond_expr_up_to_date_var(id), false));
+      return [code | inv_cache_instr];
+    }
   }
 }

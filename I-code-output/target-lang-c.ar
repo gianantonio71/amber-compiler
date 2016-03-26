@@ -120,7 +120,9 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
   {
     name_str = to_c_name(block.name);
 
-    vars_decl = [var_c_type(v) & " " & to_c_var_name(v, true) & ";" : v <- rand_sort(block.memb_vars)];
+    vars_decl = [var_c_type(v) & " " & to_c_var_name(v, true) & ";" : v <- rand_sort(block.memb_vars)] &
+                [to_c_name(t) & " " & to_c_var_name(v, true) & ";" : v, t <- rand_sort_pairs(block.nested_auto_vars)];
+
     if (block.time_rules_count != 0)
       size_str = to_text(block.time_rules_count);
       vars_decl = vars_decl & [
@@ -133,12 +135,18 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
     init_vars_decl = gen_vars_decls(block.init_code);
     init_vars_decl = init_vars_decl & [""] if init_vars_decl != [];
-    init_body = init_vars_decl & compile_to_c(block.init_code, nil);
+    init_body = init_vars_decl & compile_to_c(block.init_code, nil) &
+                [ init_method_name(t) & "(&" & to_c_var_name(v, false) & ", env);"
+                  : v, t <- rand_sort_pairs(block.nested_auto_vars)
+                ];
     init_sgn = "void " & init_method_name(block.name) & "(" & name_str & " *self, Env &env)";
     init_decl = [init_sgn & ";"];
     init_proc = [init_sgn, "{"] & indent_lines(init_body) & ["}"];
 
-    cleanup_body = compile_to_c(block.cleanup_code, nil);
+    cleanup_body = compile_to_c(block.cleanup_code, nil) &
+                   [ cleanup_method_name(t) & "(&" & to_c_var_name(v, false) & ");"
+                     : v, t <- rand_sort_pairs(block.nested_auto_vars)
+                   ];
     cleanup_sgn = "void " & cleanup_method_name(block.name) & "(" & name_str & " *self)";
     cleanup_decl = [cleanup_sgn & ";"];
     cleanup_proc = [cleanup_sgn, "{"] & indent_lines(cleanup_body) & ["}"];
@@ -212,7 +220,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     {
       sgn = "void " & input_set_method_name(block_name, input_name) & "(" & to_c_name(block_name) & " *self, Obj new_val)";
       new_input_var_str = to_c_var_name(new_input(input_name));
-      marked_for_update_var = to_c_var_name(marked_for_update_var(input_name));
+      marked_for_update_var = to_c_var_name(marked_for_update_var(std_block_node_id(input_name)));
       body = [
         sgn,
         "{",
@@ -252,22 +260,37 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     }
 
 
-    (String, [String]) gen_queue_update_method(AutoSymbol block_name, Atom memb_id, [Instr] body, Bool two_level_update)
+    (String, [String]) gen_queue_update_method(AutoSymbol block_name, StdBlockNodeId memb_id, [Instr] body, Bool two_level_update)
     {
       method_name = queue_update_method_name(memb_id, block_name);
       other_arg = if two_level_update then ", bool " & to_c_var_name(invalidate_cond_expr_cache) else "";
       sgn = "void " & method_name & "(" & to_c_name(block_name) & " *self" & other_arg & ")";
-      body_text = gen_vars_decls(body) & [""] & compile_to_c(body, nil);
+      vars_decl_text = gen_vars_decls(body);
+      vars_decl_text = [vars_decl_text | ""] if vars_decl_text != [];
+      body_text = vars_decl_text & compile_to_c(body, nil);
       return (sgn & ";", [sgn, "{"] & indent_lines(body_text) & ["}"]);
     }
 
 
-    (String, [String]) gen_queue_update_method(AutoSymbol block_name, Nat cond_id, [Instr] body, Bool two_level_update)
+    (String, [String]) gen_queue_update_method(AutoSymbol block_name, CondNodeId cond_id, [Instr] body, Bool two_level_update)
     {
       method_name = queue_update_method_name(cond_id, block_name);
       inval_cache_var_name = to_c_var_name(invalidate_cond_expr_cache);
       sgn = "void " & method_name & "(" & to_c_name(block_name) & " *self, bool " & inval_cache_var_name & ")";
-      body_text = gen_vars_decls(body) & [""] & compile_to_c(body, nil);
+      vars_decl_text = gen_vars_decls(body);
+      vars_decl_text = [vars_decl_text | ""] if vars_decl_text != [];
+      body_text = vars_decl_text & compile_to_c(body, nil);
+      return (sgn & ";", [sgn, "{"] & indent_lines(body_text) & ["}"]);
+    }
+
+
+    (String, [String]) gen_queue_update_method(AutoSymbol block_name, NestedAutoInputNodeId input_id, [Instr] body, Bool two_level_update)
+    {
+      method_name = queue_update_method_name(input_id, block_name);
+      sgn = "void " & method_name & "(" & to_c_name(block_name) & " *self)";
+      vars_decl_text = gen_vars_decls(body);
+      vars_decl_text = [vars_decl_text | ""] if vars_decl_text != [];
+      body_text = vars_decl_text & compile_to_c(body, nil);
       return (sgn & ";", [sgn, "{"] & indent_lines(body_text) & ["}"]);
     }
 
@@ -402,9 +425,9 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     var_decls = gen_vars_decls(body);
 
     auto_vars = rand_sort(keys(auto_vars_types));
-    auto_var_decls = [to_c_name(auto_vars_types[v]) & " " & to_c_var_name(v) & ";" : v <- auto_vars];
-    auto_vars_init = [init_method_name(auto_vars_types[v]) & "(&" & to_c_var_name(v) & ", env);" : v <- auto_vars];
-    auto_vars_cleanup = [cleanup_method_name(auto_vars_types[v]) & "(&" & to_c_var_name(v) & ");" : v <- auto_vars];
+    auto_var_decls = [to_c_name(auto_vars_types[v]) & " " & to_c_var_name(v, true) & ";" : v <- auto_vars];
+    auto_vars_init = [init_method_name(auto_vars_types[v]) & "(&" & to_c_var_name(v, false) & ", env);" : v <- auto_vars];
+    auto_vars_cleanup = [cleanup_method_name(auto_vars_types[v]) & "(&" & to_c_var_name(v, false) & ");" : v <- auto_vars];
 
     comp_body = compile_to_c(body, nil);
 
@@ -604,15 +627,15 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     set_input()           = { value = instr.value;
                               value_str = if value != nil then to_c_expr(value(value)) else "null_obj";
                               method_name = input_set_method_name(instr.type, instr.input);
-                              return [method_name & "(&" & to_c_var_name(instr.var) & ", " & value_str & ");"];
+                              return [method_name & "(&" & to_c_var_name(instr.var, false) & ", " & value_str & ");"];
                             },
 
     update_inputs()       = compile_update_inputs_to_c(if instr.var? then just(instr.var) else nil, instr.type, if instr.call? then just(instr.call) else nil, instr.elapsed_time);
 
 
-  [String] compile_update_inputs_to_c(Maybe[AutoVar] var, AutoSymbol type, Maybe[(name: MethodSymbol, args: [AtomicExpr])] call, IntExpr elapsed_time)
+  [String] compile_update_inputs_to_c(Maybe[AnyAutoVar] var, AutoSymbol type, Maybe[(name: MethodSymbol, args: [AtomicExpr])] call, IntExpr elapsed_time)
   {
-    var_str = if var != nil then "&" & to_c_var_name(value(var)) else "self";
+    var_str = if var != nil then "&" & to_c_var_name(value(var), false) else "self";
     if (call == nil)
       name_str = update_method_name(type);
       args = [];
@@ -660,7 +683,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     internal_sort()       = mk_call(var, "internal_sort",       [expr.set]),
     symb_to_str(e?)       = mk_call(var, "to_str",              [e]),
     get_new_input(a?)     = [to_c_var_name(var) & " = " & to_c_var_name(new_input(a)) & ";"],
-    read_output()         = [mk_gen_call(var, output_get_method_name(expr.type, expr.output), ["&" & to_c_var_name(expr.var)])],
+    read_output()         = [mk_gen_call(var, output_get_method_name(expr.type, expr.output), ["&" & to_c_var_name(expr.var, false)])],
     add_attachment()      = mk_call(var, "add_attachment",      [expr.target, expr.data]),
     fetch_attachments(e?) = mk_call(var, "fetch_attachments",   [e]);
 
@@ -917,17 +940,6 @@ using String typesymb2name(TypeSymbol)
     var_is_set(v?)        = parentesize(to_c_var_name(v) & " != blank_obj", parentesised),
     var_is_def(v?)        = parentesize(to_c_var_name(v) & " != null_obj", parentesised),
 
-    //## field_is_set() SHOULD NEVER BE CALLED IF field_is_def() IS NOT TRUE.
-    //## ADD THE REQUIRED CHECK.
-    field_is_set()        = parentesize(
-                              to_c_var_name(expr.var) & "." & to_c_var_name(memb_var(expr.field), true) & " != blank_obj",
-                              parentesised
-                            ),
-    field_is_def()        = parentesize(
-                              to_c_var_name(expr.var) & "." & to_c_var_name(memb_var(expr.field), true) & " != null_obj",
-                              parentesised
-                            ),
-
     neg(e?)               = parentesize("!" & to_c_expr(e, true), parentesised),
 
     and(es?)              = to_nary_op(" & ",  es, parentesised),
@@ -986,11 +998,10 @@ using String typesymb2name(TypeSymbol)
 
   String cleanup_method_name(AutoSymbol name) = to_c_name(name) & "_cleanup";
 
-  String queue_update_method_name(Atom member, AutoSymbol auto) =
-    to_c_name(auto) & "_" & upper_camel_case(member) & "_queue_update";
-
-  String queue_update_method_name(Nat cond_id, AutoSymbol auto) =
-    to_c_name(auto) & "_" & to_str(cond_id) & "_queue_update";
+  String queue_update_method_name(BlockNodeId id, AutoSymbol auto):
+    std_block_node_id(a?)   = to_c_name(auto) & "_" & upper_camel_case(a) & "_queue_update",
+    cond_node_id(n?)        = to_c_name(auto) & "_" & to_str(n) & "_queue_update",
+    nested_auto_input_id()  = to_c_name(auto) & "_" & upper_camel_case(id.auto) & "_" & upper_camel_case(id.input) & "_queue_update";
 
   String insert_timer_method_name(AutoSymbol auto) = to_c_name(auto) & "_insert_timer";
 
@@ -1007,12 +1018,13 @@ using String typesymb2name(TypeSymbol)
   String to_c_var_name(BoolVar v)     = to_c_var_name(v, false);
   String to_c_var_name(IntVar v)      = to_c_var_name(v, false);
 
+
   String to_c_var_name(ClsVar v):
     cls_var(+ a?)  = upper_camel_case(a) & "_C",
     cls_var(* n?)  = "c" & to_str(n);
 
 
-  String to_c_var_name(<ObjVar, MembObjVar> v, Bool decl) = to_c_var_name(v, if decl then "" else "self->");
+  String to_c_var_name(<ObjVar, MembObjVar> v, Bool add_prefix) = to_c_var_name(v, if add_prefix then "" else "self->");
 
   String to_c_var_name(<ObjVar, MembObjVar> v, String prefix):
     var(Atom a?)            = upper_camel_case(a) & "_V",
@@ -1026,40 +1038,39 @@ using String typesymb2name(TypeSymbol)
     evar()                  = "V" & to_str(v.id) & "[" & to_c_expr(v.idx) & "]",
     new_input(Atom a?)      = prefix & upper_camel_case(a) & "_new";
 
-  String to_c_var_name(AutoVar v) = upper_camel_case(name(v)) & "_A";
-  String to_c_var_name(BoolVar v, Bool decl)
+
+  String to_c_var_name(AnyAutoVar v, Bool add_prefix):
+    loc_auto_var(a?)  = upper_camel_case(a) & "_A",
+    memb_auto_var(a?) = (if add_prefix then "" else "self->") & upper_camel_case(a) & "_A";
+
+
+  String to_c_var_name(BoolVar v, Bool add_prefix)
   {
-    prefix = if decl then "" else "self->";
+    prefix = if add_prefix then "" else "self->";
     return match (v)
-      bvar(n?)                          = "b" & to_str(n),
-      memb_has_changed(id?)             = "hc_" & upper_camel_case(id),
-      rep_cond_value_var(id?)           = "rc" & to_str(id),
-      rep_cond_is_def_var(id?)          = "rcd" & to_str(id),
-      invalidate_cond_expr_cache        = "inval_cache",
-      cond_value_var(n?)                = prefix & "cond_" & to_str(n),
-      cond_expr_up_to_date_var(Nat n?)  = prefix & "cond_" & to_str(n) & "_expr_up_to_date",
-      cond_expr_up_to_date_var(Atom a?) = prefix & "cond_" & upper_camel_case(a) & "_expr_up_to_date",
-      cond_expr_value_var(Nat n?)       = prefix & "cond_" & to_str(n) & "_expr",
-      cond_expr_value_var(Atom a?)      = prefix & "cond_" & upper_camel_case(a) & "_expr",
-      cond_expr_is_def_var(Nat n?)      = prefix & "cond_" & to_str(n) & "_expr_is_def",
-      cond_expr_is_def_var(Atom a?)     = prefix & "cond_" & upper_camel_case(a) & "_expr_is_def",
-      cond_is_def_var(n?)               = prefix & "cond_" & to_str(n) & "_is_def",
-      marked_for_update_var(Atom a?)    = prefix & upper_camel_case(a) & "_marked_for_update",
-      marked_for_update_var(Nat n?)     = prefix & "cond_" & to_str(n) & "_marked_for_update",
-      is_new                            = prefix & "is_new";
+      bvar(n?)                                      = "b" & to_str(n),
+      memb_has_changed(id?)                         = "hc_" & upper_camel_case(id),
+      rep_cond_value_var(id?)                       = "rc" & to_str(id),
+      rep_cond_is_def_var(id?)                      = "rcd" & to_str(id),
+      invalidate_cond_expr_cache                    = "inval_cache",
+      cond_value_var(n?)                            = prefix & "cond_" & to_str(n),
+      cond_expr_up_to_date_var(Nat n?)              = prefix & "cond_" & to_str(n) & "_expr_up_to_date",
+      cond_expr_up_to_date_var(Atom a?)             = prefix & "cond_" & upper_camel_case(a) & "_expr_up_to_date",
+      cond_expr_value_var(Nat n?)                   = prefix & "cond_" & to_str(n) & "_expr",
+      cond_expr_value_var(Atom a?)                  = prefix & "cond_" & upper_camel_case(a) & "_expr",
+      cond_expr_is_def_var(Nat n?)                  = prefix & "cond_" & to_str(n) & "_expr_is_def",
+      cond_expr_is_def_var(Atom a?)                 = prefix & "cond_" & upper_camel_case(a) & "_expr_is_def",
+      cond_is_def_var(n?)                           = prefix & "cond_" & to_str(n) & "_is_def",
+      marked_for_update_var(std_block_node_id(a?))  = prefix & upper_camel_case(a) & "_marked_for_update",
+      marked_for_update_var(cond_node_id(n?))       = prefix & "cond_" & to_str(n) & "_marked_for_update",
+      marked_for_update_var(nested_auto_input_id() id?) = prefix & upper_camel_case(id.auto) & "_" & upper_camel_case(id.input) & "_marked_for_update",
+      is_new                                        = prefix & "is_new";
   }
 
 
-  String to_c_var_name(IntVar v, Bool decl)
+  String to_c_var_name(IntVar v, Bool add_prefix)
   {
-    assert match (v)
-      nodes_to_update_var()               = not decl,
-      time_varying_cond_ids_heap_var(i?)  = not decl,
-      trigger_times_heap_var()            = not decl,
-      time_varying_cond_ids_heap_var()    = not decl,
-      _                                   = true;
-
-    prefix = if decl then "" else "self->";
+    prefix = if add_prefix then "" else "self->";
     return match (v)
       ivar(n?)                            = "i" & to_str(n),
       curr_time                           = "curr_time",
@@ -1073,13 +1084,14 @@ using String typesymb2name(TypeSymbol)
       time_triggers_count_var             = prefix & "time_triggers_count",
       trigger_times_heap_var(i?)          = prefix & "trigger_times_heap[" & to_c_expr(i) & "]",
       time_varying_cond_ids_heap_var(i?)  = prefix & "time_varying_cond_ids_heap[" & to_c_expr(i) & "]",
-      last_update_time                    = prefix & "last_update_time";
+      last_update_time                    = prefix & "last_update_time",
+      nested_auto_int_var()               = to_c_var_name(v.auto_var, false) & "." & to_c_var_name(v.memb_var, true);
   }
 
 
-  String to_c_var_name(MembIntVectVar v, Bool decl)
+  String to_c_var_name(MembIntVectVar v, Bool add_prefix)
   {
-    assert decl;
+    assert add_prefix;
     return "nodes_to_update_" & to_text(v.level) & "[" & to_text(v.size) & "]";
   }
 

@@ -35,7 +35,7 @@ using
   Nat next_vector_var_id,
   Nat next_stream_var_id,
 
-  (AutoVar => AutoSymbol) auto_vars_types,
+  (AnyAutoVar => AutoSymbol) auto_vars_types,
 
   Bool ignore_assertions;
 
@@ -175,8 +175,8 @@ using
     accessor_test() = gen_eval_code_for_accessor_test_expr(expr.expr, expr.field, res_var),
 
     get_output()    = [read_output(res_var, expr.var, auto_vars_types[expr.var], expr.output)],
-    output_is_set() = [set_var(res_var, to_obj(field_is_set(expr.var, expr.output)))],
-    output_is_def() = [set_var(res_var, to_obj(field_is_def(expr.var, expr.output)))],
+    output_is_set() = gen_eval_code_for_output_is_set_expr(expr.var, expr.output, res_var),
+    output_is_def() = gen_eval_code_for_output_is_def_expr(expr.var, expr.output, res_var),
 
     if_expr()       = gen_eval_code_for_if_expr(expr.cond, expr.then, expr.else, res_var),
     match_expr()    = gen_eval_code_for_match_expr(expr.exprs, expr.cases, res_var),
@@ -190,6 +190,7 @@ using
     range_comp(ei?) = gen_eval_code_for_range_comp_expr(ei, res_var),
 
     is_set(v?)      = [set_var(res_var, to_obj(var_is_set(v)))];
+
 
 
   [Instr^] gen_eval_code_for_set_expr(SubExpr* subexprs, EvalDestVar res_var)
@@ -478,6 +479,26 @@ using
     // // that has nothing to do with the actual result
     code = [ext_lookup(bvar, unused_var, info_expr, field), set_var(res_var, to_obj(bvar))];
     return nonempty(info.eval_code & code);
+  }
+
+
+  [Instr^] gen_eval_code_for_output_is_set_expr(AnyAutoVar var, Atom output, EvalDestVar res_var)
+  {
+    tmp_var = lvar(next_obj_var_id);
+    return [
+      read_output(tmp_var, var, auto_vars_types[var], output),
+      set_var(res_var, to_obj(var_is_set(tmp_var)))
+    ];
+  }
+
+
+  [Instr^] gen_eval_code_for_output_is_def_expr(LocAutoVar var, Atom output, EvalDestVar res_var)
+  {
+    tmp_var = lvar(next_obj_var_id);
+    return [
+      read_output(tmp_var, var, auto_vars_types[var], output),
+      set_var(res_var, to_obj(var_is_def(tmp_var)))
+    ];
   }
 
 
@@ -1018,7 +1039,7 @@ using
   }
 
 
-  [Instr^] gen_code_for_auto_set_input_stmt(AutoVar var, Atom input, Maybe[Expr] value)
+  [Instr^] gen_code_for_auto_set_input_stmt(LocAutoVar var, Atom input, Maybe[Expr] value)
   {
     auto_type = auto_vars_types[var];
     if (value != nil)
