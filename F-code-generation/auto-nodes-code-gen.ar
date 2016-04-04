@@ -340,14 +340,33 @@ using
 
   [Instr] gen_node_code(AutoNestedAutoNode node)
   {
-    auto_var = memb_auto_var(get_inner_id(node.id));
+    inner_id = get_inner_id(node.id);
+
+    auto_var = memb_auto_var(inner_id);
     auto_type = auto_vars_types[auto_var];
+    update_source_var = update_source_var(inner_id);
 
     elapsed_time_expr = if in(auto_type, time_sensitive_autos)
       then sub(curr_time, nested_auto_int_var(auto_var, last_update_time))
       else 0;
 
     call_code = [update_inputs(auto_var, auto_type, elapsed_time_expr)];
+    if (node.calls != [])
+      cases = [call_code];
+      for (m, as : node.calls)
+        args_eval_info = gen_safe_eval_info(as, next_obj_var_id = 0, next_bool_var_id = 0);
+        update_inputs_instr = update_inputs(
+          var:          auto_var,
+          type:         auto_type,
+          call:         (name: m, args: args_eval_info.exprs),
+          elapsed_time: elapsed_time_expr
+        );
+        case_code = [args_eval_info.eval_code | update_inputs_instr];
+        cases = [cases | case_code];
+      ;
+      call_code = [switch_on_nat(update_source_var, cases), set_ivar(update_source_var, 0)];
+    ;
+
     //## CURRENTLY WE PROPAGATE THE UPDATE WITHOUT CHECKING WHAT INPUTS (IF ANY) HAVE CHANGED. FIX
     prop_code = [mark_for_update(id, false) : id <- rand_sort(union(values(node.dep_nodes)))];
 

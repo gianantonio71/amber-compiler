@@ -135,18 +135,12 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
     init_vars_decl = gen_vars_decls(block.init_code);
     init_vars_decl = init_vars_decl & [""] if init_vars_decl != [];
-    init_body = init_vars_decl & compile_to_c(block.init_code, nil) &
-                [ init_method_name(t) & "(&" & to_c_var_name(v, false) & ", env);"
-                  : v, t <- rand_sort_pairs(block.nested_auto_vars)
-                ];
+    init_body = init_vars_decl & compile_to_c(block.init_code, nil);
     init_sgn = "void " & init_method_name(block.name) & "(" & name_str & " *self, Env &env)";
     init_decl = [init_sgn & ";"];
     init_proc = [init_sgn, "{"] & indent_lines(init_body) & ["}"];
 
-    cleanup_body = compile_to_c(block.cleanup_code, nil) &
-                   [ cleanup_method_name(t) & "(&" & to_c_var_name(v, false) & ");"
-                     : v, t <- rand_sort_pairs(block.nested_auto_vars)
-                   ];
+    cleanup_body = compile_to_c(block.cleanup_code, nil);
     cleanup_sgn = "void " & cleanup_method_name(block.name) & "(" & name_str & " *self)";
     cleanup_decl = [cleanup_sgn & ";"];
     cleanup_proc = [cleanup_sgn, "{"] & indent_lines(cleanup_body) & ["}"];
@@ -426,18 +420,11 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
     auto_vars = rand_sort(keys(auto_vars_types));
     auto_var_decls = [to_c_name(auto_vars_types[v]) & " " & to_c_var_name(v, true) & ";" : v <- auto_vars];
-    auto_vars_init = [init_method_name(auto_vars_types[v]) & "(&" & to_c_var_name(v, false) & ", env);" : v <- auto_vars];
-    auto_vars_cleanup = [cleanup_method_name(auto_vars_types[v]) & "(&" & to_c_var_name(v, false) & ");" : v <- auto_vars];
 
     comp_body = compile_to_c(body, nil);
 
-    code = [signature, "{"] & indent_lines(var_decls) & indent_lines(auto_var_decls) & [""] &
-           //## HERE I SPLIT THE RETURN STATEMENT AT THE END FROM THE REST OF THE BODY
-           //## IT WORKS, BUT IT'S VERY HACKY. JUST REMOVE THE RETURN STATEMENT FROM
-           //## THE LEVEL 3 AST, CREATE A SPECIAL VARIABLE TO HOLD THE RETURN VALUE,
-           //## AND JUST GENERATE THE RETURN STATEMENT HERE.
-           indent_lines(auto_vars_init) & [""] & indent_lines(subseq(comp_body, 0, nil, 1)) &
-           [""] & indent_lines(auto_vars_cleanup) & [""] & indent_lines(subseq(comp_body, nil, 1, 0)) & ["}"];
+    code = [signature, "{"] & indent_lines(var_decls) & indent_lines(auto_var_decls) &
+           ["" if var_decls != [] or auto_var_decls != []] & indent_lines(comp_body) & ["}"];
 
     if (cached)
       wrapper_code = [
@@ -623,6 +610,10 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     insert_timer()        = [insert_timer_method_name(instr.type) & "(self, " & to_c_expr(instr.idx) & ", " & to_c_expr(instr.time) & ");"],
 
     clear_timer()         = [clear_timer_method_name(instr.type) & "(self, " & to_c_expr(instr.idx) & ");"],
+
+    auto_init()           = [init_method_name(instr.type) & "(&" & to_c_var_name(instr.var, false) & ", env);"],
+
+    auto_cleanup()        = [cleanup_method_name(instr.type) & "(&" & to_c_var_name(instr.var, false) & ");"],
 
     set_input()           = { value = instr.value;
                               value_str = if value != nil then to_c_expr(value(value)) else "null_obj";

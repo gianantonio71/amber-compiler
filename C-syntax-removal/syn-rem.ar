@@ -256,8 +256,15 @@ using (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_arg_arities, (A
     {
       args = [(syn_type_to_type(t, nil), v) : t, v <- syn_method.args];
       arg_vars = set([v : unused_var, v <- args]);
-      asgnms = merge([(a => syn_expr_to_expr(e, memb_vars, auto_vars, arg_vars)) : a, e <- syn_method.assignments]);
-      return method(syn_method.name, args, asgnms);
+      asgnms = merge({
+        (s.memb_var => syn_expr_to_expr(s.value, memb_vars, auto_vars, arg_vars))
+        : s <- set(syn_method.statements), syn_memb_asgnm() << s
+      });
+      calls = merge({
+        (s.auto_var => (method: s.method, args: [syn_expr_to_expr(a, memb_vars, auto_vars, arg_vars) : a <- s.args]))
+        : s <- set(syn_method.statements), syn_nested_call() << s
+      });
+      return method(syn_method.name, args, asgnms, calls);
     }
 
 

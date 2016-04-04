@@ -11,45 +11,26 @@ Block gen_auto_code(Automaton automaton, (AutoSymbol => (Atom => Bool)) auto_inp
   fail if not levels_sizes :: [NzNat]; //## UGLY UGLY UGLY
   levels_offsets = [0] & partial_sums(levels_sizes);
 
-  param_ids = keys(automaton.params);
   input_ids = keys(automaton.inputs);
-  state_var_ids = keys(automaton.state);
   disc_sgns_ids = discrete_signals(automaton);
-  rule_ids = keys(automaton.rules);
   time_rule_ids = keys(automaton.time_rules);
-  cond_nodes = {t : t <- set(nodes), cond_node() << t}; //## BIT UGLY.
-  cond_ids = {get_inner_id(c.id) : c <- cond_nodes};
-  rep_cond_nodes = {t : t <- set(nodes), rep_cond_node() << t};
-  rep_cond_ids = {get_inner_id(c.id) : c <- rep_cond_nodes};
-  nested_cond_ids = {get_inner_id(c.id) : c <- cond_nodes, c.parent != nil};
+  nested_cond_ids = {get_inner_id(n.id) : n <- set(nodes), cond_node() << n, n.parent != nil};
   disc_inputs_ids = intersection(input_ids, disc_sgns_ids);
 
-  continuous_derived_nodes_ids = (rule_ids & time_rule_ids) - disc_sgns_ids;
-
-  obj_memb_var_ids = param_ids & input_ids & state_var_ids & disc_sgns_ids & rule_ids & time_rule_ids;
-  std_memb_vars = {memb_var(id) : id <- obj_memb_var_ids};
-  new_input_vars = {new_input(a) : a <- input_ids};
-  method_args = {right(a) : m <- automaton.methods, a <- set(m.args)};
-
-  memb_obj_vars       = std_memb_vars & new_input_vars & method_args;
-
-  memb_int_vars       = {update_source_var(a) : a <- state_var_ids & disc_sgns_ids} &
-                        set([update_count_var(l) : s @ l <- levels_sizes, s > 2]) &
-                        {next_trigger_time_var(id) : id <- time_rule_ids} &
-                        {curr_time_slot_var(id) : id <- time_rule_ids};
-  // Not adding the arrays used to store the trigger heaps
-  // That is done in the target language code generation phase
-  memb_int_vars = memb_int_vars & {time_triggers_count_var, last_update_time} if in(automaton.name, time_sensitive_autos);
+  memb_obj_vars = seq_union([memb_obj_vars(n) : n <- nodes]) &
+                  {(memb_var(id), :blank) : id <- keys(automaton.params)} &
+                  {(right(a), :blank) : m <- automaton.methods, a <- set(m.args)};
 
   memb_int_vect_vars  = set([nodes_to_update_vect_var(l, nz_nat(s)) : s @ l <- levels_sizes, s > 2]);
 
-  memb_bool_vars      = {cond_value_var(n) : n <- cond_ids} &
-                        {cond_is_def_var(n) : n <- cond_ids} &
-                        {cond_expr_value_var(n) : n <- nested_cond_ids & time_rule_ids} &
-                        {cond_expr_is_def_var(n) : n <- nested_cond_ids & time_rule_ids} &
-                        {cond_expr_up_to_date_var(n) : n <- nested_cond_ids & time_rule_ids} &
-                        {marked_for_update_var(n.id) : n <- set(nodes)} &
-                        {is_new};
+  // Not adding the arrays used to store the trigger heaps
+  // That is done in the target language code generation phase
+  is_time_sensitive = in(automaton.name, time_sensitive_autos);
+  memb_int_vars = seq_union([memb_int_vars(n) : n <- nodes]) &
+                  set([(update_count_var(l), s) : s @ l <- levels_sizes, s > 2]) &
+                  {(time_triggers_count_var, 0) if is_time_sensitive, (last_update_time, 0) if is_time_sensitive};
+
+  memb_bool_vars = seq_union([memb_bool_vars(n) : n <- nodes]) & {(is_new, true)};
 
   const_data = {time_slots_len(a, ls) : c @ a <- automaton.time_rules, ls = trigger_times_table(c.time_expr), ls != []};
 
@@ -62,14 +43,8 @@ Block gen_auto_code(Automaton automaton, (AutoSymbol => (Atom => Bool)) auto_inp
 
         options                   = options,
 
-        memb_vars_and_method_args = std_memb_vars & method_args,
         disc_sgns_ids             = disc_sgns_ids,
-
-        cont_inputs_ids           = input_ids - disc_sgns_ids,
         disc_inputs_ids           = intersection(input_ids, disc_sgns_ids),
-        state_vars_ids            = state_var_ids,
-        cont_derived_vars_ids     = continuous_derived_nodes_ids,
-        disc_derived_vars_ids     = disc_sgns_ids - disc_inputs_ids,
 
         nodes_by_id               = merge(set([(n.id => n) : n <- nodes])),
         nodes_ids_by_level        = [set(l) : l <- nodes_ids_by_level(nodes)],
@@ -81,15 +56,15 @@ Block gen_auto_code(Automaton automaton, (AutoSymbol => (Atom => Bool)) auto_inp
         levels_offsets            = levels_offsets,
         levels_sizes              = levels_sizes)
 
-    init_code     = gen_init_method_body(memb_bool_vars, memb_int_vars, (id => sv.init_value : sv @ id <- automaton.state));
+    init_code     = gen_init_method_body(memb_bool_vars, memb_int_vars, memb_obj_vars);
     update_code   = gen_update_method_body(nodes, nested_cond_ids, nodes_deps);
     methods_code  = ((m.name, length(m.args)) => gen_method_code(m) : m <- automaton.methods);
   ;
 
   // Generating cleanup code
-  memb_vars_to_rel = param_ids & input_ids & state_var_ids & disc_sgns_ids & rule_ids & time_rule_ids;
-  vars_to_rel = {memb_var(id) : id <- memb_vars_to_rel} & {new_input(id) : id <- input_ids};
-  cleanup_code = join([[release(v), init_memb_var(v, :blank)] : v <- rand_sort(vars_to_rel)]);
+  cleanup_code = join([[release(v), init_memb_var(v, :blank)] : v, unused_var <- rand_sort(memb_obj_vars)]) &
+                 rand_sort({auto_cleanup(memb_auto_var(id), auto.type) : auto @ id <- automaton.nested_autos});
+
 
   // Generating methods for queuing updates
   node_ids = [n.id : n <- nodes];
@@ -124,11 +99,16 @@ Block gen_auto_code(Automaton automaton, (AutoSymbol => (Atom => Bool)) auto_inp
 
   sorted_input_ids = [match (id) std_block_node_id(a?) = a : id <- subseq(node_ids, 0, size(automaton.inputs))]; //## BAD: RUNTIME TYPE CHECKING SHOULD NOT BE NEEDED HERE
 
+  memb_vars = {left(v) : v <- memb_bool_vars} &
+              {left(v) : v <- memb_int_vars} &
+              {left(v) : v <- memb_obj_vars} &
+              memb_int_vect_vars;
+
   return block(
     name:               automaton.name,
     inputs:             sorted_input_ids,
     outputs:            keys(automaton.outputs),
-    memb_vars:          memb_obj_vars & memb_int_vars & memb_int_vect_vars & memb_bool_vars,
+    memb_vars:          memb_vars,
     nested_auto_vars:   (memb_auto_var(id) => auto.type : auto @ id <- automaton.nested_autos),
     init_code:          init_code,
     update_code:        update_code,
@@ -168,14 +148,8 @@ using
 
   CompilationOptions          options,
 
-  <MembVar, MethodArg>*       memb_vars_and_method_args,
   Atom*                       disc_sgns_ids,
-
-  Atom*                       cont_inputs_ids,
   Atom*                       disc_inputs_ids,
-  Atom*                       state_vars_ids,
-  Atom*                       cont_derived_vars_ids,
-  Atom*                       disc_derived_vars_ids,
 
   (BlockNodeId => AutoNode)   nodes_by_id,
   [BlockNodeId+]              nodes_ids_by_level,
@@ -198,7 +172,12 @@ using
     par_copy_code = [set_var(v, fn_par(i)) : unused_var, v @ i <- method.args];
 
     // Then we mark for update all the state relevant state variables
-    queue_update_code = join(rand_sort({gen_queue_update_code(a, e) : e @ a <- method.assignments}));
+    queue_update_code = join(rand_sort({gen_queue_update_code(a, e) : e @ a <- method.asgnms}));
+
+    // Now we setup all the method calls on nested automata
+    method_call_setup_code = join(rand_sort(
+      {gen_method_call_setup_code(id, info.method, info.args) : info @ id <- method.calls}
+    ));
 
     // Now we call the update procedure
     //## BUG BUG BUG: THIS IS WRONG, I NEED TO "DISABLE" DISCRETE INPUTS
@@ -207,120 +186,63 @@ using
     // We can now clear all copied parameters
     clear_code = [reset_memb_var(v, :blank) : unused_var, v <- method.args];
 
-    return par_copy_code & queue_update_code & call_code & clear_code;
+    return par_copy_code & queue_update_code & method_call_setup_code & call_code & clear_code;
 
 
-    [Instr] gen_queue_update_code(Atom state_var_id, Expr new_value)
+    [Instr] gen_queue_update_code(Atom bare_state_var_id, Expr new_value)
     {
-      expr_idx = match (nodes_by_id[std_block_node_id(state_var_id)])
+      state_var_id = std_block_node_id(bare_state_var_id);
+      expr_idx = match (nodes_by_id[state_var_id])
                    state() n? = index_first(new_value, n.exprs);
       return [
-        set_ivar(update_source_var(state_var_id), expr_idx),
-        queue_update(automaton.name, std_block_node_id(state_var_id))
+        set_ivar(update_source_var(bare_state_var_id), expr_idx),
+        queue_update(automaton.name, state_var_id)
+      ];
+    }
+
+
+    [Instr] gen_method_call_setup_code(Atom bare_auto_id, MethodSymbol method, [Expr] args)
+    {
+      auto_id = std_block_node_id(bare_auto_id);
+      node = nodes_by_id[auto_id];
+      node = match (node) nested_auto_node() = node; //## UGLY UGLY UGLY
+      call_idx = 1 + index_first((method, args), node.calls);
+      return [
+        set_ivar(update_source_var(bare_auto_id), call_idx),
+        queue_update(automaton.name, auto_id)
       ];
     }
   }
 
 
-
-  [Instr] gen_init_method_body(MembBoolVar* memb_bool_vars, MembIntVar* memb_int_vars, (Atom => Expr) state_vars_init_value)
+  [Instr] gen_init_method_body((MembBoolVar, Bool)* memb_bool_vars, (MembIntVar, Int)* memb_int_vars, (<MembVar, MembObjVar, MethodArg>, <blank, undefined>)* memb_obj_vars)
   {
-    // Initializing all object member variables (save for new inputs) to blank
-    code_0 = [init_memb_var(v, :blank) : v <- rand_sort(memb_vars_and_method_args)];
-
-    // Initializing new inputs to undefined (if countinuous) or blank (if discrete)
-    code_1 = [init_memb_var(new_input(a), :undefined) : a <- rand_sort(cont_inputs_ids)] &
-             [init_memb_var(new_input(a), :blank) : a <- rand_sort(disc_inputs_ids)];
-
     // Initializing all boolean member variables
-    code_2 = [set_bvar(v, bool_memb_var_init_value(v)) : v <- rand_sort(memb_bool_vars)];
+    code_0 = [set_bvar(var, init_val) : var, init_val <- rand_sort(memb_bool_vars)];
 
     // Initializing all integer member variables
-    code_3 = [set_ivar(v, int_memb_var_init_value(v)) : v <- rand_sort(memb_int_vars)];
+    code_1 = [set_ivar(var, init_val) : var, init_val <- rand_sort(memb_int_vars)];
 
-    // Initializing the update_source_var()
-    code_4 = [
-      set_ivar(update_source_var(id), state_var_update_source_idx(id, state_vars_init_value[id]))
-      : id <- rand_sort(state_vars_ids)
-    ] & [set_ivar(update_source_var(id), -1) : id <- rand_sort(disc_derived_vars_ids)];
+    // Initializing all object member variables (save for new inputs) to blank
+    code_2 = [init_memb_var(var, init_val) : var, init_val <- rand_sort(memb_obj_vars)];
 
-    // This is the list of nodes that have to be initialized through the normal mechanism
-    // during the first update. It consists of all continous inputs and derived signals,
-    // time-varying conditions, state variables and all the conditions and the nested automata,
-    // but it does not include discrete signals, which are ignored the first time
-    nodes_to_init_by_level = [
-      { n : n <- ns,
-        match (n)
-          std_block_node_id(a?)   = in(a, cont_inputs_ids) or in(a, cont_derived_vars_ids) or in(a, state_vars_ids),
-          cond_node_id()          = true,
-          nested_auto_input_id()  = true
-      } : ns <- nodes_ids_by_level
-    ];
-
-    // Initializing variables that keep track of the number of nodes to update
-    // For every level that has more than 2 nodes (the threshold for having a switch case)
-    // we add all continuous inputs or derived signals to the update list
-    code_5 = [set_ivar(update_count_var(l), size(ns)) : ns @ l <- nodes_to_init_by_level, size(nodes_ids_by_level[l]) > 2];
+    // Creating the list of node that are initially marked for update
+    marked_nodes = {id : v_iv <- memb_bool_vars, v = left(v_iv), iv = right(v_iv), marked_for_update_var(id?) << v, iv};
+    marked_nodes_by_level = [intersection(ns, marked_nodes) : ns @ l <- nodes_ids_by_level];
 
     // Initializing variables that contain the list of nodes that must be updated.
-    // Initially only continuous inputs are marked for update
-    code_6 = join([
-      [set_ivar(nodes_to_update_var(l, i), nodes_idxs[n]) : n @ i <- rand_sort(ns)]
-      : ns @ l <- nodes_to_init_by_level, size(nodes_ids_by_level[l]) > 2
+    code_3 = join([
+      [set_ivar(nodes_to_update_var(l, i), nodes_idxs[n]) : n @ i <- rand_sort(marked_nodes_by_level[l])]
+      : ns @ l <- nodes_ids_by_level, size(ns) > 2
     ]);
 
     // Now initializing all parameters.
     //## THESE VARIABLES HAVE ALREADY BEEN INITIALIZED TO BLANK, AND THAT'S REDUNDANT
-    code_7 = gen_params_init_code(automaton, options);
+    code_4 = gen_params_init_code(automaton, options);
 
-    return join([code_0, code_1, code_2, code_3, code_4, code_5, code_6, code_7]);
+    code_5 = rand_sort({auto_init(memb_auto_var(id), auto.type) : auto @ id <- automaton.nested_autos});
 
-
-    Nat state_var_update_source_idx(Atom id, Expr init_val)
-    {
-      node = nodes_by_id[std_block_node_id(id)];
-      return match (node)
-        state() = index_first(init_val, node.exprs);
-    }
-
-
-    Bool bool_memb_var_init_value(MembBoolVar):
-      cond_is_def_var()               = true,
-      is_new                          = true,
-      marked_for_update_var(id?)      = marked_for_update_var_init_value(id),
-      cond_expr_is_def_var(Atom id?)  = true,
-      // cond_expr_is_def_var(Nat id?)   = false,
-      _                               = false;
-
-
-    // Variable type            Initially marked for update
-    //   continuous input         true
-    //   discrete input           false
-    //   state variable           true
-    //   continuous derived       true
-    //   discrete derived         false
-    //   time-varying condition   true
-    //   nested automaton input   true
-    Bool marked_for_update_var_init_value(BlockNodeId id):
-      std_block_node_id(a?)   = in(a, cont_inputs_ids) or in(a, cont_derived_vars_ids) or
-                                in(a, state_vars_ids) or has_key(automaton.nested_autos, a),
-      cond_node_id()          = true,
-      //## NOT SURE ABOUT THIS ONE. IT HAS TO BE TRUE BECAUSE OF THE POSSIBILITY
-      //## OF THE EXPRESSION BEING A CONSTANT, BUT AT THE SAME TIME THAT DOESN'T
-      //## SEEM TO MAKE MUCH SENSE IF THE INPUT IS A DISCRETE ONE...
-      nested_auto_input_id()  = true;
-
-
-    Int int_memb_var_init_value(MembIntVar):
-      update_source_var()       = -1,
-      update_count_var()        =  0,
-      // nodes_to_update_var()
-      next_trigger_time_var()   = -1,
-      curr_time_slot_var()      = -1,
-      time_triggers_count_var   =  0,
-      // trigger_times_heap_var()
-      // time_varying_cond_ids_heap_var()
-      last_update_time          =  0;
+    return join([code_0, code_1, code_2, code_3, code_4, code_5]);
   }
 
 

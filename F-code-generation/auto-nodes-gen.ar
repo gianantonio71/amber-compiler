@@ -1,110 +1,3 @@
-type AutoNode     = AutoInputNode, AutoDerivedNode, AutoStateNode,
-                    AutoDiscDerivedNode, AutoCondNode, AutoRepCondNode,
-                    AutoTimeVaryingNode, AutoNestedAutoInputNode, AutoNestedAutoNode;
-
-
-type AutoInputNode        = input(id: StdBlockNodeId, discrete: Bool, dep_nodes: BlockNodeId*, level: Nat);
-
-type AutoDerivedNode      = derived(id: StdBlockNodeId, expr: Expr, dep_nodes: BlockNodeId*, level: Nat);
-
-type AutoStateNode        = state(id: StdBlockNodeId, exprs: [Expr], dep_nodes: BlockNodeId*, level: Nat);
-
-type AutoDiscDerivedNode  = derived_disc(id: StdBlockNodeId, exprs: [Expr], dep_nodes: BlockNodeId*, level: Nat);
-
-type AutoCondNode         = cond_node(
-                              id:         CondNodeId,
-                              cond:       Expr,
-                              parent:     Maybe[(id: CondNodeId, trigger: Bool)],
-                              actions:    (AutoNodeAction*, AutoNodeAction*),
-                              subconds:   (CondNodeId*, CondNodeId*),
-                              level:      Nat
-                            );
-
-type AutoRepCondNode      = rep_cond_node(
-                              id:         CondNodeId,
-                              cond:       Expr,
-                              parent:     Maybe[(id: CondNodeId, trigger: Bool)],
-                              actions:    (AutoNodeAction*, AutoNodeAction*),
-                              subconds:   (CondNodeId*, CondNodeId*),
-                              level:      Nat
-                            );
-
-type AutoNodeAction       = (target: Atom, value_idx: Nat);
-
-type AutoTimeVaryingNode  = time_varying_node(
-                              id:         StdBlockNodeId,
-                              cond:       Expr,
-                              time_expr:  TimeExpr,
-                              dep_nodes:  BlockNodeId*,
-                              level:      Nat
-                            );
-
-type AutoNestedAutoInputNode  = nested_auto_input_node(
-                                  id:                       NestedAutoInputNodeId,
-                                  value:                    Expr,
-                                  disc_vars:                MembVar*,
-                                  disc_nested_auto_outputs: (MembAutoVar, Atom)*,
-                                  level:                    Nat
-                                );
-
-type AutoNestedAutoNode   = nested_auto_node(
-                              id:         StdBlockNodeId,
-                              dep_nodes:  (Atom => BlockNodeId*),
-                              level:      Nat
-                            );
-
-////////////////////////////////////////////////////////////////////////////////
-
-AutoNode input(StdBlockNodeId id, Bool d, BlockNodeId* ns, Nat l) =
-  input(id: id, discrete: d, dep_nodes: ns, level: l);
-
-AutoNode derived(StdBlockNodeId id, Expr e, BlockNodeId* ns, Nat l) =
-  derived(id: id, expr: e, dep_nodes: ns, level: l);
-
-AutoNode state(StdBlockNodeId id, [Expr] es, BlockNodeId* ns, Nat l) =
-  state(id: id, exprs: es, dep_nodes: ns, level: l);
-
-AutoNode derived_disc(StdBlockNodeId id, [Expr] es, BlockNodeId* ns, Nat l) =
-  derived_disc(id: id, exprs: es, dep_nodes: ns, level: l);
-
-AutoNode cond_node(CondNodeId id, Expr c, Maybe[(id: CondNodeId, trigger: Bool)] p,
-                    AutoNodeAction* tas, AutoNodeAction* eas, CondNodeId* tcs, CondNodeId* ecs, Nat l) =
-  cond_node(id: id, cond: c, parent: p, actions: (tas, eas), subconds: (tcs, ecs), level: l);
-
-AutoNode rep_cond_node(CondNodeId id, Expr c, Maybe[(id: CondNodeId, trigger: Bool)] p,
-                        AutoNodeAction* tas, AutoNodeAction* eas, CondNodeId* tcs, CondNodeId* ecs, Nat l) =
-  rep_cond_node(id: id, cond: c, parent: p, actions: (tas, eas), subconds: (tcs, ecs), level: l);
-
-AutoNode time_varying_node(StdBlockNodeId id, Expr c, TimeExpr te, BlockNodeId* ns, Nat l) =
-  time_varying_node(id: id, cond: c, time_expr: te, dep_nodes: ns, level: l);
-
-AutoNode nested_auto_input_node(NestedAutoInputNodeId id, Expr v, MembVar* dvs, (MembAutoVar, Atom)* dos, Nat l) =
-  nested_auto_input_node(id: id, value: v, disc_vars: dvs, disc_nested_auto_outputs: dos, level: l);
-
-AutoNode nested_auto_node(StdBlockNodeId id, (Atom => BlockNodeId*) ns, Nat l) =
-  nested_auto_node(id: id, dep_nodes: ns, level: l);
-
-////////////////////////////////////////////////////////////////////////////////
-
-BlockNodeId* dep_nodes_ids(AutoNode node):
-  input()                   = node.dep_nodes,
-  derived()                 = node.dep_nodes,
-  state()                   = node.dep_nodes,
-  derived_disc()            = node.dep_nodes,
-  cond_node()               = { tas, eas = node.actions;
-                                tscs, escs = node.subconds;
-                                return {std_block_node_id(a.target) : a <- tas & eas} & tscs & escs;
-                              },
-  rep_cond_node()           = { tas, eas = node.actions;
-                                tscs, escs = node.subconds;
-                                return {std_block_node_id(a.target) : a <- tas & eas} & tscs & escs;
-                              },
-  time_varying_node()       = node.dep_nodes,
-  nested_auto_input_node()  = {std_block_node_id(node.id.auto)},
-  nested_auto_node()        = union(values(node.dep_nodes));
-
-////////////////////////////////////////////////////////////////////////////////
-
 type CondInfo     = ( cond:         Expr,
                       parent:       Maybe[(id: CondNodeId, trigger: Bool)],
                       nested_conds: (id: CondNodeId, trigger: Bool)*,
@@ -144,13 +37,13 @@ BlockNodeId dependency_to_node_id(NestedAutoOutputId id)  = std_block_node_id(id
   state_value_deps        = map_state_value_deps(automaton, cond_nodes, rep_cond_nodes);
   rules_deps              = (std_block_node_id(a) => expr_deps(e) : e @ a <- automaton.rules);
   time_rules_deps         = (std_block_node_id(a) => expr_deps(c.cond) : c @ a <- automaton.time_rules);
-  nested_auto_nodes_deps  = (
+  nested_autos_trigger_deps  = (
     std_block_node_id(auto_id) => {nested_auto_input_id(auto_id, in_id) : unused_var @ in_id <- auto.args}
     : auto @ auto_id <- automaton.nested_autos
   );
 
   // Putting all dependency maps together
-  common_dep_map  = conds_deps & rep_cond_deps & rules_deps & time_rules_deps & nested_auto_input_deps & nested_auto_nodes_deps;
+  common_dep_map  = conds_deps & rep_cond_deps & rules_deps & time_rules_deps & nested_auto_input_deps & nested_autos_trigger_deps;
   trigger_dep_map = common_dep_map & state_trigger_deps;
   //## SHOULDN'T THE SET OF TRIGGER DEPENDENCIES BE A SUBSET OF THE VALUE DEPENDENCIES?
   //## SO COULDN'T THE FOLLOWING LINE BE JUST value_dep_map = common_dep_map & state_value_deps?
@@ -174,19 +67,23 @@ BlockNodeId dependency_to_node_id(NestedAutoOutputId id)  = std_block_node_id(id
   // Collecting all update values for state variables and discrete derived nodes
   update_values = group_and_sort_update_values(automaton, cond_nodes, rep_cond_nodes);
 
+  // Collecting all method calls to nested automata
+  nested_auto_calls = group_and_sort_nested_autos_calls(automaton);
+
   // Collecting the ids of state variables and discrete nodes
   state_vars_ids  = keys(automaton.state);
   disc_signal_ids = {id : input @ id <- automaton.inputs, input.discrete} &
                     union({updated_disc_vars_ids(a) : a <- automaton.actions & automaton.rep_actions});
 
   // Creating the final sorted list of nodes
-  sorted_nodes = [input(std_block_node_id(i), automaton.inputs[i].discrete, lookup(rev_trigger_dep_map, std_block_node_id(i), {}), 0) : i <- rand_sort(keys(automaton.inputs))];
+  input_nodes = [input(std_block_node_id(i), automaton.inputs[i].discrete, lookup(rev_trigger_dep_map, std_block_node_id(i), {}), 0) : i <- rand_sort(keys(automaton.inputs))];
   let ( automaton                   = automaton,
         auto_input_is_disc          = auto_input_is_disc,
         auto_output_is_disc         = auto_output_is_disc,
         cond_nodes                  = cond_nodes,
         rep_cond_nodes              = rep_cond_nodes,
         update_values               = update_values,
+        nested_auto_calls           = nested_auto_calls,
         state_vars_ids              = state_vars_ids,
         disc_signal_ids             = disc_signal_ids,
         nested_auto_inputs          = nested_auto_inputs,
@@ -194,14 +91,10 @@ BlockNodeId dependency_to_node_id(NestedAutoOutputId id)  = std_block_node_id(id
         rev_output_trigger_dep_map  = rev_output_trigger_dep_map
       )
 
-    for (l @ i : nodes_by_level)
-      for (n : rand_sort(l))
-        sorted_nodes = [sorted_nodes | create_node_info(n, nat(i + 1))];
-      ;
-    ;
+    other_nodes = join([[create_node_info(n, nat(i+1)) : n <- rand_sort(l)] : l @ i <- nodes_by_level]);
   ;
 
-  return sorted_nodes;
+  return input_nodes & other_nodes;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -277,9 +170,16 @@ BlockNodeId dependency_to_node_id(NestedAutoOutputId id)  = std_block_node_id(id
     {(u.state_id => u.new_value) : c @ unused_var <- cond_nodes, u <- c.updates} &
     {(u.state_id => u.new_value) : c @ unused_var <- rep_cond_nodes, u <- c.updates} &
     {(id => v.init_value)        : v @ id <- automaton.state} &
-    {(a => e)                    : m <- automaton.methods, e @ a <- m.assignments}
+    {(a => e)                    : m <- automaton.methods, e @ a <- m.asgnms}
   );
   return (s => rand_sort(vs) : vs @ s <- update_values);
+}
+
+
+(Atom => [(MethodSymbol, [Expr])]) group_and_sort_nested_autos_calls(Automaton automaton)
+{
+  calls = merge_values({(na => (c.method, c.args)) : m <- automaton.methods, c @ na <- m.calls});
+  return (na => rand_sort(cs) : cs @ na <- calls);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -293,6 +193,7 @@ using
   (CondNodeId => CondInfo)                    cond_nodes,
   (CondNodeId => CondInfo)                    rep_cond_nodes,
   (Atom => [Expr])                            update_values,
+  (Atom => [(MethodSymbol, [Expr])])          nested_auto_calls,
   Atom*                                       state_vars_ids,
   Atom*                                       disc_signal_ids,
   (NestedAutoInputNodeId => Expr)             nested_auto_inputs,
@@ -305,9 +206,10 @@ using
     core_id = get_inner_id(node_id);
 
     if (has_key(automaton.nested_autos, core_id))
+      calls = lookup(nested_auto_calls, core_id, []);
       output_dep_nodes = lookup(rev_output_trigger_dep_map, node_id, ());
       assert not (? ns @ o <- output_dep_nodes : not disjoint(ns, {std_block_node_id(id) : id <- state_vars_ids}));
-      return nested_auto_node(node_id, output_dep_nodes, level);
+      return nested_auto_node(node_id, calls, output_dep_nodes, level);
     ;
 
     dep_nodes = lookup(rev_trigger_dep_map, node_id, {});
@@ -323,7 +225,7 @@ using
     ;
 
     if (has_key(automaton.state, core_id))
-      return state(node_id, lookup(update_values, core_id, []), dep_nodes, level);
+      return state(node_id, lookup(update_values, core_id, []), automaton.state[core_id].init_value, dep_nodes, level);
     ;
 
     if (in(core_id, disc_signal_ids))

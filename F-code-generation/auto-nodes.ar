@@ -1,0 +1,189 @@
+type AutoNode     = AutoInputNode, AutoDerivedNode, AutoStateNode,
+                    AutoDiscDerivedNode, AutoCondNode, AutoRepCondNode,
+                    AutoTimeVaryingNode, AutoNestedAutoInputNode, AutoNestedAutoNode;
+
+
+type AutoInputNode        = input(id: StdBlockNodeId, discrete: Bool, dep_nodes: BlockNodeId*, level: Nat);
+
+type AutoDerivedNode      = derived(id: StdBlockNodeId, expr: Expr, dep_nodes: BlockNodeId*, level: Nat);
+
+type AutoStateNode        = state(
+                              id:         StdBlockNodeId,
+                              exprs:      [Expr],
+                              init_val:   Expr,
+                              dep_nodes:  BlockNodeId*,
+                              level:      Nat);
+
+type AutoDiscDerivedNode  = derived_disc(id: StdBlockNodeId, exprs: [Expr], dep_nodes: BlockNodeId*, level: Nat);
+
+type AutoCondNode         = cond_node(
+                              id:         CondNodeId,
+                              cond:       Expr,
+                              parent:     Maybe[(id: CondNodeId, trigger: Bool)],
+                              actions:    (AutoNodeAction*, AutoNodeAction*),
+                              subconds:   (CondNodeId*, CondNodeId*),
+                              level:      Nat
+                            );
+
+type AutoRepCondNode      = rep_cond_node(
+                              id:         CondNodeId,
+                              cond:       Expr,
+                              parent:     Maybe[(id: CondNodeId, trigger: Bool)],
+                              actions:    (AutoNodeAction*, AutoNodeAction*),
+                              subconds:   (CondNodeId*, CondNodeId*),
+                              level:      Nat
+                            );
+
+type AutoNodeAction       = (target: Atom, value_idx: Nat);
+
+type AutoTimeVaryingNode  = time_varying_node(
+                              id:         StdBlockNodeId,
+                              cond:       Expr,
+                              time_expr:  TimeExpr,
+                              dep_nodes:  BlockNodeId*,
+                              level:      Nat
+                            );
+
+type AutoNestedAutoInputNode  = nested_auto_input_node(
+                                  id:                       NestedAutoInputNodeId,
+                                  value:                    Expr,
+                                  disc_vars:                MembVar*,
+                                  disc_nested_auto_outputs: (MembAutoVar, Atom)*,
+                                  level:                    Nat
+                                );
+
+type AutoNestedAutoNode   = nested_auto_node(
+                              id:         StdBlockNodeId,
+                              calls:      [(MethodSymbol, [Expr])],
+                              dep_nodes:  (Atom => BlockNodeId*),
+                              level:      Nat
+                            );
+
+////////////////////////////////////////////////////////////////////////////////
+
+AutoNode input(StdBlockNodeId id, Bool d, BlockNodeId* ns, Nat l) =
+  input(id: id, discrete: d, dep_nodes: ns, level: l);
+
+AutoNode derived(StdBlockNodeId id, Expr e, BlockNodeId* ns, Nat l) =
+  derived(id: id, expr: e, dep_nodes: ns, level: l);
+
+AutoNode state(StdBlockNodeId id, [Expr] es, Expr iv, BlockNodeId* ns, Nat l) =
+  state(id: id, exprs: es, init_val: iv, dep_nodes: ns, level: l);
+
+AutoNode derived_disc(StdBlockNodeId id, [Expr] es, BlockNodeId* ns, Nat l) =
+  derived_disc(id: id, exprs: es, dep_nodes: ns, level: l);
+
+AutoNode cond_node(CondNodeId id, Expr c, Maybe[(id: CondNodeId, trigger: Bool)] p,
+                    AutoNodeAction* tas, AutoNodeAction* eas, CondNodeId* tcs, CondNodeId* ecs, Nat l) =
+  cond_node(id: id, cond: c, parent: p, actions: (tas, eas), subconds: (tcs, ecs), level: l);
+
+AutoNode rep_cond_node(CondNodeId id, Expr c, Maybe[(id: CondNodeId, trigger: Bool)] p,
+                        AutoNodeAction* tas, AutoNodeAction* eas, CondNodeId* tcs, CondNodeId* ecs, Nat l) =
+  rep_cond_node(id: id, cond: c, parent: p, actions: (tas, eas), subconds: (tcs, ecs), level: l);
+
+AutoNode time_varying_node(StdBlockNodeId id, Expr c, TimeExpr te, BlockNodeId* ns, Nat l) =
+  time_varying_node(id: id, cond: c, time_expr: te, dep_nodes: ns, level: l);
+
+AutoNode nested_auto_input_node(NestedAutoInputNodeId id, Expr v, MembVar* dvs, (MembAutoVar, Atom)* dos, Nat l) =
+  nested_auto_input_node(id: id, value: v, disc_vars: dvs, disc_nested_auto_outputs: dos, level: l);
+
+AutoNode nested_auto_node(StdBlockNodeId id, [(MethodSymbol, [Expr])] cs, (Atom => BlockNodeId*) ns, Nat l) =
+  nested_auto_node(id: id, calls: cs, dep_nodes: ns, level: l);
+
+////////////////////////////////////////////////////////////////////////////////
+
+BlockNodeId* dep_nodes_ids(AutoNode node):
+  input()                   = node.dep_nodes,
+  derived()                 = node.dep_nodes,
+  state()                   = node.dep_nodes,
+  derived_disc()            = node.dep_nodes,
+  cond_node()               = { tas, eas = node.actions;
+                                tscs, escs = node.subconds;
+                                return {std_block_node_id(a.target) : a <- tas & eas} & tscs & escs;
+                              },
+  rep_cond_node()           = { tas, eas = node.actions;
+                                tscs, escs = node.subconds;
+                                return {std_block_node_id(a.target) : a <- tas & eas} & tscs & escs;
+                              },
+  time_varying_node()       = node.dep_nodes,
+  nested_auto_input_node()  = {std_block_node_id(node.id.auto)},
+  nested_auto_node()        = union(values(node.dep_nodes));
+
+////////////////////////////////////////////////////////////////////////////////
+
+(MembBoolVar, Bool)* memb_bool_vars(AutoNode node)
+{
+  cond_vars = match (node)
+    cond_node() = cond_vars(get_inner_id(node.id)),
+    _           = {};
+
+  expr_cond_vars = match (node)
+    cond_node()         = if node.parent != nil then expr_cond_vars(get_inner_id(node.id)) else {},
+    time_varying_node() = expr_cond_vars(get_inner_id(node.id)),
+    _                   = {};
+
+  marked_for_update_var_init_value = match (node)
+    input()                   = not node.discrete,
+    derived()                 = true,
+    state()                   = true,
+    derived_disc()            = false,
+    cond_node()               = true,
+    rep_cond_node()           = true,
+    time_varying_node()       = true,
+    nested_auto_input_node()  = true,
+    nested_auto_node()        = true;
+
+  return {(marked_for_update_var(node.id), marked_for_update_var_init_value)} & cond_vars & expr_cond_vars;
+
+
+  (MembBoolVar, Bool)* cond_vars(Nat bare_id) = {
+    (cond_value_var(bare_id),   false),
+    (cond_is_def_var(bare_id),  true)
+  };
+
+  (MembBoolVar, Bool)* expr_cond_vars(<Nat, Atom> bare_id) = {
+    (cond_expr_value_var(bare_id),      false),
+    (cond_expr_is_def_var(bare_id),     true),
+    (cond_expr_up_to_date_var(bare_id), false)
+  };
+}
+
+
+(MembIntVar, Int)* memb_int_vars(AutoNode node)
+{
+  update_source_vars = match (node)
+    state()             = { init_val_idx = index_first(node.init_val, node.exprs);
+                            return {(update_source_var(get_inner_id(node.id)), init_val_idx)};
+                          },
+    derived_disc()      = {(update_source_var(get_inner_id(node.id)), -1)},
+    nested_auto_node()  = {(update_source_var(get_inner_id(node.id)),  0) if node.calls != []},
+    _                   = {};
+
+  time_vars = match (node)
+    time_varying_node() = { bare_id = get_inner_id(node.id);
+                            return {
+                              (next_trigger_time_var(bare_id),  -1),
+                              (curr_time_slot_var(bare_id),     -1)
+                            };
+                          },
+    _                   = {};
+
+  return update_source_vars & time_vars;
+}
+
+
+(<MembVar, MembObjVar>, <blank, undefined>)* memb_obj_vars(AutoNode node):
+  input()                   = { bare_id = get_inner_id(node.id);
+                                return {
+                                  (memb_var(bare_id),   :blank),
+                                  (new_input(bare_id),  if node.discrete then :blank else :undefined)
+                                };
+                              },
+  derived()                 = {(memb_var(get_inner_id(node.id)),  :blank)},
+  state()                   = {(memb_var(get_inner_id(node.id)),  :blank)},
+  derived_disc()            = {(memb_var(get_inner_id(node.id)),  :blank)},
+  cond_node()               = {},
+  rep_cond_node()           = {},
+  time_varying_node()       = {(memb_var(get_inner_id(node.id)),  :blank)},
+  nested_auto_input_node()  = {},
+  nested_auto_node()        = {};

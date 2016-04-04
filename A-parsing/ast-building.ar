@@ -1301,6 +1301,29 @@ using String filename, [[Nat]] lines
     return syn_auto_def(name, pos_pars, decls);
   }
 
+  SynMethodStmt build_method_stmt_ast(RuleMatch mtc)
+  {
+    rule_name = get_rule_name(mtc);
+    stmt_nodes = rule_seq_nodes(get_rule_match(mtc));
+
+    if (rule_name == :asgnm)
+      assert length(stmt_nodes) == 4;
+
+      memb_var = get_lowercase_id(stmt_nodes[0]);
+      value = build_expr_ast(stmt_nodes[2]);
+      return syn_memb_asgnm(memb_var, value);
+
+    else
+      assert rule_name == :call;
+      assert length(stmt_nodes) == 5;
+
+      auto_var = get_lowercase_id(stmt_nodes[0]);
+      method_name = method_symbol(get_lowercase_id(stmt_nodes[2]));
+      args = [build_expr_ast(n) : n <- rep_rule_nodes(block_node(stmt_nodes[3]))];
+      return syn_nested_call(auto_var, method_name, args);
+    ;
+  }
+
   SynMethodDef build_method_def_ast(RuleMatch mtc)
   {
     nodes = rule_seq_nodes(mtc);
@@ -1309,9 +1332,8 @@ using String filename, [[Nat]] lines
     name = method_symbol(get_lowercase_id(nodes[2]));
     arg_nodes = rep_rule_nodes(block_node(nodes[3]));
     args = [(build_type_ast(rule_seq_node(n, 0)), method_arg(get_lowercase_id(n, 1))) : n <- arg_nodes];
-    asgnm_nodes = rep_rule_nodes(block_node(nodes[4]));
-    asgnms = [(get_lowercase_id(n, 0), build_expr_ast(rule_seq_node(n, 2))) : n <- asgnm_nodes];
-    return syn_method_def(automaton, name, args, asgnms);
+    stmts = [build_method_stmt_ast(n) : n <- rep_rule_nodes(block_node(nodes[4]))];
+    return syn_method_def(automaton, name, args, stmts);
   }
 
   SynTimeVaryingRule build_time_varying_rule(RuleMatch mtc)
