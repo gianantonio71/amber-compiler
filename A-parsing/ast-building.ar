@@ -1285,7 +1285,8 @@ using String filename, [[Nat]] lines
       cond_rule         = [build_cond_rule_ast(inner_match)],
       foreach_rule      = [build_foreach_rule_ast(inner_match)],
       time_varying_rule = [build_time_varying_rule(inner_match)],
-      nested_auto       = [build_nested_auto_ast(inner_match)];
+      nested_auto       = [build_nested_auto_ast(inner_match)],
+      method_call       = [build_method_call_ast(inner_match)];
     return decls;
   }
 
@@ -1408,6 +1409,38 @@ using String filename, [[Nat]] lines
     auto_name = get_lowercase_id(nodes[2]);
     args = [(get_lowercase_id(ns, 0), build_expr_ast(rule_seq_node(ns, 2))) : ns <- rep_rule_nodes(block_node(nodes[3]))];
     return syn_nested_auto(name, auto_name, args);
+  }
+
+  SynMethodCall build_method_call_ast(RuleMatch mtc)
+  {
+    nodes = rule_seq_nodes(mtc);
+    assert length(nodes) == 7;
+
+    target = get_lowercase_id(nodes[0]);
+    method = get_lowercase_id(nodes[2]);
+    args = [build_expr_ast(n) : n <- rep_rule_nodes(block_node(nodes[3]))];
+
+    cond_node = nodes[4];
+    if (cond_node != null_match)
+      cond = just(build_expr_ast(rule_seq_node(cond_node, 1)));
+    else
+      cond = nil;
+    ;
+
+    signals_node = nodes[5];
+    if (signals_node != null_match)
+      signals = [get_lowercase_id(n) : n <- rep_rule_nodes(rule_seq_node(signals_node, 1))];
+    else
+      signals = [];
+    ;
+
+    return syn_method_call(
+      target:   target,
+      method:   method,
+      args:     args,
+      cond:     cond,
+      signals:  signals
+    );
   }
 }
 

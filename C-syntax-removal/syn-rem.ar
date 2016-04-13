@@ -149,22 +149,23 @@ using (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_arg_arities, (A
   {
     decls = set(auto_def.decls);
 
-    //## NEITHER OF THESE IS AT ALL SAFE, IF I END UP MAKING ANY CHANGES TO AutoDecl
-    memb_vars = {
-      memb_var(d.name)
-      : d <- decls,
-        match (d)
-          syn_nested_auto() = false,
-          _                 = true
-    };
-    disc_signals = set([d.name : d <- auto_def.decls, d.discrete? and d.discrete]);
-
+    syn_inputs              = {d : d <- decls, syn_input()              << d};
+    syn_outputs             = {d : d <- decls, syn_output()             << d};
     syn_state_vars          = {d : d <- decls, syn_state()              << d};
     syn_plain_rules         = {d : d <- decls, syn_plain_rule()         << d};
     syn_cond_rules          = {d : d <- decls, syn_cond_rule()          << d};
     syn_foreach_rules       = {d : d <- decls, syn_foreach_rule()       << d};
     syn_time_varying_rules  = {d : d <- decls, syn_time_varying_rule()  << d};
     syn_nested_autos        = {d : d <- decls, syn_nested_auto()        << d};
+    syn_method_calls        = {d : d <- decls, syn_method_call()        << d};
+
+    assert decls == syn_inputs & syn_outputs & syn_state_vars & syn_plain_rules & syn_cond_rules &
+                    syn_foreach_rules & syn_time_varying_rules & syn_nested_autos & syn_method_calls;
+
+    memb_vars = {memb_var(d.name) : d <- syn_inputs & syn_outputs & syn_state_vars & syn_plain_rules &
+                                         syn_cond_rules & syn_foreach_rules & syn_time_varying_rules};
+
+    disc_signals = {d.name : d <- syn_inputs & syn_outputs & syn_plain_rules & syn_cond_rules & syn_foreach_rules, d.discrete};
 
     auto_vars = {memb_auto_var(a.name) : a <- syn_nested_autos};
 
@@ -221,6 +222,14 @@ using (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_arg_arities, (A
       : na <- syn_nested_autos
     );
 
+    // Desugaring method calls on nested automata
+    all_method_call_actions = {method_call_to_action(c, memb_vars, auto_vars, disc_signals) : c <- syn_method_calls};
+    cond_method_calls = {value(ca) : a <- all_method_call_actions, ca = left(a), ca != nil};
+    actions = actions & cond_method_calls;
+    rep_method_calls = {value(ra) : a <- all_method_call_actions, ra = right(a), ra != nil};
+    rep_actions = rep_actions & rep_method_calls;
+
+    // Identifying constant rules
     arg_ids = {};
     loop
       next_round = {
@@ -250,6 +259,42 @@ using (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_arg_arities, (A
       nested_autos: nested_autos,
       methods:      {desugar_method(m, memb_vars, auto_vars) : m <- methods}
     );
+
+
+    (Maybe[AutoCondAction], Maybe[AutoRepAction]) method_call_to_action(SynMethodCall syn_call, MembVar* memb_vars, MembAutoVar* auto_vars, Atom* disc_signals)
+    {
+      target = memb_auto_var(syn_call.target);
+      method = method_symbol(syn_call.method);
+      args = [syn_expr_to_expr(e, memb_vars, auto_vars) : e <- syn_call.args];
+      call = method_call(target, method, args);
+
+      maybe_syn_cond = syn_call.cond;
+      maybe_cond = if maybe_syn_cond != nil
+                     then just(syn_expr_to_expr(value(maybe_syn_cond), memb_vars, auto_vars))
+                     else nil;
+
+      // If the list of discrete signals is not given explicitly, we search
+      // the parameter list and the condition for discrete signals
+      if (syn_call.signals != [])
+        signals = syn_call.signals;
+      else
+        exprs = if maybe_cond != nil then [args | value(maybe_cond)] else args;
+        all_signals = {match (v) memb_var(id?) = id : v <- seq_union([extern_vars(e) : e <- exprs])};
+        signals = rand_sort(intersection(all_signals, disc_signals));
+      ;
+      signals_set_conds = [is_set(memb_var(s)) : s <- signals];
+
+      if (maybe_cond != nil)
+        cond = value(maybe_cond);
+        // If no discrete signals are involved, this is a (non-repeated) conditional action
+        return (just(cond_action(cond, {call}, {})), nil) if signals_set_conds == [];
+        cond = and_expr([signals_set_conds | cond]);
+      else
+        cond = and_expr(nonempty(signals_set_conds));
+      ;
+
+      return (nil, just(rep_action(cond, {call}, {})));
+    }
 
 
     Method desugar_method(SynMethodDef syn_method, MembVar* memb_vars, MembAutoVar* auto_vars)

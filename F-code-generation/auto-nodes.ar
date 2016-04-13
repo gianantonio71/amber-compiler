@@ -3,18 +3,19 @@ type AutoNode     = AutoInputNode, AutoDerivedNode, AutoStateNode,
                     AutoTimeVaryingNode, AutoNestedAutoInputNode, AutoNestedAutoNode;
 
 
-type AutoInputNode        = input(id: StdBlockNodeId, discrete: Bool, dep_nodes: BlockNodeId*, level: Nat);
+type AutoInputNode        = input(id: StdBlockNodeId, discrete: Bool, downstream_nodes: BlockNodeId*, level: Nat);
 
-type AutoDerivedNode      = derived(id: StdBlockNodeId, expr: Expr, dep_nodes: BlockNodeId*, level: Nat);
+type AutoDerivedNode      = derived(id: StdBlockNodeId, expr: Expr, downstream_nodes: BlockNodeId*, level: Nat);
 
 type AutoStateNode        = state(
-                              id:         StdBlockNodeId,
-                              exprs:      [Expr],
-                              init_val:   Expr,
-                              dep_nodes:  BlockNodeId*,
-                              level:      Nat);
+                              id:               StdBlockNodeId,
+                              exprs:            [Expr],
+                              init_val:         Expr,
+                              downstream_nodes: BlockNodeId*,
+                              level:            Nat
+                            );
 
-type AutoDiscDerivedNode  = derived_disc(id: StdBlockNodeId, exprs: [Expr], dep_nodes: BlockNodeId*, level: Nat);
+type AutoDiscDerivedNode  = derived_disc(id: StdBlockNodeId, exprs: [Expr], downstream_nodes: BlockNodeId*, level: Nat);
 
 type AutoCondNode         = cond_node(
                               id:         CondNodeId,
@@ -34,14 +35,15 @@ type AutoRepCondNode      = rep_cond_node(
                               level:      Nat
                             );
 
-type AutoNodeAction       = (target: Atom, value_idx: Nat);
+type AutoNodeAction       = state_update_action(target_var: Atom, expr_idx: Nat),
+                            method_call_action(target_auto: Atom, call_idx: Nat); //method: MethodSymbol, args: [Expr^]);
 
 type AutoTimeVaryingNode  = time_varying_node(
-                              id:         StdBlockNodeId,
-                              cond:       Expr,
-                              time_expr:  TimeExpr,
-                              dep_nodes:  BlockNodeId*,
-                              level:      Nat
+                              id:               StdBlockNodeId,
+                              cond:             Expr,
+                              time_expr:        TimeExpr,
+                              downstream_nodes: BlockNodeId*,
+                              level:            Nat
                             );
 
 type AutoNestedAutoInputNode  = nested_auto_input_node(
@@ -53,25 +55,25 @@ type AutoNestedAutoInputNode  = nested_auto_input_node(
                                 );
 
 type AutoNestedAutoNode   = nested_auto_node(
-                              id:         StdBlockNodeId,
-                              calls:      [(MethodSymbol, [Expr])],
-                              dep_nodes:  (Atom => BlockNodeId*),
-                              level:      Nat
+                              id:                         StdBlockNodeId,
+                              calls:                      [(MethodSymbol, [Expr])],
+                              downstream_nodes_by_output: (Atom => BlockNodeId*),
+                              level:                      Nat
                             );
 
 ////////////////////////////////////////////////////////////////////////////////
 
 AutoNode input(StdBlockNodeId id, Bool d, BlockNodeId* ns, Nat l) =
-  input(id: id, discrete: d, dep_nodes: ns, level: l);
+  input(id: id, discrete: d, downstream_nodes: ns, level: l);
 
 AutoNode derived(StdBlockNodeId id, Expr e, BlockNodeId* ns, Nat l) =
-  derived(id: id, expr: e, dep_nodes: ns, level: l);
+  derived(id: id, expr: e, downstream_nodes: ns, level: l);
 
 AutoNode state(StdBlockNodeId id, [Expr] es, Expr iv, BlockNodeId* ns, Nat l) =
-  state(id: id, exprs: es, init_val: iv, dep_nodes: ns, level: l);
+  state(id: id, exprs: es, init_val: iv, downstream_nodes: ns, level: l);
 
 AutoNode derived_disc(StdBlockNodeId id, [Expr] es, BlockNodeId* ns, Nat l) =
-  derived_disc(id: id, exprs: es, dep_nodes: ns, level: l);
+  derived_disc(id: id, exprs: es, downstream_nodes: ns, level: l);
 
 AutoNode cond_node(CondNodeId id, Expr c, Maybe[(id: CondNodeId, trigger: Bool)] p,
                     AutoNodeAction* tas, AutoNodeAction* eas, CondNodeId* tcs, CondNodeId* ecs, Nat l) =
@@ -82,32 +84,41 @@ AutoNode rep_cond_node(CondNodeId id, Expr c, Maybe[(id: CondNodeId, trigger: Bo
   rep_cond_node(id: id, cond: c, parent: p, actions: (tas, eas), subconds: (tcs, ecs), level: l);
 
 AutoNode time_varying_node(StdBlockNodeId id, Expr c, TimeExpr te, BlockNodeId* ns, Nat l) =
-  time_varying_node(id: id, cond: c, time_expr: te, dep_nodes: ns, level: l);
+  time_varying_node(id: id, cond: c, time_expr: te, downstream_nodes: ns, level: l);
 
 AutoNode nested_auto_input_node(NestedAutoInputNodeId id, Expr v, MembVar* dvs, (MembAutoVar, Atom)* dos, Nat l) =
   nested_auto_input_node(id: id, value: v, disc_vars: dvs, disc_nested_auto_outputs: dos, level: l);
 
 AutoNode nested_auto_node(StdBlockNodeId id, [(MethodSymbol, [Expr])] cs, (Atom => BlockNodeId*) ns, Nat l) =
-  nested_auto_node(id: id, calls: cs, dep_nodes: ns, level: l);
+  nested_auto_node(id: id, calls: cs, downstream_nodes_by_output: ns, level: l);
+
+
+AutoNodeAction state_update_action(Atom t, Nat i) = state_update_action(target_var: t, expr_idx: i);
+AutoNodeAction method_call_action(Atom t, Nat i)  = method_call_action(target_auto: t, call_idx: i);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-BlockNodeId* dep_nodes_ids(AutoNode node):
-  input()                   = node.dep_nodes,
-  derived()                 = node.dep_nodes,
-  state()                   = node.dep_nodes,
-  derived_disc()            = node.dep_nodes,
+BlockNodeId* downstream_nodes_ids(AutoNode node):
+  input()                   = node.downstream_nodes,
+  derived()                 = node.downstream_nodes,
+  state()                   = node.downstream_nodes,
+  derived_disc()            = node.downstream_nodes,
   cond_node()               = { tas, eas = node.actions;
                                 tscs, escs = node.subconds;
-                                return {std_block_node_id(a.target) : a <- tas & eas} & tscs & escs;
+                                return {downstream_node_id(a) : a <- tas & eas} & tscs & escs;
                               },
   rep_cond_node()           = { tas, eas = node.actions;
                                 tscs, escs = node.subconds;
-                                return {std_block_node_id(a.target) : a <- tas & eas} & tscs & escs;
+                                return {downstream_node_id(a) : a <- tas & eas} & tscs & escs;
                               },
-  time_varying_node()       = node.dep_nodes,
+  time_varying_node()       = node.downstream_nodes,
   nested_auto_input_node()  = {std_block_node_id(node.id.auto)},
-  nested_auto_node()        = union(values(node.dep_nodes));
+  nested_auto_node()        = union(values(node.downstream_nodes_by_output));
+
+
+BlockNodeId downstream_node_id(AutoNodeAction action):
+  state_update_action()   = std_block_node_id(action.target_var),
+  method_call_action()    = std_block_node_id(action.target_auto);
 
 ////////////////////////////////////////////////////////////////////////////////
 

@@ -25,7 +25,7 @@ using
     l1 = lvar(1);
     memb_var = memb_var(id);
     body = [set_var(memb_var, l0), set_bvar(memb_has_changed(id), true) if in(id, memb_copy_var_ids)] &
-           [mark_for_update(n, false) : n <- rand_sort(node.dep_nodes)];
+           [mark_for_update(n, false) : n <- rand_sort(node.downstream_nodes)];
 
     return nonempty([get_new_input(l0, id), init_memb_var(new_input(id), :blank)] & body) if node.discrete;
 
@@ -47,7 +47,7 @@ using
     eval_code = gen_safe_eval_code(node.expr, nv_var, next_obj_var_id = 1, next_bool_var_id = 0);
     cond = neg(is_eq(var, nv_var));
     body = [set_var(var, nv_var), set_bvar(memb_has_changed(id), true) if in(id, memb_copy_var_ids)] &
-           [mark_for_update(n, false) : n <- rand_sort(node.dep_nodes)];
+           [mark_for_update(n, false) : n <- rand_sort(node.downstream_nodes)];
     return [eval_code | do_if(cond, body)];
   }
 
@@ -64,7 +64,7 @@ using
     ;
     cond = neg(is_eq(var, nv_var));
     body = [set_var(var, nv_var), set_bvar(memb_has_changed(id), true) if in(id, memb_copy_var_ids)] &
-           [mark_for_update(n, false) : n <- rand_sort(node.dep_nodes)];
+           [mark_for_update(n, false) : n <- rand_sort(node.downstream_nodes)];
     return [eval_instr, do_if(cond, body)];
   }
 
@@ -79,7 +79,7 @@ using
       cases = nonempty([gen_safe_eval_code(e, nv_var) : e <- node.exprs] & [[clear_loc_var(nv_var)]]);
       eval_instr = switch_on_nat(update_source_var(id), cases);
     ;
-    return nonempty([eval_instr, set_var(var, nv_var)] & [mark_for_update(n, false) : n <- rand_sort(node.dep_nodes)]);
+    return nonempty([eval_instr, set_var(var, nv_var)] & [mark_for_update(n, false) : n <- rand_sort(node.downstream_nodes)]);
   }
 
 
@@ -113,8 +113,8 @@ using
         and([b0, neg(is_new)]),
         [ branch_or_no_op(
             b1,
-            join(rand_sort({gen_update_code(a.target, a.value_idx) : a <- then_actions})),
-            join(rand_sort({gen_update_code(a.target, a.value_idx) : a <- else_actions}))
+            join(rand_sort({gen_update_code(a) : a <- then_actions})),
+            join(rand_sort({gen_update_code(a) : a <- else_actions}))
           )
         ]
       )
@@ -140,7 +140,7 @@ using
       do_if(
         cond_is_def_var,
         [ set_bvar(cond_is_def_var, false),
-          do_if_not(is_new, join([gen_clear_code(a.target) : a <- rand_sort(all_actions)]))
+          do_if_not(is_new, join([gen_clear_code(a) : a <- rand_sort(all_actions)]))
         ] & dep_conds_update_prop_code
       )
     ];
@@ -170,15 +170,15 @@ using
         [ branch_or_no_op(
             inline_is_eq(l0, obj_true),
             // The condition is true, running the 'then' branch
-            join(rand_sort({gen_update_code(a.target, a.value_idx) : a <- then_actions})) &
+            join(rand_sort({gen_update_code(a) : a <- then_actions})) &
             [mark_for_update(n, true) : n <- rand_sort(then_subcond_ids)],
             // The condition is false, running the 'else' branch
-            join(rand_sort({gen_update_code(a.target, a.value_idx) : a <- else_actions})) &
+            join(rand_sort({gen_update_code(a) : a <- else_actions})) &
             [mark_for_update(n, true) : n <- rand_sort(else_subcond_ids)]
           )
         ],
         // The condition is not defined, we execute all assignments with a null value
-        join(rand_sort({gen_clear_code(a.target) : a <- all_actions})) &
+        join(rand_sort({gen_clear_code(a) : a <- all_actions})) &
         [mark_for_update(n, true) : n <- rand_sort(all_subcond_ids)]
       )
     ];
@@ -294,7 +294,7 @@ using
 
       do_if(
         neg(is_eq(cond_var, l0)),
-        [set_var(cond_var, l0)] & [mark_for_update(n, false) : n <- rand_sort(node.dep_nodes)]
+        [set_var(cond_var, l0)] & [mark_for_update(n, false) : n <- rand_sort(node.downstream_nodes)]
       )
     ];
 
@@ -368,7 +368,7 @@ using
     ;
 
     //## CURRENTLY WE PROPAGATE THE UPDATE WITHOUT CHECKING WHAT INPUTS (IF ANY) HAVE CHANGED. FIX
-    prop_code = [mark_for_update(id, false) : id <- rand_sort(union(values(node.dep_nodes)))];
+    prop_code = [mark_for_update(id, false) : id <- rand_sort(union(values(node.downstream_nodes_by_output)))];
 
     triggers_count_var = nested_auto_int_var(auto_var, time_triggers_count_var);
     first_trigger_var  = nested_auto_int_var(auto_var, trigger_times_heap_var(0));
@@ -487,13 +487,31 @@ using
   }
 
 
-  [Instr^] gen_update_code(Atom state, Nat src_idx) = [
-      do_if(neg(marked_for_update_var(std_block_node_id(state))), set_ivar(update_source_var(state), src_idx)),
-      mark_for_update(std_block_node_id(state), false)
-    ];
+  [Instr^] gen_update_code(AutoNodeAction action):
+    state_update_action()   = [ do_if_not(
+                                  marked_for_update_var(std_block_node_id(action.target_var)),
+                                  set_ivar(update_source_var(action.target_var), action.expr_idx)
+                                ),
+                                mark_for_update(std_block_node_id(action.target_var), false)
+                              ],
+    method_call_action()    = [ set_ivar(update_source_var(action.target_auto), action.call_idx),
+                                mark_for_update(std_block_node_id(action.target_auto), false)
+                              ];
 
 
-  [Instr^] gen_clear_code(Atom state) = gen_update_code(state, multivalue_node_expr_count[std_block_node_id(state)]);
+  [Instr^] gen_clear_code(AutoNodeAction action):
+    state_update_action()   = { target_var = action.target_var;
+                                node_id = std_block_node_id(target_var);
+                                return [
+                                  do_if_not(
+                                    marked_for_update_var(node_id),
+                                    set_ivar(update_source_var(target_var), multivalue_node_expr_count[node_id])
+                                  ),
+                                  mark_for_update(node_id, false)
+                                ];
+                              },
+    //## DECIDE WHAT TO DO HERE AND IMPLEMENT IT PROPERLY
+    method_call_action()    = [terminate];
 
 
   Instr mark_for_update(BlockNodeId node_id, Bool from_cond):
@@ -504,48 +522,80 @@ using
     nested_auto_input_id()  = queue_update(auto_name, node_id);
 }
 
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 
-using
+(body: [Instr], two_level_update: Bool) gen_queue_update_method(AutoInputNode node, Nat index, NzNat level_size) =
+  gen_std_queue_update_method(node, index, level_size);
+
+
+(body: [Instr], two_level_update: Bool) gen_queue_update_method(AutoDerivedNode node, Nat index, NzNat level_size) =
+  gen_std_queue_update_method(node, index, level_size);
+
+
+(body: [Instr], two_level_update: Bool) gen_queue_update_method(AutoStateNode node, Nat index, NzNat level_size) =
+  gen_std_queue_update_method(node, index, level_size);
+
+
+(body: [Instr], two_level_update: Bool) gen_queue_update_method(AutoDiscDerivedNode node, Nat index, NzNat level_size) =
+  gen_std_queue_update_method(node, index, level_size);
+
+
+(body: [Instr], two_level_update: Bool) gen_queue_update_method(AutoCondNode node, Nat index, NzNat level_size)
 {
-  (BlockNodeId => Nat)  nodes_idxs,
-  (BlockNodeId => Nat)  nodes_levels,
-  [Nat]                 levels_sizes,
-  Nat*                  nested_cond_ids,
-  Atom*                 time_rules_ids,
-  Nat                   next_int_var_id;
+  code = gen_std_queue_update_code(node.id, node.level, index, level_size);
+  if (node.parent != nil)
+    cond_expr_up_to_date_var = cond_expr_up_to_date_var(get_inner_id(node.id));
+    inval_cache_instr = do_if(invalidate_cond_expr_cache, set_bvar(cond_expr_up_to_date_var, false));
+    return (body: [code | inval_cache_instr], two_level_update: true);
+  else
+    return (body: code, two_level_update: false);
+  ;
+}
 
 
-  [Instr] queue_update_method_body(<StdBlockNodeId, CondNodeId, NestedAutoInputNodeId> node_id)
-  {
-    index = nodes_idxs[node_id];
-    level = nodes_levels[node_id];
-    level_size = levels_sizes[level];
-
-    idx_var = ivar(next_int_var_id);
-    mark_var = marked_for_update_var(node_id);
-    count_var = update_count_var(level);
-    nodes_var = nodes_to_update_var(level, idx_var);
-
-    extra_code = if level_size > 2
-      then [
-        set_ivar(idx_var, count_var),
-        set_ivar(nodes_var, index),
-        set_ivar(count_var, add(idx_var, 1))
-      ]
-      else [];
-
-    code = [do_if(neg(mark_var), [set_bvar(mark_var, true)] & extra_code)];
-
-    return match (node_id)
-      std_block_node_id(a?)   = if in(a, time_rules_ids)  then add_clear_cache_code(code, a) else code,
-      cond_node_id(n?)        = if in(n, nested_cond_ids) then add_clear_cache_code(code, n) else code,
-      nested_auto_input_id()  = code;
+(body: [Instr], two_level_update: Bool) gen_queue_update_method(AutoRepCondNode node, Nat index, NzNat level_size) =
+  //## ISN'T THIS A BUG? RETURNING two_level_update == false FOR A NESTED, REPEATED CONDITION?
+  //## I'M NOT AT ALL CLEAR HOW ALL THIS STUFF WORKS.
+  gen_std_queue_update_method(node, index, level_size);
 
 
-    [Instr] add_clear_cache_code([Instr] code, <Atom, Nat> id)
-    {
-      inv_cache_instr = do_if(invalidate_cond_expr_cache, set_bvar(cond_expr_up_to_date_var(id), false));
-      return [code | inv_cache_instr];
-    }
-  }
+(body: [Instr], two_level_update: Bool) gen_queue_update_method(AutoTimeVaryingNode node, Nat index, NzNat level_size)
+{
+  cond_expr_up_to_date_var = cond_expr_up_to_date_var(get_inner_id(node.id));
+  inval_cache_instr = do_if(invalidate_cond_expr_cache, set_bvar(cond_expr_up_to_date_var, false));
+  code = [gen_std_queue_update_code(node.id, node.level, index, level_size) | inval_cache_instr];
+  return (body: code, two_level_update: true);
+}
+
+
+(body: [Instr], two_level_update: Bool) gen_queue_update_method(AutoNestedAutoInputNode node, Nat index, NzNat level_size) =
+  gen_std_queue_update_method(node, index, level_size);
+
+
+(body: [Instr], two_level_update: Bool) gen_queue_update_method(AutoNestedAutoNode node, Nat index, NzNat level_size) =
+  gen_std_queue_update_method(node, index, level_size);
+
+////////////////////////////////////////////////////////////////////////////////
+
+(body: [Instr], two_level_update: Bool) gen_std_queue_update_method(AutoNode node, Nat index, NzNat level_size) =
+  (body: gen_std_queue_update_code(node.id, node.level, index, level_size), two_level_update: false);
+
+
+[Instr] gen_std_queue_update_code(BlockNodeId node_id, Nat level, Nat index, NzNat level_size)
+{
+  idx_var = ivar(0);
+  mark_var = marked_for_update_var(node_id);
+  count_var = update_count_var(level);
+  nodes_var = nodes_to_update_var(level, idx_var);
+
+  extra_code = if level_size > 2
+    then [
+      set_ivar(idx_var, count_var),
+      set_ivar(nodes_var, index),
+      set_ivar(count_var, add(idx_var, 1))
+    ]
+    else [];
+
+  return [do_if(neg(mark_var), [set_bvar(mark_var, true)] & extra_code)];
 }
