@@ -1,4 +1,4 @@
-Block gen_auto_code(Automaton automaton, (AutoSymbol => (Atom => Bool)) auto_input_is_disc, (AutoSymbol => (Atom => Bool)) auto_output_is_disc, AutoSymbol* time_sensitive_autos, CompilationOptions options)
+Block gen_auto_code(Automaton automaton, (AutoSymbol => (Atom => Bool)) auto_input_is_disc, (AutoSymbol => (Atom => Bool)) auto_output_is_disc, AutoSymbol* time_sensitive_autos, (TypeName => Type) typedefs, CompilationOptions options)
 {
   nodes = gen_auto_nodes(automaton, auto_input_is_disc, auto_output_is_disc);
   fail if nodes == []; //## BUG BUG BUG
@@ -58,7 +58,7 @@ Block gen_auto_code(Automaton automaton, (AutoSymbol => (Atom => Bool)) auto_inp
 
     init_code     = gen_init_method_body(memb_bool_vars, memb_int_vars, memb_obj_vars);
     update_code   = gen_update_method_body(nodes, nested_cond_ids, downstream_nodes);
-    methods_code  = ((m.name, length(m.args)) => gen_method_code(m) : m <- automaton.methods);
+    methods_code  = gen_methods_code(automaton.methods, typedefs);
   ;
 
   // Generating cleanup code
@@ -146,6 +146,27 @@ using
   (BlockNodeId => Nat)        nodes_idxs,
   [Nat]                       levels_offsets,
   [NzNat]                     levels_sizes;
+
+
+  ((ExMethodSymbol, Nat) => [Instr]) gen_methods_code(Method* methods, (TypeName => Type) typedefs)
+  {
+    return merge({
+      gen_code_for_overloaded_methods(ms, typedefs) : ms @ unused_var <- group_by(methods, ($.name, length($.args)))
+    });
+
+
+    ((ExMethodSymbol, Nat) => [Instr]) gen_code_for_overloaded_methods(Method+ methods, (TypeName => Type) typedefs)
+    {
+      a_method = an_elem(methods);
+      name = a_method.name;
+      arity = length(a_method.args);
+      return ((name, arity) => gen_method_code(a_method)) if size(methods) == 1;
+      sorted_methods = rand_sort(methods);
+      comp_methods = merge([((ex_method_symbol(m.name, i), arity) => gen_method_code(m)) : m @ i <- sorted_methods]);
+      disp_method_code = gen_dispatch_method_body(automaton.name, sorted_methods, typedefs);
+      return comp_methods & ((name, arity) => disp_method_code);
+    }
+  }
 
 
   [Instr] gen_method_code(Method method)
@@ -409,4 +430,48 @@ using
     ];
   ;
   return join([join(cfs) : cfs <- params_init_code]);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+[Instr] gen_dispatch_method_body(AutoSymbol auto_type, [Method^] methods, (TypeName => Type) typedefs)
+{
+  assert length(methods) > 1;
+  assert size(set([m.name : m <- methods])) == 1;         // All methods must have the same name
+  assert size(set([length(m.args) : m <- methods])) == 1; // All methods have the same arity
+
+  a_method    = head(methods);
+  name        = a_method.name;
+  some_args   = nonempty(a_method.args);
+  arity       = nz_nat(length(a_method.args));
+
+  candidates = [];
+  for (i < length(some_args))
+    arg_col = [m.args[i] : m <- methods];
+    ptypes  = [pseudotype(left(a), typedefs) : a <- arg_col];
+    good = all([all([are_disjoint(p1, p2) : p2 <- right_subseq(ptypes, j+1)]) : p1 @ j <- ptypes]); //## BAD: INEFFICIENT. ALSO A BIT UGLY...
+    candidates = [candidates | i] if good;
+  ;
+
+  //## DO WE NEED TO IMPLEMENT THE CASE IN WHICH THERE'S NO SINGLE ARGUMENT THAT CAN BE USED FOR DISPATCH?
+  fail if candidates == [];
+
+  //## IF THERE'S MORE THAN ONE CANDIDATE PARAMETER, WE SHOULD CHOOSE THE ONE
+  //## THAT CAN MAKE THE DISPATCH MORE EFFICIENT, NOT JUST THE FIRST ONE
+  dispatch_arg = head(candidates);
+
+  cases = [(
+      ptrns:  [type_to_pseudotype_pattern(left(m.args[dispatch_arg]), typedefs)],
+      code:   [ update_inputs(
+                  type:         auto_type,
+                  call:         (name: ex_method_symbol(m.name, i), args: [fn_par(j) : j < length(m.args)]),
+                  elapsed_time: elapsed_time
+                ),
+                exit_block
+              ]
+    ) : m @ i <- methods
+  ];
+  code = gen_switch_code([fn_par(dispatch_arg)], lvar(0), cases, next_obj_var_id=1);
+
+  return code;
 }

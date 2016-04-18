@@ -118,6 +118,111 @@ using Nat next_obj_var_id, StdVar* loc_bound_vars, [Instr^] on_match_code, (Atom
   }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+
+using Nat next_obj_var_id
+{
+  [Instr^] gen_switch_code([ExprEvalRes^] exprs, LocVar tag_var, [(ptrns: [Pattern^], code: [Instr^])^] cases)
+  {
+    if (length(head(cases).ptrns) == 1)
+      all_cases = [(only_item(c.ptrns), c.code) : c <- cases];
+
+      catch_all_code = nil;
+      for (p, c @ i : all_cases)
+        if (is_pattern_any(p))
+          // catch_all_code = just(c);
+          // all_cases = subseq(all_cases, 0, i);
+          // break;
+          //## BUG BUG BUG: THIS IS A HACK TO WORK AROUND A BUG IN THE TYPECHECKER.
+          //## REENABLE THE ABOVE IMPLEMENTATION AFTER THE BUG IS FIXED.
+          if (catch_all_code == nil)
+            catch_all_code = just(c);
+            all_cases = subseq(all_cases, 0, i);
+          ;
+        ;
+      ;
+
+      //## BAD BAD BAD: THERE MUST BE A BETTER WAY TO WRITE THIS KIND OF THINGS...
+      symb_cases    = [(restrict(p, pseudotype_symbols),  c) : p, c <- all_cases, matches(p, pseudotype_symbols)];
+      int_cases     = [(restrict(p, pseudotype_integers), c) : p, c <- all_cases, matches(p, pseudotype_integers)];
+      float_cases   = [(restrict(p, pseudotype_floats),   c) : p, c <- all_cases, matches(p, pseudotype_floats)];
+      seq_cases     = [(restrict(p, pseudotype_seqs),     c) : p, c <- all_cases, matches(p, pseudotype_seqs)];
+      set_cases     = [(restrict(p, pseudotype_sets),     c) : p, c <- all_cases, matches(p, pseudotype_sets)];
+      map_cases     = [(restrict(p, pseudotype_maps),     c) : p, c <- all_cases, matches(p, pseudotype_maps)];
+      tag_obj_cases = [(restrict(p, pseudotype_tag_objs), c) : p, c <- all_cases, matches(p, pseudotype_tag_objs)];
+
+      mtc_expr = only_item(exprs);
+
+      code = [];
+
+      tag_objs_code = [set_var(tag_var, get_tag(mtc_expr))];
+      for (p, c : tag_obj_cases)
+        let (loc_bound_vars = {}, on_match_code = c, tag_vars = (mtc_expr => tag_var))
+          matched_case_code = gen_ptrn_matching_code(try_value(p), mtc_expr, pseudotype_tag_objs);
+        ;
+        tag_objs_code = tag_objs_code & matched_case_code;
+      ;
+      code = code & opt_do_if(is_tagged_obj(mtc_expr), tag_objs_code) if tag_objs_code != [];
+
+      ptypes_info = [
+        // (symb_cases,    pseudotype_symbols,   is_symb(mtc_expr)),
+        (symb_cases,    pseudotype_any,       true),
+        // (tag_obj_cases, pseudotype_tag_objs,  is_tagged_obj(mtc_expr)),
+        (int_cases,     pseudotype_integers,  is_int(mtc_expr)),
+        (float_cases,   pseudotype_floats,    is_float(mtc_expr)),
+        // (seq_cases,     pseudotype_seqs,      or([inline_is_eq(mtc_expr, :empty_seq), is_ne_seq(mtc_expr)])),
+        (seq_cases,     pseudotype_any,       true),
+        // (set_cases,     pseudotype_sets,      or([inline_is_eq(mtc_expr, :empty_set), is_ne_set(mtc_expr)])),
+        (set_cases,     pseudotype_any,       true),
+        // (map_cases,     pseudotype_maps,      or([inline_is_eq(mtc_expr, :empty_map), is_ne_map(mtc_expr)]))
+        (map_cases,     pseudotype_any,       true)
+      ];
+
+      for (ptype_cases, pseudotype, memb_expr : ptypes_info)
+        ptype_code = [];
+        for (p, c : ptype_cases)
+          let (loc_bound_vars={}, on_match_code=c, tag_vars=())
+            ptype_code = ptype_code & gen_ptrn_matching_code(try_value(p), mtc_expr, pseudotype);
+          ;
+        ;
+        code = code & opt_do_if(memb_expr, ptype_code) if ptype_code != [];
+      ;
+
+      if (catch_all_code != nil)
+        code = [execute_block(nonempty(code & value(catch_all_code)))];
+      else
+        code = [execute_block([code | terminate])];
+      ;
+
+    else
+      code = [];
+      for (c : cases)
+        case_code = gen_guarded_case_eval_code(exprs, c.ptrns, c.code);
+        code = code & case_code;
+      ;
+      code = [execute_block([code | terminate])];
+    ;
+
+    return code;
+
+
+    [Instr^] gen_guarded_case_eval_code([AtomicExpr] exprs, [Pattern] ptrns, [Instr^] code)
+    {
+      assert length(exprs) == length(ptrns);
+
+      return code if exprs == [] or ptrns == []; // Shutting up the typechecker...
+
+      next_step_code = gen_guarded_case_eval_code(tail(exprs), tail(ptrns), code);
+      let (loc_bound_vars={}, on_match_code=next_step_code, tag_vars=())
+        res = gen_ptrn_matching_code(head(ptrns), head(exprs), pseudotype_any);
+      ;
+      return nonempty(res);
+    }
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 Pattern+ easy_check_ptrns = {ptrn_float, ptrn_empty_set, ptrn_ne_set, ptrn_empty_seq, ptrn_ne_seq, ptrn_empty_map, ptrn_ne_map};
 
 Pattern+ normalize_patterns(Pattern+ ptrns) = ptrns; //## IMPLEMENT FOR REAL

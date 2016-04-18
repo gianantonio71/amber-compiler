@@ -202,11 +202,13 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
       append([to_text(l) & "LL" : l <- const.lengths], ", ") & "};";
 
 
-    (String, [String]) gen_method(AutoSymbol block_name, MethodSymbol name, Nat arity, [Instr] body)
+    (String, [String]) gen_method(AutoSymbol block_name, ExMethodSymbol name, Nat arity, [Instr] body)
     {
       args_str = append([to_c_name(block_name) & " *self", "long long elapsed_time"] & ["Obj p" & to_text(i) : i < arity], ", ");
       sgn = "void " & user_def_method_name(block_name, name, arity) & "(" & args_str & ", Env &env)";
-      return (sgn & ";", [sgn, "{"] & indent_lines(compile_to_c(body, nil)) & ["}"]);
+      vars_decls = gen_vars_decls(body);
+      body_text = vars_decls & ["" if vars_decls != []] & compile_to_c(body, nil);
+      return (sgn & ";", [sgn, "{"] & indent_lines(body_text) & ["}"]);
     }
 
 
@@ -624,7 +626,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     update_inputs()       = compile_update_inputs_to_c(if instr.var? then just(instr.var) else nil, instr.type, if instr.call? then just(instr.call) else nil, instr.elapsed_time);
 
 
-  [String] compile_update_inputs_to_c(Maybe[AnyAutoVar] var, AutoSymbol type, Maybe[(name: MethodSymbol, args: [AtomicExpr])] call, IntExpr elapsed_time)
+  [String] compile_update_inputs_to_c(Maybe[AnyAutoVar] var, AutoSymbol type, Maybe[(name: ExMethodSymbol, args: [AtomicExpr])] call, IntExpr elapsed_time)
   {
     var_str = if var != nil then "&" & to_c_var_name(value(var), false) else "self";
     if (call == nil)
@@ -981,7 +983,7 @@ using String typesymb2name(TypeSymbol)
 
   String output_get_method_name(AutoSymbol auto, Atom output) = to_c_name(auto) & "_" & upper_camel_case(output) & "_get";
 
-  String user_def_method_name(AutoSymbol auto, MethodSymbol method, Nat arity) = to_c_name(auto) & "_" & to_c_name(method) & "_" & to_text(arity);
+  String user_def_method_name(AutoSymbol auto, ExMethodSymbol method, Nat arity) = to_c_name(auto) & "_" & to_c_name(method) & "_" & to_text(arity);
 
   String init_method_name(AutoSymbol name)    = to_c_name(name) & "_init";
 
@@ -1116,7 +1118,10 @@ using String typesymb2name(TypeSymbol)
 
   String to_c_name(AutoSymbol): auto_symbol(a?) = upper_camel_case(a);
 
-  String to_c_name(MethodSymbol): method_symbol(a?) = upper_camel_case(a);
+  String to_c_name(ExMethodSymbol symb):
+    msg_handler         = "DEFAULT_METHOD",
+    method_symbol(a?)   = upper_camel_case(a),
+    ex_method_symbol()  = to_c_name(symb.symbol) & "_" & to_text(symb.id);
 
   ///////////////////////////////////////////////////////////////////////////////
   ///////////////////////////////////////////////////////////////////////////////
