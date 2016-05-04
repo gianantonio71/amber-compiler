@@ -24,14 +24,16 @@ using
     l0 = lvar(0);
     l1 = lvar(1);
     memb_var = memb_var(id);
+    new_input_var = new_input(id);
+
     body = [set_var(memb_var, l0), set_bvar(memb_has_changed(id), true) if in(id, memb_copy_var_ids)] &
            [mark_for_update(n, false) : n <- rand_sort(node.downstream_nodes)];
 
-    return nonempty([get_new_input(l0, id), init_memb_var(new_input(id), :blank)] & body) if node.discrete;
+    return nonempty([read_pending_var(l0, new_input_var), init_memb_var(new_input_var, :blank)] & body) if node.discrete;
 
     return [
-      get_new_input(l0, id),
-      init_memb_var(new_input(id), :blank),
+      read_pending_var(l0, new_input_var),
+      init_memb_var(new_input_var, :blank),
       set_var(l1, memb_var),
       do_if_not(is_eq(l0, l1), body)
     ];
@@ -58,8 +60,13 @@ using
 
     var = memb_var(id);
     nv_var = lvar(0);
+    pv_var = pending_state_var(id);
     let (next_obj_var_id = 1, next_bool_var_id = 0)
-      cases = nonempty([gen_safe_eval_code(e, nv_var) : e <- node.exprs] & [[clear_loc_var(nv_var)]]);
+      extra_cases = [
+        [clear_loc_var(nv_var)],
+        [read_pending_var(nv_var, pv_var), init_memb_var(pv_var, :blank)]
+      ];
+      cases = nonempty([gen_safe_eval_code(e, nv_var) : e <- node.exprs] & extra_cases);
       eval_instr = switch_on_nat(update_source_var(id), cases);
     ;
     cond = neg(is_eq(var, nv_var));
@@ -350,21 +357,18 @@ using
       then sub(curr_time, nested_auto_int_var(auto_var, last_update_time))
       else 0;
 
-    call_code = [update_inputs(auto_var, auto_type, elapsed_time_expr)];
-    if (node.calls != [])
-      cases = [call_code];
-      for (m, as : node.calls)
-        args_eval_info = gen_safe_eval_info(as, next_obj_var_id = 0, next_bool_var_id = 0);
-        update_inputs_instr = update_inputs(
-          var:          auto_var,
-          type:         auto_type,
-          call:         (name: m, args: args_eval_info.exprs),
-          elapsed_time: elapsed_time_expr
-        );
-        case_code = [args_eval_info.eval_code | update_inputs_instr];
-        cases = [cases | case_code];
-      ;
-      call_code = [switch_on_nat(update_source_var, cases), set_ivar(update_source_var, 0)];
+    update_code = [prop_input_updates(auto_var, auto_type, elapsed_time_expr)];
+    maybe_msg = node.message;
+    if (maybe_msg != nil)
+      channel, msg = value(maybe_msg);
+      msg_eval_info = gen_safe_eval_info(msg, next_obj_var_id = 0, next_bool_var_id = 0);
+      pend_msg_var = has_pending_message_var(inner_id);
+      msg_sending_code = [
+        call_method(auto_var, auto_type, channel, [msg_eval_info.expr]),
+        prop_input_updates(auto_var, auto_type, 0),
+        set_bvar(pend_msg_var, false)
+      ];
+      update_code = [update_code | do_if(pend_msg_var, msg_eval_info.eval_code & msg_sending_code)];
     ;
 
     //## CURRENTLY WE PROPAGATE THE UPDATE WITHOUT CHECKING WHAT INPUTS (IF ANY) HAVE CHANGED. FIX
@@ -379,7 +383,7 @@ using
       ) if in(auto_type, time_sensitive_autos)
     ];
 
-    return call_code & prop_code & timer_code;
+    return update_code & prop_code & timer_code;
   }
 
 
@@ -494,7 +498,7 @@ using
                                 ),
                                 mark_for_update(std_block_node_id(action.target_var), false)
                               ],
-    method_call_action()    = [ set_ivar(update_source_var(action.target_auto), action.call_idx),
+    method_call_action()    = [ set_bvar(has_pending_message_var(action.target_auto), true),
                                 mark_for_update(std_block_node_id(action.target_auto), false)
                               ];
 
@@ -525,23 +529,23 @@ using
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-(body: [Instr], two_level_update: Bool) gen_queue_update_method(AutoInputNode node, Nat index, NzNat level_size) =
+(body: [Instr], two_level_update: Bool) gen_queue_update_method(AutoInputNode node, Nat index, Nat level_size) =
   gen_std_queue_update_method(node, index, level_size);
 
 
-(body: [Instr], two_level_update: Bool) gen_queue_update_method(AutoDerivedNode node, Nat index, NzNat level_size) =
+(body: [Instr], two_level_update: Bool) gen_queue_update_method(AutoDerivedNode node, Nat index, Nat level_size) =
   gen_std_queue_update_method(node, index, level_size);
 
 
-(body: [Instr], two_level_update: Bool) gen_queue_update_method(AutoStateNode node, Nat index, NzNat level_size) =
+(body: [Instr], two_level_update: Bool) gen_queue_update_method(AutoStateNode node, Nat index, Nat level_size) =
   gen_std_queue_update_method(node, index, level_size);
 
 
-(body: [Instr], two_level_update: Bool) gen_queue_update_method(AutoDiscDerivedNode node, Nat index, NzNat level_size) =
+(body: [Instr], two_level_update: Bool) gen_queue_update_method(AutoDiscDerivedNode node, Nat index, Nat level_size) =
   gen_std_queue_update_method(node, index, level_size);
 
 
-(body: [Instr], two_level_update: Bool) gen_queue_update_method(AutoCondNode node, Nat index, NzNat level_size)
+(body: [Instr], two_level_update: Bool) gen_queue_update_method(AutoCondNode node, Nat index, Nat level_size)
 {
   code = gen_std_queue_update_code(node.id, node.level, index, level_size);
   if (node.parent != nil)
@@ -554,13 +558,13 @@ using
 }
 
 
-(body: [Instr], two_level_update: Bool) gen_queue_update_method(AutoRepCondNode node, Nat index, NzNat level_size) =
+(body: [Instr], two_level_update: Bool) gen_queue_update_method(AutoRepCondNode node, Nat index, Nat level_size) =
   //## ISN'T THIS A BUG? RETURNING two_level_update == false FOR A NESTED, REPEATED CONDITION?
   //## I'M NOT AT ALL CLEAR HOW ALL THIS STUFF WORKS.
   gen_std_queue_update_method(node, index, level_size);
 
 
-(body: [Instr], two_level_update: Bool) gen_queue_update_method(AutoTimeVaryingNode node, Nat index, NzNat level_size)
+(body: [Instr], two_level_update: Bool) gen_queue_update_method(AutoTimeVaryingNode node, Nat index, Nat level_size)
 {
   cond_expr_up_to_date_var = cond_expr_up_to_date_var(get_inner_id(node.id));
   inval_cache_instr = do_if(invalidate_cond_expr_cache, set_bvar(cond_expr_up_to_date_var, false));
@@ -569,20 +573,20 @@ using
 }
 
 
-(body: [Instr], two_level_update: Bool) gen_queue_update_method(AutoNestedAutoInputNode node, Nat index, NzNat level_size) =
+(body: [Instr], two_level_update: Bool) gen_queue_update_method(AutoNestedAutoInputNode node, Nat index, Nat level_size) =
   gen_std_queue_update_method(node, index, level_size);
 
 
-(body: [Instr], two_level_update: Bool) gen_queue_update_method(AutoNestedAutoNode node, Nat index, NzNat level_size) =
+(body: [Instr], two_level_update: Bool) gen_queue_update_method(AutoNestedAutoNode node, Nat index, Nat level_size) =
   gen_std_queue_update_method(node, index, level_size);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-(body: [Instr], two_level_update: Bool) gen_std_queue_update_method(AutoNode node, Nat index, NzNat level_size) =
+(body: [Instr], two_level_update: Bool) gen_std_queue_update_method(AutoNode node, Nat index, Nat level_size) =
   (body: gen_std_queue_update_code(node.id, node.level, index, level_size), two_level_update: false);
 
 
-[Instr] gen_std_queue_update_code(BlockNodeId node_id, Nat level, Nat index, NzNat level_size)
+[Instr] gen_std_queue_update_code(BlockNodeId node_id, Nat level, Nat index, Nat level_size)
 {
   idx_var = ivar(0);
   mark_var = marked_for_update_var(node_id);

@@ -2,7 +2,7 @@ type CondInfo     = ( cond:         Expr,
                       parent:       Maybe[(id: CondNodeId, trigger: Bool)],
                       nested_conds: (id: CondNodeId, trigger: Bool)*,
                       updates:      (state_id: Atom, new_value: Expr, trigger: Bool)*,
-                      calls:        (auto_var: MembAutoVar, method: MethodSymbol, args: [Expr], trigger: Bool)*
+                      calls:        (auto_var: MembAutoVar, method: MethodSymbol, message: Expr, trigger: Bool)*
                     );
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -138,7 +138,7 @@ BlockNodeId dependency_to_node_id(NestedAutoOutputId id)  = std_block_node_id(id
     if (a :: <AutoUpdate, AutoSetDiscrete>)
       updates = updates & {(state_id: a.target, new_value: a.value, trigger: tv)};
     elif (a :: AutoMethodCall)
-      calls = calls & {(auto_var: a.target, method: a.method, args: a.args, trigger: tv)};
+      calls = calls & {(auto_var: a.target, method: a.method, message: a.message, trigger: tv)};
     else
       fail if not a :: <AutoCondAction, AutoRepAction>; //## BAD BAD: THE TYPECHECKER SHOULD AUTOMATICALLY INFER THE TYPE OF <a> IF WE TAKE THIS BRANCH
       nested_conds = nested_conds & {(id: cond_node_id(next_id), trigger: tv)};
@@ -185,9 +185,7 @@ BlockNodeId dependency_to_node_id(NestedAutoOutputId id)  = std_block_node_id(id
 
 (StdBlockNodeId => AutoNodeDependency*) map_nested_autos_value_up_nodes(Automaton automaton, (CondNodeId => CondInfo) cond_nodes, (CondNodeId => CondInfo) rep_cond_nodes)
 {
-  in_method_args = {(na => set(c.args)) : m <- automaton.methods, c @ na <- m.calls};
-  in_action_args = {(name(c.target) => set(c.args)) : a <- automaton.actions & automaton.rep_actions, c <- retrieve_method_calls(a)};
-  all_args = merge_value_sets(in_method_args & in_action_args);
+  all_args = merge_values({(name(c.target) => c.message) : a <- automaton.actions & automaton.rep_actions, c <- retrieve_method_calls(a)});
   return (std_block_node_id(a) => union({expr_deps(e) : e <- es}) : es @ a <- all_args);
 }
 
@@ -197,19 +195,14 @@ BlockNodeId dependency_to_node_id(NestedAutoOutputId id)  = std_block_node_id(id
   update_values = merge_values(
     {(u.state_id => u.new_value) : c @ unused_var <- cond_nodes, u <- c.updates} &
     {(u.state_id => u.new_value) : c @ unused_var <- rep_cond_nodes, u <- c.updates} &
-    {(id => v.init_value)        : v @ id <- automaton.state} &
-    {(a => e)                    : m <- automaton.methods, e @ a <- m.asgnms}
+    {(id => v.init_value)        : v @ id <- automaton.state}
   );
   return (s => rand_sort(vs) : vs @ s <- update_values);
 }
 
 
-(Atom => [(MethodSymbol, [Expr])]) group_and_sort_nested_autos_calls(Automaton automaton)
-{
-  in_method_calls = {(na => (c.method, c.args)) : m <- automaton.methods, c @ na <- m.calls};
-  in_action_calls = {(name(c.target) => (c.method, c.args) : a <- automaton.actions & automaton.rep_actions, c <- retrieve_method_calls(a))};
-  return (na => rand_sort(cs) : cs @ na <- merge_values(in_method_calls & in_action_calls));
-}
+(Atom => (MethodSymbol, Expr)) group_and_sort_nested_autos_calls(Automaton automaton) =
+  (name(c.target) => (c.method, c.message) : a <- automaton.actions & automaton.rep_actions, c <- retrieve_method_calls(a));
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -222,7 +215,7 @@ using
   (CondNodeId => CondInfo)                    cond_nodes,
   (CondNodeId => CondInfo)                    rep_cond_nodes,
   (Atom => [Expr])                            update_values,
-  (Atom => [(MethodSymbol, [Expr])])          nested_auto_calls,
+  (Atom => (MethodSymbol, Expr))              nested_auto_calls,
   Atom*                                       state_vars_ids,
   Atom*                                       disc_signal_ids,
   (NestedAutoInputNodeId => Expr)             nested_auto_inputs,
@@ -235,10 +228,10 @@ using
     core_id = get_inner_id(node_id);
 
     if (has_key(automaton.nested_autos, core_id))
-      calls = lookup(nested_auto_calls, core_id, []);
+      msg_disp = if has_key(nested_auto_calls, core_id) then just(nested_auto_calls[core_id]) else nil;
       output_dep_nodes = lookup(output_trigger_down_nodes_map, node_id, ());
       assert not (? ns @ o <- output_dep_nodes : not disjoint(ns, {std_block_node_id(id) : id <- state_vars_ids}));
-      return nested_auto_node(node_id, calls, output_dep_nodes, level);
+      return nested_auto_node(node_id, msg_disp, output_dep_nodes, level);
     ;
 
     dep_nodes = lookup(trigger_down_nodes_map, node_id, {});
@@ -294,7 +287,7 @@ using
       state_update_action(u.state_id, index_first(u.new_value, update_values[u.state_id]))
       : u <- cond_info.updates, u.trigger == trigger_value
     } & {
-      method_call_action(bare_id, nat(1 + index_first((c.method, c.args), nested_auto_calls[bare_id])))
+      method_call_action(bare_id)
       : c <- cond_info.calls, c.trigger == trigger_value, bare_id = name(c.auto_var)
     };
   }
@@ -336,7 +329,7 @@ AutoNodeDependency* cond_deps(CondInfo cond)
 
 AutoNodeDependency* expr_deps(Expr expr)
 {
-  assert extern_vars(expr) :: <MembVar, MembCopyVar, MethodArg>*; //## BAD BAD BAD
+  assert extern_vars(expr) :: <MembVar, MembCopyVar>*; //## BAD BAD BAD
   memb_vars_ids = {std_block_node_id(unsafe_name(v)) : v <- extern_vars(expr), memb_var() << v};
   auto_output_ids = {nested_auto_output_id(left(d), right(d)) : d <- nested_auto_output_deps(expr)};
   return memb_vars_ids & auto_output_ids;

@@ -35,7 +35,9 @@ using
   Nat next_vector_var_id,
   Nat next_stream_var_id,
 
-  (AnyAutoVar => AutoSymbol) auto_vars_types,
+  (Atom => Nat)               pending_state_var_asgnms_idxs,
+  (AnyAutoVar => AutoSymbol)  auto_vars_types,
+  Maybe[AutoSymbol]           self_auto,
 
   Bool ignore_assertions;
 
@@ -55,7 +57,6 @@ using
   EvalInfo gen_eval_info(Expr expr, EvalVar var):
     LeafObj         = (eval_code: [],                       expr: expr,                             var_used: false),
     Var             = (eval_code: [],                       expr: expr,                             var_used: false),
-    // is_def(v?)      = {fail;},
     _               = (eval_code: gen_eval_code(expr, var), expr: var,                              var_used: true);
 
 
@@ -726,9 +727,45 @@ using
     if_stmt()                 = gen_code_for_if_stmt(stmt.cond, stmt.body, stmt.else, res_var),
     for_stmt()                = gen_code_for_for_stmt(if stmt.var? then just(stmt.var) else nil, stmt.start_val, stmt.end_val, stmt.end_val_incl, stmt.body, res_var),
     foreach_stmt()            = gen_code_for_foreach_stmt(stmt.vars, if stmt.idx_var? then just(stmt.idx_var) else nil, stmt.values, stmt.body, res_var),
+    set_memb_var_stmt()       = gen_code_for_set_memb_var_stmt(stmt.var, stmt.value),
+    method_call_stmt()        = gen_code_for_method_call_stmt(stmt),
     proc_call()               = gen_code_for_proc_call_stmt(if stmt.res_var? then just(stmt.res_var) else nil, stmt.proc_name, stmt.params),
     auto_set_input_stmt()     = gen_code_for_auto_set_input_stmt(stmt.var, stmt.input, stmt.value),
     auto_update_stmt()        = gen_code_for_auto_update_stmt(stmt);
+
+
+  [Instr^] gen_code_for_set_memb_var_stmt(PendingStateVar var, Expr value)
+  {
+    tmp_var = lvar(next_obj_var_id);
+    eval_code = gen_eval_code(value, tmp_var, next_obj_var_id = nat(next_obj_var_id + 1));
+
+    bare_state_var_id = name(var);
+    asgnm_code = [
+      set_var(var, tmp_var),
+      set_ivar(update_source_var(bare_state_var_id), pending_state_var_asgnms_idxs[bare_state_var_id]),
+      queue_update(try_value(self_auto), std_block_node_id(bare_state_var_id))
+    ];
+
+    return nonempty(eval_code & asgnm_code);
+  }
+
+
+  [Instr^] gen_code_for_method_call_stmt(MethodCallStmt stmt)
+  {
+    eval_info = gen_eval_info(stmt.args);
+    call_method_instr = call_method(
+      var:      stmt.var if stmt.var?,
+      type:     if stmt.var? then auto_vars_types[stmt.var] else try_value(self_auto),
+      channel:  method_symbol(stmt.channel),
+      args:     eval_info.exprs
+    );
+    code = [eval_info.eval_code | call_method_instr];
+    //## THIS IS PRETTY UGLY. I'M USING self_auto and/or stmt.var? TO CHECK IF THIS STATEMENT IS
+    //## EXECUTING FROM WITHIN A PROCEDURE OR A METHOD
+    assert (self_auto != nil) == (not stmt.var? or match (stmt.var) memb_auto_var() = true, loc_auto_var() = false);
+    code = [code | queue_update(value(self_auto), std_block_node_id(name(stmt.var)))] if self_auto != nil and stmt.var?;
+    return code;
+  }
 
 
   [Instr^] gen_code_for_auto_update_stmt(AutoUpdateStmt stmt)
@@ -745,21 +782,7 @@ using
       time = 0;
     ;
 
-    if (stmt.call?)
-      call = stmt.call;
-      args_eval_info = gen_eval_info(call.args);
-      code = code & args_eval_info.eval_code;
-      instr = update_inputs(
-        var:          var,
-        type:         type,
-        call:         (name: call.name, args: args_eval_info.exprs),
-        elapsed_time: time
-      );
-    else
-      instr = update_inputs(var: var, type: type, elapsed_time: time);
-    ;
-
-    return [code | instr];
+    return [code | prop_input_updates(var: var, type: type, elapsed_time: time)];
   }
 
 

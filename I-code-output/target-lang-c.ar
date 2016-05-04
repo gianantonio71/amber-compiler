@@ -623,20 +623,25 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
                               return [method_name & "(&" & to_c_var_name(instr.var, false) & ", " & value_str & ");"];
                             },
 
-    update_inputs()       = compile_update_inputs_to_c(if instr.var? then just(instr.var) else nil, instr.type, if instr.call? then just(instr.call) else nil, instr.elapsed_time);
+    prop_input_updates()  = compile_prop_input_updates_to_c(if instr.var? then just(instr.var) else nil, instr.type, instr.elapsed_time),
+    call_method()         = compile_call_method_to_c(if instr.var? then just(instr.var) else nil, instr.type, instr.channel, instr.args);
 
 
-  [String] compile_update_inputs_to_c(Maybe[AnyAutoVar] var, AutoSymbol type, Maybe[(name: ExMethodSymbol, args: [AtomicExpr])] call, IntExpr elapsed_time)
+  [String] compile_prop_input_updates_to_c(Maybe[AnyAutoVar] var, AutoSymbol type, IntExpr elapsed_time)
   {
     var_str = if var != nil then "&" & to_c_var_name(value(var), false) else "self";
-    if (call == nil)
-      name_str = update_method_name(type);
-      args = [];
-    else
-      name_str = user_def_method_name(type, call.name, length(call.args));
-      args = call.args;
-    ;
+    name_str = update_method_name(type);
     time_str = to_c_expr(elapsed_time);
+    return [mk_gen_call(name_str, [var_str, time_str], [], ["env"])];
+  }
+
+
+  [String] compile_call_method_to_c(Maybe[AnyAutoVar] var, AutoSymbol type, ExMethodSymbol channel, [AtomicExpr] args)
+  {
+    var_str = if var != nil then "&" & to_c_var_name(value(var), false) else "self";
+    name_str = user_def_method_name(type, channel, length(args));
+    // time_str = to_c_expr(elapsed_time);
+    time_str = to_c_expr(0);
     return [mk_gen_call(name_str, [var_str, time_str], args, ["env"])];
   }
 
@@ -675,7 +680,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     list_to_seq()         = mk_call(var, "list_to_seq",         [expr.list]),
     internal_sort()       = mk_call(var, "internal_sort",       [expr.set]),
     symb_to_str(e?)       = mk_call(var, "to_str",              [e]),
-    get_new_input(a?)     = [to_c_var_name(var) & " = " & to_c_var_name(new_input(a)) & ";"],
+    read_pending_var(v?)  = [to_c_var_name(var) & " = " & to_c_var_name(v) & ";"],
     read_output()         = [mk_gen_call(var, output_get_method_name(expr.type, expr.output), ["&" & to_c_var_name(expr.var, false)])],
     add_attachment()      = mk_call(var, "add_attachment",      [expr.target, expr.data]),
     fetch_attachments(e?) = mk_call(var, "fetch_attachments",   [e]);
@@ -1025,8 +1030,8 @@ using String typesymb2name(TypeSymbol)
     named_arg(Atom a?)      = "env.n_"  & _str_(a),
     cls_ext_par(Nat n?)     = "C["  & to_str(n) & "]",
     memb_var(Atom a?)       = prefix & upper_camel_case(a),
-    method_arg(a?)          = prefix & upper_camel_case(a) & "_M",
     memb_copy_var(Atom a?)  = upper_camel_case(a) & "_O",
+    pending_state_var(a?)   = prefix & upper_camel_case(a) & "_PV",
     lvar(Nat n?)            = "l"   & to_str(n),
     evar()                  = "V" & to_str(v.id) & "[" & to_c_expr(v.idx) & "]",
     new_input(Atom a?)      = prefix & upper_camel_case(a) & "_new";
@@ -1054,6 +1059,7 @@ using String typesymb2name(TypeSymbol)
       cond_expr_is_def_var(Nat n?)                  = prefix & "cond_" & to_str(n) & "_expr_is_def",
       cond_expr_is_def_var(Atom a?)                 = prefix & "cond_" & upper_camel_case(a) & "_expr_is_def",
       cond_is_def_var(n?)                           = prefix & "cond_" & to_str(n) & "_is_def",
+      has_pending_message_var(a?)                   = prefix & upper_camel_case(a) & "_PS",
       marked_for_update_var(std_block_node_id(a?))  = prefix & upper_camel_case(a) & "_marked_for_update",
       marked_for_update_var(cond_node_id(n?))       = prefix & "cond_" & to_str(n) & "_marked_for_update",
       marked_for_update_var(nested_auto_input_id() id?) = prefix & upper_camel_case(id.auto) & "_" & upper_camel_case(id.input) & "_marked_for_update",

@@ -28,8 +28,8 @@ Program rem_syntax(SynPrg prg)
     desugared_automata = {syn_auto_def_to_auto_def(a, lookup(methods_by_automaton, a.name, {})) : a <- automata};
   ;
 
-  auto_vars_outputs = (a.name => {(name: n, discrete: o.discrete) : o @ n <- a.outputs} : a <- desugared_automata);
-  desugared_proc_defs = {syn_proc_def_to_proc_def(pd, typedefs, fn_arg_arities, auto_vars_outputs) : pd <- proc_defs};
+  auto_outputs = (a.name => {(name: n, discrete: o.discrete) : o @ n <- a.outputs} : a <- desugared_automata);
+  desugared_proc_defs = {syn_proc_def_to_proc_def(pd, typedefs, fn_arg_arities, auto_outputs) : pd <- proc_defs};
 
   return program(
     typedefs:       typedefs,
@@ -76,7 +76,6 @@ FnDef* syn_fndef_to_fndefs(SynFnDef fndef, SynSgn* named_args, (TypeName => Type
       closures          = {cls_var(p.var_name) : p <- set(fndef.args), p.var_name?, p.type?, p.type :: SynClsType},
       named_args        = {np.name : np <- named_args}, //## BAD BAD BAD
       memb_vars         = {},
-      method_args       = {},
       auto_vars_outputs = (),
       local_fns         = lfns,
       curr_outer_fn     = just(outer_fn),
@@ -131,7 +130,6 @@ ProcDef2 syn_proc_def_to_proc_def(SynProcDef pd, (TypeName => Type) typedefs, ((
     closures          = {},
     named_args        = {},
     memb_vars         = {},
-    method_args       = {},
     auto_vars_outputs = auto_vars_outputs,
     local_fns         = (),
     curr_outer_fn     = nil,
@@ -263,10 +261,10 @@ using (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_arg_arities, (A
 
     (Maybe[AutoCondAction], Maybe[AutoRepAction]) method_call_to_action(SynMethodCall syn_call, MembVar* memb_vars, MembAutoVar* auto_vars, Atom* disc_signals)
     {
-      target = memb_auto_var(syn_call.target);
-      method = method_symbol(syn_call.method);
-      args = [syn_expr_to_expr(e, memb_vars, auto_vars) : e <- syn_call.args];
-      call = method_call(target, method, args);
+      target  = memb_auto_var(syn_call.target);
+      method  = method_symbol(syn_call.method);
+      message = syn_expr_to_expr(syn_call.message, memb_vars, auto_vars);
+      call = method_call(target, method, message);
 
       maybe_syn_cond = syn_call.cond;
       maybe_cond = if maybe_syn_cond != nil
@@ -278,8 +276,8 @@ using (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_arg_arities, (A
       if (syn_call.signals != [])
         signals = syn_call.signals;
       else
-        exprs = if maybe_cond != nil then [args | value(maybe_cond)] else args;
-        all_signals = {match (v) memb_var(id?) = id : v <- seq_union([extern_vars(e) : e <- exprs])};
+        exprs = {message, value(maybe_cond) if maybe_cond != nil};
+        all_signals = {match (v) memb_var(id?) = id : v <- union({extern_vars(e) : e <- exprs})};
         signals = rand_sort(intersection(all_signals, disc_signals));
       ;
       signals_set_conds = [is_set(memb_var(s)) : s <- signals];
@@ -300,16 +298,8 @@ using (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_arg_arities, (A
     Method desugar_method(SynMethodDef syn_method, MembVar* memb_vars, MembAutoVar* auto_vars)
     {
       args = [(syn_type_to_type(t, nil), v) : t, v <- syn_method.args];
-      arg_vars = set([v : unused_var, v <- args]);
-      asgnms = merge({
-        (s.memb_var => syn_expr_to_expr(s.value, memb_vars, auto_vars, arg_vars))
-        : s <- set(syn_method.statements), syn_memb_asgnm() << s
-      });
-      calls = merge({
-        (s.auto_var => (method: s.method, args: [syn_expr_to_expr(a, memb_vars, auto_vars, arg_vars) : a <- s.args]))
-        : s <- set(syn_method.statements), syn_nested_call() << s
-      });
-      return method(syn_method.name, args, asgnms, calls);
+      body = syn_stmts_to_stmts(syn_method.body, memb_vars, auto_vars, set([v : unused_var, v <- syn_method.args]));
+      return method(syn_method.name, args, body);
     }
 
 
@@ -419,16 +409,27 @@ using (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_arg_arities, (A
 
 
     Expr syn_expr_to_expr(SynExpr expr, MembVar* memb_vars, MembAutoVar* auto_vars) =
-      syn_expr_to_expr(expr, memb_vars, auto_vars, {});
-
-    Expr syn_expr_to_expr(SynExpr expr, MembVar* memb_vars, MembAutoVar* auto_vars, MethodArg* method_args) =
       desugar_expr(
         expr,
         {},
         closures = {},
         named_args = {},
         memb_vars = memb_vars,
-        method_args = method_args,
+        auto_vars_outputs = (v => {} : v <- auto_vars), //## BUG BUG BUG: CHEATING HERE...
+        local_fns = (),
+        curr_outer_fn = nil, //## UGLY UGLY UGLY
+        typedefs = typedefs,
+        fn_arg_arities = fn_arg_arities
+      );
+
+
+    [Statement] syn_stmts_to_stmts([SynStmt] stmts, MembVar* memb_vars, MembAutoVar* auto_vars, StdVar* def_vars) =
+      desugar_stmts(
+        stmts,
+        def_vars,
+        closures = {},
+        named_args = {},
+        memb_vars = memb_vars,
         auto_vars_outputs = (v => {} : v <- auto_vars), //## BUG BUG BUG: CHEATING HERE...
         local_fns = (),
         curr_outer_fn = nil, //## UGLY UGLY UGLY

@@ -85,19 +85,19 @@ type MethodSymbol = msg_handler, method_symbol(Atom);
 
 type AutoSymbol   = auto_symbol(Atom);
 
-type StdVar       = var(Atom);
-type FnPar        = fn_par(Nat);
-type NamedArg     = named_arg(Atom);
-type CaptVar      = cls_ext_par(Nat); //## RENAME THIS. BESIDES, DO I NEED IT HERE? OR IS IT ONLY USED IN THE LAYER 3?
-type MembVar      = memb_var(Atom);
-type MembCopyVar  = memb_copy_var(Atom); //## FIND BETTER NAME...
-type MethodArg    = method_arg(Atom);
+type StdVar           = var(Atom);
+type FnPar            = fn_par(Nat);
+type NamedArg         = named_arg(Atom);
+type CaptVar          = cls_ext_par(Nat); //## RENAME THIS. BESIDES, DO I NEED IT HERE? OR IS IT ONLY USED IN THE LAYER 3?
+type MembVar          = memb_var(Atom);
+type MembCopyVar      = memb_copy_var(Atom);      //## FIND BETTER NAME...
+type PendingStateVar  = pending_state_var(Atom);  //## FIND BETTER NAME...
 
 type LocAutoVar   = loc_auto_var(Atom);
 type MembAutoVar  = memb_auto_var(Atom);
 type AnyAutoVar   = LocAutoVar, MembAutoVar;
 
-type Var      = StdVar, FnPar, NamedArg, CaptVar, MembVar, MembCopyVar, MethodArg;
+type Var      = StdVar, FnPar, NamedArg, CaptVar, MembVar, MembCopyVar, PendingStateVar;
 
 type ClsVar   = cls_var(<Atom, Nat>); //## BAD: THERE SHOULD BE A NAMED VERSION OF ClsVar
 
@@ -225,9 +225,13 @@ type Statement  = assignment_stmt(vars: [StdVar^], value: Expr),
                   return_stmt,
                   proc_call(res_var: StdVar?, proc_name: ProcSymbol, params: [Expr]),
                   auto_set_input_stmt(var: LocAutoVar, input: Atom, value: Maybe[Expr]),
+                  SetMembVarStmt, MethodCallStmt,
                   AutoUpdateStmt;
 
-type AutoUpdateStmt = auto_update_stmt(var: LocAutoVar, call: (name: MethodSymbol, args: [Expr])?, elapsed_time: Expr?);
+type SetMembVarStmt   = set_memb_var_stmt(var: PendingStateVar, value: Expr);
+type MethodCallStmt   = method_call_stmt(var: AnyAutoVar?, channel: Atom, args: [Expr]);
+
+type AutoUpdateStmt = auto_update_stmt(var: LocAutoVar, elapsed_time: Expr?);
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -242,7 +246,6 @@ type FnDef      = fn_def(
                     named_args:   (NamedArg => AnyType), //## BAD: THE TYPE IS TOO LOOSE. INCLUDE A CHECK IN THE WELL-FORMEDNESS CHECKING LAYER
                     res_type:     Type?,
                     expr:         Expr
-                    //impl_env: Signature*,
                   );
 
 type ProcSymbol = proc_symbol(Atom);
@@ -269,7 +272,7 @@ type TimeExpr       = BasicTimeExpr, CyclicTimeExpr;
 
 type AutoUpdate         = update(target: Atom, value: Expr);
 type AutoSetDiscrete    = set_discrete(target: Atom, value: Expr);
-type AutoMethodCall     = method_call(target: MembAutoVar, method: MethodSymbol, args: [Expr]);
+type AutoMethodCall     = method_call(target: MembAutoVar, method: MethodSymbol, message: Expr);
 
 type AutoAtomicAction   = AutoUpdate, AutoSetDiscrete, AutoMethodCall;
 
@@ -280,10 +283,9 @@ type AutoRepAction      = rep_action(cond: Expr, body: AutoAnyRepAction*, else: 
 type AutoAnyRepAction   = AutoAtomicAction, AutoRepAction;
 
 type Method             = method(
-                            name:   MethodSymbol,
-                            args:   [(Type, MethodArg)],
-                            asgnms: (Atom => Expr),
-                            calls:  (Atom => (method: MethodSymbol, args: [Expr]))
+                            name:     MethodSymbol,
+                            args:     [(Type, StdVar)],
+                            body:     [Statement]
                           );
 
 type TimeVaryingCond    = time_varying_cond(cond: Expr, time_expr: TimeExpr);

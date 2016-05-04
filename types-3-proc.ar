@@ -1,4 +1,4 @@
-type LocVar         = lvar(Nat);  //## FIND BETTER NAME.
+type LocVar         = lvar(Nat), never_used_lvar;  //## FIND BETTER NAME.
 type ElemVar        = evar(id: Nat, idx: <Nat, IntVar, add(val1: IntVar, val2: Nat)>);
 type MembObjVar     = new_input(Atom);
 
@@ -6,7 +6,7 @@ type ObjVar         = Var, LocVar, ElemVar;
 
 type ReadOnlyObjVar = FnPar, CaptVar;
 type WriteObjVar    = RWObjVar, ElemVar;
-type RWObjVar       = StdVar, LocVar, MembVar, MembCopyVar, MethodArg;
+type RWObjVar       = StdVar, LocVar, MembVar, MembCopyVar, PendingStateVar;
 
 type StdObjVar      = RWObjVar, NamedArg, ReadOnlyObjVar;
 
@@ -17,6 +17,7 @@ type MembBoolVar    = cond_value_var(Nat),
                       cond_expr_value_var(<Nat, Atom>),
                       cond_expr_is_def_var(<Nat, Atom>),
                       cond_expr_up_to_date_var(<Nat, Atom>),
+                      has_pending_message_var(Atom),
                       marked_for_update_var(BlockNodeId),
                       is_new;
 
@@ -183,9 +184,9 @@ type RefObjExpr     = mk_set_from_stream(stream: StreamVar),
                       list_to_seq(list: AtomicExpr),
                       internal_sort(set: AtomicExpr),
                       symb_to_str(AtomicExpr),
-                      // Can be used only once per input, and does not automatically clear the new input,
-                      // which has to be manually cleared with clear_memb_var(new_input(...))
-                      get_new_input(Atom),
+                      // Can be used only once per pending variable, and does not automatically clear it,
+                      // it has to be manually cleared with init_memb_var(...)
+                      read_pending_var(<PendingStateVar, MembObjVar>),
                       read_output(var: AnyAutoVar, type: AutoSymbol, output: Atom),
                       add_attachment(target: AtomicExpr, data: AtomicExpr), // Impure
                       fetch_attachments(AtomicExpr);                        // Impure
@@ -216,8 +217,8 @@ type BasicInstr     = init_stream(StreamVar),
 
                       set_rc_var(var: WriteObjVar, value: <FloatExpr, RefObjExpr>),
 
-                      init_memb_var(var: <MembVar, MembObjVar, MethodArg>, new_state: <blank, undefined>),
-                      reset_memb_var(var: <MembVar, MethodArg>, new_state: <blank, undefined>),
+                      init_memb_var(var: <MembVar, MembObjVar, PendingStateVar>, new_state: <blank, undefined>),
+                      reset_memb_var(var: <MembVar>, new_state: <blank, undefined>),
                       clear_loc_var(LocVar), //## BAD: I DON'T LIKE THE ABILITY TO CLEAR A NON-MEMBER VARIABLE
 
                       add_ref(ObjVar),
@@ -241,12 +242,8 @@ type BasicInstr     = init_stream(StreamVar),
                       auto_cleanup(var: AnyAutoVar, type: AutoSymbol),
 
                       set_input(var: AnyAutoVar, type: AutoSymbol, input: Atom, value: Maybe[AtomicExpr]),
-                      update_inputs(
-                        var:          AnyAutoVar?,
-                        type:         AutoSymbol,
-                        call:         (name: ExMethodSymbol, args: [AtomicExpr])?,
-                        elapsed_time: IntExpr
-                      ),
+                      prop_input_updates(var: AnyAutoVar?, type: AutoSymbol, elapsed_time: IntExpr),
+                      call_method(var: AnyAutoVar?, type: AutoSymbol, channel: ExMethodSymbol, args: [AtomicExpr]),
 
                       push_call_info(fn_name: ObjFnName, params: [Maybe[FnPar]]),
                       pop_call_info,
@@ -305,7 +302,7 @@ type Block          = block(
                         name:               AutoSymbol,
                         inputs:             [Atom],
                         outputs:            Atom*,
-                        memb_vars:          <MembVar, MembObjVar, MethodArg, MembIntVar, MembIntVectVar, MembBoolVar>*,
+                        memb_vars:          <MembVar, PendingStateVar, MembObjVar, MembIntVar, MembIntVectVar, MembBoolVar>*,
                         nested_auto_vars:   (MembAutoVar => AutoSymbol),
                         init_code:          [Instr],
                         update_code:        [Instr],
