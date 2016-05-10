@@ -35,6 +35,9 @@ using
   Nat next_vector_var_id,
   Nat next_stream_var_id,
 
+  //## BAD BAD BAD: THIS IS ONLY NEEDED FOR UPDATE METHODS STATEMENTS, SO WHY NOT
+  //## OMIT IT ENTIRELY FOR EXPRESSIONS? STATEMENTS NESTED INSIDE A DO EXPRESSION
+  //## CANNOT SET AUTOMATON VARIABLES ANYWAY, SO WE CAN JUST PASS AN EMPTY MAP THERE
   (Atom => Nat)               pending_state_var_asgnms_idxs,
   (AnyAutoVar => AutoSymbol)  auto_vars_types,
   Maybe[AutoSymbol]           self_auto,
@@ -149,49 +152,50 @@ using
 
 
   [Instr^] gen_eval_code(Expr expr, EvalDestVar res_var):
-    object()        = [set_var(res_var, expr)],
-    float_lit()     = [mk_float(res_var, expr.mantissa, expr.dec_exp)],
-    Var             = [set_var(res_var, expr)],
+    object()            = [set_var(res_var, expr)],
+    float_lit()         = [mk_float(res_var, expr.mantissa, expr.dec_exp)],
+    Var                 = [set_var(res_var, expr)],
 
-    set_expr(es?)   = gen_eval_code_for_set_expr(es, res_var),
-    seq_expr(es?)   = gen_eval_code_for_seq_expr(es, res_var),
-    seq_tail_expr() = gen_eval_code_for_seq_tail_expr(expr.seq, expr.tail, res_var),
-    tuple_expr(es?) = gen_eval_code_for_tuple_expr(es, res_var),
-    map_expr(es?)   = gen_eval_code_for_map_expr(es, res_var),
-    tag_obj_expr()  = gen_eval_code_for_tag_obj_expr(expr.tag, expr.obj, res_var),
+    set_expr(es?)       = gen_eval_code_for_set_expr(es, res_var),
+    seq_expr(es?)       = gen_eval_code_for_seq_expr(es, res_var),
+    seq_tail_expr()     = gen_eval_code_for_seq_tail_expr(expr.seq, expr.tail, res_var),
+    tuple_expr(es?)     = gen_eval_code_for_tuple_expr(es, res_var),
+    map_expr(es?)       = gen_eval_code_for_map_expr(es, res_var),
+    tag_obj_expr()      = gen_eval_code_for_tag_obj_expr(expr.tag, expr.obj, res_var),
 
-    fn_call()       = gen_eval_code_for_fn_call_expr(expr.name, expr.params, expr.named_args, res_var),
-    cls_call()      = gen_eval_code_for_cls_call(expr.name, expr.params, res_var),
-    builtin_call()  = gen_eval_code_for_builtin_call(expr.name, expr.params, res_var),
+    fn_call()           = gen_eval_code_for_fn_call_expr(expr.name, expr.params, expr.named_args, res_var),
+    cls_call()          = gen_eval_code_for_cls_call(expr.name, expr.params, res_var),
+    builtin_call()      = gen_eval_code_for_builtin_call(expr.name, expr.params, res_var),
 
-    and_expr()      = gen_eval_code_for_and_expr(expr.left, expr.right, res_var),
-    or_expr()       = gen_eval_code_for_or_expr(expr.left, expr.right, res_var),
-    not_expr(e?)    = gen_eval_code_for_not_expr(e, res_var),
+    and_expr()          = gen_eval_code_for_and_expr(expr.left, expr.right, res_var),
+    or_expr()           = gen_eval_code_for_or_expr(expr.left, expr.right, res_var),
+    not_expr(e?)        = gen_eval_code_for_not_expr(e, res_var),
 
-    eq()            = gen_eval_code_for_eq_expr(expr.left, expr.right, res_var),
+    eq()                = gen_eval_code_for_eq_expr(expr.left, expr.right, res_var),
 
-    membership()    = gen_eval_code_for_membership_expr(expr.obj, expr.type, res_var),
+    membership()        = gen_eval_code_for_membership_expr(expr.obj, expr.type, res_var),
 
-    accessor()      = gen_eval_code_for_accessor_expr(expr.expr, expr.field, res_var),
-    accessor_test() = gen_eval_code_for_accessor_test_expr(expr.expr, expr.field, res_var),
+    accessor()          = gen_eval_code_for_accessor_expr(expr.expr, expr.field, res_var),
+    accessor_test()     = gen_eval_code_for_accessor_test_expr(expr.expr, expr.field, res_var),
 
-    get_output()    = [read_output(res_var, expr.var, auto_vars_types[expr.var], expr.output)],
-    output_is_set() = gen_eval_code_for_output_is_set_expr(expr.var, expr.output, res_var),
-    output_is_def() = gen_eval_code_for_output_is_def_expr(expr.var, expr.output, res_var),
+    get_output()        = [read_output(res_var, expr.var, auto_vars_types[expr.var], expr.output)],
+    output_is_set()     = gen_eval_code_for_output_is_set_expr(expr.var, expr.output, res_var),
+    output_is_def()     = gen_eval_code_for_output_is_def_expr(expr.var, expr.output, res_var),
 
-    if_expr()       = gen_eval_code_for_if_expr(expr.cond, expr.then, expr.else, res_var),
-    match_expr()    = gen_eval_code_for_match_expr(expr.exprs, expr.cases, res_var),
-    do_expr(ss?)    = [execute_block(gen_code(ss, res_var))],
+    method_call_expr()  = get_eval_code_for_method_call_expr(expr, res_var),
 
-    ex_qual()       = gen_eval_code_for_ex_qual_expr(expr.source, expr.cond, res_var),
-    set_comp()      = gen_eval_code_for_set_comp_expr(expr.expr, expr.source, res_var),
-    map_comp()      = gen_eval_code_for_map_comp_expr(expr.key_expr, expr.value_expr, expr.source, res_var),
+    if_expr()           = gen_eval_code_for_if_expr(expr.cond, expr.then, expr.else, res_var),
+    match_expr()        = gen_eval_code_for_match_expr(expr.exprs, expr.cases, res_var),
+    do_expr(ss?)        = [execute_block(gen_code(ss, res_var))],
 
-    seq_comp(ei?)   = gen_eval_code_for_seq_comp_expr(ei, res_var),
-    range_comp(ei?) = gen_eval_code_for_range_comp_expr(ei, res_var),
+    ex_qual()           = gen_eval_code_for_ex_qual_expr(expr.source, expr.cond, res_var),
+    set_comp()          = gen_eval_code_for_set_comp_expr(expr.expr, expr.source, res_var),
+    map_comp()          = gen_eval_code_for_map_comp_expr(expr.key_expr, expr.value_expr, expr.source, res_var),
 
-    is_set(v?)      = [set_var(res_var, to_obj(var_is_set(v)))];
+    seq_comp(ei?)       = gen_eval_code_for_seq_comp_expr(ei, res_var),
+    range_comp(ei?)     = gen_eval_code_for_range_comp_expr(ei, res_var),
 
+    is_set(v?)          = [set_var(res_var, to_obj(var_is_set(v)))];
 
 
   [Instr^] gen_eval_code_for_set_expr(SubExpr* subexprs, EvalDestVar res_var)
@@ -503,6 +507,20 @@ using
   }
 
 
+  [Instr^] get_eval_code_for_method_call_expr(MethodCallExpr expr, EvalDestVar res_var)
+  {
+    args_eval_info = gen_eval_info(expr.args);
+    call_method_instr = call_method(
+      res_var:  res_var,
+      auto_var: expr.var if expr.var?,
+      type:     if expr.var? then auto_vars_types[expr.var] else try_value(self_auto),
+      name:     ex_method_symb(expr.name, length(expr.args)),
+      args:     args_eval_info.exprs
+    );
+    return [args_eval_info.eval_code | call_method_instr];
+  }
+
+
   [Instr^] gen_eval_code_for_if_expr(Expr cond, Expr then_expr, Expr else_expr, EvalDestVar res_var)
   {
     info = gen_eval_info(cond);
@@ -754,9 +772,9 @@ using
   {
     eval_info = gen_eval_info(stmt.args);
     call_method_instr = call_method(
-      var:      stmt.var if stmt.var?,
+      auto_var: stmt.var if stmt.var?,
       type:     if stmt.var? then auto_vars_types[stmt.var] else try_value(self_auto),
-      channel:  method_symbol(stmt.channel),
+      name:     ex_method_symb(stmt.name, length(eval_info.exprs)),
       args:     eval_info.exprs
     );
     code = [eval_info.eval_code | call_method_instr];

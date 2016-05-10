@@ -81,7 +81,8 @@ type FnSymbol = fn_symbol(Atom),
                 nested_fn_symbol(outer: FnSymbol, inner: FnSymbol),
                 unique_fn_symbol(symbol: FnSymbol, id: Nat); //## THE symbol: FIELD SHOULD ONLY CONTAIN EITHER fn_symbol() OR op_symbol()
 
-type MethodSymbol = msg_handler, method_symbol(Atom);
+type ReadOnlyMethodSymb = read_only_method_symb(Atom);
+type UpdateMethodSymb   = msg_handler, update_method_symb(Atom);
 
 type AutoSymbol   = auto_symbol(Atom);
 
@@ -114,7 +115,7 @@ type Expr     = LeafObj, FloatLit, Var,
                 EqExpr,
                 MembExpr, CastExpr,
                 AccExpr, AccTestExpr,
-                GetOutputExpr, OutputIsSetExpr, OutputIsDefExpr,
+                GetOutputExpr, OutputIsSetExpr, OutputIsDefExpr, MethodCallExpr,
                 IfExpr, MatchExpr, DoExpr,
                 ExQualExpr, SetCompExpr, MapCompExpr,
                 SeqCompExpr, RangeCompExpr,
@@ -149,6 +150,8 @@ type AccTestExpr    = accessor_test(expr: Expr, field: SymbObj); //## DITTO
 type GetOutputExpr    = get_output(var: AnyAutoVar, output: Atom);
 type OutputIsSetExpr  = output_is_set(var: AnyAutoVar, output: Atom);
 type OutputIsDefExpr  = output_is_def(var: LocAutoVar, output: Atom);
+
+type MethodCallExpr   = method_call_expr(var: AnyAutoVar?, name: ReadOnlyMethodSymb, args: [Expr]);
 
 type IfExpr         = if_expr(cond: Expr, then: Expr, else: Expr);
 type MatchExpr      = match_expr(exprs: [Expr^], cases: [(ptrns: [Pattern^], expr: Expr)^]);
@@ -229,7 +232,7 @@ type Statement  = assignment_stmt(vars: [StdVar^], value: Expr),
                   AutoUpdateStmt;
 
 type SetMembVarStmt   = set_memb_var_stmt(var: PendingStateVar, value: Expr);
-type MethodCallStmt   = method_call_stmt(var: AnyAutoVar?, channel: Atom, args: [Expr]);
+type MethodCallStmt   = method_call_stmt(var: AnyAutoVar?, name: UpdateMethodSymb, args: [Expr]);
 
 type AutoUpdateStmt = auto_update_stmt(var: LocAutoVar, elapsed_time: Expr?);
 
@@ -272,7 +275,7 @@ type TimeExpr       = BasicTimeExpr, CyclicTimeExpr;
 
 type AutoUpdate         = update(target: Atom, value: Expr);
 type AutoSetDiscrete    = set_discrete(target: Atom, value: Expr);
-type AutoMethodCall     = method_call(target: MembAutoVar, method: MethodSymbol, message: Expr);
+type AutoMethodCall     = method_call(target: MembAutoVar, method: UpdateMethodSymb, message: Expr);
 
 type AutoAtomicAction   = AutoUpdate, AutoSetDiscrete, AutoMethodCall;
 
@@ -282,27 +285,25 @@ type AutoAnyCondAction  = AutoAtomicAction, AutoCondAction;
 type AutoRepAction      = rep_action(cond: Expr, body: AutoAnyRepAction*, else: AutoAnyRepAction*);
 type AutoAnyRepAction   = AutoAtomicAction, AutoRepAction;
 
-type Method             = method(
-                            name:     MethodSymbol,
-                            args:     [(Type, StdVar)],
-                            body:     [Statement]
-                          );
+type ReadOnlyMethod     = read_only_method(name: ReadOnlyMethodSymb, args: [(Type, StdVar)], ret_type: Type, expr: Expr);
+type UpdateMethod       = update_method(name: UpdateMethodSymb, args: [(Type, StdVar)], body: [Statement]);
 
 type TimeVaryingCond    = time_varying_cond(cond: Expr, time_expr: TimeExpr);
 
 type Automaton  = automaton(
-                    name:         AutoSymbol,
-                    pos_params:   [Atom],
-                    inputs:       (Atom => (type: NeType, discrete: Bool)),
-                    outputs:      (Atom => (type: NeType, discrete: Bool)),
-                    state:        (Atom => (type: NeType, init_value: Expr)),
-                    params:       (Atom => Expr),
-                    rules:        (Atom => Expr),
-                    time_rules:   (Atom => TimeVaryingCond),
-                    actions:      AutoCondAction*,
-                    rep_actions:  AutoRepAction*,
-                    nested_autos: (Atom => (type: AutoSymbol, args: (Atom => Expr))),
-                    methods:      Method*
+                    name:               AutoSymbol,
+                    pos_params:         [Atom],
+                    inputs:             (Atom => (type: NeType, discrete: Bool)),
+                    outputs:            (Atom => (type: NeType, discrete: Bool)),
+                    state:              (Atom => (type: NeType, init_value: Expr)),
+                    params:             (Atom => Expr),
+                    rules:              (Atom => Expr),
+                    time_rules:         (Atom => TimeVaryingCond),
+                    actions:            AutoCondAction*,
+                    rep_actions:        AutoRepAction*,
+                    nested_autos:       (Atom => (type: AutoSymbol, args: (Atom => Expr))),
+                    read_only_methods:  ReadOnlyMethod*,
+                    update_methods:     UpdateMethod*
                   );
 
 ///////////////////////////////////////////////////////////////////////////////

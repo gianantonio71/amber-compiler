@@ -3,16 +3,17 @@ Program rem_syntax(SynPrg prg)
 {
   decls = set(_obj_(prg));
   
-  tdefs         = {d : d <- decls, typedef()        << d};
-  par_tdefs     = {d : d <- decls, par_typedef()    << d};
-  fndefs        = {d : d <- decls, syn_fn_def()     << d};
-  proc_defs     = {d : d <- decls, syn_proc_def()   << d};
-  ublocks       = {d : d <- decls, using_block()    << d};
-  subtype_decls = {d : d <- decls, subtype_decl()   << d};
-  automata      = {d : d <- decls, syn_auto_def()   << d};
-  methods       = {d : d <- decls, syn_method_def() << d};
+  tdefs               = {d : d <- decls, typedef()                  << d};
+  par_tdefs           = {d : d <- decls, par_typedef()              << d};
+  fndefs              = {d : d <- decls, syn_fn_def()               << d};
+  proc_defs           = {d : d <- decls, syn_proc_def()             << d};
+  ublocks             = {d : d <- decls, using_block()              << d};
+  subtype_decls       = {d : d <- decls, subtype_decl()             << d};
+  automata            = {d : d <- decls, syn_auto_def()             << d};
+  read_only_methods   = {d : d <- decls, syn_read_only_method_def() << d};
+  update_methods      = {d : d <- decls, syn_update_method_def()    << d};
 
-  assert tdefs & par_tdefs & fndefs & proc_defs & ublocks & subtype_decls & automata & methods == decls;
+  assert tdefs & par_tdefs & fndefs & proc_defs & ublocks & subtype_decls & automata & read_only_methods & update_methods == decls;
 
   typedefs = create_type_map(tdefs, par_tdefs);
   fn_arg_arities = get_fn_arg_arities(fndefs, ublocks);
@@ -23,9 +24,15 @@ Program rem_syntax(SynPrg prg)
   );
 
   auto_output_is_disc = (a.name => (d.name => d.discrete : d <- set(a.decls), syn_output() << d) : a <- automata);
-  methods_by_automaton = merge_values({(m.automaton => m) : m <- methods});
+  read_only_methods_by_automaton = merge_values({(m.automaton => m) : m <- read_only_methods});
+  update_methods_by_automaton = merge_values({(m.automaton => m) : m <- update_methods});
   let (typedefs=typedefs, fn_arg_arities=fn_arg_arities, auto_output_is_disc=auto_output_is_disc)
-    desugared_automata = {syn_auto_def_to_auto_def(a, lookup(methods_by_automaton, a.name, {})) : a <- automata};
+    desugared_automata = {
+      syn_auto_def_to_auto_def(a, rms, ums)
+      : a <- automata,
+        rms = lookup(read_only_methods_by_automaton, a.name, {}),
+        ums = lookup(update_methods_by_automaton, a.name, {})
+    };
   ;
 
   auto_outputs = (a.name => {(name: n, discrete: o.discrete) : o @ n <- a.outputs} : a <- desugared_automata);
@@ -143,7 +150,7 @@ ProcDef2 syn_proc_def_to_proc_def(SynProcDef pd, (TypeName => Type) typedefs, ((
 
 using (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_arg_arities, (AutoSymbol => (Atom => Bool)) auto_output_is_disc
 {
-  Automaton syn_auto_def_to_auto_def(SynAutoDef auto_def, SynMethodDef* methods)
+  Automaton syn_auto_def_to_auto_def(SynAutoDef auto_def, SynReadOnlyMethodDef* read_only_methods, SynUpdateMethodDef* update_methods)
   {
     decls = set(auto_def.decls);
 
@@ -172,7 +179,7 @@ using (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_arg_arities, (A
     state_vars = (
       v.name => (
         type:       syn_type_to_type(v.type, nil),
-        init_value: syn_expr_to_expr(v.init_value, memb_vars, auto_vars)
+        init_value: syn_expr_to_expr(v.init_value, memb_vars, auto_vars, {})
       ) : v <- syn_state_vars
     );
 
@@ -208,14 +215,14 @@ using (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_arg_arities, (A
     // Desugaring time-varying rules
     time_rules = (
       r.name => time_varying_cond(e, r.value.time_expr) :
-      r <- syn_time_varying_rules, e = syn_expr_to_expr(r.value.cond, memb_vars, auto_vars)
+      r <- syn_time_varying_rules, e = syn_expr_to_expr(r.value.cond, memb_vars, auto_vars, {})
     );
 
     // Desugaring nested automata
     nested_autos = (
       na.name => (
         type: auto_symbol(na.auto_name),
-        args: merge([(f => syn_expr_to_expr(e, memb_vars, auto_vars)) : f, e <- na.args])
+        args: merge([(f => syn_expr_to_expr(e, memb_vars, auto_vars, {})) : f, e <- na.args])
       )
       : na <- syn_nested_autos
     );
@@ -244,31 +251,32 @@ using (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_arg_arities, (A
     rules = remove_keys(rules, arg_ids);
 
     return automaton(
-      name:         auto_def.name,
-      pos_params:   auto_def.pos_args,
-      params:       args,
-      inputs:       inputs(auto_def),
-      outputs:      outputs(auto_def),
-      state:        state_vars,
-      rules:        rules,
-      time_rules:   time_rules,
-      actions:      actions,
-      rep_actions:  rep_actions,
-      nested_autos: nested_autos,
-      methods:      {desugar_method(m, memb_vars, auto_vars) : m <- methods}
+      name:               auto_def.name,
+      pos_params:         auto_def.pos_args,
+      params:             args,
+      inputs:             inputs(auto_def),
+      outputs:            outputs(auto_def),
+      state:              state_vars,
+      rules:              rules,
+      time_rules:         time_rules,
+      actions:            actions,
+      rep_actions:        rep_actions,
+      nested_autos:       nested_autos,
+      read_only_methods:  {desugar_read_only_method(m, memb_vars, auto_vars) : m <- read_only_methods},
+      update_methods:     {desugar_update_method(m, memb_vars, auto_vars) : m <- update_methods}
     );
 
 
     (Maybe[AutoCondAction], Maybe[AutoRepAction]) method_call_to_action(SynMethodCall syn_call, MembVar* memb_vars, MembAutoVar* auto_vars, Atom* disc_signals)
     {
       target  = memb_auto_var(syn_call.target);
-      method  = method_symbol(syn_call.method);
-      message = syn_expr_to_expr(syn_call.message, memb_vars, auto_vars);
+      method  = update_method_symb(syn_call.method);
+      message = syn_expr_to_expr(syn_call.message, memb_vars, auto_vars, {});
       call = method_call(target, method, message);
 
       maybe_syn_cond = syn_call.cond;
       maybe_cond = if maybe_syn_cond != nil
-                     then just(syn_expr_to_expr(value(maybe_syn_cond), memb_vars, auto_vars))
+                     then just(syn_expr_to_expr(value(maybe_syn_cond), memb_vars, auto_vars, {}))
                      else nil;
 
       // If the list of discrete signals is not given explicitly, we search
@@ -295,23 +303,32 @@ using (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_arg_arities, (A
     }
 
 
-    Method desugar_method(SynMethodDef syn_method, MembVar* memb_vars, MembAutoVar* auto_vars)
+    ReadOnlyMethod desugar_read_only_method(SynReadOnlyMethodDef syn_method, MembVar* memb_vars, MembAutoVar* auto_vars)
+    {
+      args = [(syn_type_to_type(t, nil), v) : t, v <- syn_method.args];
+      ret_type = syn_type_to_type(syn_method.ret_type, nil);
+      expr = syn_expr_to_expr(syn_method.expr, memb_vars, auto_vars, set([v : unused_var, v <- syn_method.args]));
+      return read_only_method(syn_method.name, args, ret_type, expr);
+    }
+
+
+    UpdateMethod desugar_update_method(SynUpdateMethodDef syn_method, MembVar* memb_vars, MembAutoVar* auto_vars)
     {
       args = [(syn_type_to_type(t, nil), v) : t, v <- syn_method.args];
       body = syn_stmts_to_stmts(syn_method.body, memb_vars, auto_vars, set([v : unused_var, v <- syn_method.args]));
-      return method(syn_method.name, args, body);
+      return update_method(syn_method.name, args, body);
     }
 
 
     (Maybe[(Atom => Expr)], Maybe[AutoRepAction]) desugar_plain_rule(SynPlainRule rule, MembVar* memb_vars, MembAutoVar* auto_vars, Atom* disc_signals, (MembAutoVar => AutoSymbol) auto_vars_types)
     {
-      expr = syn_expr_to_expr(rule.expr, memb_vars, auto_vars);
+      expr = syn_expr_to_expr(rule.expr, memb_vars, auto_vars, {});
       vars = extern_vars(expr);
       input_signals = {match (v) memb_var(id?) = id : v <- vars};
       disc_input_signals = intersection(input_signals, disc_signals);
       disc_nested_output_deps = {
           d
-        : d <- nested_auto_output_deps(expr),
+        : d <- possibly_discrete_nested_auto_output_deps_copy_1(expr),
           as = memb_auto_var(left(d)),
           o  = right(d),
           at = auto_vars_types[as],
@@ -342,8 +359,8 @@ using (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_arg_arities, (A
 
       if (length(branches) == 1)
         branch = branches[0];
-        cond = syn_expr_to_expr(branch.cond, memb_vars, auto_vars);
-        expr = syn_expr_to_expr(branch.expr, memb_vars, auto_vars);
+        cond = syn_expr_to_expr(branch.cond, memb_vars, auto_vars, {});
+        expr = syn_expr_to_expr(branch.expr, memb_vars, auto_vars, {});
         ss = {match (v) memb_var(id?) = id : v <- extern_vars(cond) & extern_vars(expr)};
         dss = [memb_var(s) : s <- rand_sort(intersection(ss, disc_signals))];
         if (dss != [])
@@ -375,8 +392,8 @@ using (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_arg_arities, (A
 
       else_actions = {cond_rule_to_action(name, inner_branches, discrete, memb_vars, auto_vars) if inner_branches != []};
 
-      cond = syn_expr_to_expr(outer_branch.cond, memb_vars, auto_vars);
-      expr = syn_expr_to_expr(outer_branch.expr, memb_vars, auto_vars);
+      cond = syn_expr_to_expr(outer_branch.cond, memb_vars, auto_vars, {});
+      expr = syn_expr_to_expr(outer_branch.expr, memb_vars, auto_vars, {});
       if (discrete)
         action = set_discrete(name, expr);
       else
@@ -389,13 +406,13 @@ using (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_arg_arities, (A
 
     AutoRepAction foreach_rule_to_repeated_action(SynForeachRule rule, MembVar* memb_vars, MembAutoVar* auto_vars, Atom* disc_signals)
     {
-      value = syn_expr_to_expr(rule.value, memb_vars, auto_vars);
+      value = syn_expr_to_expr(rule.value, memb_vars, auto_vars, {});
       if (rule.discrete)
         action = set_discrete(rule.name, value);
       else
         action = update(rule.name, value);
       ;
-      action = rep_action(syn_expr_to_expr(rule.cond, memb_vars, auto_vars), {action}, {}) if rule.cond?;
+      action = rep_action(syn_expr_to_expr(rule.cond, memb_vars, auto_vars, {}), {action}, {}) if rule.cond?;
 
       change_cond = or_expr([
         if in(s, disc_signals)
@@ -408,10 +425,10 @@ using (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_arg_arities, (A
     }
 
 
-    Expr syn_expr_to_expr(SynExpr expr, MembVar* memb_vars, MembAutoVar* auto_vars) =
+    Expr syn_expr_to_expr(SynExpr expr, MembVar* memb_vars, MembAutoVar* auto_vars, StdVar* def_vars) =
       desugar_expr(
         expr,
-        {},
+        def_vars,
         closures = {},
         named_args = {},
         memb_vars = memb_vars,
@@ -438,3 +455,19 @@ using (TypeName => Type) typedefs, ((FnSymbol, Nat) => [Nat]) fn_arg_arities, (A
       );
   }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+//## THIS FUNCTION HAS TWO COPIES (ONE HERE AND ONE IN AUTOMATA CODE GENERATION)
+//## BECAUSE IT SEEMS WAY TOO SPECIAL PURPOSE TO PUT IN A SHARED FILE.
+(Atom, Atom)* possibly_discrete_nested_auto_output_deps_copy_1(Expr expr):
+  get_output()        = {(name(expr.var), expr.output)},
+  // This one is not relevant here because we only care about dependencies
+  // that could potentially be discrete, and this signal is always continuous
+  output_is_set()     = {},
+  // This one should never appear outside the body of a procedure
+  output_is_def()     = {fail;},
+  // Not relevant either, because this is always a "continuous" signal
+  method_call_expr()  = {},
+  _                   = retrieve_from_nested_exprs(expr, possibly_discrete_nested_auto_output_deps_copy_1);

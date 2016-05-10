@@ -2,7 +2,7 @@ type CondInfo     = ( cond:         Expr,
                       parent:       Maybe[(id: CondNodeId, trigger: Bool)],
                       nested_conds: (id: CondNodeId, trigger: Bool)*,
                       updates:      (state_id: Atom, new_value: Expr, trigger: Bool)*,
-                      calls:        (auto_var: MembAutoVar, method: MethodSymbol, message: Expr, trigger: Bool)*
+                      calls:        (auto_var: MembAutoVar, method: UpdateMethodSymb, message: Expr, trigger: Bool)*
                     );
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -14,6 +14,25 @@ NestedAutoOutputId nested_auto_output_id(Atom a, Atom o) = nested_auto_output_id
 
 BlockNodeId dependency_to_node_id(BlockNodeId id)         = id;
 BlockNodeId dependency_to_node_id(NestedAutoOutputId id)  = std_block_node_id(id.auto);
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+StdBlockNodeId* nested_auto_deps(Expr expr):
+  method_call_expr()  = {std_block_node_id(name(expr.var)) if expr.var?},
+  _                   = retrieve_from_nested_exprs(expr, nested_auto_deps);
+
+
+NestedAutoOutputId* nested_auto_output_deps(Expr expr):
+  get_output()        = {nested_auto_output_id(name(expr.var), expr.output)},
+  output_is_set()     = {nested_auto_output_id(name(expr.var), expr.output)},
+  // This one should never appear outside the body of a procedure
+  output_is_def()     = {fail;},
+  // This one has an upstream dependency on the entire automaton, not just one
+  // (or more) of its outputs. That dependency has to be accounted for through
+  // a separate mechanism (see the above nested_auto_deps(...) function)
+  // method_call_expr()  = {fail;},
+  _                   = retrieve_from_nested_exprs(expr, nested_auto_output_deps);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -155,6 +174,7 @@ BlockNodeId dependency_to_node_id(NestedAutoOutputId id)  = std_block_node_id(id
 
 (StdBlockNodeId => BlockNodeId*) map_state_trigger_up_nodes((CondNodeId => CondInfo) cond_nodes, (CondNodeId => CondInfo) rep_cond_nodes) =
   merge_values(
+    //## WHY ARE THE TWO DIFFERENT? A SET COMPREHENSION FOR THE FIRST, AND A MAP COMPREHENSION FOR THE SECOND?
     {(std_block_node_id(u.state_id) => id) : c @ id <- cond_nodes, u <- c.updates} &
     {(std_block_node_id(u.state_id) => id : c @ id <- rep_cond_nodes, u <- c.updates)}
   );
@@ -201,7 +221,7 @@ BlockNodeId dependency_to_node_id(NestedAutoOutputId id)  = std_block_node_id(id
 }
 
 
-(Atom => (MethodSymbol, Expr)) group_and_sort_nested_autos_calls(Automaton automaton) =
+(Atom => (UpdateMethodSymb, Expr)) group_and_sort_nested_autos_calls(Automaton automaton) =
   (name(c.target) => (c.method, c.message) : a <- automaton.actions & automaton.rep_actions, c <- retrieve_method_calls(a));
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -215,7 +235,7 @@ using
   (CondNodeId => CondInfo)                    cond_nodes,
   (CondNodeId => CondInfo)                    rep_cond_nodes,
   (Atom => [Expr])                            update_values,
-  (Atom => (MethodSymbol, Expr))              nested_auto_calls,
+  (Atom => (UpdateMethodSymb, Expr))          nested_auto_calls,
   Atom*                                       state_vars_ids,
   Atom*                                       disc_signal_ids,
   (NestedAutoInputNodeId => Expr)             nested_auto_inputs,
@@ -302,7 +322,7 @@ using
     disc_vars = {v : v <- extern_vars(expr), in(unsafe_name(v), disc_signal_ids)};
     disc_outputs = {
       (memb_auto_var(a), o)
-      : ao <- nested_auto_output_value_deps(expr),
+      : ao <- possibly_discrete_nested_auto_output_deps_copy_2(expr),
         a = left(ao),
         o = right(ao),
         auto_output_is_disc[automaton.nested_autos[a].type][o]
@@ -331,8 +351,9 @@ AutoNodeDependency* expr_deps(Expr expr)
 {
   assert extern_vars(expr) :: <MembVar, MembCopyVar>*; //## BAD BAD BAD
   memb_vars_ids = {std_block_node_id(unsafe_name(v)) : v <- extern_vars(expr), memb_var() << v};
-  auto_output_ids = {nested_auto_output_id(left(d), right(d)) : d <- nested_auto_output_deps(expr)};
-  return memb_vars_ids & auto_output_ids;
+  auto_output_ids = nested_auto_output_deps(expr);
+  auto_ids = nested_auto_deps(expr);
+  return memb_vars_ids & auto_output_ids & auto_ids;
 }
 
 //## HOW IS THIS DIFFERENT FROM discrete_signals() IN auto-utils.ar?
@@ -345,3 +366,20 @@ Atom* updated_disc_vars_ids(AutoAtomicAction action):
 Atom* updated_disc_vars_ids(<AutoCondAction, AutoRepAction> action) =
   union({updated_disc_vars_ids(a) : a <- action.body}) &
   union({updated_disc_vars_ids(a) : a <- action.else});
+
+////////////////////////////////////////////////////////////////////////////////
+
+//## THIS FUNCTION HAS TWO COPIES (ONE HERE AND ONE SYNTAX REMOVAL)
+//## BECAUSE IT SEEMS WAY TOO SPECIAL PURPOSE TO PUT IN A SHARED FILE.
+//## MAYBE THIS COPY COULD BE ELIMINATED IF WE MOVED SOME RESPONSABILITY
+//## INTO THE SYNTAX REMOVAL LAYER
+(Atom, Atom)* possibly_discrete_nested_auto_output_deps_copy_2(Expr expr):
+  get_output()        = {(name(expr.var), expr.output)},
+  // This one is not relevant here because we only care about dependencies
+  // that could potentially be discrete, and this signal is always continuous
+  output_is_set()     = {},
+  // This one should never appear outside the body of a procedure
+  output_is_def()     = {fail;},
+  // Not relevant either, because this is always a "continuous" signal
+  method_call_expr()  = {},
+  _                   = retrieve_from_nested_exprs(expr, possibly_discrete_nested_auto_output_deps_copy_2);

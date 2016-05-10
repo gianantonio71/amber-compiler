@@ -83,39 +83,40 @@ Bool is_param_type(FnType type) = at_least_one([is_param_type(t) : t <- type.par
 ////////////////////////////////////////////////////////////////////////////////
 
 T* retrieve_from_nested_exprs(Expr expr, (Expr -> T*) retrieve):
-  LeafObj           = {},
-  FloatLit          = {},
-  set_expr(ses?)    = union({any_expr_retrieve_from_nested_exprs(se, retrieve) : se <- ses}),
-  seq_expr(ses?)    = seq_union([any_expr_retrieve_from_nested_exprs(se, retrieve) : se <- ses]),
-  tuple_expr(es?)   = seq_union([retrieve(e) : e <- es]),
-  seq_tail_expr()   = retrieve(expr.seq) & seq_union([retrieve(e) : e <- expr.tail]),
-  map_expr(es?)     = union({retrieve(e.key) & retrieve(e.value) & if e.cond? then retrieve(e.cond) else {} : e <- es}),
-  tag_obj_expr()    = retrieve(expr.tag) & retrieve(expr.obj),
-  Var               = {},
-  fn_call()         = union({any_expr_retrieve_from_nested_exprs(p, retrieve) : p <- set(expr.params) & values(expr.named_args)}),
-  cls_call()        = seq_union([retrieve(p) : p <- expr.params]),
-  builtin_call()    = seq_union([retrieve(p) : p <- expr.params]),
-  and_expr()        = retrieve(expr.left) & retrieve(expr.right),
-  or_expr()         = retrieve(expr.left) & retrieve(expr.right),
-  not_expr(e?)      = retrieve(e),
-  eq()              = retrieve(expr.left) & retrieve(expr.right),
-  membership()      = retrieve(expr.obj),
-  cast_expr()       = retrieve(expr.expr),
-  accessor()        = retrieve(expr.expr),
-  accessor_test()   = retrieve(expr.expr),
-  get_output()      = {},
-  output_is_set()   = {},
-  output_is_def()   = {},
-  if_expr()         = retrieve(expr.cond) & retrieve(expr.then) & retrieve(expr.else),
-  match_expr()      = seq_union([retrieve(e) : e <- expr.exprs]) &
-                      seq_union([retrieve(c.expr) : c <- expr.cases]),
-  do_expr(ss?)      = retrieve_from_nested_exprs(ss, retrieve),
-  ex_qual()         = retrieve_from_nested_exprs(expr.source, retrieve) & retrieve(expr.cond),
-  set_comp()        = retrieve_from_nested_exprs(expr.source, retrieve) & retrieve(expr.expr),
-  map_comp()        = retrieve_from_nested_exprs(expr.source, retrieve) & retrieve(expr.key_expr) & retrieve(expr.value_expr),
-  seq_comp()        = retrieve(expr.expr) & retrieve(expr.src_expr)   & if expr.sel_expr? then retrieve(expr.sel_expr) else {},
-  range_comp()      = retrieve(expr.expr) & retrieve(expr.bound_expr) & if expr.sel_expr? then retrieve(expr.sel_expr) else {},
-  is_set()          = {};
+  LeafObj             = {},
+  FloatLit            = {},
+  set_expr(ses?)      = union({any_expr_retrieve_from_nested_exprs(se, retrieve) : se <- ses}),
+  seq_expr(ses?)      = seq_union([any_expr_retrieve_from_nested_exprs(se, retrieve) : se <- ses]),
+  tuple_expr(es?)     = seq_union([retrieve(e) : e <- es]),
+  seq_tail_expr()     = retrieve(expr.seq) & seq_union([retrieve(e) : e <- expr.tail]),
+  map_expr(es?)       = union({retrieve(e.key) & retrieve(e.value) & if e.cond? then retrieve(e.cond) else {} : e <- es}),
+  tag_obj_expr()      = retrieve(expr.tag) & retrieve(expr.obj),
+  Var                 = {},
+  fn_call()           = union({any_expr_retrieve_from_nested_exprs(p, retrieve) : p <- set(expr.params) & values(expr.named_args)}),
+  cls_call()          = seq_union([retrieve(p) : p <- expr.params]),
+  builtin_call()      = seq_union([retrieve(p) : p <- expr.params]),
+  and_expr()          = retrieve(expr.left) & retrieve(expr.right),
+  or_expr()           = retrieve(expr.left) & retrieve(expr.right),
+  not_expr(e?)        = retrieve(e),
+  eq()                = retrieve(expr.left) & retrieve(expr.right),
+  membership()        = retrieve(expr.obj),
+  cast_expr()         = retrieve(expr.expr),
+  accessor()          = retrieve(expr.expr),
+  accessor_test()     = retrieve(expr.expr),
+  get_output()        = {},
+  output_is_set()     = {},
+  output_is_def()     = {},
+  method_call_expr()  = seq_union([retrieve(a) : a <- expr.args]),
+  if_expr()           = retrieve(expr.cond) & retrieve(expr.then) & retrieve(expr.else),
+  match_expr()        = seq_union([retrieve(e) : e <- expr.exprs]) &
+                        seq_union([retrieve(c.expr) : c <- expr.cases]),
+  do_expr(ss?)        = retrieve_from_nested_exprs(ss, retrieve),
+  ex_qual()           = retrieve_from_nested_exprs(expr.source, retrieve) & retrieve(expr.cond),
+  set_comp()          = retrieve_from_nested_exprs(expr.source, retrieve) & retrieve(expr.expr),
+  map_comp()          = retrieve_from_nested_exprs(expr.source, retrieve) & retrieve(expr.key_expr) & retrieve(expr.value_expr),
+  seq_comp()          = retrieve(expr.expr) & retrieve(expr.src_expr)   & if expr.sel_expr? then retrieve(expr.sel_expr) else {},
+  range_comp()        = retrieve(expr.expr) & retrieve(expr.bound_expr) & if expr.sel_expr? then retrieve(expr.sel_expr) else {},
+  is_set()            = {};
 
 
 T* any_expr_retrieve_from_nested_exprs(Expr expr, (Expr -> T*) retrieve)      = retrieve(expr);
@@ -167,54 +168,55 @@ T* retrieve_from_nested_exprs(Clause cls, (Expr -> T*) retrieve):
 ////////////////////////////////////////////////////////////////////////////////
 
 Expr replace_nested_exprs(Expr expr, (Expr -> Expr) replace):
-  LeafObj           = expr,
-  FloatLit          = expr,
-  set_expr(ses?)    = set_expr({replace_exprs_in_subexpr(se, replace) : se <- ses}),
-  seq_expr(ses?)    = seq_expr([replace_exprs_in_subexpr(se, replace) : se <- ses]),
-  tuple_expr(es?)   = tuple_expr([replace(e) : e <- es]),
-  seq_tail_expr()   = seq_tail_expr(replace(expr.seq), [replace(e) : e <- expr.tail]),
-  map_expr(es?)     = map_expr({(key: replace(e.key), value: replace(e.value), cond: replace(e.cond) if e.cond?) : e <- es}),
-  tag_obj_expr()    = tag_obj_expr(replace(expr.tag), replace(expr.obj)),
-  Var               = expr,
-  fn_call()         = fn_call(
-                        expr.name,
-                        [replace_exprs_in_any_expr(p, replace) : p <- expr.params],
-                        (n => replace_exprs_in_any_expr(e, replace) : e @ n <- expr.named_args)
-                      ),
-  cls_call()        = cls_call(expr.name, [replace(p) : p <- expr.params]),
-  builtin_call()    = builtin_call(expr.name, [replace(p) : p <- expr.params]),
-  and_expr()        = and_expr(replace(expr.left), replace(expr.right)),
-  or_expr()         = or_expr(replace(expr.left), replace(expr.right)),
-  not_expr(e?)      = not_expr(replace(e)),
-  eq()              = eq(replace(expr.left), replace(expr.right)),
-  membership()      = membership(replace(expr.obj), expr.type),
-  cast_expr()       = cast_expr(replace(expr.expr), expr.type),
-  accessor()        = accessor(replace(expr.expr), expr.field),
-  accessor_test()   = accessor_test(replace(expr.expr), expr.field),
-  get_output()      = expr,
-  output_is_set()   = expr,
-  output_is_def()   = expr,
-  if_expr()         = if_expr(replace(expr.cond), replace(expr.then), replace(expr.else)),
-  match_expr()      = match_expr([replace(e) : e <- expr.exprs], [(ptrns: c.ptrns, expr: replace(c.expr)) : c <- expr.cases]),
-  do_expr(ss?)      = do_expr(replace_exprs_in_stmts(ss, replace)),
-  ex_qual()         = ex_qual(replace_exprs_in_clause(expr.source, replace), replace(expr.cond)),
-  set_comp()        = set_comp(replace(expr.expr), replace_exprs_in_clause(expr.source, replace)),
-  map_comp()        = map_comp(replace(expr.key_expr), replace(expr.value_expr), replace_exprs_in_clause(expr.source, replace)),
-  seq_comp()        = seq_comp(
-                        expr:     replace(expr.expr),
-                        vars:     expr.vars,
-                        idx_var:  expr.idx_var if expr.idx_var?,
-                        src_expr: replace(expr.src_expr),
-                        sel_expr: replace(expr.sel_expr) if expr.sel_expr?
-                      ),
-  range_comp()      = range_comp(
-                        expr:       replace(expr.expr),
-                        var:        expr.var,
-                        bound_expr: replace(expr.bound_expr),
-                        inclusive:  expr.inclusive,
-                        sel_expr:   expr.sel_expr if expr.sel_expr?
-                      ),
-  is_set()          = expr;
+  LeafObj             = expr,
+  FloatLit            = expr,
+  set_expr(ses?)      = set_expr({replace_exprs_in_subexpr(se, replace) : se <- ses}),
+  seq_expr(ses?)      = seq_expr([replace_exprs_in_subexpr(se, replace) : se <- ses]),
+  tuple_expr(es?)     = tuple_expr([replace(e) : e <- es]),
+  seq_tail_expr()     = seq_tail_expr(replace(expr.seq), [replace(e) : e <- expr.tail]),
+  map_expr(es?)       = map_expr({(key: replace(e.key), value: replace(e.value), cond: replace(e.cond) if e.cond?) : e <- es}),
+  tag_obj_expr()      = tag_obj_expr(replace(expr.tag), replace(expr.obj)),
+  Var                 = expr,
+  fn_call()           = fn_call(
+                          expr.name,
+                          [replace_exprs_in_any_expr(p, replace) : p <- expr.params],
+                          (n => replace_exprs_in_any_expr(e, replace) : e @ n <- expr.named_args)
+                        ),
+  cls_call()          = cls_call(expr.name, [replace(p) : p <- expr.params]),
+  builtin_call()      = builtin_call(expr.name, [replace(p) : p <- expr.params]),
+  and_expr()          = and_expr(replace(expr.left), replace(expr.right)),
+  or_expr()           = or_expr(replace(expr.left), replace(expr.right)),
+  not_expr(e?)        = not_expr(replace(e)),
+  eq()                = eq(replace(expr.left), replace(expr.right)),
+  membership()        = membership(replace(expr.obj), expr.type),
+  cast_expr()         = cast_expr(replace(expr.expr), expr.type),
+  accessor()          = accessor(replace(expr.expr), expr.field),
+  accessor_test()     = accessor_test(replace(expr.expr), expr.field),
+  get_output()        = expr,
+  output_is_set()     = expr,
+  output_is_def()     = expr,
+  method_call_expr()  = method_call_expr(var: expr.var if expr.var?, name: expr.name, args: [replace(a) : a <- expr.args]),
+  if_expr()           = if_expr(replace(expr.cond), replace(expr.then), replace(expr.else)),
+  match_expr()        = match_expr([replace(e) : e <- expr.exprs], [(ptrns: c.ptrns, expr: replace(c.expr)) : c <- expr.cases]),
+  do_expr(ss?)        = do_expr(replace_exprs_in_stmts(ss, replace)),
+  ex_qual()           = ex_qual(replace_exprs_in_clause(expr.source, replace), replace(expr.cond)),
+  set_comp()          = set_comp(replace(expr.expr), replace_exprs_in_clause(expr.source, replace)),
+  map_comp()          = map_comp(replace(expr.key_expr), replace(expr.value_expr), replace_exprs_in_clause(expr.source, replace)),
+  seq_comp()          = seq_comp(
+                          expr:     replace(expr.expr),
+                          vars:     expr.vars,
+                          idx_var:  expr.idx_var if expr.idx_var?,
+                          src_expr: replace(expr.src_expr),
+                          sel_expr: replace(expr.sel_expr) if expr.sel_expr?
+                        ),
+  range_comp()        = range_comp(
+                          expr:       replace(expr.expr),
+                          var:        expr.var,
+                          bound_expr: replace(expr.bound_expr),
+                          inclusive:  expr.inclusive,
+                          sel_expr:   expr.sel_expr if expr.sel_expr?
+                        ),
+  is_set()            = expr;
 
 
 CondExpr replace_exprs_in_cond_expr(CondExpr expr, (Expr -> Expr) replace) = cond_expr(replace(expr.expr), replace(expr.cond));
@@ -663,25 +665,11 @@ Var* cls_expr_extern_vars(ClsExpr expr):
 ////////////////////////////////////////////////////////////////////////////////
 
 AnyAutoVar* extern_auto_vars(Expr expr):
-  get_output()    = {expr.var},
-  output_is_set() = {expr.var},
-  output_is_def() = {fail;},
-  _               = retrieve_from_nested_exprs(expr, extern_auto_vars);
-
-////////////////////////////////////////////////////////////////////////////////
-
-(Atom, Atom)* nested_auto_output_deps(Expr expr):
-  get_output()    = {(name(expr.var), expr.output)},
-  output_is_set() = {(name(expr.var), expr.output)},
-  output_is_def() = {fail;},
-  _               = retrieve_from_nested_exprs(expr, nested_auto_output_deps);
-
-
-(Atom, Atom)* nested_auto_output_value_deps(Expr expr):
-  get_output()    = {(name(expr.var), expr.output)},
-  // output_is_set() = {(name(expr.var), expr.output)},
-  output_is_def() = {fail;},
-  _               = retrieve_from_nested_exprs(expr, nested_auto_output_deps);
+  get_output()        = {expr.var},
+  output_is_set()     = {expr.var},
+  output_is_def()     = {fail;},
+  method_call_expr()  = {expr.var if expr.var?},
+  _                   = retrieve_from_nested_exprs(expr, extern_auto_vars);
 
 ////////////////////////////////////////////////////////////////////////////////
 

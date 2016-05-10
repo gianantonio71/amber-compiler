@@ -61,9 +61,10 @@ Block gen_auto_code(Automaton automaton, (AutoSymbol => (Atom => Bool)) auto_inp
         levels_offsets              = levels_offsets,
         levels_sizes                = levels_sizes)
 
-    init_code     = gen_init_method_body(memb_bool_vars, memb_int_vars, memb_obj_vars);
-    update_code   = gen_update_method_body(nodes, nested_cond_ids, downstream_nodes);
-    methods_code  = gen_methods_code(automaton.methods, typedefs);
+    init_code               = gen_init_method_body(memb_bool_vars, memb_int_vars, memb_obj_vars);
+    update_code             = gen_update_method_body(nodes, nested_cond_ids, downstream_nodes);
+    read_only_methods_code  = gen_methods_code(automaton.read_only_methods, typedefs);
+    update_methods_code     = gen_methods_code(automaton.update_methods, typedefs);
   ;
 
   // Generating cleanup code
@@ -105,7 +106,7 @@ Block gen_auto_code(Automaton automaton, (AutoSymbol => (Atom => Bool)) auto_inp
     update_code:        update_code,
     cleanup_code:       cleanup_code,
     queue_update_code:  queue_update_code,
-    methods_code:       methods_code,
+    methods_code:       read_only_methods_code & update_methods_code,
     const_data:         const_data,
     time_rules_count:   size(time_varying_node_idxs)
   );
@@ -155,28 +156,58 @@ using
   [Nat]                       levels_sizes;
 
 
-  ((ExMethodSymbol, Nat) => [Instr]) gen_methods_code(Method* methods, (TypeName => Type) typedefs)
+  (ExMethodSymb => [Instr]) gen_methods_code(<ReadOnlyMethod, UpdateMethod>* methods, (TypeName => Type) typedefs)
   {
     return merge({
       gen_code_for_overloaded_methods(ms, typedefs) : ms @ unused_var <- group_by(methods, ($.name, length($.args)))
     });
 
 
-    ((ExMethodSymbol, Nat) => [Instr]) gen_code_for_overloaded_methods(Method+ methods, (TypeName => Type) typedefs)
+    (ExMethodSymb => [Instr]) gen_code_for_overloaded_methods(<ReadOnlyMethod, UpdateMethod>+ methods, (TypeName => Type) typedefs)
     {
       a_method = an_elem(methods);
       name = a_method.name;
       arity = length(a_method.args);
-      return ((name, arity) => gen_method_code(a_method)) if size(methods) == 1;
+      return (ex_method_symb(name, arity) => gen_method_code(a_method)) if size(methods) == 1;
       sorted_methods = rand_sort(methods);
-      comp_methods = merge([((ex_method_symbol(m.name, i), arity) => gen_method_code(m)) : m @ i <- sorted_methods]);
+      comp_methods = merge([(ex_method_symb(m.name, i, arity) => gen_method_code(m)) : m @ i <- sorted_methods]);
       disp_method_code = gen_dispatch_method_body(automaton.name, sorted_methods, typedefs);
-      return comp_methods & ((name, arity) => disp_method_code);
+      return comp_methods & (ex_method_symb(name, arity) => disp_method_code);
     }
   }
 
 
-  [Instr] gen_method_code(Method method)
+  [Instr] gen_method_code(ReadOnlyMethod method)
+  {
+    res_var = lvar(0);
+
+    auto_vars_types = (memb_auto_var(id) => na.type : na @ id <- automaton.nested_autos);
+
+    let ( next_set_it_var_id            = 0,
+          next_seq_it_var_id            = 0,
+          next_map_it_var_id            = 0,
+          next_obj_var_id               = 1,
+          next_int_var_id               = 0,
+          next_bool_var_id              = 0,
+          next_vector_var_id            = 0,
+          next_stream_var_id            = 0,
+          pending_state_var_asgnms_idxs = (),
+          auto_vars_types               = auto_vars_types,
+          self_auto                     = just(automaton.name),
+          ignore_assertions             = options.ignore_assertions)
+
+      // Compiling the body of the method
+      code = [set_var(v, fn_par(i)) : unused_var, v @ i <- method.args] & gen_eval_code(method.expr, res_var);
+    ;
+
+    // entry_code = [push_call_info(fndef.name, fn_par(i)) : p @ i <- fndef.params])];
+    // exit_code = [pop_call_info];
+
+    return [code | ret_val(res_var)];
+  }
+
+
+  [Instr] gen_method_code(UpdateMethod method)
   {
     pending_state_var_asgnms_idxs = (get_inner_id(id) => nat(n + 1) : n @ id <- multivalue_node_expr_count);
     auto_vars_types = (memb_auto_var(id) => na.type : na @ id <- automaton.nested_autos);
@@ -434,7 +465,7 @@ using
 }
 
 
-[Instr] gen_dispatch_method_body(AutoSymbol auto_type, [Method^] methods, (TypeName => Type) typedefs)
+[Instr] gen_dispatch_method_body(AutoSymbol auto_type, [<ReadOnlyMethod, UpdateMethod>^] methods, (TypeName => Type) typedefs)
 {
   assert length(methods) > 1;
   assert size(set([m.name : m <- methods])) == 1;         // All methods must have the same name
@@ -456,7 +487,7 @@ using
 
   cases = [(
       ptrns:  [type_to_pseudotype_pattern(left(m.args[disp_arg]), typedefs)],
-      code:   [call_method(auto_type, ex_method_symbol(name, i), [fn_par(j) : j < arity]), exit_block]
+      code:   [call_method(auto_type, ex_method_symb(name, i, arity), [fn_par(j) : j < arity]), exit_block]
     ) : m @ i <- methods
   ];
   code = gen_switch_code([fn_par(disp_arg)], lvar(0), cases, next_obj_var_id=1);
