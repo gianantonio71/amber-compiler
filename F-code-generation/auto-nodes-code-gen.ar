@@ -24,16 +24,16 @@ using
     l0 = lvar(0);
     l1 = lvar(1);
     memb_var = memb_var(id);
-    new_input_var = new_input(id);
+    pending_input_var = pending_input_var(id);
 
     body = [set_var(memb_var, l0), set_bvar(memb_has_changed(id), true) if in(id, memb_copy_var_ids)] &
            [mark_for_update(n, false) : n <- rand_sort(node.downstream_nodes)];
 
-    return nonempty([read_pending_var(l0, new_input_var), init_memb_var(new_input_var, :blank)] & body) if node.discrete;
+    return nonempty([read_pending_var(l0, pending_input_var), init_memb_var(pending_input_var, :blank)] & body) if node.discrete;
 
     return [
-      read_pending_var(l0, new_input_var),
-      init_memb_var(new_input_var, :blank),
+      read_pending_var(l0, pending_input_var),
+      init_memb_var(pending_input_var, :blank),
       set_var(l1, memb_var),
       do_if_not(is_eq(l0, l1), body)
     ];
@@ -213,100 +213,200 @@ using
     l0 = lvar(0);
     cond_var = memb_var(id);
 
-    inner_cond_value_var = cond_expr_value_var(id);
-    inner_cond_is_def_var = cond_expr_is_def_var(id);
-    inner_cond_up_to_date_var = cond_expr_up_to_date_var(id);
+    watched_signal_up_to_date_var = watched_signal_up_to_date_var(id);
+    watched_signal_value_var = watched_signal_value_var(id);
 
     next_trigger_time_var = next_trigger_time_var(id);
     curr_time_slot_var = curr_time_slot_var(id);
 
-    // Updating the inner condition, if it's not up-to-date already
-    inner_cond_updating_code = [
+    // We enter any of the following four regions of code (defined/undefined -> defined/undefined)
+    // with the new value for the watched signal stored in lvar(0) and the old one in
+    // watched_signal_value_var(_). The new value is copied in place only at the end of the section
+
+    // The watched signal is now undefined and either this is the first update, or it was defined before
+    // Possible state transitions for unchanged-for rules: A/C/D/E -> B
+    // Possible state transitions for boolean rules: A/C/D/E/F -> B
+    // We first clear any pending timer (there could be one if we come from D)
+    // We also reset the next trigger time and the current time slot (needed when coming from D or E)
+    watched_signal_becomes_undefined_code = [
+      set_ivar(next_trigger_time_var, -1),
+      set_ivar(curr_time_slot_var, -1),
+      clear_timer(auto_name, time_varying_node_idx)
+    ];
+
+    // // The watched signal was undefined and has just become defined.
+    // // Possible state transitions for unchanged-for rules: B -> C
+    // // Possible state transitions for boolean rules: B -> C/F
+    // // Nothing to do here. Since there's no code to run, we don't even bother with this branch
+    // watched_signal_becomes_defined_code = [];
+
+    // // The watched signal stays undefined
+    // // Possible state transitions: B -> B
+    // // Nothing to do here. Since there's no code to run, we don't even bother with this branch
+    // watched_signal_stays_undefined_code = [];
+
+    // The timer has expired expired before the watched signal changed
+    // Possible state transitions: D -> D/E
+    // In order to figure out if a timer has expired, we compare the current time
+    // with the next trigger time. Since the next trigger time is always -1 if we
+    // are not in state D, that should be the only check we need.
+    // If the timer has actually expired, we do (or not do) the following:
+    //    The timer has already been removed, so no need to do that again here //## AM I SURE ABOUT THIS ONE? CHECK
+    //    We increment the current time slot
+    //    If it's the last slot:
+    //      We reset the next trigger time
+    //    Otherwise:
+    //      We set the next trigger time
+    //      We insert the new timer
+    timer_expires_instr =
       do_if(
-        neg(inner_cond_up_to_date_var),
+        is_eq(next_trigger_time_var, curr_time),
+        [ set_ivar(i1, add(curr_time_slot_var, 1)),
+          set_ivar(curr_time_slot_var, i1),
+          set_ivar(i2, time_slot_length(time_expr, auto_name, id, i1)),
+          branch(
+            neg(is_eq(i2, 0)),
+            [ set_ivar(i3, add(curr_time, i2)),
+              set_ivar(next_trigger_time_var, i3),
+              insert_timer(auto_name, time_varying_node_idx, i3)
+            ],
+            [set_ivar(next_trigger_time_var, -1)]
+          )
+        ]
+      );
+
+    if (node.rule_type == :unchanged)
+      //  These are the possible states for an unchanged-for time rule:
+      //
+      //  State   Watched   Overall     Next      Current   Timer
+      //  ID      signal    condition   trigger   time      set
+      //                                time      slot
+      //
+      //  A)      blank     blank       -1        -1        no      Initial state
+      //  B)      null      null        -1        -1        no      Watched signal is null
+      //  C)      set       null        -1        -1        no      Watched signal is non-null now, but it was null before it assumed its current value
+      //  D)      set       set         set       set       yes     Standard good state, with ongoing timer
+      //  E)      set       set         -1        set       no      Standard good state, all time triggers already expired
+
+      // The watched signal was, and remains, defined. We act only if it has actually changed
+      // Possible state transitions for unchanged-for rules: A/C/D/E -> D
+      //   First we clear any pending timer (There's one set up only if coming from D)
+      //   Then we set the next trigger time and the current time slot and set up the new timer
+      watched_signal_stays_defined_code = [
+        do_if_not(
+          is_eq(l0, watched_signal_value_var),
+          [ clear_timer(auto_name, time_varying_node_idx),
+            set_ivar(curr_time_slot_var, 0),
+            set_ivar(i0, add(curr_time, init_slot_len)),
+            set_ivar(next_trigger_time_var, i0),
+            insert_timer(auto_name, time_varying_node_idx, i0)
+          ]
+        )
+      ];
+
+      // Recalculation of the overall condition. Possible states at this stage:
+      //  B)      null      null        -1        -1        no      Watched signal is null
+      //  C)      set       null        -1        -1        no      Watched signal is non-null now, but it was null before it assumed its current value
+      //  D)      set       set         set       set       yes     Standard good state, with ongoing timer
+      //  E)      set       set         -1        set       no      Standard good state, all time triggers already expired
+      overall_cond_recalc_instr = branch(
+        neg(is_eq(curr_time_slot_var, -1)),
+        // If the current time slot is set, then we are now either in state D or E,
+        // and the time slot decides the current value of the time-varying condition
+        [set_var(l0, to_obj(if init_val == true then is_even(curr_time_slot_var) else is_odd(curr_time_slot_var)))],
+        // Otherwise we are either in state B or C, and the time-varying condition is undefined
+        [clear_loc_var(l0)]
+      );
+
+    else
+      //  Here are the possible states for a boolean time rule:
+      //
+      //  State   Watched   Overall     Next      Current   Timer
+      //  ID      signal    condition   trigger   time      set
+      //                                time      slot
+      //
+      //  A)      blank     blank       -1        -1        no      Initial state
+      //  B)      null      null        -1        -1        no      Watched signal is null
+      //  C)      true      null        -1        -1        no      Watched signal is true now, but it was null before it became true
+      //  D)      true      true/false  set       set       yes     Standard true state, with ongoing timer
+      //  E)      true      true/false  -1        set       no      Standard true state, all time triggers already expired
+      //  F)      false     false       -1        -1        no      Standard false state
+
+      // The watched signal was, and remains, defined. We act only if it has actually changed
+      // Possible state transitions for unchanged-for rules: A/C/D/E/F -> D/F
+      watched_signal_stays_defined_code = [
+        do_if_not(
+          is_eq(l0, watched_signal_value_var),
+          [ branch(
+              is_eq(l0, obj_true),
+              // Here the old value of the watched signal can only be false or blank
+              // The possible transitions are: A/F -> D
+              // No timer can be active at this stage, so there's nothing to clear
+              // We set the current time slot and the next trigger time
+              // We also set up a new timer
+              [ set_ivar(curr_time_slot_var, 0),
+                set_ivar(i0, add(curr_time, init_slot_len)),
+                set_ivar(next_trigger_time_var, i0),
+                insert_timer(auto_name, time_varying_node_idx, i0)
+              ],
+              // The old value of the watched signal can only be true or blank
+              // The possible transitions are: A/C/D/E -> F
+              // First we clear any pending timer (There's one set up only if coming from D)
+              // We need to clear the next trigger time and the current time slot
+              // Any existing timer has already been cleared
+              [ clear_timer(auto_name, time_varying_node_idx),
+                set_ivar(next_trigger_time_var, -1),
+                set_ivar(curr_time_slot_var, -1)
+              ]
+            )
+          ]
+        )
+      ];
+
+      // Recalculation of the overall condition. Here's again the list of possible states at this stage:
+      //   B)      null      null        -1        -1        no      Watched signal is null
+      //   C)      true      null        -1        -1        no      Watched signal is true now, but it was null before it became true
+      //   D)      true      true/false  set       set       yes     Standard true state, with ongoing timer
+      //   E)      true      true/false  -1        set       no      Standard true state, all time triggers already expired
+      //   F)      false     false       -1        -1        no      Standard false state
+      overall_cond_recalc_instr = branch(
+        neg(is_eq(curr_time_slot_var, -1)),
+        // If the current time slot is set, then we are now either in state D or E,
+        // and the time slot decides the current value of the time-varying condition
+        [set_var(l0, to_obj(if init_val == true then is_even(curr_time_slot_var) else is_odd(curr_time_slot_var)))],
+        // Otherwise we are either in state B, C or F.
+        // In state F (watched_signal_value_var == false) the overall condition is false.
+        // Otherwise it is undefined.
+        [branch(is_eq(watched_signal_value_var, obj_false), [set_var(l0, obj_false)], [clear_loc_var(l0)])]
+      );
+    ;
+
+    // Final node code
+    return [
+      // First we recalculate the watched signal, if needed, and then execute
+      // the code for the four possible cases listed above
+      do_if_not(
+        watched_signal_up_to_date_var,
         gen_safe_eval_code(node.cond, l0, next_obj_var_id = 1, next_bool_var_id = 0) &
         [ branch(
             var_is_def(l0),
-            [ branch(
-                inner_cond_is_def_var,
-                [ branch(
-                    inner_cond_value_var,
-                    [ do_if(
-                        is_eq(l0, obj_false),
-                        [ set_bvar(inner_cond_value_var, false),
-                          clear_timer(auto_name, time_varying_node_idx)
-                        ]
-                      )
-                    ],
-                    [ do_if(
-                        is_eq(l0, obj_true),
-                        [ set_bvar(inner_cond_value_var, true),
-                          set_ivar(curr_time_slot_var, 0),
-                          set_ivar(i0, add(curr_time, init_slot_len)),
-                          set_ivar(next_trigger_time_var, i0),
-                          insert_timer(auto_name, time_varying_node_idx, i0)
-                        ]
-                      )
-                    ]
-                  )
-                ],
-                [ do_if(
-                    is_eq(l0, obj_false),
-                    [ set_bvar(inner_cond_value_var, false), set_bvar(inner_cond_is_def_var, true)]
-                  )
-                ]
-              )
-            ],
-            [ do_if(
-                inner_cond_is_def_var,
-                [ do_if(inner_cond_value_var, clear_timer(auto_name, time_varying_node_idx)),
-                  set_bvar(inner_cond_is_def_var, false)
-                ]
-              )
-            ]
+            [do_if(var_is_def(watched_signal_value_var), watched_signal_stays_defined_code)],
+            [do_if(var_is_def(watched_signal_value_var), watched_signal_becomes_undefined_code)]
           ),
-          set_bvar(inner_cond_up_to_date_var, true)
+          set_var(watched_signal_value_var, l0),
+          set_bvar(watched_signal_up_to_date_var, true)
         ]
-      )
-    ];
-
-    // Now calculating the overall condition, based on the time expression
-    outer_cond_update_code = [
-      branch(
-        inner_cond_is_def_var,
-        [ branch(
-            inner_cond_value_var,
-            [ set_ivar(i0, next_trigger_time_var),
-              do_if(
-                is_eq(i0, curr_time),
-                [ set_ivar(i1, add(curr_time_slot_var, 1)),
-                  set_ivar(curr_time_slot_var, i1),
-                  set_ivar(i2, time_slot_length(time_expr, auto_name, id, i1)),
-                  do_if(
-                    neg(is_eq(i2, 0)),
-                    [ set_ivar(i3, add(curr_time, i2)),
-                      set_ivar(next_trigger_time_var, i3),
-                      insert_timer(auto_name, time_varying_node_idx, i3)
-                    ]
-                  )
-                ]
-              ),
-              set_var(l0, to_obj(if init_val == true then is_even(curr_time_slot_var) else is_odd(curr_time_slot_var)))
-            ],
-            [set_var(l0, obj_false)]
-          )
-        ],
-        [clear_loc_var(l0)]
       ),
-
-      do_if(
-        neg(is_eq(cond_var, l0)),
+      // Then we check if a timer has expired and act accordingly
+      timer_expires_instr,
+      // We can now recalculate the value of the overall condition
+      overall_cond_recalc_instr,
+      // If the condition has changed, we update it and we add the downstream nodes to the update queue
+      do_if_not(
+        is_eq(cond_var, l0),
         [set_var(cond_var, l0)] & [mark_for_update(n, false) : n <- rand_sort(node.downstream_nodes)]
       )
     ];
-
-    // Putting it all together
-    return inner_cond_updating_code & outer_cond_update_code;
   }
 
 
@@ -566,8 +666,8 @@ using
 
 (body: [Instr], two_level_update: Bool) gen_queue_update_method(AutoTimeVaryingNode node, Nat index, Nat level_size)
 {
-  cond_expr_up_to_date_var = cond_expr_up_to_date_var(get_inner_id(node.id));
-  inval_cache_instr = do_if(invalidate_cond_expr_cache, set_bvar(cond_expr_up_to_date_var, false));
+  watched_signal_up_to_date_var = watched_signal_up_to_date_var(get_inner_id(node.id));
+  inval_cache_instr = do_if(invalidate_cond_expr_cache, set_bvar(watched_signal_up_to_date_var, false));
   code = [gen_std_queue_update_code(node.id, node.level, index, level_size) | inval_cache_instr];
   return (body: code, two_level_update: true);
 }

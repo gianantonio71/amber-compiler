@@ -1,12 +1,12 @@
-type LocVar         = lvar(Nat), never_used_lvar;  //## FIND BETTER NAME.
-type ElemVar        = evar(id: Nat, idx: <Nat, IntVar, add(val1: IntVar, val2: Nat)>);
-type MembObjVar     = new_input(Atom);
+type LocVar           = lvar(Nat), never_used_lvar;  //## FIND BETTER NAME.
+type ElemVar          = evar(id: Nat, idx: <Nat, IntVar, add(val1: IntVar, val2: Nat)>);
+type PendingInputVar  = pending_input_var(Atom);
 
-type ObjVar         = Var, LocVar, ElemVar;
+type ObjVar         = Var, MembObjVar, LocVar, ElemVar;
 
 type ReadOnlyObjVar = FnPar, CaptVar;
 type WriteObjVar    = RWObjVar, ElemVar;
-type RWObjVar       = StdVar, LocVar, MembVar, MembCopyVar, PendingStateVar;
+type RWObjVar       = StdVar, LocVar, MembVar, MembObjVar, MembCopyVar, PendingStateVar;
 
 type StdObjVar      = RWObjVar, NamedArg, ReadOnlyObjVar;
 
@@ -14,9 +14,10 @@ type VecVar         = vvar(id: Nat, size: NzNat);
 
 type MembBoolVar    = cond_value_var(Nat),
                       cond_is_def_var(Nat),
-                      cond_expr_value_var(<Nat, Atom>),
-                      cond_expr_is_def_var(<Nat, Atom>),
-                      cond_expr_up_to_date_var(<Nat, Atom>),
+                      cond_expr_value_var(Nat),
+                      cond_expr_is_def_var(Nat),
+                      cond_expr_up_to_date_var(Nat),
+                      watched_signal_up_to_date_var(Atom),
                       has_pending_message_var(Atom),
                       marked_for_update_var(BlockNodeId),
                       is_new;
@@ -31,6 +32,8 @@ type MembIntVar     = update_source_var(Atom),
                       time_varying_cond_ids_heap_var(IntExpr),
                       last_update_time,
                       nested_auto_int_var(auto_var: MembAutoVar, memb_var: MembIntVar);
+
+type MembObjVar     = watched_signal_value_var(Atom);
 
 type IntConst       = time_slot_length(automaton: AutoSymbol, expr_id: Atom, time_slot: IntExpr);
 
@@ -91,7 +94,7 @@ type NatBoolOp      = is_symb(ObjExpr),
                       //## EITHER var_is_set(v) SHOULD NOT BE CALLED IF var_is_def(v) IS NOT TRUE OR VICE VERSA.
                       //## FIGURE THIS OUT AND ADD ALL THE NECESSARY CHECKS
                       var_is_set(<MembVar, LocVar>),
-                      var_is_def(<MembVar, MembObjVar, MembCopyVar, LocVar>); // We should never feed it a blank variable
+                      var_is_def(<MembVar, MembObjVar, PendingInputVar, MembCopyVar, LocVar>); // We should never feed it a blank variable
                       // It should not be possible to call field_is_set(v, s) if field_is_def(v, s) is not true.
                       // This is because field_is_set(...) is not defined is field_is_def(...) is false,
                       // and outside automata the language cannot deal with undefined values.
@@ -186,7 +189,7 @@ type RefObjExpr     = mk_set_from_stream(stream: StreamVar),
                       symb_to_str(AtomicExpr),
                       // Can be used only once per pending variable, and does not automatically clear it,
                       // it has to be manually cleared with init_memb_var(...)
-                      read_pending_var(<PendingStateVar, MembObjVar>),
+                      read_pending_var(<PendingStateVar, PendingInputVar>),
                       read_output(var: AnyAutoVar, type: AutoSymbol, output: Atom),
                       add_attachment(target: AtomicExpr, data: AtomicExpr), // Impure
                       fetch_attachments(AtomicExpr);                        // Impure
@@ -217,12 +220,12 @@ type BasicInstr     = init_stream(StreamVar),
 
                       set_rc_var(var: WriteObjVar, value: <FloatExpr, RefObjExpr>),
 
-                      init_memb_var(var: <MembVar, MembObjVar, PendingStateVar>, new_state: <blank, undefined>),
+                      init_memb_var(var: <MembVar, MembObjVar, PendingInputVar, PendingStateVar>, new_state: <blank, undefined>),
                       reset_memb_var(var: <MembVar>, new_state: <blank, undefined>),
                       clear_loc_var(LocVar), //## BAD: I DON'T LIKE THE ABILITY TO CLEAR A NON-MEMBER VARIABLE
 
                       add_ref(ObjVar),
-                      release(<ObjVar, MembObjVar>),
+                      release(<ObjVar, PendingInputVar>),
 
                       print_obj(obj: AtomicExpr),
 
@@ -302,7 +305,7 @@ type Block          = block(
                         name:               AutoSymbol,
                         inputs:             [Atom],
                         outputs:            Atom*,
-                        memb_vars:          <MembVar, PendingStateVar, MembObjVar, MembIntVar, MembIntVectVar, MembBoolVar>*,
+                        memb_vars:          <MembVar, MembObjVar, PendingInputVar, PendingStateVar, MembIntVar, MembIntVectVar, MembBoolVar>*,
                         nested_auto_vars:   (MembAutoVar => AutoSymbol),
                         init_code:          [Instr],
                         update_code:        [Instr],

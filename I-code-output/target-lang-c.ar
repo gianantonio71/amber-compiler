@@ -111,7 +111,7 @@ CCodeOutput compile_to_c(CompiledPrg prg)
 
 
 //## THIS SHOULD NOT GO HERE
-type FnCallParam = null_obj, ObjExpr, ElemVar, MembObjVar, VecVar, BoolExpr, IntExpr, ItVar, StreamVar, ClsVar;
+type FnCallParam = null_obj, ObjExpr, ElemVar, PendingInputVar, VecVar, BoolExpr, IntExpr, ItVar, StreamVar, ClsVar;
 
 
 using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
@@ -218,21 +218,21 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     (String, [String]) gen_input_setter(AutoSymbol block_name, Atom input_name, Nat node_idx, Bool queue_node)
     {
       sgn = "void " & input_set_method_name(block_name, input_name) & "(" & to_c_name(block_name) & " *self, Obj new_val)";
-      new_input_var_str = to_c_var_name(new_input(input_name));
+      pending_input_var_str = to_c_var_name(pending_input_var(input_name));
       marked_for_update_var = to_c_var_name(marked_for_update_var(std_block_node_id(input_name)));
       body = [
         sgn,
         "{",
         "  if (" & marked_for_update_var & ")",
         "  {",
-        // "    internal_fail_if(" & new_input_var_str & " == null_obj);",
-        "    release(" & new_input_var_str & ");",
-        "    " & new_input_var_str & " = new_val;",
+        // "    internal_fail_if(" & pending_input_var_str & " == null_obj);",
+        "    release(" & pending_input_var_str & ");",
+        "    " & pending_input_var_str & " = new_val;",
         "  }",
         "  else",
         "  {",
-        // "    internal_fail_if(" & new_input_var_str & " != null_obj);",
-        "    " & new_input_var_str & " = new_val;",
+        // "    internal_fail_if(" & pending_input_var_str & " != null_obj);",
+        "    " & pending_input_var_str & " = new_val;",
         "    long long idx = self->update_count_0;" if queue_node,
         "    self->nodes_to_update_0[idx] = " & to_str(node_idx) & ";" if queue_node,
         "    self->update_count_0 = idx + 1;" if queue_node,
@@ -903,13 +903,12 @@ using String typesymb2name(TypeSymbol)
     rand_elem(e?)       = "rand_set_elem("      & to_c_expr(e)        & ")";
 
 
-  String to_c_expr(ObjExpr expr, Bool) = to_c_expr(expr);
+  String to_c_expr(BoolExpr expr)           = to_c_expr(expr, false);
+  String to_c_expr(ObjExpr expr, Bool)      = to_c_expr(expr);
 
-  String to_c_expr(MembObjVar v)        = to_c_var_name(v);
+  String to_c_expr(PendingInputVar v)       = to_c_var_name(v);
+  String to_c_expr(PendingInputVar v, Bool) = to_c_var_name(v);
 
-  String to_c_expr(MembObjVar v, Bool)  = to_c_var_name(v);
-
-  String to_c_expr(BoolExpr expr) = to_c_expr(expr, false);
 
   String to_c_expr(BoolExpr expr, Bool parentesised):
     true                  = "true",
@@ -1013,15 +1012,15 @@ using String typesymb2name(TypeSymbol)
   String clear_timer_method_name(AutoSymbol auto) = to_c_name(auto) & "_clear_timer";
 
   //## USE AnyVar?
-  String to_c_var_name(ObjVar v)      = to_c_var_name(v, false);
-  String to_c_var_name(MembObjVar v)  = to_c_var_name(v, false);
-  String to_c_var_name(VecVar v)      = "V" & to_str(v.id);
-  String to_c_var_name(SetItVar v)    = "s" & to_str(_obj_(v));
-  String to_c_var_name(SeqItVar v)    = "q" & to_str(_obj_(v));
-  String to_c_var_name(MapItVar v)    = "m" & to_str(_obj_(v));
-  String to_c_var_name(StreamVar v)   = "t" & to_str(_obj_(v));
-  String to_c_var_name(BoolVar v)     = to_c_var_name(v, false);
-  String to_c_var_name(IntVar v)      = to_c_var_name(v, false);
+  String to_c_var_name(ObjVar v)          = to_c_var_name(v, false);
+  String to_c_var_name(PendingInputVar v) = to_c_var_name(v, false);
+  String to_c_var_name(VecVar v)          = "V" & to_str(v.id);
+  String to_c_var_name(SetItVar v)        = "s" & to_str(_obj_(v));
+  String to_c_var_name(SeqItVar v)        = "q" & to_str(_obj_(v));
+  String to_c_var_name(MapItVar v)        = "m" & to_str(_obj_(v));
+  String to_c_var_name(StreamVar v)       = "t" & to_str(_obj_(v));
+  String to_c_var_name(BoolVar v)         = to_c_var_name(v, false);
+  String to_c_var_name(IntVar v)          = to_c_var_name(v, false);
 
 
   String to_c_var_name(ClsVar v):
@@ -1029,19 +1028,20 @@ using String typesymb2name(TypeSymbol)
     cls_var(* n?)  = "c" & to_str(n);
 
 
-  String to_c_var_name(<ObjVar, MembObjVar> v, Bool add_prefix) = to_c_var_name(v, if add_prefix then "" else "self->");
+  String to_c_var_name(<ObjVar, PendingInputVar> v, Bool add_prefix) = to_c_var_name(v, if add_prefix then "" else "self->");
 
-  String to_c_var_name(<ObjVar, MembObjVar> v, String prefix):
-    var(Atom a?)            = upper_camel_case(a) & "_V",
-    fn_par(Nat n?)          = "p"   & to_str(n),
-    named_arg(Atom a?)      = "env.n_"  & _str_(a),
-    cls_ext_par(Nat n?)     = "C["  & to_str(n) & "]",
-    memb_var(Atom a?)       = prefix & upper_camel_case(a),
-    memb_copy_var(Atom a?)  = upper_camel_case(a) & "_O",
-    pending_state_var(a?)   = prefix & upper_camel_case(a) & "_PV",
-    lvar(Nat n?)            = "l"   & to_str(n),
-    evar()                  = "V" & to_str(v.id) & "[" & to_c_expr(v.idx) & "]",
-    new_input(Atom a?)      = prefix & upper_camel_case(a) & "_new";
+  String to_c_var_name(<ObjVar, PendingInputVar> v, String prefix):
+    var(Atom a?)                  = upper_camel_case(a) & "_V",
+    fn_par(Nat n?)                = "p"   & to_str(n),
+    named_arg(Atom a?)            = "env.n_"  & _str_(a),
+    cls_ext_par(Nat n?)           = "C["  & to_str(n) & "]",
+    memb_var(Atom a?)             = prefix & upper_camel_case(a),
+    watched_signal_value_var(a?)  = prefix & upper_camel_case(a) & "_WS",
+    memb_copy_var(Atom a?)        = upper_camel_case(a) & "_O",
+    pending_state_var(a?)         = prefix & upper_camel_case(a) & "_PV",
+    lvar(Nat n?)                  = "l"   & to_str(n),
+    evar()                        = "V" & to_str(v.id) & "[" & to_c_expr(v.idx) & "]",
+    pending_input_var(Atom a?)    = prefix & upper_camel_case(a) & "_new";
 
 
   String to_c_var_name(AnyAutoVar v, Bool add_prefix):
@@ -1060,12 +1060,10 @@ using String typesymb2name(TypeSymbol)
       invalidate_cond_expr_cache                    = "inval_cache",
       cond_value_var(n?)                            = prefix & "cond_" & to_str(n),
       cond_expr_up_to_date_var(Nat n?)              = prefix & "cond_" & to_str(n) & "_expr_up_to_date",
-      cond_expr_up_to_date_var(Atom a?)             = prefix & "cond_" & upper_camel_case(a) & "_expr_up_to_date",
       cond_expr_value_var(Nat n?)                   = prefix & "cond_" & to_str(n) & "_expr",
-      cond_expr_value_var(Atom a?)                  = prefix & "cond_" & upper_camel_case(a) & "_expr",
       cond_expr_is_def_var(Nat n?)                  = prefix & "cond_" & to_str(n) & "_expr_is_def",
-      cond_expr_is_def_var(Atom a?)                 = prefix & "cond_" & upper_camel_case(a) & "_expr_is_def",
       cond_is_def_var(n?)                           = prefix & "cond_" & to_str(n) & "_is_def",
+      watched_signal_up_to_date_var(a?)             = prefix & upper_camel_case(a) & "_WSUTD",
       has_pending_message_var(a?)                   = prefix & upper_camel_case(a) & "_PS",
       marked_for_update_var(std_block_node_id(a?))  = prefix & upper_camel_case(a) & "_marked_for_update",
       marked_for_update_var(cond_node_id(n?))       = prefix & "cond_" & to_str(n) & "_marked_for_update",
@@ -1106,11 +1104,11 @@ using String typesymb2name(TypeSymbol)
     to_c_name(auto_name) & "_" & upper_camel_case(table_id) & "_time_slots_table";
 
 
-  String var_c_type(ObjVar)         = "Obj";
-  String var_c_type(MembObjVar)     = "Obj";
-  String var_c_type(IntVar)         = "long long";
-  String var_c_type(MembIntVectVar) = "long long";
-  String var_c_type(BoolVar)        = "bool";
+  String var_c_type(ObjVar)           = "Obj";
+  String var_c_type(PendingInputVar)  = "Obj";
+  String var_c_type(IntVar)           = "long long";
+  String var_c_type(MembIntVectVar)   = "long long";
+  String var_c_type(BoolVar)          = "bool";
 
   ///////////////////////////////////////////////////////////////////////////////
   ///////////////////////////////////////////////////////////////////////////////

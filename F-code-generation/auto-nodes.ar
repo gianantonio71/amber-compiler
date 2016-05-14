@@ -42,6 +42,7 @@ type AutoTimeVaryingNode  = time_varying_node(
                               id:               StdBlockNodeId,
                               cond:             Expr,
                               time_expr:        TimeExpr,
+                              rule_type:        <unchanged, boolean>,
                               downstream_nodes: BlockNodeId*,
                               level:            Nat
                             );
@@ -83,8 +84,8 @@ AutoNode rep_cond_node(CondNodeId id, Expr c, Maybe[(id: CondNodeId, trigger: Bo
                         AutoNodeAction* tas, AutoNodeAction* eas, CondNodeId* tcs, CondNodeId* ecs, Nat l) =
   rep_cond_node(id: id, cond: c, parent: p, actions: (tas, eas), subconds: (tcs, ecs), level: l);
 
-AutoNode time_varying_node(StdBlockNodeId id, Expr c, TimeExpr te, BlockNodeId* ns, Nat l) =
-  time_varying_node(id: id, cond: c, time_expr: te, downstream_nodes: ns, level: l);
+AutoNode time_varying_node(StdBlockNodeId id, Expr c, TimeExpr te, <unchanged, boolean> t, BlockNodeId* ns, Nat l) =
+  time_varying_node(id: id, cond: c, time_expr: te, rule_type: t, downstream_nodes: ns, level: l);
 
 AutoNode nested_auto_input_node(NestedAutoInputNodeId id, Expr v, MembVar* dvs, (MembAutoVar, Atom)* dos, Nat l) =
   nested_auto_input_node(id: id, value: v, disc_vars: dvs, disc_nested_auto_outputs: dos, level: l);
@@ -130,7 +131,7 @@ BlockNodeId downstream_node_id(AutoNodeAction action):
 
   expr_cond_vars = match (node)
     cond_node()         = if node.parent != nil then expr_cond_vars(get_inner_id(node.id)) else {},
-    time_varying_node() = expr_cond_vars(get_inner_id(node.id)),
+    time_varying_node() = {(watched_signal_up_to_date_var(get_inner_id(node.id)),  false)},
     _                   = {};
 
   pend_msg_vars = match (node)
@@ -157,7 +158,7 @@ BlockNodeId downstream_node_id(AutoNodeAction action):
     (cond_is_def_var(bare_id),  true)
   };
 
-  (MembBoolVar, Bool)* expr_cond_vars(<Nat, Atom> bare_id) = {
+  (MembBoolVar, Bool)* expr_cond_vars(Nat bare_id) = {
     (cond_expr_value_var(bare_id),      false),
     (cond_expr_is_def_var(bare_id),     true),
     (cond_expr_up_to_date_var(bare_id), false)
@@ -187,11 +188,11 @@ BlockNodeId downstream_node_id(AutoNodeAction action):
 }
 
 
-(<MembVar, PendingStateVar, MembObjVar>, <blank, undefined>)* memb_obj_vars(AutoNode node):
+(<MembVar, MembObjVar, PendingInputVar, PendingStateVar>, <blank, undefined>)* memb_obj_vars(AutoNode node):
   input()                   = { bare_id = get_inner_id(node.id);
                                 return {
-                                  (memb_var(bare_id),   :blank),
-                                  (new_input(bare_id),  if node.discrete then :blank else :undefined)
+                                  (memb_var(bare_id),           :blank),
+                                  (pending_input_var(bare_id),  if node.discrete then :blank else :undefined)
                                 };
                               },
   derived()                 = {(memb_var(get_inner_id(node.id)),            :blank)},
@@ -202,6 +203,11 @@ BlockNodeId downstream_node_id(AutoNodeAction action):
   derived_disc()            = {(memb_var(get_inner_id(node.id)),            :blank)},
   cond_node()               = {},
   rep_cond_node()           = {},
-  time_varying_node()       = {(memb_var(get_inner_id(node.id)),            :blank)},
+  time_varying_node()       = { bare_id = get_inner_id(node.id);
+                                return {
+                                  (memb_var(bare_id),                 :blank),
+                                  (watched_signal_value_var(bare_id), :blank)
+                                };
+                              },
   nested_auto_input_node()  = {},
   nested_auto_node()        = {(pending_state_var(get_inner_id(node.id)),   :blank) if node.message != nil};
