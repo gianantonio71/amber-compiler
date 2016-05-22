@@ -1,4 +1,4 @@
-using (TypeName => Type) typedefs
+using [TypeName -> Type] typedefs
 {
   //## MAYBE THIS (AND ALL THE FUNCTIONS IT DEPENDS ON) SHOULD GO IN THE SAME FILE AS is_subset(Type, Type)
   Bool is_subset(ClsType t1, ClsType t2)
@@ -10,7 +10,7 @@ using (TypeName => Type) typedefs
 
     assert length(t1.in_types) == length(t2.in_types);
 
-    for (i < length(t1.in_types))
+    for i < length(t1.in_types):
       return false if not is_subset(t2.in_types[i], replace_type_vars_with_type_any(t1.in_types[i]));
     ;
     // return is_subset(cls_call_type(t1, t2.in_types), t2.out_type);
@@ -29,11 +29,11 @@ using (TypeName => Type) typedefs
   //   _,        _         = {fail;};
 
 
-  (TypeVar => Type) type_var_instantiations_for_subset([Type] actual_types, [Type] formal_types)
+  [TypeVar -> Type] type_var_instantiations_for_subset(Type* actual_types, Type* formal_types)
   {
-    type_vars = seq_union([retrieve_type_vars(t) : t <- formal_types]);
-    conds = merge_value_sets(set([subset_conds(at, ft) : at, ft <- zip(actual_types, formal_types)]));
-    return (v => union_superset(lookup(conds, v, {})) : v <- type_vars);
+    type_vars = seq_union((retrieve_type_vars(t) : t <- formal_types));
+    conds = merge_value_sets(set((subset_conds(at, ft) : at, ft <- zip(actual_types, formal_types))));
+    return [v -> union_superset(lookup(conds, v, [])) : v <- type_vars];
   }
 
 
@@ -53,54 +53,54 @@ using (TypeName => Type) typedefs
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-using (TypeName => Type) typedefs
+using [TypeName -> Type] typedefs
 {
   // Here I just assume that the pattern can actually match objects of the specified type
   // If it cannot, the function is free to fail or return garbage.
   //## WOULD BE GOOD TO ADD AN ASSERTION THAT CHECKS THAT THE PATTERN CAN ACTUALLY MATCH THE TYPE
-  (Var => Type) generate_env(Pattern ptrn, Type type):
-    ptrn_symbol         = (),
-    ptrn_float          = (),
-    ptrn_empty_set      = (),
-    ptrn_ne_set         = (),
-    ptrn_empty_seq      = (),
-    ptrn_ne_seq         = (),
-    ptrn_empty_map      = (),
-    ptrn_ne_map         = (),
-    ptrn_any            = (),
-    ptrn_symbol()       = (),
-    ptrn_integer()      = (),
+  [Var -> Type] generate_env(Pattern ptrn, Type type):
+    ptrn_symbol         = [:],
+    ptrn_float          = [:],
+    ptrn_empty_set      = [:],
+    ptrn_ne_set         = [:],
+    ptrn_empty_seq      = [:],
+    ptrn_ne_seq         = [:],
+    ptrn_empty_map      = [:],
+    ptrn_ne_map         = [:],
+    ptrn_any            = [:],
+    ptrn_symbol()       = [:],
+    ptrn_integer()      = [:],
     ptrn_tag_obj()      = ptrn_tag_obj_gen_env(ptrn.tag, ptrn.obj, type),
     ptrn_var()          = ptrn_var_gen_env(ptrn.var, ptrn.ptrn, type),
     ptrn_union(ps?)     = ptrn_union_gen_env(ps, type);
 
 
-  (Var => Type) ptrn_tag_obj_gen_env(TagPtrn tag_ptrn, Pattern obj_ptrn, Type type)
+  [Var -> Type] ptrn_tag_obj_gen_env(TagPtrn tag_ptrn, Pattern obj_ptrn, Type type)
   {
     tag_types = match (type)
-      type_var()  = {type_tagged_obj},
+      type_var()  = [type_tagged_obj],
       _           = tagged_obj_types(type);
 
-    envs = {
+    envs = [
       generate_env(tag_ptrn, t.tag_type) & generate_env(obj_ptrn, t.obj_type)
       : t <- tag_types, may_match(tag_ptrn, t.tag_type), may_match(obj_ptrn, t.obj_type)
-    };
+    ];
 
-    return (v => union_superset(ts) : ts @ v <- merge_values(envs));
+    return [v -> union_superset(ts) : ts @ v <- merge_values(envs)];
   }
 
 
-  (Var => Type) ptrn_var_gen_env(Var var, Pattern ptrn, Type type)
+  [Var -> Type] ptrn_var_gen_env(Var var, Pattern ptrn, Type type)
   {
     assert type == empty_type or may_match(ptrn, type);
-    return (var => type_pattern_intersection_superset(type, ptrn)) & generate_env(ptrn, type);
+    return [var -> type_pattern_intersection_superset(type, ptrn)] & generate_env(ptrn, type);
   }
 
 
-  (Var => Type) ptrn_union_gen_env(Pattern+ ptrns, Type type)
+  [Var -> Type] ptrn_union_gen_env([+Pattern] ptrns, Type type)
   {
-    matching_ptrns = {p : p <- ptrns, may_match(p, type)};
-    return (v => union_superset(ts) : ts @ v <- merge_values({generate_env(p, type) : p <- matching_ptrns}));
+    matching_ptrns = [p : p <- ptrns, may_match(p, type)];
+    return [v -> union_superset(ts) : ts @ v <- merge_values([generate_env(p, type) : p <- matching_ptrns])];
   }
 }
 
@@ -109,12 +109,12 @@ using (TypeName => Type) typedefs
 
 //## IS THIS THE RIGHT PLACE FOR THESE FUNCTIONS? MAYBE I SHOULD ALSO RENAME SOME OF THEM...
 
-using (TypeName => Type) typedefs
+using [TypeName -> Type] typedefs
 {
-  Bool has_reached_fixpoint((TypeVar => Type) curr_insts, (TypeVar => Type) new_insts)
+  Bool has_reached_fixpoint([TypeVar -> Type] curr_insts, [TypeVar -> Type] new_insts)
   {
     return false if not subset(keys(new_insts), keys(curr_insts));
-    for (v : rand_sort(keys(new_insts)))
+    for v <- rand_sort(keys(new_insts)):
       return false if not is_subset(new_insts[v], curr_insts[v]);
     ;
     return true;
@@ -122,30 +122,30 @@ using (TypeName => Type) typedefs
 }
 
 
-(TypeVar => Type) merge_insts((TypeVar => Type) curr_insts, (TypeVar => Type) new_insts)
+[TypeVar -> Type] merge_insts([TypeVar -> Type] curr_insts, [TypeVar -> Type] new_insts)
 {
   curr_vars = keys(curr_insts);
   new_vars = keys(new_insts);
-  modified = (v => union_superset(curr_insts[v], new_insts[v]) : v <- intersection(curr_vars, new_vars));
-  unchanged = (v => curr_insts[v] : v <- curr_vars - new_vars);
-  new = (v => new_insts[v] : v <- new_vars - curr_vars);
+  modified = [v -> union_superset(curr_insts[v], new_insts[v]) : v <- intersection(curr_vars, new_vars)];
+  unchanged = [v -> curr_insts[v] : v <- curr_vars - new_vars];
+  new = [v -> new_insts[v] : v <- new_vars - curr_vars];
   return modified & unchanged & new;
 }
 
 
-using (Var => Type) environment
+using [Var -> Type] environment
 {
-  (Var => Type) get_updated_env([<var(Atom), nil>^] params, Expr expr, [Type^] param_types)
+  [Var -> Type] get_updated_env(<var(Atom), nil>+ params, Expr expr, Type+ param_types)
   {
     arity = length(params);
-    env_delta = merge([(fn_par(i) => pt, pn => pt if pn != nil) : pn, pt @ i <- zip(params, param_types)]);
+    env_delta = merge(([fn_par(i) -> pt, pn -> pt if pn != nil] : pn, pt @ i <- zip(params, param_types)));
     return update(environment, env_delta);
   }
 }
 
 
 ClsExpr rewrite_cls_expr(ClsExpr expr):
-  fn_ptr()  = cls_expr(expr.arity * [nil], fn_call(expr.name, [fn_par(i) : i < expr.arity])),
+  fn_ptr()  = cls_expr(expr.arity * (nil), fn_call(expr.name, (fn_par(i) : i < expr.arity))),
   _         = expr;
 
 ////////////////////////////////////////////////////////////////////////////////////////////
@@ -154,9 +154,9 @@ ClsExpr rewrite_cls_expr(ClsExpr expr):
 //## WHAT THE HECK IS THIS?
 Type mandatory_record_field_type(RecordType type, SymbObj label)
 {
-  mfs = {f : f @ l <- _obj_(type), l == label};
+  mfs = [f : f @ l <- _obj_(type), l == label];
   assert size(mfs) >= 0;
-  return empty_type if mfs == {};
+  return empty_type if mfs == [];
   mf = only_element(mfs);
   return if mf.optional then empty_type else mf.type;
 }

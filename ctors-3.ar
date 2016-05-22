@@ -117,11 +117,11 @@ NatObjOp get_curr_value(MapItVar it)           = :get_curr_value(it);
 NatObjOp rand_elem(ObjExpr s)                  = :rand_elem(s);
 
 BoolExpr neg(BoolExpr e)                                = :neg(e);
-BoolExpr and([BoolExpr^] es)                            = :and(es);
-BoolExpr or([BoolExpr^] es)                             = :or(es);
-BoolExpr and_then([BoolExpr^] es)                       = :and_then(es);
-BoolExpr or_else([BoolExpr^] es)                        = :or_else(es);
-BoolExpr eval_bool_fn(BoolFnName n, [AnyTypeExpr^] ps)  = eval_bool_fn(name: n, params: ps);
+BoolExpr and(BoolExpr+ es)                            = :and(es);
+BoolExpr or(BoolExpr+ es)                             = :or(es);
+BoolExpr and_then(BoolExpr+ es)                       = :and_then(es);
+BoolExpr or_else(BoolExpr+ es)                        = :or_else(es);
+BoolExpr eval_bool_fn(BoolFnName n, AnyTypeExpr+ ps)  = eval_bool_fn(name: n, params: ps);
 
 // Basic instructions
 
@@ -212,28 +212,28 @@ Instr ret_val(<AtomicExpr, AtomicBoolExpr> e) = :ret_val(e);
 
 Instr no_op = :no_op;
 
-Instr branch(BoolExpr c, [Instr] t, [Instr] f) =
-  if t != []
+Instr branch(BoolExpr c, Instr* t, Instr* f) =
+  if t != ()
     then branch(cond: c, when_true: t, when_false: f)
     else branch(cond: neg(c), when_true: nonempty(f), when_false: t);
 
-Instr branch_or_no_op(BoolExpr c, [Instr] t, [Instr] f) =
-  if t == [] and f == []
+Instr branch_or_no_op(BoolExpr c, Instr* t, Instr* f) =
+  if t == () and f == ()
     then no_op
     else branch(c, t, f);
 
 //Instr symbol_switch() = symbol_switch(val: ObjExpr, cases: (vals: SymbObj+, instrs: [Instr])*, else: [Instr^]?);
 
-Instr repeat([Instr^] b) = :repeat(b);
+Instr repeat(Instr+ b) = :repeat(b);
 Instr break_loop         = :break_loop;
 
-Instr execute_block([Instr^] b) = :execute_block(b);
+Instr execute_block(Instr+ b) = :execute_block(b);
 Instr exit_block                = :exit_block;
 
-Instr switch_on_nat(IntExpr e, [[Instr]^] cs)  = switch_on_nat(value: e, cases: cs);
+Instr switch_on_nat(IntExpr e, Instr*+ cs)  = switch_on_nat(value: e, cases: cs);
 
-Instr call_proc(WriteObjVar v, ObjFnName n, [<AtomicExpr, BoundCls>] ps) = call_proc(var: v, name: n, params: ps);
-Instr call_cls(WriteObjVar v, <ClsVar, NamedArg> cv, [AtomicExpr] ps)    = call_cls(var: v, cls_var: cv, params: ps);
+Instr call_proc(WriteObjVar v, ObjFnName n, <AtomicExpr, BoundCls>* ps) = call_proc(var: v, name: n, params: ps);
+Instr call_cls(WriteObjVar v, <ClsVar, NamedArg> cv, AtomicExpr* ps)    = call_cls(var: v, cls_var: cv, params: ps);
 
 Instr queue_update(AutoSymbol s, BlockNodeId id)              = queue_update(type: s, id: id);
 Instr queue_cond_update(AutoSymbol s, BlockNodeId id, Bool b) = queue_cond_update(type: s, id: id, inval_cache: b);
@@ -249,28 +249,28 @@ Instr set_input(AnyAutoVar v, AutoSymbol t, Atom i, Maybe[AtomicExpr] e)  = set_
 Instr prop_input_updates(AnyAutoVar v, AutoSymbol t, IntExpr et)  = prop_input_updates(var: v, type: t, elapsed_time: et);
 Instr prop_input_updates(AutoSymbol t, IntExpr et)                = prop_input_updates(type: t, elapsed_time: et);
 
-Instr call_method(AnyAutoVar v, AutoSymbol t, ExMethodSymb c, [AtomicExpr] as)  = call_method(auto_var: v, type: t, name: c, args: as);
-Instr call_method(AutoSymbol t, ExMethodSymb c, [AtomicExpr] as)                = call_method(type: t, name: c, args: as);
+Instr call_method(AnyAutoVar v, AutoSymbol t, ExMethodSymb c, AtomicExpr* as)  = call_method(auto_var: v, type: t, name: c, args: as);
+Instr call_method(AutoSymbol t, ExMethodSymb c, AtomicExpr* as)                = call_method(type: t, name: c, args: as);
 
-Instr push_call_info(ObjFnName fn_name, [Maybe[FnPar]] params) = push_call_info(fn_name: fn_name, params: params);
+Instr push_call_info(ObjFnName fn_name, Maybe[FnPar]* params) = push_call_info(fn_name: fn_name, params: params);
 Instr pop_call_info = :pop_call_info;
 
-Instr runtime_check(AtomicExpr c, String f, NzNat l, Maybe[String] t, <StdVar, NamedArg>* vs) =
+Instr runtime_check(AtomicExpr c, String f, NzNat l, Maybe[String] t, [<StdVar, NamedArg>] vs) =
   runtime_check(cond: c, file: f, line: l, text: t, vars: vs);
 
-Instr cls_scope(NamedArg v, BoundCls c, [Instr^] b) = cls_scope(var: v, bound_cls: c, body: b);
+Instr cls_scope(NamedArg v, BoundCls c, Instr+ b) = cls_scope(var: v, bound_cls: c, body: b);
 
 //////////////////// //////////////////// ////////////////////
 
-ClsDef   cls_def(NzNat a, [Instr^] b)   = cls_def(arity: a, body: b);
+ClsDef   cls_def(NzNat a, Instr+ b)   = cls_def(arity: a, body: b);
 
-BoundCls bound_cls(ClsDef c, [Var] vs)  = bound_cls(cls: c, env: vs);
+BoundCls bound_cls(ClsDef c, Var* vs)  = bound_cls(cls: c, env: vs);
 
 // ObjProcPar obj = :obj; //## DEFINING THIS WILL BREAK THE GENERATED CODE
 ObjProcPar cls(ClsVar n, NzNat a) = cls(name: n, arity: a);
 ObjProcPar cls(NzNat a) = cls(arity: a);
 
-ObjProcDef obj_proc_def(ObjFnName name, [ObjProcPar] params, (NamedArg => Nat) nps, [Instr^] body, Bool cached) =
+ObjProcDef obj_proc_def(ObjFnName name, ObjProcPar* params, [NamedArg -> Nat] nps, Instr+ body, Bool cached) =
   obj_proc_def(
     name:         name,
     params:       params,
@@ -279,21 +279,21 @@ ObjProcDef obj_proc_def(ObjFnName name, [ObjProcPar] params, (NamedArg => Nat) n
     cached:       cached
   );
 
-BoolProcDef bool_proc_def(BoolFnName name, NzNat arity, [Instr^] body) =
+BoolProcDef bool_proc_def(BoolFnName name, NzNat arity, Instr+ body) =
   bool_proc_def(
     name:  name,
     arity: arity,
     body:  body
   );
 
-CompiledPrg compiled_prg(BoolProcDef* bps, ObjProcDef* ps, Block* bs) =
+CompiledPrg compiled_prg([BoolProcDef] bps, [ObjProcDef] ps, [Block] bs) =
   compiled_prg(
     bool_procs: bps,
     procs:      ps,
     blocks:     bs
   );
 
-ConstBlockData time_slots_len(Atom id, [Nat^] ls) = time_slots_len(expr_id: id, lengths: ls);
+ConstBlockData time_slots_len(Atom id, Nat+ ls) = time_slots_len(expr_id: id, lengths: ls);
 
 StdBlockNodeId          std_block_node_id(Atom id)             = :std_block_node_id(id);
 CondNodeId              cond_node_id(Nat id)                   = :cond_node_id(id);
@@ -304,15 +304,15 @@ ExMethodSymb ex_method_symb(<ReadOnlyMethodSymb, UpdateMethodSymb> s, Nat a) = e
 
 //////////////////// Derived expressions  ////////////////////
 
-BoolExpr and(BoolExpr e1, BoolExpr e2)      = and([e1, e2]);
-BoolExpr or(BoolExpr e1, BoolExpr e2)       = or([e1, e2]);
-BoolExpr and_then(BoolExpr e1, BoolExpr e2) = and_then([e1, e2]);
-BoolExpr or_else(BoolExpr e1, BoolExpr e2)  = or_else([e1, e2]);
+BoolExpr and(BoolExpr e1, BoolExpr e2)      = and((e1, e2));
+BoolExpr or(BoolExpr e1, BoolExpr e2)       = or((e1, e2));
+BoolExpr and_then(BoolExpr e1, BoolExpr e2) = and_then((e1, e2));
+BoolExpr or_else(BoolExpr e1, BoolExpr e2)  = or_else((e1, e2));
 
-BoolExpr and(BoolExpr e1, BoolExpr e2, BoolExpr e3)      = and([e1, e2, e3]);
-BoolExpr or(BoolExpr e1, BoolExpr e2, BoolExpr e3)       = or([e1, e2, e3]);
-BoolExpr and_then(BoolExpr e1, BoolExpr e2, BoolExpr e3) = and_then([e1, e2, e3]);
-BoolExpr or_else(BoolExpr e1, BoolExpr e2, BoolExpr e3)  = or_else([e1, e2, e3]);
+BoolExpr and(BoolExpr e1, BoolExpr e2, BoolExpr e3)      = and((e1, e2, e3));
+BoolExpr or(BoolExpr e1, BoolExpr e2, BoolExpr e3)       = or((e1, e2, e3));
+BoolExpr and_then(BoolExpr e1, BoolExpr e2, BoolExpr e3) = and_then((e1, e2, e3));
+BoolExpr or_else(BoolExpr e1, BoolExpr e2, BoolExpr e3)  = or_else((e1, e2, e3));
 
 BoolExpr is_empty_set(ObjExpr e) = is_eq(e, empty_set);
 BoolExpr is_empty_seq(ObjExpr e) = is_eq(e, empty_seq);
@@ -335,20 +335,20 @@ SymbObj obj_nil   = :object(nil);
 
 //////////////////// Derived instructions ////////////////////
 
-Instr repeat_while(BoolExpr cond, [Instr^] body) = repeat(nonempty([do_if_not(cond, break_loop)] & body));
+Instr repeat_while(BoolExpr cond, Instr+ body) = repeat(nonempty((do_if_not(cond, break_loop)) & body));
 
 Instr increment(IntVar v, IntExpr a)  = set_ivar(v, add(v, a));
 Instr increment(IntVar v)             = increment(v, 1);
 
-Instr do_if(BoolExpr cond, [Instr] instrs)      = branch(cond, instrs, []);
-Instr do_if_not(BoolExpr cond, [Instr] instrs)  = branch(cond, [], instrs);
+Instr do_if(BoolExpr cond, Instr* instrs)      = branch(cond, instrs, ());
+Instr do_if_not(BoolExpr cond, Instr* instrs)  = branch(cond, (), instrs);
 
-Instr do_if(BoolExpr cond, Instr instr)      = do_if(cond, [instr]);
-Instr do_if_not(BoolExpr cond, Instr instr)  = do_if_not(cond, [instr]);
+Instr do_if(BoolExpr cond, Instr instr)      = do_if(cond, (instr));
+Instr do_if_not(BoolExpr cond, Instr instr)  = do_if_not(cond, (instr));
 
-[Instr] opt_do_if(BoolExpr cond, [Instr] instrs) = if cond == true  then instrs,
-                                                      cond == false then []
-                                                                    else [do_if(cond, instrs)];
+Instr* opt_do_if(BoolExpr cond, Instr* instrs) = if cond == true  then instrs,
+                                                    cond == false then ()
+                                                                  else (do_if(cond, instrs));
 
 // Instr do_if_in(AtomicExpr val, SymbObj+ values, [Instr] instrs) =
 //   symbol_switch(
@@ -391,6 +391,6 @@ Instr get_curr_value(WriteObjVar v, MapItVar it)           = set_var(v, get_curr
 
 Instr maybe_op(Instr instr, Bool cond) = if cond then instr else no_op;
 
-Instr block_success_if(BoolExpr c, BoolVar res_var)     = do_if(c, [set_bvar(res_var, true), exit_block]);
-Instr block_failure_if(BoolExpr c, BoolVar res_var)     = do_if(c, [set_bvar(res_var, false), exit_block]);
+Instr block_success_if(BoolExpr c, BoolVar res_var)     = do_if(c, (set_bvar(res_var, true), exit_block));
+Instr block_failure_if(BoolExpr c, BoolVar res_var)     = do_if(c, (set_bvar(res_var, false), exit_block));
 Instr block_failure_if_not(BoolExpr c, BoolVar res_var) = block_failure_if(neg(c), res_var);

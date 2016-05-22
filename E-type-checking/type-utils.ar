@@ -1,6 +1,6 @@
-Type union_superset(Type t1, Type t2) = union_superset({t1, t2});
+Type union_superset(Type t1, Type t2) = union_superset([t1, t2]);
 
-Type union_superset(Type* types) = union_type(types);
+Type union_superset([Type] types) = union_type(types);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -39,25 +39,25 @@ ClsType replace_type_vars_with_type_any(ClsType type) = replace_type_vars_comput
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-using (TypeName => Type) typedefs
+using [TypeName -> Type] typedefs
 {
-  TypeVar* retrieve_type_vars(Type type):
-    TypeVar   = {type},
+  [TypeVar] retrieve_type_vars(Type type):
+    TypeVar   = [type],
     _         = retrieve_from_nested_types(type, retrieve_type_vars($, typedefs=typedefs));
 
 
-  Type* split_type(Type type):
-    empty_type      = {},
-    LeafType        = {type}, //## BAD: EXACT SAME EXPRESSION REPEATED 8 TIMES
-    type_var()      = {type},
+  [Type] split_type(Type type):
+    empty_type      = [],
+    LeafType        = [type], //## BAD: EXACT SAME EXPRESSION REPEATED 8 TIMES
+    type_var()      = [type],
     type_ref(ts?)   = split_type(expand_type_ref(ts, typedefs)),
-    ne_seq_type()   = {type},
-    ne_set_type()   = {type},
-    ne_map_type()   = {type},
-    record_type()   = {type},
-    tuple_type()    = {type},
-    tag_obj_type()  = {type},
-    union_type(ts?) = union({split_type(t) : t <- ts}); //## SHOULD I MERGE TYPES HERE WHEN POSSIBLE?
+    ne_seq_type()   = [type],
+    ne_set_type()   = [type],
+    ne_map_type()   = [type],
+    record_type()   = [type],
+    tuple_type()    = [type],
+    tag_obj_type()  = [type],
+    union_type(ts?) = union([split_type(t) : t <- ts]); //## SHOULD I MERGE TYPES HERE WHEN POSSIBLE?
 
 
   Bool may_match(Pattern ptrn, Type type) = type_pattern_intersection_superset(type, ptrn) != empty_type;
@@ -71,7 +71,7 @@ using (TypeName => Type) typedefs
 
     _,                  ptrn_any          = type,
     _,                  ptrn_var()        = type_pattern_intersection_superset(type, ptrn.ptrn),
-    _,                  ptrn_union(ps?)   = union_type({type_pattern_intersection_superset(type, p) : p <- ps}),
+    _,                  ptrn_union(ps?)   = union_type([type_pattern_intersection_superset(type, p) : p <- ps]),
 
     type_var(),         _                 = type_pattern_intersection_superset(type_any, ptrn),
 
@@ -106,7 +106,7 @@ using (TypeName => Type) typedefs
 
     tag_obj_type(),     ptrn_tag_obj()    = { tag_type_int = type_pattern_intersection_superset(type.tag_type, ptrn.tag);
                                               obj_type_int = type_pattern_intersection_superset(type.obj_type, ptrn.obj);
-                                              if (tag_type_int == empty_type or obj_type_int == empty_type)
+                                              if tag_type_int == empty_type or obj_type_int == empty_type:
                                                 return empty_type;
                                               else
                                                 fail if not tag_type_int :: TagType; //## BAD BAD BAD. CHEATING. NEEDS SUBSIGNATURES HERE...
@@ -116,8 +116,8 @@ using (TypeName => Type) typedefs
 
     tag_obj_type(),     _                 = empty_type,
 
-    union_type(ts?),    _                 = { int_types = {it : t <- ts, it = type_pattern_intersection_superset(t, ptrn), it != empty_type};
-                                              return empty_type if int_types == {};
+    union_type(ts?),    _                 = { int_types = [it : t <- ts, it = type_pattern_intersection_superset(t, ptrn), it != empty_type];
+                                              return empty_type if int_types == [];
                                               // return only_element(int_types) if size(int_types) == 1;
                                               // The types here are all union-compatible, since they are all
                                               // subsets of types that were union-compatible to begin with
@@ -156,24 +156,24 @@ using (TypeName => Type) typedefs
 
     type_ref(ts?),    _           = type_contains_obj(expand_type_ref(ts, typedefs), obj),
 
-    empty_seq_type,   _           = obj == [],
-    empty_set_type,   _           = obj == {},
-    empty_map_type,   _           = obj == (),
+    empty_seq_type,   _           = obj == (),
+    empty_set_type,   _           = obj == [],
+    empty_map_type,   _           = obj == [:],
 
-    ne_seq_type(),    [...]       = obj != [] and all([type_contains_obj(type.elem_type, e) : e <- obj]),
+    ne_seq_type(),    (..)       = obj != () and all((type_contains_obj(type.elem_type, e) : e <- obj)),
     ne_seq_type(),    _           = false,
 
-    ne_set_type(),    {...}       = obj != {} and not (? e <- obj : not type_contains_obj(type.elem_type, e)),
+    ne_set_type(),    [..]       = obj != [] and not (? e <- obj : not type_contains_obj(type.elem_type, e)),
     ne_set_type(),    _           = false,
 
-    ne_map_type(),    (...)       = obj != () and not (? v @ k <- obj : not type_contains_obj(type.key_type, k) or not type_contains_obj(type.value_type, v)),
+    ne_map_type(),    [->]       = obj != [:] and not (? v @ k <- obj : not type_contains_obj(type.key_type, k) or not type_contains_obj(type.value_type, v)),
     ne_map_type(),    _           = false,
 
-    record_type(fs?), (...)       = not (? v @ k <- obj : not has_key(fs, k) or not type_contains_obj(fs[k].type, v)) and
-                                    subset({l : f @ l <- fs, not f.optional}, keys(obj)),
+    record_type(fs?), [->]       = not (? v @ k <- obj : not has_key(fs, k) or not type_contains_obj(fs[k].type, v)) and
+                                    subset([l : f @ l <- fs, not f.optional], keys(obj)),
     record_type(fs?), _           = false,
 
-    tuple_type(ts?),  [...]       = length(ts) == length(obj) and all([type_contains_obj(t, e) : t, e <- zip(ts, obj)]),
+    tuple_type(ts?),  (..)       = length(ts) == length(obj) and all((type_contains_obj(t, e) : t, e <- zip(ts, obj))),
     tuple_type(ts?),  _           = false,
 
     tag_obj_type(),   tag @ iobj  = type_contains_obj(type.tag_type, tag) and type_contains_obj(type.obj_type, iobj),
@@ -202,12 +202,12 @@ using (TypeName => Type) typedefs
                                 return if res_type != exp_type then res_type else type;
                               },
 
-    empty_seq_type          = if obj == [] then empty_type else type,
-    empty_set_type          = if obj == {} then empty_type else type,
-    empty_map_type          = if obj == () then empty_type else type,
+    empty_seq_type          = if obj == () then empty_type else type,
+    empty_set_type          = if obj == [] then empty_type else type,
+    empty_map_type          = if obj == [:] then empty_type else type,
 
-    union_type(ts?)         = { nts = {nt : t <- ts, nt = subtract_obj_from_type(t, obj), nt != empty_type};
-                                return if nts == {} then empty_type else union_type(nts);
+    union_type(ts?)         = { nts = [nt : t <- ts, nt = subtract_obj_from_type(t, obj), nt != empty_type];
+                                return if nts == [] then empty_type else union_type(nts);
                               },
 
     _                       = type;
@@ -218,7 +218,7 @@ using (TypeName => Type) typedefs
 
 FnType signature(FnDef fn_def) =
   fn_type(
-    params:       [if p.type? then p.type else {fail;} : p <- fn_def.params], //## BAD BAD BAD
+    params:       (if p.type? then p.type else {fail;} : p <- fn_def.params), //## BAD BAD BAD
     named_args:   fn_def.named_args,
     ret_type:     if fn_def.res_type? then fn_def.res_type else {fail;} //## BAD BAD BAD
   );
@@ -239,27 +239,27 @@ BuiltInType builtin_signature(BuiltIn):
   gt              = binary_int_pred,
   ge              = binary_int_pred,
 
-  str             = builtin_type([atom_type],                          type_string),
-  symb            = builtin_type([type_string],                        atom_type),
-  at              = builtin_type([type_seq_t, integer],                type_var(:t)),
-  len             = builtin_type([type_seq],                           high_ints(0)),
-  slice           = builtin_type([type_seq_t, integer, integer],       type_seq_t),
-  cat             = builtin_type([type_seq_t, type_seq_t],             type_seq_t),
-  mcat            = builtin_type([type_seq(type_seq_t)],               type_seq_t),
-  set             = builtin_type([type_seq_t],                         type_set_t),
-  rev             = builtin_type([type_seq_t],                         type_seq_t),
-  mset            = builtin_type([type_seq_t],                         type_mset(type_var(:t))),
-  isort           = builtin_type([type_set_t],                         type_seq_t),
-  list_to_seq     = builtin_type([type_bare_list(type_var(:t))],       type_seq_t),
+  str             = builtin_type((atom_type),                          type_string),
+  symb            = builtin_type((type_string),                        atom_type),
+  at              = builtin_type((type_seq_t, integer),                type_var(:t)),
+  len             = builtin_type((type_seq),                           high_ints(0)),
+  slice           = builtin_type((type_seq_t, integer, integer),       type_seq_t),
+  cat             = builtin_type((type_seq_t, type_seq_t),             type_seq_t),
+  mcat            = builtin_type((type_seq(type_seq_t)),               type_seq_t),
+  set             = builtin_type((type_seq_t),                         type_set_t),
+  rev             = builtin_type((type_seq_t),                         type_seq_t),
+  mset            = builtin_type((type_seq_t),                         type_mset(type_var(:t))),
+  isort           = builtin_type((type_set_t),                         type_seq_t),
+  list_to_seq     = builtin_type((type_bare_list(type_var(:t))),       type_seq_t),
 
-  tag             = builtin_type([type_tagged_obj],                    atom_type), // The return type is too loose, and it is ignore in the code
-  obj             = builtin_type([type_tagged_obj],                    type_any),  // Ditto
+  tag             = builtin_type((type_tagged_obj),                    atom_type), // The return type is too loose, and it is ignore in the code
+  obj             = builtin_type((type_tagged_obj),                    type_any),  // Ditto
 
-  in              = builtin_type([type_any, type_set],                 type_bool),
-  has_key         = builtin_type([type_map, type_any],                 type_bool),
-  lookup          = builtin_type([type_map_t1_t2, type_var(:t1)],      type_var(:t2)),
-  union           = builtin_type([type_set(type_set_t)],               type_set_t),
-  merge           = builtin_type([type_set(type_map_t1_t2)],           type_map_t1_t2),
+  in              = builtin_type((type_any, type_set),                 type_bool),
+  has_key         = builtin_type((type_map, type_any),                 type_bool),
+  lookup          = builtin_type((type_map_t1_t2, type_var(:t1)),      type_var(:t2)),
+  union           = builtin_type((type_set(type_set_t)),               type_set_t),
+  merge           = builtin_type((type_set(type_map_t1_t2)),           type_map_t1_t2),
 
   fneg            = unary_float_op,
   fadd            = binary_float_op,
@@ -269,37 +269,37 @@ BuiltInType builtin_signature(BuiltIn):
   fsqrt           = unary_float_op,
   // floor           = ,
   // ceiling         = ,
-  float           = builtin_type([integer],                            float_type),
-  mantissa        = builtin_type([float_type],                         integer),
-  dec_exp         = builtin_type([float_type],                         integer),
+  float           = builtin_type((integer),                            float_type),
+  mantissa        = builtin_type((float_type),                         integer),
+  dec_exp         = builtin_type((float_type),                         integer),
 
-  rand_nat        = builtin_type([type_nat],                           type_nat),
-  rand_elem       = builtin_type([type_set_t],                         type_var(:t)), //## THE TYPE OF THE ARGUMENT SHOULD BE NONEMPTY SET
-  counter         = builtin_type([type_any],                           type_nat),
+  rand_nat        = builtin_type((type_nat),                           type_nat),
+  rand_elem       = builtin_type((type_set_t),                         type_var(:t)), //## THE TYPE OF THE ARGUMENT SHOULD BE NONEMPTY SET
+  counter         = builtin_type((type_any),                           type_nat),
 
-  ticks           = builtin_type([type_any],                           integer),
+  ticks           = builtin_type((type_any),                           integer),
 
-  attach          = builtin_type([type_var(:t), type_any],             type_var(:t)),
-  fetch           = builtin_type([type_any],                           type_set);
+  attach          = builtin_type((type_var(:t), type_any),             type_var(:t)),
+  fetch           = builtin_type((type_any),                           type_set);
 
 
-BuiltInType unary_int_op    = builtin_type([integer], integer);
-BuiltInType binary_int_op   = builtin_type([integer, integer], integer);
-BuiltInType binary_int_pred = builtin_type([integer, integer], type_bool);
+BuiltInType unary_int_op    = builtin_type((integer), integer);
+BuiltInType binary_int_op   = builtin_type((integer, integer), integer);
+BuiltInType binary_int_pred = builtin_type((integer, integer), type_bool);
 
-BuiltInType unary_float_op  = builtin_type([float_type], float_type);
-BuiltInType binary_float_op = builtin_type([float_type, float_type], float_type);
+BuiltInType unary_float_op  = builtin_type((float_type), float_type);
+BuiltInType binary_float_op = builtin_type((float_type, float_type), float_type);
 
 Type type_seq_t             = type_seq(type_var(:t));
 Type type_set_t             = type_set(type_var(:t));
 Type type_map_t1_t2         = type_map(type_var(:t1), type_var(:t2));
 
-Type type_bare_list(Type elem_type) = type_ref(par_type_symbol(builtin_type_symbol(:bare_list), [elem_type]));
+Type type_bare_list(Type elem_type) = type_ref(par_type_symbol(builtin_type_symbol(:bare_list), (elem_type)));
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-Type type_bool = union_type({symb_type(true), symb_type(false)});
+Type type_bool = union_type([symb_type(true), symb_type(false)]);
 
 IntType type_nat = high_ints(0);
 IntType type_nz_nat = high_ints(1);
@@ -313,24 +313,24 @@ TagObjType type_tagged_obj = {res = tag_obj_type(atom_type, type_any); fail if r
 
 Type type_seq(Type elem_type, Bool nonempty) = if nonempty then ne_seq_type(elem_type) else type_seq(elem_type);
 
-Type type_seq(Type elem_type)  = union_type({empty_seq_type, ne_seq_type(elem_type)});
-Type type_set(Type elem_type)  = union_type({empty_set_type, ne_set_type(elem_type)});
-Type type_mset(Type elem_type) = union_type({empty_map_type, ne_map_type(elem_type, high_ints(1))});
+Type type_seq(Type elem_type)  = union_type([empty_seq_type, ne_seq_type(elem_type)]);
+Type type_set(Type elem_type)  = union_type([empty_set_type, ne_set_type(elem_type)]);
+Type type_mset(Type elem_type) = union_type([empty_map_type, ne_map_type(elem_type, high_ints(1))]);
 
-Type type_tuple(<2..*> size)  = tuple_type(nonempty(size * [type_any]));
+Type type_tuple(<2..*> size)  = tuple_type(nonempty(size * (type_any)));
 
-Type type_map(Type key_type, Type value_type)  = union_type({empty_map_type, ne_map_type(key_type, value_type)});
+Type type_map(Type key_type, Type value_type)  = union_type([empty_map_type, ne_map_type(key_type, value_type)]);
 
-Type type_string = tag_obj_type(symb_type(:string), union_type({empty_seq_type, ne_seq_type(type_nat)}));
+Type type_string = tag_obj_type(symb_type(:string), union_type([empty_seq_type, ne_seq_type(type_nat)]));
 
 Type type_any = type_ref(builtin_type_symbol(:any));
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-(TypeName => Type) builtin_typedefs = (
-  type_name(builtin_type_symbol(:any), 0) =>
-    union_type({
+[TypeName -> Type] builtin_typedefs = [
+  type_name(builtin_type_symbol(:any), 0) ->
+    union_type([
       atom_type,
       integer,
       float_type,
@@ -341,10 +341,10 @@ Type type_any = type_ref(builtin_type_symbol(:any));
       ne_set_type(type_ref(builtin_type_symbol(:any))),
       ne_map_type(type_ref(builtin_type_symbol(:any)), type_ref(builtin_type_symbol(:any))),
       tag_obj_type(atom_type, type_ref(builtin_type_symbol(:any)))
-    }),
-  type_name(builtin_type_symbol(:bare_list), 1) =>
-    union_type({
+    ]),
+  type_name(builtin_type_symbol(:bare_list), 1) ->
+    union_type([
       empty_seq_type,
-      tuple_type([type_var(0), type_ref(builtin_type_symbol(:bare_list))])
-    })
-);
+      tuple_type((type_var(0), type_ref(builtin_type_symbol(:bare_list))))
+    ])
+];

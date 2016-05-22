@@ -8,7 +8,7 @@ type LeafObj    = object(<Atom, Int>);
 ///////////////////////////////////////////////////////////////////////////////
 
 type BasicTypeSymbol  = type_symbol(Atom), builtin_type_symbol(Atom);
-type ParTypeSymbol    = par_type_symbol(symbol: BasicTypeSymbol, params: [Type^]); //## TOO LOOSE A TYPE, I THINK. MAYBE builtin_type_symbol() SHOULD BE PART OF TypeSymbol, NOT BasicTypeSymbol
+type ParTypeSymbol    = par_type_symbol(symbol: BasicTypeSymbol, params: Type+); //## TOO LOOSE A TYPE, I THINK. MAYBE builtin_type_symbol() SHOULD BE PART OF TypeSymbol, NOT BasicTypeSymbol
 type TypeSymbol       = BasicTypeSymbol, ParTypeSymbol;
 
 type TypeName         = type_name(symbol: BasicTypeSymbol, arity: Nat);
@@ -33,15 +33,15 @@ type NeSetType          = ne_set_type(elem_type: NeType);
 
 type NeMapType          = ne_map_type(key_type: NeType, value_type: NeType);
 
-type RecordTypeFields   = (SymbObj => (type: NeType, optional: Bool));
+type RecordTypeFields   = [SymbObj -> [type: NeType, optional: Bool]];
 type RecordType         = record_type(RecordTypeFields);
 
-type TupleType          = tuple_type([NeType^]);
+type TupleType          = tuple_type(NeType+);
 
 type TagType            = SymbType, atom_type;
 type TagObjType         = tag_obj_type(tag_type: TagType, obj_type: NeType);
 
-type UnionType          = union_type(NeType+);
+type UnionType          = union_type([+NeType]);
 
 type NeType             = LeafType, TypeRef, TypeVar, NeSeqType, NeSetType, NeMapType,
                           RecordType, TupleType, TagObjType, UnionType;
@@ -50,16 +50,16 @@ type Type               = empty_type, NeType;
 
 ///////////////////////////////////////////////////////////////////////////////
 
-type ClsType  = cls_type(in_types: [Type^], out_type: Type);
+type ClsType  = cls_type(in_types: Type+, out_type: Type);
 type AnyType  = Type, ClsType;
 
 type FnType   = fn_type(
-                  params:       [AnyType],
-                  named_args:   (NamedArg => AnyType),
+                  params:       AnyType*,
+                  named_args:   [NamedArg -> AnyType],
                   ret_type:     Type
                 );
 
-type BuiltInType  = builtin_type(param_types: [Type^], ret_type: Type);
+type BuiltInType  = builtin_type(param_types: Type+, ret_type: Type);
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -121,19 +121,19 @@ type Expr     = LeafObj, FloatLit, Var,
                 SeqCompExpr, RangeCompExpr,
                 IsSetExpr;
 
-type SetExpr        = set_expr(SubExpr*);
-type SeqExpr        = seq_expr([SubExpr]);
-type TupleExpr      = tuple_expr([Expr^]);
-type SeqTailExpr    = seq_tail_expr(seq: Expr, tail: [Expr^]);
-type MapExpr        = map_expr((key: Expr, value: Expr, cond: Expr?)*);
+type SetExpr        = set_expr([SubExpr]);
+type SeqExpr        = seq_expr(SubExpr*);
+type TupleExpr      = tuple_expr(Expr+); //## THIS IS REDUNDANT NOW, IT'S STILL HERE ONLY BECAUSE REMOVING IT WOULD REQUIRE SOME MAINTENANCE OF THE TYPE CHECKING CODE
+type SeqTailExpr    = seq_tail_expr(seq: Expr, tail: Expr+);
+type MapExpr        = map_expr([[key: Expr, value: Expr, cond: Expr?]]);
 type TagObjExpr     = tag_obj_expr(tag: Expr, obj: Expr);
 
 //## CAN LOCAL FUNCTIONS HAVE NAMED PARAMETERS? IT WOULDN'T MAKE MUCH SENSE,
 //## BUT THE DATA STRUCTURE AND THE SYNTAX ALLOW IT. MAKE SURE IT'S CHECHED
 //## IN THE WELL-FORMEDNESS CHECKING LAYER.
-type FnCallExpr     = fn_call(name: FnSymbol, params: [AnyExpr], named_args: (NamedArg => AnyExpr)); //## NO POINT USING NamedArg INSTEAD OF JUST Atom HERE
-type ClsCall        = cls_call(name: <ClsVar, NamedArg>, params: [Expr^]);  //## BAD: THERE SHOULD BE A NAMED VERSION OF ClsVar
-type BuiltinCall    = builtin_call(name: BuiltIn, params: [Expr^]); //## CAN A BUILTIN HAVE NO ARGUMENTS?
+type FnCallExpr     = fn_call(name: FnSymbol, params: AnyExpr*, named_args: [NamedArg -> AnyExpr]); //## NO POINT USING NamedArg INSTEAD OF JUST Atom HERE
+type ClsCall        = cls_call(name: <ClsVar, NamedArg>, params: Expr+);  //## BAD: THERE SHOULD BE A NAMED VERSION OF ClsVar
+type BuiltinCall    = builtin_call(name: BuiltIn, params: Expr+); //## CAN A BUILTIN HAVE NO ARGUMENTS?
 
 type AndExpr        = and_expr(left: Expr, right: Expr); //## NOT SURE HERE
 type OrExpr         = or_expr(left: Expr, right: Expr);  //## NOT SURE HERE
@@ -151,17 +151,17 @@ type GetOutputExpr    = get_output(var: AnyAutoVar, output: Atom);
 type OutputIsSetExpr  = output_is_set(var: AnyAutoVar, output: Atom);
 type OutputIsDefExpr  = output_is_def(var: LocAutoVar, output: Atom);
 
-type MethodCallExpr   = method_call_expr(var: AnyAutoVar?, name: ReadOnlyMethodSymb, args: [Expr]);
+type MethodCallExpr   = method_call_expr(var: AnyAutoVar?, name: ReadOnlyMethodSymb, args: Expr*);
 
 type IfExpr         = if_expr(cond: Expr, then: Expr, else: Expr);
-type MatchExpr      = match_expr(exprs: [Expr^], cases: [(ptrns: [Pattern^], expr: Expr)^]);
-type DoExpr         = do_expr([Statement^]);
+type MatchExpr      = match_expr(exprs: Expr+, cases: [ptrns: Pattern+, expr: Expr]+);
+type DoExpr         = do_expr(Statement+);
 
 type ExQualExpr     = ex_qual(source: Clause, cond: Expr);
 type SetCompExpr    = set_comp(expr: Expr, source: Clause);
 type MapCompExpr    = map_comp(key_expr: Expr, value_expr: Expr, source: Clause);
 
-type SeqCompExpr    = seq_comp(expr: Expr, vars: [StdVar^], idx_var: StdVar?, src_expr: Expr, sel_expr: Expr?);
+type SeqCompExpr    = seq_comp(expr: Expr, vars: StdVar+, idx_var: StdVar?, src_expr: Expr, sel_expr: Expr?);
 type RangeCompExpr  = range_comp(expr: Expr, var: StdVar, bound_expr: Expr, inclusive: Bool, sel_expr: Expr?);
 
 type IsSetExpr      = is_set(MembVar);
@@ -170,7 +170,7 @@ type IsSetExpr      = is_set(MembVar);
 
 type ClsExpr  = ClsVar,
                 fn_ptr(name: FnSymbol, arity: NzNat),
-                cls_expr(params: [<var(Atom), nil>^], expr: Expr); //## REPLACE params WITH arity, SINCE THERE'S NO WAY IN THE SYNTAX TO ACTUALLY NAME THE PARAMETERS OF A CLOSURE?
+                cls_expr(params: <var(Atom), nil>+, expr: Expr); //## REPLACE params WITH arity, SINCE THERE'S NO WAY IN THE SYNTAX TO ACTUALLY NAME THE PARAMETERS OF A CLOSURE?
 
 type AnyExpr  = Expr, ClsExpr;
 
@@ -194,7 +194,7 @@ type Pattern  = ptrn_symbol, //## THE CORRESPONDING TYPE IS CALLED atom_type. RE
                 //## TYPE AND A PATTERN DEPENDS ON THE FIRST ASSUMPTION
                 // Patterns in a union must be pseudotype-compatible.
                 // They must also define the same set of variables
-                ptrn_union(Pattern+);
+                ptrn_union([+Pattern]);
 
 
 type TagPtrn  = ptrn_symbol, ptrn_symbol(SymbObj), ptrn_var(var: StdVar, ptrn: ptrn_symbol);
@@ -212,13 +212,13 @@ type Clause   = set_elem_clause(var: StdVar, src: Expr),
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type Statement  = assignment_stmt(vars: [StdVar^], value: Expr),
+type Statement  = assignment_stmt(vars: StdVar+, value: Expr),
                   return_stmt(Expr),
-                  if_stmt(cond: Expr, body: [Statement^], else: [Statement]),
-                  loop_stmt([Statement^]),
-                  foreach_stmt(vars: [StdVar^], idx_var: StdVar?, values: Expr, body: [Statement^]),
-                  for_stmt(var: StdVar?, start_val: Expr, end_val: Expr, end_val_incl: Bool, body: [Statement^]),
-                  let_stmt(asgnms: (NamedArg => Expr), body: [Statement^]), //## BAD
+                  if_stmt(cond: Expr, body: Statement+, else: Statement*),
+                  loop_stmt(Statement+),
+                  foreach_stmt(vars: StdVar+, idx_var: StdVar?, values: Expr, body: Statement+),
+                  for_stmt(var: StdVar?, start_val: Expr, end_val: Expr, end_val_incl: Bool, body: Statement+),
+                  let_stmt(asgnms: [NamedArg -> Expr], body: Statement+), //## BAD
                   break_stmt,
                   fail_stmt,
                   assert_stmt(cond: Expr, file: String, line: NzNat, text: Maybe[String]),
@@ -226,13 +226,13 @@ type Statement  = assignment_stmt(vars: [StdVar^], value: Expr),
                   imp_update_stmt(obj: StdVar, idx: Expr, value: Expr),
                   //## BAD: MIXING PURE AND IMPURE STATEMENTS
                   return_stmt,
-                  proc_call(res_var: StdVar?, proc_name: ProcSymbol, params: [Expr]),
+                  proc_call(res_var: StdVar?, proc_name: ProcSymbol, params: Expr*),
                   auto_set_input_stmt(var: LocAutoVar, input: Atom, value: Maybe[Expr]),
                   SetMembVarStmt, MethodCallStmt,
                   AutoUpdateStmt;
 
 type SetMembVarStmt   = set_memb_var_stmt(var: PendingStateVar, value: Expr);
-type MethodCallStmt   = method_call_stmt(var: AnyAutoVar?, name: UpdateMethodSymb, args: [Expr]);
+type MethodCallStmt   = method_call_stmt(var: AnyAutoVar?, name: UpdateMethodSymb, args: Expr*);
 
 type AutoUpdateStmt = auto_update_stmt(var: LocAutoVar, elapsed_time: Expr?);
 
@@ -245,8 +245,8 @@ type FnFrmPar   = ScalarFrmParam, ClsFrmParam;
 
 type FnDef      = fn_def(
                     name:         FnSymbol,
-                    params:       [FnFrmPar], //## BAD BAD
-                    named_args:   (NamedArg => AnyType), //## BAD: THE TYPE IS TOO LOOSE. INCLUDE A CHECK IN THE WELL-FORMEDNESS CHECKING LAYER
+                    params:       FnFrmPar*, //## BAD BAD
+                    named_args:   [NamedArg -> AnyType], //## BAD: THE TYPE IS TOO LOOSE. INCLUDE A CHECK IN THE WELL-FORMEDNESS CHECKING LAYER
                     res_type:     Type?,
                     expr:         Expr
                   );
@@ -256,10 +256,10 @@ type ProcSymbol = proc_symbol(Atom);
 //## SERIOUSLY, FIND BETTER NAME...
 type ProcDef2   = proc_def(
                     name:             ProcSymbol,
-                    params:           [(var: StdVar, type: Type)],
+                    params:           [var: StdVar, type: Type]*,
                     res_type:         Maybe[Type],
-                    auto_vars_types:  (LocAutoVar => AutoSymbol),
-                    body:             [Statement]
+                    auto_vars_types:  [LocAutoVar -> AutoSymbol],
+                    body:             Statement*
                   );
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -279,39 +279,39 @@ type AutoMethodCall     = method_call(target: MembAutoVar, method: UpdateMethodS
 
 type AutoAtomicAction   = AutoUpdate, AutoSetDiscrete, AutoMethodCall;
 
-type AutoCondAction     = cond_action(cond: Expr, body: AutoAnyCondAction*, else: AutoAnyCondAction*);
+type AutoCondAction     = cond_action(cond: Expr, body: [AutoAnyCondAction], else: [AutoAnyCondAction]);
 type AutoAnyCondAction  = AutoAtomicAction, AutoCondAction;
 
-type AutoRepAction      = rep_action(cond: Expr, body: AutoAnyRepAction*, else: AutoAnyRepAction*);
+type AutoRepAction      = rep_action(cond: Expr, body: [AutoAnyRepAction], else: [AutoAnyRepAction]);
 type AutoAnyRepAction   = AutoAtomicAction, AutoRepAction;
 
-type ReadOnlyMethod     = read_only_method(name: ReadOnlyMethodSymb, args: [(Type, StdVar)], ret_type: Type, expr: Expr);
-type UpdateMethod       = update_method(name: UpdateMethodSymb, args: [(Type, StdVar)], body: [Statement]);
+type ReadOnlyMethod     = read_only_method(name: ReadOnlyMethodSymb, args: (Type, StdVar)*, ret_type: Type, expr: Expr);
+type UpdateMethod       = update_method(name: UpdateMethodSymb, args: (Type, StdVar)*, body: Statement*);
 
 type TimeVaryingCond    = time_varying_cond(expr: Expr, time_expr: TimeExpr, rule_type: <unchanged, boolean>);
 
 type Automaton  = automaton(
                     name:               AutoSymbol,
-                    pos_params:         [Atom],
-                    inputs:             (Atom => (type: NeType, discrete: Bool)),
-                    outputs:            (Atom => (type: NeType, discrete: Bool)),
-                    state:              (Atom => (type: NeType, init_value: Expr)),
-                    params:             (Atom => Expr),
-                    rules:              (Atom => Expr),
-                    time_rules:         (Atom => TimeVaryingCond),
-                    actions:            AutoCondAction*,
-                    rep_actions:        AutoRepAction*,
-                    nested_autos:       (Atom => (type: AutoSymbol, args: (Atom => Expr))),
-                    read_only_methods:  ReadOnlyMethod*,
-                    update_methods:     UpdateMethod*
+                    pos_params:         Atom*,
+                    inputs:             [Atom -> [type: NeType, discrete: Bool]],
+                    outputs:            [Atom -> [type: NeType, discrete: Bool]],
+                    state:              [Atom -> [type: NeType, init_value: Expr]],
+                    params:             [Atom -> Expr],
+                    rules:              [Atom -> Expr],
+                    time_rules:         [Atom -> TimeVaryingCond],
+                    actions:            [AutoCondAction],
+                    rep_actions:        [AutoRepAction],
+                    nested_autos:       [Atom -> [type: AutoSymbol, args: [Atom -> Expr]]],
+                    read_only_methods:  [ReadOnlyMethod],
+                    update_methods:     [UpdateMethod]
                   );
 
 ///////////////////////////////////////////////////////////////////////////////
 
 type Program    = program(
-                    typedefs:       (TypeName => Type),
-                    subtype_decls:  SubtypeDecl*,
-                    fndefs:         FnDef*,
-                    proc_defs:      ProcDef2*,
-                    auto_defs:      Automaton*
+                    typedefs:       [TypeName -> Type],
+                    subtype_decls:  [SubtypeDecl],
+                    fndefs:         [FnDef],
+                    proc_defs:      [ProcDef2],
+                    auto_defs:      [Automaton]
                   );

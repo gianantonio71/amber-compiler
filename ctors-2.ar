@@ -7,7 +7,7 @@ IntObj  object(Int n)  = :object(n);
 BasicTypeSymbol type_symbol(Atom a)         = :type_symbol(a);
 BasicTypeSymbol builtin_type_symbol(Atom a) = :builtin_type_symbol(a);
 
-ParTypeSymbol par_type_symbol(BasicTypeSymbol s, [Type^] ps) = par_type_symbol(symbol: s, params: ps);
+ParTypeSymbol par_type_symbol(BasicTypeSymbol s, Type+ ps) = par_type_symbol(symbol: s, params: ps);
 
 TypeName type_name(BasicTypeSymbol ts, Nat arity) = type_name(symbol: ts, arity: arity);
 
@@ -49,25 +49,25 @@ NeType ne_map_type(NeType kt, NeType vt)              = ne_map_type(key_type: kt
 
 
 //## BAD: IF THE LANGUAGE HAD SUBSIGNATURES, THIS FUNCTION WOULD NOT BE NEEDED
-NeType record_type_nonempty((SymbObj => (type: NeType, optional: Bool)) fs) =
-  :record_type((l => (type: f.type, optional: f.optional) : f @ l <- fs));
+NeType record_type_nonempty([SymbObj -> [type: NeType, optional: Bool]] fs) =
+  :record_type([l -> [type: f.type, optional: f.optional] : f @ l <- fs]);
 
-Type record_type((SymbObj => (type: Type, optional: Bool)) fs)
+Type record_type([SymbObj -> [type: Type, optional: Bool]] fs)
 {
   return empty_type if (? f @ l <- fs : f.type == empty_type and not f.optional);
-  rfs = (l => (type: t, optional: f.optional) : f @ l <- fs, t = f.type, t != empty_type);
+  rfs = [l -> [type: t, optional: f.optional] : f @ l <- fs, t = f.type, t != empty_type];
   return :record_type(rfs);
 }
 
 //## BAD: IF THE LANGUAGE HAD SUBSIGNATURES, THIS FUNCTION WOULD NOT BE NEEDED
-NeType tuple_type_nonempty([NeType^] ts) = :tuple_type(ts);
+NeType tuple_type_nonempty(NeType+ ts) = :tuple_type(ts);
 
-Type tuple_type([Type^] ts)
+Type tuple_type(Type+ ts)
 {
-  ne_ts = [];
-  for (t : ts)
+  ne_ts = ();
+  for t <- ts:
     return empty_type if t == empty_type;
-    ne_ts = [ne_ts | t];
+    ne_ts = (ne_ts | t);
   ;
   return :tuple_type(nonempty(ne_ts));
 }
@@ -76,42 +76,42 @@ Type tuple_type([Type^] ts)
 TagObjType   tag_obj_type(TagType tt, NeType ot) = tag_obj_type(tag_type: tt, obj_type: ot);
 
 //## BAD: IF THE LANGUAGE HAD SUBSIGNATURES, THIS FUNCTION WOULD NOT BE NEEDED
-NeType union_type_nonempty(NeType+ ts)
+NeType union_type_nonempty([+NeType] ts)
 {
-  nu_ts = union({nu_types(t) : t <- ts});
+  nu_ts = union([nu_types(t) : t <- ts]);
   return if size(nu_ts) == 1 then only_element(nu_ts) else :union_type(nonempty(nu_ts));
 
-  NeType+ nu_types(NeType type):
-    union_type(ts?)  = nonempty(union({nu_types(t) : t <- ts})),
-    _                = {type};
+  [+NeType] nu_types(NeType type):
+    union_type(ts?)  = nonempty(union([nu_types(t) : t <- ts])),
+    _                = [type];
 }
 
-Type union_type(Type* ts)
+Type union_type([Type] ts)
 {
-  nu_ts = union({nu_types(t) : t <- ts, t != empty_type});
-  return if nu_ts == {}       then empty_type,
+  nu_ts = union([nu_types(t) : t <- ts, t != empty_type]);
+  return if nu_ts == []       then empty_type,
             size(nu_ts) == 1  then only_element(nu_ts)
                               else :union_type(nu_ts);
 
-  NeType+ nu_types(NeType type):
-    union_type(ts?)  = nonempty(union({nu_types(t) : t <- ts})),
-    _                = {type};
+  [+NeType] nu_types(NeType type):
+    union_type(ts?)  = nonempty(union([nu_types(t) : t <- ts])),
+    _                = [type];
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-ClsType cls_type([Type^] its, Type ot) = cls_type(in_types: its, out_type: ot);
+ClsType cls_type(Type+ its, Type ot) = cls_type(in_types: its, out_type: ot);
 
-FnType fn_type([AnyType] ps, Type rt) = fn_type(ps, (), rt);
-FnType fn_type([AnyType] ps, (NamedArg => AnyType) nps, Type rt) = fn_type(params: ps, named_args: nps, ret_type: rt);
+FnType fn_type(AnyType* ps, Type rt) = fn_type(ps, [:], rt);
+FnType fn_type(AnyType* ps, [NamedArg -> AnyType] nps, Type rt) = fn_type(params: ps, named_args: nps, ret_type: rt);
 
-BuiltInType builtin_type([Type^] pts, Type rt) = builtin_type(param_types: pts, ret_type: rt);
+BuiltInType builtin_type(Type+ pts, Type rt) = builtin_type(param_types: pts, ret_type: rt);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-Type map_type(Type kt, Type vt, Bool may_be_empty) = union_type({empty_map_type if may_be_empty, ne_map_type(kt, vt)});
+Type map_type(Type kt, Type vt, Bool may_be_empty) = union_type([empty_map_type if may_be_empty, ne_map_type(kt, vt)]);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -127,9 +127,9 @@ Pattern ptrn_ne_seq                             = :ptrn_ne_seq;
 Pattern ptrn_empty_map                          = :ptrn_empty_map;
 Pattern ptrn_ne_map                             = :ptrn_ne_map;
 
-Pattern ptrn_seq                                = ptrn_union({ptrn_empty_seq, ptrn_ne_seq});
-Pattern ptrn_set                                = ptrn_union({ptrn_empty_set, ptrn_ne_set});
-Pattern ptrn_map                                = ptrn_union({ptrn_empty_map, ptrn_ne_map});
+Pattern ptrn_seq                                = ptrn_union([ptrn_empty_seq, ptrn_ne_seq]);
+Pattern ptrn_set                                = ptrn_union([ptrn_empty_set, ptrn_ne_set]);
+Pattern ptrn_map                                = ptrn_union([ptrn_empty_map, ptrn_ne_map]);
 
 <ptrn_any> ptrn_any                             = :ptrn_any;
 TagPtrn ptrn_symbol(Atom a)                     = :ptrn_symbol(:object(a));
@@ -140,18 +140,18 @@ Pattern ptrn_integer(IntType type)              = :ptrn_integer(type);
 Pattern ptrn_tag_obj(TagPtrn tag, Pattern obj)  = ptrn_tag_obj(tag: tag, obj: obj);
 Pattern ptrn_var(StdVar v, Pattern p)           = ptrn_var(var: v, ptrn: p);
 
-Pattern ptrn_union(Pattern+ ps)
+Pattern ptrn_union([+Pattern] ps)
 {
   return only_element(ps) if size(ps) == 1;
   return ptrn_any if in(ptrn_any, ps);
-  norm_ps = union({patterns(p) : p <- ps});
+  norm_ps = union([patterns(p) : p <- ps]);
   //## HERE I SHOULD LOOK OUT FOR THE CASE WHEN THE SET OF PATTERNS COLLECTIVELY FORM A PATTERN "ANY"
   //## I COULD ALSO ELIMINATE PATTERNS THAT ARE SUBSETS OF OTHER PATTERNS IN THE SET
   return :ptrn_union(ps);
 
-  Pattern* patterns(Pattern ptrn):
-    ptrn_union(ps?)   = union({patterns(p) : p <- ps}),
-    _                 = {ptrn};
+  [Pattern] patterns(Pattern ptrn):
+    ptrn_union(ps?)   = union([patterns(p) : p <- ps]),
+    _                 = [ptrn];
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -194,40 +194,40 @@ ClsFrmParam non_scalar_par(NzNat a)           = non_scalar_par(arity: a);
 
 FloatLit float_lit(Int m, Int e)  = float_lit(mantissa: m, dec_exp: e);
 
-Expr seq_expr([SubExpr] es)           = :seq_expr(es);
-Expr seq_tail_expr(Expr s, [Expr^] t) = seq_tail_expr(seq: s, tail: t);
+Expr seq_expr(SubExpr* es)           = :seq_expr(es);
+Expr seq_tail_expr(Expr s, Expr+ t) = seq_tail_expr(seq: s, tail: t);
 
-Expr tuple_expr([Expr^] es) = :tuple_expr(es);
+Expr tuple_expr(Expr+ es) = :tuple_expr(es);
 
-Expr set_expr(SubExpr* ses) = :set_expr(ses);
+Expr set_expr([SubExpr] ses) = :set_expr(ses);
 
-Expr map_expr((key: Expr, value: Expr, cond: Expr?)* es) = :map_expr(es);
+Expr map_expr([[key: Expr, value: Expr, cond: Expr?]] es) = :map_expr(es);
 
 Expr tag_obj_expr(Expr t, Expr o)   = tag_obj_expr(tag: t, obj: o);
 
-Expr fn_call(FnSymbol name, [AnyExpr] params) = fn_call(name, params, ());
-Expr fn_call(FnSymbol name, [AnyExpr] params, (NamedArg => AnyExpr) named_args) = fn_call(name: name, params: params, named_args: named_args);
+Expr fn_call(FnSymbol name, AnyExpr* params) = fn_call(name, params, [:]);
+Expr fn_call(FnSymbol name, AnyExpr* params, [NamedArg -> AnyExpr] named_args) = fn_call(name: name, params: params, named_args: named_args);
 
-Expr builtin_call(BuiltIn n, [Expr^] ps) = builtin_call(name: n, params: ps);
-Expr cls_call(<ClsVar, NamedArg> n, [Expr^] ps) = cls_call(name: n, params: ps);
+Expr builtin_call(BuiltIn n, Expr+ ps) = builtin_call(name: n, params: ps);
+Expr cls_call(<ClsVar, NamedArg> n, Expr+ ps) = cls_call(name: n, params: ps);
 
 Expr and_expr(Expr l, Expr r) = and_expr(left: l, right: r);
 Expr or_expr(Expr l, Expr r) = or_expr(left: l, right: r);
 Expr not_expr(Expr e) = :not_expr(e);
 
-Expr and_expr([Expr^] es)
+Expr and_expr(Expr+ es)
 {
   expr = last(es);
-  for (i = 1..length(es))
+  for i = 1..length(es):
     expr = and_expr(rev_at(es, i), expr);
   ;
   return expr;
 }
 
-Expr or_expr([Expr^] es)
+Expr or_expr(Expr+ es)
 {
   expr = last(es);
-  for (i = 1..length(es))
+  for i = 1..length(es):
     expr = or_expr(rev_at(es, i), expr);
   ;
   return expr;
@@ -242,17 +242,17 @@ GetOutputExpr   get_output(AnyAutoVar v, Atom o)     = get_output(var: v, output
 OutputIsSetExpr output_is_set(AnyAutoVar v, Atom o)  = output_is_set(var: v, output: o);
 OutputIsDefExpr output_is_def(LocAutoVar v, Atom o)  = output_is_def(var: v, output: o);
 
-MethodCallExpr method_call_expr(AnyAutoVar v, ReadOnlyMethodSymb m, [Expr] as) = method_call_expr(var: v, name: m, args: as);
-MethodCallExpr method_call_expr(ReadOnlyMethodSymb m, [Expr] as) = method_call_expr(name: m, args: as);
+MethodCallExpr method_call_expr(AnyAutoVar v, ReadOnlyMethodSymb m, Expr* as) = method_call_expr(var: v, name: m, args: as);
+MethodCallExpr method_call_expr(ReadOnlyMethodSymb m, Expr* as) = method_call_expr(name: m, args: as);
 
 Expr cast_expr(Expr e, Type t) = cast_expr(expr: e, type: t);
 Expr membership(Expr obj, Type type) = membership(obj: obj, type: type);
 
 Expr if_expr(Expr cond, Expr true_expr, Expr false_expr) = if_expr(cond: cond, then: true_expr, else: false_expr);
 
-Expr match_expr([Expr^] es, [(ptrns: [Pattern^], expr: Expr)^] cs) = match_expr(exprs: es, cases: cs);
+Expr match_expr(Expr+ es, [ptrns: Pattern+, expr: Expr]+ cs) = match_expr(exprs: es, cases: cs);
 
-Expr do_expr([Statement^] ss) = :do_expr(ss);
+Expr do_expr(Statement+ ss) = :do_expr(ss);
 
 ExQualExpr  ex_qual(Clause s, Expr c)             = ex_qual(source: s, cond: c);
 SetCompExpr set_comp(Expr e, Clause c)            = set_comp(expr: e, source: c);
@@ -267,9 +267,9 @@ CondExpr cond_expr(Expr e, Expr c) = cond_expr(expr: e, cond: c);
 ////////////////////////////////////////////////////////////////////////////////
 
 ClsExpr fn_ptr(FnSymbol s, NzNat a)              = fn_ptr(name: s, arity: a);
-ClsExpr cls_expr(Nat a, Expr e)                  = cls_expr(a * [nil], e);
+ClsExpr cls_expr(Nat a, Expr e)                  = cls_expr(a * (nil), e);
 //## BAD: THE NONEMPTY CHECK SHOULD BE MOVED TO THE CALL SITES
-ClsExpr cls_expr([<var(Atom), nil>] ps, Expr e)  = cls_expr(params: nonempty(ps), expr: e);
+ClsExpr cls_expr(<var(Atom), nil>* ps, Expr e)  = cls_expr(params: nonempty(ps), expr: e);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -284,11 +284,11 @@ Clause filter_clause(Expr e)                          = :filter_clause(e);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Statement assignment_stmt([StdVar^] vs, Expr v)                   = assignment_stmt(vars: vs, value: v);
+Statement assignment_stmt(StdVar+ vs, Expr v)                   = assignment_stmt(vars: vs, value: v);
 Statement return_stmt(Expr e)                                     = :return_stmt(e);
-Statement if_stmt(Expr c, [Statement^] b, [Statement] e)          = if_stmt(cond: c, body: b, else: e);
-Statement loop_stmt([Statement^] ss)                              = :loop_stmt(ss);
-Statement let_stmt((NamedArg => Expr) as, [Statement^] b)         = let_stmt(asgnms: as, body: b);
+Statement if_stmt(Expr c, Statement+ b, Statement* e)          = if_stmt(cond: c, body: b, else: e);
+Statement loop_stmt(Statement+ ss)                              = :loop_stmt(ss);
+Statement let_stmt([NamedArg -> Expr] as, Statement+ b)         = let_stmt(asgnms: as, body: b);
 Statement assert_stmt(Expr c, String f, NzNat l, Maybe[String] t) = assert_stmt(cond: c, file: f, line: l, text: t);
 Statement print_stmt(Expr e)                                      = :print_stmt(e);
 
@@ -298,7 +298,7 @@ Statement print_stmt(Expr e)                                      = :print_stmt(
 
 Statement imp_update_stmt(StdVar o, Expr i, Expr v)  = imp_update_stmt(obj: o, idx: i, value: v);
 
-Statement foreach_stmt([StdVar^] vs, Maybe[StdVar] iv, Expr svs, [Statement^] b) =
+Statement foreach_stmt(StdVar+ vs, Maybe[StdVar] iv, Expr svs, Statement+ b) =
   foreach_stmt(
     vars:     vs,
     idx_var:  value(iv) if iv != nil,
@@ -306,7 +306,7 @@ Statement foreach_stmt([StdVar^] vs, Maybe[StdVar] iv, Expr svs, [Statement^] b)
     body:     b
   );
 
-Statement for_stmt(Maybe[StdVar] v, Expr sv, Expr ev, Bool evi, [Statement^] b) =
+Statement for_stmt(Maybe[StdVar] v, Expr sv, Expr ev, Bool evi, Statement+ b) =
   for_stmt(
     var:          value(v) if v != nil,
     start_val:    sv,
@@ -327,10 +327,10 @@ ProcSymbol proc_symbol(Atom a) = :proc_symbol(a);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-FnDef fn_def(FnSymbol n, [FnFrmPar] ps, (NamedArg => AnyType) nps, Maybe[Type] mrt, Expr e) =
+FnDef fn_def(FnSymbol n, FnFrmPar* ps, [NamedArg -> AnyType] nps, Maybe[Type] mrt, Expr e) =
   fn_def(name: n, params: ps, named_args: nps, res_type: value(mrt) if mrt != nil, expr: e);
 
-ProcDef2 proc_def(ProcSymbol n, [(var: StdVar, type: Type)] ps, Maybe[Type] rt, (LocAutoVar => AutoSymbol) avs, [Statement] b) =
+ProcDef2 proc_def(ProcSymbol n, [var: StdVar, type: Type]* ps, Maybe[Type] rt, [LocAutoVar -> AutoSymbol] avs, Statement* b) =
   proc_def(name: n, params: ps, res_type: rt, auto_vars_types: avs, body: b);
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -339,21 +339,21 @@ AutoUpdate      update(Atom a, Expr e)                              = update(tar
 AutoSetDiscrete set_discrete(Atom a, Expr e)                        = set_discrete(target: a, value: e);
 AutoMethodCall  method_call(MembAutoVar t, UpdateMethodSymb s, Expr m)  = method_call(target: t, method: s, message: m);
 
-AutoCondAction cond_action(Expr c, AutoAnyCondAction* b, AutoAnyCondAction* e)
+AutoCondAction cond_action(Expr c, [AutoAnyCondAction] b, [AutoAnyCondAction] e)
 {
-  assert b != {} or e != {};
+  assert b != [] or e != [];
   return cond_action(cond: c, body: b, else: e);
 }
 
-AutoRepAction rep_action(Expr c, AutoAnyRepAction* b, AutoAnyRepAction* e)
+AutoRepAction rep_action(Expr c, [AutoAnyRepAction] b, [AutoAnyRepAction] e)
 {
-  assert b != {} or e != {};
+  assert b != [] or e != [];
   return rep_action(cond: c, body: b, else: e);
 }
 
-ReadOnlyMethod read_only_method(ReadOnlyMethodSymb n, [(Type, StdVar)] as, Type t, Expr e) = read_only_method(name: n, args: as, ret_type: t, expr: e);
+ReadOnlyMethod read_only_method(ReadOnlyMethodSymb n, (Type, StdVar)* as, Type t, Expr e) = read_only_method(name: n, args: as, ret_type: t, expr: e);
 
-UpdateMethod update_method(UpdateMethodSymb n, [(Type, StdVar)] as, [Statement] ss) = update_method(name: n, args: as, body: ss);
+UpdateMethod update_method(UpdateMethodSymb n, (Type, StdVar)* as, Statement* ss) = update_method(name: n, args: as, body: ss);
 
 ////////////////////////////////////////////////////////////////////////////////
 

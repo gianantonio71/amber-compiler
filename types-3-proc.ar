@@ -144,11 +144,11 @@ type NatObjOp       = at(seq: ObjExpr, idx: IntExpr),
 type BoolExpr       = AtomicBoolExpr,
                       NatBoolOp,
                       neg(BoolExpr),
-                      and([BoolExpr^]), //## SEQUENCES OR SETS?
-                      or([BoolExpr^]),  //## DITTO
-                      and_then([BoolExpr^]),
-                      or_else([BoolExpr^]),
-                      eval_bool_fn(name: BoolFnName, params: [AnyTypeExpr^]);
+                      and(BoolExpr+), //## SEQUENCES OR SETS?
+                      or(BoolExpr+),  //## DITTO
+                      and_then(BoolExpr+),
+                      or_else(BoolExpr+),
+                      eval_bool_fn(name: BoolFnName, params: AnyTypeExpr+);
 
 type IntExpr        = Int, IntConst, IntVar, NatIntOp;
 
@@ -231,8 +231,8 @@ type BasicInstr     = init_stream(StreamVar),
 
                       no_op,
 
-                      call_proc(var: WriteObjVar?, name: ObjFnName, params: [<AtomicExpr, BoundCls>]),
-                      call_cls(var: WriteObjVar, cls_var: <ClsVar, NamedArg>, params: [AtomicExpr]),
+                      call_proc(var: WriteObjVar?, name: ObjFnName, params: <AtomicExpr, BoundCls>*),
+                      call_cls(var: WriteObjVar, cls_var: <ClsVar, NamedArg>, params: AtomicExpr*),
 
                       //## THESE TYPES SHOULD BE REFINED, BlockNodeId IS TOO GENERAL
                       queue_update(type: AutoSymbol, id: BlockNodeId),
@@ -246,12 +246,12 @@ type BasicInstr     = init_stream(StreamVar),
 
                       set_input(var: AnyAutoVar, type: AutoSymbol, input: Atom, value: Maybe[AtomicExpr]),
                       prop_input_updates(var: AnyAutoVar?, type: AutoSymbol, elapsed_time: IntExpr),
-                      call_method(res_var: WriteObjVar?, auto_var: AnyAutoVar?, type: AutoSymbol, name: ExMethodSymb, args: [AtomicExpr]),
+                      call_method(res_var: WriteObjVar?, auto_var: AnyAutoVar?, type: AutoSymbol, name: ExMethodSymb, args: AtomicExpr*),
 
-                      push_call_info(fn_name: ObjFnName, params: [Maybe[FnPar]]),
+                      push_call_info(fn_name: ObjFnName, params: Maybe[FnPar]*),
                       pop_call_info,
 
-                      runtime_check(cond: AtomicExpr, file: String, line: NzNat, text: Maybe[String], vars: <StdVar, NamedArg>*);
+                      runtime_check(cond: AtomicExpr, file: String, line: NzNat, text: Maybe[String], vars: [<StdVar, NamedArg>]);
 
 type JumpInstr      = break_loop,
                       exit_block,
@@ -260,37 +260,37 @@ type JumpInstr      = break_loop,
                       ret_val(<AtomicExpr, AtomicBoolExpr>),
                       terminate;
 
-type CompInstr      = branch(cond: BoolExpr, when_true: [Instr^], when_false: [Instr]),
-                      switch_on_nat(value: IntExpr, cases: [[Instr]^]),
-                      repeat([Instr^]),
-                      execute_block([Instr^]),
-                      cls_scope(var: NamedArg, bound_cls: BoundCls, body: [Instr^]); //## BAD: BoundCls IS TOO LOOSE A TYPE HERE, BECAUSE A ClsVar CANNOT APPEAR HERE
+type CompInstr      = branch(cond: BoolExpr, when_true: Instr+, when_false: Instr*),
+                      switch_on_nat(value: IntExpr, cases: Instr*+),
+                      repeat(Instr+),
+                      execute_block(Instr+),
+                      cls_scope(var: NamedArg, bound_cls: BoundCls, body: Instr+); //## BAD: BoundCls IS TOO LOOSE A TYPE HERE, BECAUSE A ClsVar CANNOT APPEAR HERE
 
 type Instr          = BasicInstr, JumpInstr, CompInstr;
 
-type ClsDef         = cls_def(arity: NzNat, body: [Instr^]);
+type ClsDef         = cls_def(arity: NzNat, body: Instr+);
 
-type BoundCls       = ClsVar, bound_cls(cls: ClsDef, env: [Var]); //## WHY IS THE .env FIELD OF TYPE [Var] INSTEAD OF [ObjVar]?
+type BoundCls       = ClsVar, bound_cls(cls: ClsDef, env: Var*); //## WHY IS THE .env FIELD OF TYPE [Var] INSTEAD OF [ObjVar]?
 
 type ObjProcPar     = obj, cls(name: ClsVar?, arity: NzNat);
 
 type ObjProcDef     = obj_proc_def(
                         name:         ObjFnName,
-                        params:       [ObjProcPar],
-                        named_args:   (NamedArg => Nat), //## SHOULD IT BE <named_var(name: Atom, arity: Nat)>* INSTEAD?
-                        body:         [Instr^],
+                        params:       ObjProcPar*,
+                        named_args:   [NamedArg -> Nat], //## SHOULD IT BE <named_var(name: Atom, arity: Nat)>* INSTEAD?
+                        body:         Instr+,
                         cached:       Bool
                       );
 
 type BoolProcDef    = bool_proc_def(
                         name:  BoolFnName,
                         arity: NzNat,
-                        body:  [Instr^]
+                        body:  Instr+
                       );
 
 type ProcDef        = ObjProcDef, BoolProcDef;
 
-type ConstBlockData = time_slots_len(expr_id: Atom, lengths: [Nat^]);
+type ConstBlockData = time_slots_len(expr_id: Atom, lengths: Nat+);
 
 type StdBlockNodeId         = std_block_node_id(Atom);
 type CondNodeId             = cond_node_id(Nat);
@@ -303,17 +303,17 @@ type ExMethodSymb = ex_method_symb(symbol: <ReadOnlyMethodSymb, UpdateMethodSymb
 
 type Block          = block(
                         name:               AutoSymbol,
-                        inputs:             [Atom],
-                        outputs:            Atom*,
-                        memb_vars:          <MembVar, MembObjVar, PendingInputVar, PendingStateVar, MembIntVar, MembIntVectVar, MembBoolVar>*,
-                        nested_auto_vars:   (MembAutoVar => AutoSymbol),
-                        init_code:          [Instr],
-                        update_code:        [Instr],
-                        cleanup_code:       [Instr],
-                        queue_update_code:  (BlockNodeId => (body: [Instr], two_level_update: Bool)),
-                        methods_code:       (ExMethodSymb => [Instr]),
-                        const_data:         ConstBlockData*,
+                        inputs:             Atom*,
+                        outputs:            [Atom],
+                        memb_vars:          [<MembVar, MembObjVar, PendingInputVar, PendingStateVar, MembIntVar, MembIntVectVar, MembBoolVar>],
+                        nested_auto_vars:   [MembAutoVar -> AutoSymbol],
+                        init_code:          Instr*,
+                        update_code:        Instr*,
+                        cleanup_code:       Instr*,
+                        queue_update_code:  [BlockNodeId -> [body: Instr*, two_level_update: Bool]],
+                        methods_code:       [ExMethodSymb -> Instr*],
+                        const_data:         [ConstBlockData],
                         time_rules_count:   Nat
                       );
 
-type CompiledPrg    = compiled_prg(bool_procs: BoolProcDef*, procs: ObjProcDef*, blocks: Block*);
+type CompiledPrg    = compiled_prg(bool_procs: [BoolProcDef], procs: [ObjProcDef], blocks: [Block]);

@@ -1,9 +1,9 @@
-type CondInfo     = ( cond:         Expr,
-                      parent:       Maybe[(id: CondNodeId, trigger: Bool)],
-                      nested_conds: (id: CondNodeId, trigger: Bool)*,
-                      updates:      (state_id: Atom, new_value: Expr, trigger: Bool)*,
-                      calls:        (auto_var: MembAutoVar, method: UpdateMethodSymb, message: Expr, trigger: Bool)*
-                    );
+type CondInfo     = [ cond:         Expr,
+                      parent:       Maybe[[id: CondNodeId, trigger: Bool]],
+                      nested_conds: [[id: CondNodeId, trigger: Bool]],
+                      updates:      [[state_id: Atom, new_value: Expr, trigger: Bool]],
+                      calls:        [[auto_var: MembAutoVar, method: UpdateMethodSymb, message: Expr, trigger: Bool]]
+                    ];
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -18,14 +18,14 @@ BlockNodeId dependency_to_node_id(NestedAutoOutputId id)  = std_block_node_id(id
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-StdBlockNodeId* nested_auto_deps(Expr expr):
-  method_call_expr()  = {std_block_node_id(name(expr.var)) if expr.var?},
+[StdBlockNodeId] nested_auto_deps(Expr expr):
+  method_call_expr()  = [std_block_node_id(name(expr.var)) if expr.var?],
   _                   = retrieve_from_nested_exprs(expr, nested_auto_deps);
 
 
-NestedAutoOutputId* nested_auto_output_deps(Expr expr):
-  get_output()        = {nested_auto_output_id(name(expr.var), expr.output)},
-  output_is_set()     = {nested_auto_output_id(name(expr.var), expr.output)},
+[NestedAutoOutputId] nested_auto_output_deps(Expr expr):
+  get_output()        = [nested_auto_output_id(name(expr.var), expr.output)],
+  output_is_set()     = [nested_auto_output_id(name(expr.var), expr.output)],
   // This one should never appear outside the body of a procedure
   output_is_def()     = {fail;},
   // This one has an upstream dependency on the entire automaton, not just one
@@ -37,32 +37,32 @@ NestedAutoOutputId* nested_auto_output_deps(Expr expr):
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-[AutoNode] gen_auto_nodes(Automaton automaton, (AutoSymbol => (Atom => Bool)) auto_input_is_disc, (AutoSymbol => (Atom => Bool)) auto_output_is_disc)
+AutoNode* gen_auto_nodes(Automaton automaton, [AutoSymbol -> [Atom -> Bool]] auto_input_is_disc, [AutoSymbol -> [Atom -> Bool]] auto_output_is_disc)
 {
   // Generating condition nodes
   cond_nodes, next_id = gen_cond_nodes(automaton, 0);
   rep_cond_nodes = gen_rep_cond_nodes(automaton, next_id);
 
   // Generating nested automata inputs -> expression map
-  nested_auto_inputs = (
-    nested_auto_input_id(auto_id, in_id) => expr
+  nested_auto_inputs = [
+    nested_auto_input_id(auto_id, in_id) -> expr
     : auto @ auto_id <- automaton.nested_autos, expr @ in_id <- auto.args
-  );
+  ];
 
   // Creating node -> all nodes it depends on mapping
-  cond_up_nodes                 = (id => cond_deps(c) : c @ id <- cond_nodes);
-  rep_cond_up_nodes             = (id => cond_deps(c) : c @ id <- rep_cond_nodes);
-  nested_auto_input_up_nodes    = (id => expr_deps(e) : e @ id <- nested_auto_inputs);
+  cond_up_nodes                 = [id -> cond_deps(c) : c @ id <- cond_nodes];
+  rep_cond_up_nodes             = [id -> cond_deps(c) : c @ id <- rep_cond_nodes];
+  nested_auto_input_up_nodes    = [id -> expr_deps(e) : e @ id <- nested_auto_inputs];
   state_trigger_up_nodes        = map_state_trigger_up_nodes(cond_nodes, rep_cond_nodes);
   state_value_up_nodes          = map_state_value_up_nodes(automaton, cond_nodes, rep_cond_nodes);
-  rules_up_nodes                = (std_block_node_id(a) => expr_deps(e) : e @ a <- automaton.rules);
-  time_rules_up_nodes           = (std_block_node_id(a) => expr_deps(c.expr) : c @ a <- automaton.time_rules);
+  rules_up_nodes                = [std_block_node_id(a) -> expr_deps(e) : e @ a <- automaton.rules];
+  time_rules_up_nodes           = [std_block_node_id(a) -> expr_deps(c.expr) : c @ a <- automaton.time_rules];
   nested_autos_trigger_up_nodes = map_nested_autos_trigger_up_nodes(automaton, cond_nodes, rep_cond_nodes);
   nested_autos_value_up_nodes   = map_nested_autos_value_up_nodes(automaton, cond_nodes, rep_cond_nodes);
 
   // Putting together all dependencies for state variables and nested automata
-  all_state_up_nodes = merge_value_sets({state_trigger_up_nodes, state_value_up_nodes});
-  all_nested_autos_up_nodes = merge_value_sets({nested_autos_trigger_up_nodes, nested_autos_value_up_nodes});
+  all_state_up_nodes = merge_value_sets([state_trigger_up_nodes, state_value_up_nodes]);
+  all_nested_autos_up_nodes = merge_value_sets([nested_autos_trigger_up_nodes, nested_autos_value_up_nodes]);
 
   // Putting all dependency maps together
   common_up_nodes_map  = cond_up_nodes & rep_cond_up_nodes & rules_up_nodes & time_rules_up_nodes & nested_auto_input_up_nodes;
@@ -73,16 +73,16 @@ NestedAutoOutputId* nested_auto_output_deps(Expr expr):
   fat_trigger_down_nodes_map = reverse_multi(trigger_up_nodes_map);
   // Coalescing all the (automaton, output -> ...) into (automaton -> ...) entries
   pre_output_trigger_down_nodes_map = merge_values(
-    {(std_block_node_id(s.auto) => (s.output => ts)) : ts @ s <- fat_trigger_down_nodes_map, nested_auto_output_id() << s}
+    [[std_block_node_id(s.auto) -> [s.output -> ts]] : ts @ s <- fat_trigger_down_nodes_map, nested_auto_output_id() << s]
   );
-  output_trigger_down_nodes_map = (s => merge_value_sets(ms) : ms @ s <- pre_output_trigger_down_nodes_map);
+  output_trigger_down_nodes_map = [s -> merge_value_sets(ms) : ms @ s <- pre_output_trigger_down_nodes_map];
   //## BAD BAD BAD: THIS IS SUPER SUPER UGLY
-  trigger_down_nodes_map = (s => ts : ts @ s <- fat_trigger_down_nodes_map, s :: BlockNodeId);
+  trigger_down_nodes_map = [s -> ts : ts @ s <- fat_trigger_down_nodes_map, s :: BlockNodeId];
 
   // Sorting nodes (node ids, actually) into layers
-  level_0 = {std_block_node_id(a) : a <- keys(automaton.params) & keys(automaton.inputs)};
-  coalesced_value_down_nodes_map = (s => {dependency_to_node_id(t) : t <- ts} : ts @ s <- value_up_nodes_map);
-  nodes_by_level = topological_sort((s => new_ts : ts @ s <- coalesced_value_down_nodes_map, new_ts = ts - level_0 - {s}));
+  level_0 = [std_block_node_id(a) : a <- keys(automaton.params) & keys(automaton.inputs)];
+  coalesced_value_down_nodes_map = [s -> [dependency_to_node_id(t) : t <- ts] : ts @ s <- value_up_nodes_map];
+  nodes_by_level = topological_sort([s -> new_ts : ts @ s <- coalesced_value_down_nodes_map, new_ts = ts - level_0 - [s]]);
 
   // Collecting all update values for state variables and discrete derived nodes
   update_values = group_and_sort_update_values(automaton, cond_nodes, rep_cond_nodes);
@@ -92,26 +92,25 @@ NestedAutoOutputId* nested_auto_output_deps(Expr expr):
 
   // Collecting the ids of state variables and discrete nodes
   state_vars_ids  = keys(automaton.state);
-  disc_signal_ids = {id : input @ id <- automaton.inputs, input.discrete} &
-                    union({updated_disc_vars_ids(a) : a <- automaton.actions & automaton.rep_actions});
+  disc_signal_ids = [id : input @ id <- automaton.inputs, input.discrete] &
+                    union([updated_disc_vars_ids(a) : a <- automaton.actions & automaton.rep_actions]);
 
   // Creating the final sorted list of nodes
-  input_nodes = [input(std_block_node_id(i), automaton.inputs[i].discrete, lookup(trigger_down_nodes_map, std_block_node_id(i), {}), 0) : i <- rand_sort(keys(automaton.inputs))];
-  let ( automaton                   = automaton,
-        auto_input_is_disc          = auto_input_is_disc,
-        auto_output_is_disc         = auto_output_is_disc,
-        cond_nodes                  = cond_nodes,
-        rep_cond_nodes              = rep_cond_nodes,
-        update_values               = update_values,
-        nested_auto_calls           = nested_auto_calls,
-        state_vars_ids              = state_vars_ids,
-        disc_signal_ids             = disc_signal_ids,
-        nested_auto_inputs          = nested_auto_inputs,
-        trigger_down_nodes_map         = trigger_down_nodes_map,
-        output_trigger_down_nodes_map  = output_trigger_down_nodes_map
-      )
+  input_nodes = (input(std_block_node_id(i), automaton.inputs[i].discrete, lookup(trigger_down_nodes_map, std_block_node_id(i), []), 0) : i <- rand_sort(keys(automaton.inputs)));
+  let automaton                     = automaton,
+      auto_input_is_disc            = auto_input_is_disc,
+      auto_output_is_disc           = auto_output_is_disc,
+      cond_nodes                    = cond_nodes,
+      rep_cond_nodes                = rep_cond_nodes,
+      update_values                 = update_values,
+      nested_auto_calls             = nested_auto_calls,
+      state_vars_ids                = state_vars_ids,
+      disc_signal_ids               = disc_signal_ids,
+      nested_auto_inputs            = nested_auto_inputs,
+      trigger_down_nodes_map        = trigger_down_nodes_map,
+      output_trigger_down_nodes_map = output_trigger_down_nodes_map:
 
-    other_nodes = join([[create_auto_node(n, nat(i+1)) : n <- rand_sort(l)] : l @ i <- nodes_by_level]);
+    other_nodes = join(((create_auto_node(n, nat(i+1)) : n <- rand_sort(l)) : l @ i <- nodes_by_level));
   ;
 
   return input_nodes & other_nodes;
@@ -120,11 +119,11 @@ NestedAutoOutputId* nested_auto_output_deps(Expr expr):
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-((CondNodeId => CondInfo), Nat) gen_cond_nodes(Automaton automaton, Nat first_id)
+([CondNodeId -> CondInfo], Nat) gen_cond_nodes(Automaton automaton, Nat first_id)
 {
   next_id = first_id;
-  cond_nodes = ();
-  for (a : rand_sort(automaton.actions))
+  cond_nodes = [:];
+  for a <- rand_sort(automaton.actions):
     nodes, next_id = gen_action_nodes(a, next_id, nil);
     cond_nodes = cond_nodes & nodes;
   ;
@@ -132,11 +131,11 @@ NestedAutoOutputId* nested_auto_output_deps(Expr expr):
 }
 
 
-(CondNodeId => CondInfo) gen_rep_cond_nodes(Automaton automaton, Nat first_id)
+[CondNodeId -> CondInfo] gen_rep_cond_nodes(Automaton automaton, Nat first_id)
 {
   next_id = first_id;
-  rep_cond_nodes = ();
-  for (a @ i : rand_sort(automaton.rep_actions))
+  rep_cond_nodes = [:];
+  for a @ i <- rand_sort(automaton.rep_actions):
     nodes, next_id = gen_action_nodes(a, next_id, nil);
     rep_cond_nodes = rep_cond_nodes & nodes;
   ;
@@ -144,85 +143,85 @@ NestedAutoOutputId* nested_auto_output_deps(Expr expr):
 }
 
 
-((CondNodeId => CondInfo), Nat) gen_action_nodes(<AutoCondAction, AutoRepAction> action, Nat root_id, Maybe[(id: CondNodeId, trigger: Bool)] parent)
+([CondNodeId -> CondInfo], Nat) gen_action_nodes(<AutoCondAction, AutoRepAction> action, Nat root_id, Maybe[[id: CondNodeId, trigger: Bool]] parent)
 {
   next_id = nat(root_id + 1);
 
-  updates = {};
-  calls = {};
-  conditions = ();
-  nested_conds = {};
+  updates = [];
+  calls = [];
+  conditions = [:];
+  nested_conds = [];
 
-  for (a, tv : rand_sort({(a, true) : a <- action.body} & {(a, false) : a <- action.else}))
-    if (a :: <AutoUpdate, AutoSetDiscrete>)
-      updates = updates & {(state_id: a.target, new_value: a.value, trigger: tv)};
-    elif (a :: AutoMethodCall)
-      calls = calls & {(auto_var: a.target, method: a.method, message: a.message, trigger: tv)};
+  for a, tv <- rand_sort([(a, true) : a <- action.body] & [(a, false) : a <- action.else]):
+    if a :: <AutoUpdate, AutoSetDiscrete>:
+      updates = updates & [[state_id: a.target, new_value: a.value, trigger: tv]];
+    elif a :: AutoMethodCall:
+      calls = calls & [[auto_var: a.target, method: a.method, message: a.message, trigger: tv]];
     else
       fail if not a :: <AutoCondAction, AutoRepAction>; //## BAD BAD: THE TYPECHECKER SHOULD AUTOMATICALLY INFER THE TYPE OF <a> IF WE TAKE THIS BRANCH
-      nested_conds = nested_conds & {(id: cond_node_id(next_id), trigger: tv)};
+      nested_conds = nested_conds & [[id: cond_node_id(next_id), trigger: tv]];
       subconds, next_id = gen_action_nodes(a, next_id, just(id: cond_node_id(root_id), trigger: tv));
       conditions = conditions & subconds;
     ;
   ;
 
-  return (conditions & (cond_node_id(root_id) => (cond: action.cond, parent: parent, nested_conds: nested_conds, updates: updates, calls: calls)), next_id);
+  return (conditions & [cond_node_id(root_id) -> [cond: action.cond, parent: parent, nested_conds: nested_conds, updates: updates, calls: calls]], next_id);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-(StdBlockNodeId => BlockNodeId*) map_state_trigger_up_nodes((CondNodeId => CondInfo) cond_nodes, (CondNodeId => CondInfo) rep_cond_nodes) =
+[StdBlockNodeId -> [BlockNodeId]] map_state_trigger_up_nodes([CondNodeId -> CondInfo] cond_nodes, [CondNodeId -> CondInfo] rep_cond_nodes) =
   merge_values(
     //## WHY ARE THE TWO DIFFERENT? A SET COMPREHENSION FOR THE FIRST, AND A MAP COMPREHENSION FOR THE SECOND?
-    {(std_block_node_id(u.state_id) => id) : c @ id <- cond_nodes, u <- c.updates} &
-    {(std_block_node_id(u.state_id) => id : c @ id <- rep_cond_nodes, u <- c.updates)}
+    [[std_block_node_id(u.state_id) -> id] : c @ id <- cond_nodes, u <- c.updates] &
+    [[std_block_node_id(u.state_id) -> id : c @ id <- rep_cond_nodes, u <- c.updates]]
   );
 
 
-(StdBlockNodeId => AutoNodeDependency*) map_state_value_up_nodes(Automaton automaton, (CondNodeId => CondInfo) cond_nodes, (CondNodeId => CondInfo) rep_cond_nodes) =
+[StdBlockNodeId -> [AutoNodeDependency]] map_state_value_up_nodes(Automaton automaton, [CondNodeId -> CondInfo] cond_nodes, [CondNodeId -> CondInfo] rep_cond_nodes) =
   merge_value_sets(
-    {(std_block_node_id(u.state_id) => expr_deps(u.new_value)) : c @ unused_var <- cond_nodes, u <- c.updates} &
-    {(std_block_node_id(u.state_id) => expr_deps(u.new_value)) : c @ unused_var <- rep_cond_nodes, u <- c.updates} &
-    {(std_block_node_id(id) => expr_deps(v.init_value)) : v @ id <- automaton.state}
+    [[std_block_node_id(u.state_id) -> expr_deps(u.new_value)] : c @ unused_var <- cond_nodes, u <- c.updates] &
+    [[std_block_node_id(u.state_id) -> expr_deps(u.new_value)] : c @ unused_var <- rep_cond_nodes, u <- c.updates] &
+    [[std_block_node_id(id) -> expr_deps(v.init_value)] : v @ id <- automaton.state]
   );
 
 
-(StdBlockNodeId => AutoNodeDependency*) map_nested_autos_trigger_up_nodes(Automaton automaton, (CondNodeId => CondInfo) cond_nodes, (CondNodeId => CondInfo) rep_cond_nodes)
+[StdBlockNodeId -> [AutoNodeDependency]] map_nested_autos_trigger_up_nodes(Automaton automaton, [CondNodeId -> CondInfo] cond_nodes, [CondNodeId -> CondInfo] rep_cond_nodes)
 {
-  input_deps = (
-    std_block_node_id(auto_id) => {nested_auto_input_id(auto_id, in_id) : unused_var @ in_id <- auto.args}
+  input_deps = [
+    std_block_node_id(auto_id) -> [nested_auto_input_id(auto_id, in_id) : unused_var @ in_id <- auto.args]
     : auto @ auto_id <- automaton.nested_autos
-  );
+  ];
 
-  cond_deps = merge_values({
-    (std_block_node_id(name(c.auto_var)) => id) : info @ id <- cond_nodes & rep_cond_nodes, c <- info.calls
-  });
+  cond_deps = merge_values([
+    [std_block_node_id(name(c.auto_var)) -> id] : info @ id <- cond_nodes & rep_cond_nodes, c <- info.calls
+  ]);
 
-  return merge_value_sets({input_deps, cond_deps});
+  return merge_value_sets([input_deps, cond_deps]);
 }
 
 
-(StdBlockNodeId => AutoNodeDependency*) map_nested_autos_value_up_nodes(Automaton automaton, (CondNodeId => CondInfo) cond_nodes, (CondNodeId => CondInfo) rep_cond_nodes)
+[StdBlockNodeId -> [AutoNodeDependency]] map_nested_autos_value_up_nodes(Automaton automaton, [CondNodeId -> CondInfo] cond_nodes, [CondNodeId -> CondInfo] rep_cond_nodes)
 {
-  all_args = merge_values({(name(c.target) => c.message) : a <- automaton.actions & automaton.rep_actions, c <- retrieve_method_calls(a)});
-  return (std_block_node_id(a) => union({expr_deps(e) : e <- es}) : es @ a <- all_args);
+  all_args = merge_values([[name(c.target) -> c.message] : a <- automaton.actions & automaton.rep_actions, c <- retrieve_method_calls(a)]);
+  return [std_block_node_id(a) -> union([expr_deps(e) : e <- es]) : es @ a <- all_args];
 }
 
 
-(Atom => [Expr]) group_and_sort_update_values(Automaton automaton, (CondNodeId => CondInfo) cond_nodes, (CondNodeId => CondInfo) rep_cond_nodes)
+[Atom -> Expr*] group_and_sort_update_values(Automaton automaton, [CondNodeId -> CondInfo] cond_nodes, [CondNodeId -> CondInfo] rep_cond_nodes)
 {
   update_values = merge_values(
-    {(u.state_id => u.new_value) : c @ unused_var <- cond_nodes, u <- c.updates} &
-    {(u.state_id => u.new_value) : c @ unused_var <- rep_cond_nodes, u <- c.updates} &
-    {(id => v.init_value)        : v @ id <- automaton.state}
+    [[u.state_id -> u.new_value] : c @ unused_var <- cond_nodes, u <- c.updates] &
+    [[u.state_id -> u.new_value] : c @ unused_var <- rep_cond_nodes, u <- c.updates] &
+    [[id -> v.init_value]        : v @ id <- automaton.state]
   );
-  return (s => rand_sort(vs) : vs @ s <- update_values);
+  return [s -> rand_sort(vs) : vs @ s <- update_values];
 }
 
 
-(Atom => (UpdateMethodSymb, Expr)) group_and_sort_nested_autos_calls(Automaton automaton) =
-  (name(c.target) => (c.method, c.message) : a <- automaton.actions & automaton.rep_actions, c <- retrieve_method_calls(a));
+[Atom -> (UpdateMethodSymb, Expr)] group_and_sort_nested_autos_calls(Automaton automaton) =
+  [name(c.target) -> (c.method, c.message) : a <- automaton.actions & automaton.rep_actions, c <- retrieve_method_calls(a)];
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -230,47 +229,47 @@ NestedAutoOutputId* nested_auto_output_deps(Expr expr):
 using
 {
   Automaton                                   automaton,
-  (AutoSymbol => (Atom => Bool))              auto_input_is_disc,
-  (AutoSymbol => (Atom => Bool))              auto_output_is_disc,
-  (CondNodeId => CondInfo)                    cond_nodes,
-  (CondNodeId => CondInfo)                    rep_cond_nodes,
-  (Atom => [Expr])                            update_values,
-  (Atom => (UpdateMethodSymb, Expr))          nested_auto_calls,
-  Atom*                                       state_vars_ids,
-  Atom*                                       disc_signal_ids,
-  (NestedAutoInputNodeId => Expr)             nested_auto_inputs,
-  (BlockNodeId => BlockNodeId*)               trigger_down_nodes_map,
-  (StdBlockNodeId => (Atom => BlockNodeId*))  output_trigger_down_nodes_map;
+  [AutoSymbol -> [Atom -> Bool]]              auto_input_is_disc,
+  [AutoSymbol -> [Atom -> Bool]]              auto_output_is_disc,
+  [CondNodeId -> CondInfo]                    cond_nodes,
+  [CondNodeId -> CondInfo]                    rep_cond_nodes,
+  [Atom -> Expr*]                            update_values,
+  [Atom -> (UpdateMethodSymb, Expr)]          nested_auto_calls,
+  [Atom]                                       state_vars_ids,
+  [Atom]                                       disc_signal_ids,
+  [NestedAutoInputNodeId -> Expr]             nested_auto_inputs,
+  [BlockNodeId -> [BlockNodeId]]               trigger_down_nodes_map,
+  [StdBlockNodeId -> [Atom -> [BlockNodeId]]]  output_trigger_down_nodes_map;
 
 
   AutoNode create_auto_node(StdBlockNodeId node_id, Nat level)
   {
     core_id = get_inner_id(node_id);
 
-    if (has_key(automaton.nested_autos, core_id))
+    if has_key(automaton.nested_autos, core_id):
       msg_disp = if has_key(nested_auto_calls, core_id) then just(nested_auto_calls[core_id]) else nil;
-      output_dep_nodes = lookup(output_trigger_down_nodes_map, node_id, ());
-      assert not (? ns @ o <- output_dep_nodes : not disjoint(ns, {std_block_node_id(id) : id <- state_vars_ids}));
+      output_dep_nodes = lookup(output_trigger_down_nodes_map, node_id, [:]);
+      assert not (? ns @ o <- output_dep_nodes : not disjoint(ns, [std_block_node_id(id) : id <- state_vars_ids]));
       return nested_auto_node(node_id, msg_disp, output_dep_nodes, level);
     ;
 
-    dep_nodes = lookup(trigger_down_nodes_map, node_id, {});
-    assert disjoint(dep_nodes, {std_block_node_id(id) : id <- state_vars_ids});
+    dep_nodes = lookup(trigger_down_nodes_map, node_id, []);
+    assert disjoint(dep_nodes, [std_block_node_id(id) : id <- state_vars_ids]);
 
-    if (has_key(automaton.rules, core_id))
+    if has_key(automaton.rules, core_id):
       return derived(node_id, automaton.rules[core_id], dep_nodes, level);
     ;
 
-    if (has_key(automaton.time_rules, core_id))
+    if has_key(automaton.time_rules, core_id):
       time_cond = automaton.time_rules[core_id];
       return time_varying_node(node_id, time_cond.expr, time_cond.time_expr, time_cond.rule_type, dep_nodes, level);
     ;
 
-    if (has_key(automaton.state, core_id))
-      return state(node_id, lookup(update_values, core_id, []), automaton.state[core_id].init_value, dep_nodes, level);
+    if has_key(automaton.state, core_id):
+      return state(node_id, lookup(update_values, core_id, ()), automaton.state[core_id].init_value, dep_nodes, level);
     ;
 
-    if (in(core_id, disc_signal_ids))
+    if in(core_id, disc_signal_ids):
       return derived_disc(node_id, update_values[core_id], dep_nodes, level);
     ;
 
@@ -288,11 +287,11 @@ using
     then_actions = actions(cond_info, true);
     else_actions = actions(cond_info, false);
 
-    then_nested_conds = {c.id : c <- cond_info.nested_conds, c.trigger == true};
-    else_nested_conds = {c.id : c <- cond_info.nested_conds, c.trigger == false};
+    then_nested_conds = [c.id : c <- cond_info.nested_conds, c.trigger == true];
+    else_nested_conds = [c.id : c <- cond_info.nested_conds, c.trigger == false];
 
     //## UGLY UGLY UGLY: THE TWO CALLS ARE BASICALLY THE SAME
-    if (is_rep)
+    if is_rep:
       info = rep_cond_node(node_id, cond_info.cond, cond_info.parent, then_actions, else_actions,
                             then_nested_conds, else_nested_conds, level);
     else
@@ -303,13 +302,13 @@ using
     return info;
 
 
-    AutoNodeAction* actions(CondInfo cond_info, Bool trigger_value) = {
+    [AutoNodeAction] actions(CondInfo cond_info, Bool trigger_value) = [
       state_update_action(u.state_id, index_first(u.new_value, update_values[u.state_id]))
       : u <- cond_info.updates, u.trigger == trigger_value
-    } & {
+    ] & [
       method_call_action(bare_id)
       : c <- cond_info.calls, c.trigger == trigger_value, bare_id = name(c.auto_var)
-    };
+    ];
   }
 
 
@@ -319,19 +318,19 @@ using
 
     expr = nested_auto_inputs[node_id];
 
-    disc_vars = {v : v <- extern_vars(expr), in(unsafe_name(v), disc_signal_ids)};
-    disc_outputs = {
+    disc_vars = [v : v <- extern_vars(expr), in(unsafe_name(v), disc_signal_ids)];
+    disc_outputs = [
       (memb_auto_var(a), o)
       : ao <- possibly_discrete_nested_auto_output_deps_copy_2(expr),
         a = left(ao),
         o = right(ao),
         auto_output_is_disc[automaton.nested_autos[a].type][o]
-    };
+    ];
 
     is_disc = auto_input_is_disc[automaton.nested_autos[node_id.auto].type][node_id.input];
-    assert is_disc == (disc_vars != {} or disc_outputs != {});
+    assert is_disc == {disc_vars != [] or disc_outputs != []};
 
-    fail if not disc_vars :: MembVar*; //## BAD BAD BAD
+    fail if not disc_vars :: [MembVar]; //## BAD BAD BAD
 
     return nested_auto_input_node(node_id, expr, disc_vars, disc_outputs, level);
   }
@@ -340,32 +339,32 @@ using
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-AutoNodeDependency* cond_deps(CondInfo cond)
+[AutoNodeDependency] cond_deps(CondInfo cond)
 {
   parent = cond.parent;
-  return expr_deps(cond.cond) & {parent.id if parent != nil};
+  return expr_deps(cond.cond) & [parent.id if parent != nil];
 }
 
 
-AutoNodeDependency* expr_deps(Expr expr)
+[AutoNodeDependency] expr_deps(Expr expr)
 {
-  assert extern_vars(expr) :: <MembVar, MembCopyVar>*; //## BAD BAD BAD
-  memb_vars_ids = {std_block_node_id(unsafe_name(v)) : v <- extern_vars(expr), memb_var() << v};
+  assert extern_vars(expr) :: [<MembVar, MembCopyVar>]; //## BAD BAD BAD
+  memb_vars_ids = [std_block_node_id(unsafe_name(v)) : v <- extern_vars(expr), memb_var() << v];
   auto_output_ids = nested_auto_output_deps(expr);
   auto_ids = nested_auto_deps(expr);
   return memb_vars_ids & auto_output_ids & auto_ids;
 }
 
 //## HOW IS THIS DIFFERENT FROM discrete_signals() IN auto-utils.ar?
-Atom* updated_disc_vars_ids(AutoAtomicAction action):
-  update()        = {},
-  set_discrete()  = {action.target},
-  method_call()   = {};
+[Atom] updated_disc_vars_ids(AutoAtomicAction action):
+  update()        = [],
+  set_discrete()  = [action.target],
+  method_call()   = [];
 
 
-Atom* updated_disc_vars_ids(<AutoCondAction, AutoRepAction> action) =
-  union({updated_disc_vars_ids(a) : a <- action.body}) &
-  union({updated_disc_vars_ids(a) : a <- action.else});
+[Atom] updated_disc_vars_ids(<AutoCondAction, AutoRepAction> action) =
+  union([updated_disc_vars_ids(a) : a <- action.body]) &
+  union([updated_disc_vars_ids(a) : a <- action.else]);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -373,13 +372,13 @@ Atom* updated_disc_vars_ids(<AutoCondAction, AutoRepAction> action) =
 //## BECAUSE IT SEEMS WAY TOO SPECIAL PURPOSE TO PUT IN A SHARED FILE.
 //## MAYBE THIS COPY COULD BE ELIMINATED IF WE MOVED SOME RESPONSABILITY
 //## INTO THE SYNTAX REMOVAL LAYER
-(Atom, Atom)* possibly_discrete_nested_auto_output_deps_copy_2(Expr expr):
-  get_output()        = {(name(expr.var), expr.output)},
+[(Atom, Atom)] possibly_discrete_nested_auto_output_deps_copy_2(Expr expr):
+  get_output()        = [(name(expr.var), expr.output)],
   // This one is not relevant here because we only care about dependencies
   // that could potentially be discrete, and this signal is always continuous
-  output_is_set()     = {},
+  output_is_set()     = [],
   // This one should never appear outside the body of a procedure
   output_is_def()     = {fail;},
   // Not relevant either, because this is always a "continuous" signal
-  method_call_expr()  = {},
+  method_call_expr()  = [],
   _                   = retrieve_from_nested_exprs(expr, possibly_discrete_nested_auto_output_deps_copy_2);

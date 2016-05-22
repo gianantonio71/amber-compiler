@@ -1,68 +1,68 @@
-Var* syn_new_vars(SynPtrn ptrn):
-    ptrn_var()      = {ptrn.var} & syn_new_vars(ptrn.ptrn),
+[Var] syn_new_vars(SynPtrn ptrn):
+    ptrn_var()      = [ptrn.var] & syn_new_vars(ptrn.ptrn),
     ptrn_tag_obj()  = syn_new_vars(ptrn.tag) & syn_new_vars(ptrn.obj),
-    _               = {};
+    _               = [];
 
 
-Var* syn_new_vars(SynStmt stmt):
+[Var] syn_new_vars(SynStmt stmt):
   assignment_stmt() = set(stmt.vars),
   if_stmt()         = {
-    bodies = {b.body : b <- set(stmt.branches)} & {stmt.else};
-    return intersection({syn_new_vars(ss) : ss <- bodies, not never_falls_through(ss)});
+    bodies = [b.body : b <- set(stmt.branches)] & [stmt.else];
+    return intersection([syn_new_vars(ss) : ss <- bodies, not never_falls_through(ss)]);
   },
   let_stmt()        = syn_new_vars(stmt.body),
-  proc_call()       = {stmt.res_var if stmt.res_var?},
-  _                 = {};
+  proc_call()       = [stmt.res_var if stmt.res_var?],
+  _                 = [];
 
 
-Var* syn_new_vars([<SynStmt, SynClause>] objs) = seq_union([syn_new_vars(obj) : obj <- objs]);
+[Var] syn_new_vars(<SynStmt, SynClause>* objs) = seq_union((syn_new_vars(obj) : obj <- objs));
 
 
-Var* syn_new_vars(SynClause clause):
-  set_elem_clause()     = {clause.var},
-  map_entry_clause()    = {clause.key_var, clause.value_var},
-  seq_elem_clause()     = {clause.var},
-  and_clause(cs?)       = seq_union([syn_new_vars(c) : c <- cs]),
+[Var] syn_new_vars(SynClause clause):
+  set_elem_clause()     = [clause.var],
+  map_entry_clause()    = [clause.key_var, clause.value_var],
+  seq_elem_clause()     = [clause.var],
+  and_clause(cs?)       = seq_union((syn_new_vars(c) : c <- cs)),
   or_clause()           = intersection(syn_new_vars(clause.left), syn_new_vars(clause.right)),
   match_clause()        = syn_new_vars(clause.ptrn),
-  asgnm_clause()        = {clause.var},
-  filter_clause()       = {};
+  asgnm_clause()        = [clause.var],
+  filter_clause()       = [];
 
 
-Var* syn_new_vars(SynIter iter):
-  seq_iter()    = set(iter.vars) & {iter.idx_var if iter.idx_var?},
-  range_iter()  = {iter.var if iter.var?};
+[Var] syn_new_vars(SynIter iter):
+  seq_iter()    = set(iter.vars) & [iter.idx_var if iter.idx_var?],
+  range_iter()  = [iter.var if iter.var?];
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-TypeVar* syn_type_vars(SynClsType type) = seq_union([syn_type_vars(t) : t <- type.in_types]) & syn_type_vars(type.out_type);
+[TypeVar] syn_type_vars(SynClsType type) = seq_union((syn_type_vars(t) : t <- type.in_types)) & syn_type_vars(type.out_type);
 
-TypeVar* syn_type_vars(SynType type):
-  SynLeafType       = {},
+[TypeVar] syn_type_vars(SynType type):
+  SynLeafType       = [],
   type_ref(ts?)     = syn_type_vars(ts),
-  type_var()        = {type},
+  type_var()        = [type],
   ne_seq_type()     = syn_type_vars(type.elem_type),
   ne_set_type()     = syn_type_vars(type.elem_type),
   ne_map_type()     = syn_type_vars(type.key_type) & syn_type_vars(type.value_type),
-  record_type(fs?)  = seq_union([syn_type_vars(f.type) : f <- fs]),
-  tuple_type(ts?)   = seq_union([syn_type_vars(t) : t <- ts]),
+  record_type(fs?)  = seq_union((syn_type_vars(f.type) : f <- fs)),
+  tuple_type(ts?)   = seq_union((syn_type_vars(t) : t <- ts)),
   tag_obj_type()    = syn_type_vars(type.tag_type) & syn_type_vars(type.obj_type),
-  union_type(ts?)   = seq_union([syn_type_vars(t) : t <- ts]);
+  union_type(ts?)   = seq_union((syn_type_vars(t) : t <- ts));
 
-TypeVar* syn_type_vars(SynTypeSymbol type_symb):
-  BasicTypeSymbol   = {},
-  par_type_symbol() = seq_union([syn_type_vars(t) : t <- type_symb.params]);
+[TypeVar] syn_type_vars(SynTypeSymbol type_symb):
+  BasicTypeSymbol   = [],
+  par_type_symbol() = seq_union((syn_type_vars(t) : t <- type_symb.params));
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-TypeSymbol syn_type_symbol_to_type_symbol(SynTypeSymbol ts, Maybe[[TypeVar]] type_vars):
+TypeSymbol syn_type_symbol_to_type_symbol(SynTypeSymbol ts, Maybe[TypeVar*] type_vars):
   BasicTypeSymbol   = ts,
-  par_type_symbol() = par_type_symbol(ts.symbol, [syn_type_to_type(p, type_vars) : p <- ts.params]);
+  par_type_symbol() = par_type_symbol(ts.symbol, (syn_type_to_type(p, type_vars) : p <- ts.params));
 
 
-NeType syn_type_to_type(SynType type, Maybe[[TypeVar]] type_vars):
+NeType syn_type_to_type(SynType type, Maybe[TypeVar*] type_vars):
   LeafType            = type,
   type_var(+)         = if type_vars != nil then type_var(index_first(type, value(type_vars))) else type,
   type_var(*)         = type,
@@ -71,26 +71,26 @@ NeType syn_type_to_type(SynType type, Maybe[[TypeVar]] type_vars):
   ne_seq_type()       = ne_seq_type(syn_type_to_type(type.elem_type, type_vars)),
   ne_set_type()       = ne_set_type(syn_type_to_type(type.elem_type, type_vars)),
   ne_map_type()       = ne_map_type(syn_type_to_type(type.key_type, type_vars), syn_type_to_type(type.value_type, type_vars)),
-  record_type(fs?)    = record_type_nonempty((f.label => (type: syn_type_to_type(f.type, type_vars), optional: f.optional) : f <- set(fs))),
-  tuple_type(ts?)     = tuple_type_nonempty([syn_type_to_type(t, type_vars) : t <- ts]),
+  record_type(fs?)    = record_type_nonempty([f.label -> [type: syn_type_to_type(f.type, type_vars), optional: f.optional] : f <- set(fs)]),
+  tuple_type(ts?)     = tuple_type_nonempty((syn_type_to_type(t, type_vars) : t <- ts)),
   tag_obj_type()      = { tag_type = type.tag_type;
                           fail if not tag_type :: TagType; //## BAD: HANDLE THE ERROR
                           return tag_obj_type(tag_type, syn_type_to_type(type.obj_type, type_vars));
                         },
-  union_type(ts?)     = union_type_nonempty({syn_type_to_type(t, type_vars) : t <- set(ts)});
+  union_type(ts?)     = union_type_nonempty([syn_type_to_type(t, type_vars) : t <- set(ts)]);
 
 
-ClsType syn_type_to_type(SynClsType type, Maybe[[TypeVar]] type_vars) =
+ClsType syn_type_to_type(SynClsType type, Maybe[TypeVar*] type_vars) =
   cls_type(
-    [syn_type_to_type(t, type_vars) : t <- type.in_types],
+    (syn_type_to_type(t, type_vars) : t <- type.in_types),
     syn_type_to_type(type.out_type, type_vars)
   );
 
 
-(TypeName => Type) create_type_map(SynTypedef* tdefs, SynParTypedef* par_tdefs)
+[TypeName -> Type] create_type_map([SynTypedef] tdefs, [SynParTypedef] par_tdefs)
 {
-  type_map = (type_name(td.name, 0) => syn_type_to_type(td.type, just([])) : td <- tdefs);
-  par_type_map = (type_name(td.name, length(td.params)) => syn_type_to_type(td.type, just(td.params)) : td <- par_tdefs);
+  type_map = [type_name(td.name, 0) -> syn_type_to_type(td.type, just(())) : td <- tdefs];
+  par_type_map = [type_name(td.name, length(td.params)) -> syn_type_to_type(td.type, just(td.params)) : td <- par_tdefs];
   return type_map & par_type_map;
 }
 
@@ -98,7 +98,7 @@ ClsType syn_type_to_type(SynClsType type, Maybe[[TypeVar]] type_vars) =
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-PseudoType syn_pseudotype(SynType type, (TypeName => Type) typedefs) = pseudotype(syn_type_to_type(type, nil), typedefs);
+PseudoType syn_pseudotype(SynType type, [TypeName -> Type] typedefs) = pseudotype(syn_type_to_type(type, nil), typedefs);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -106,29 +106,29 @@ PseudoType syn_pseudotype(SynType type, (TypeName => Type) typedefs) = pseudotyp
 Bool syn_is_last_for_sure(SynStmt stmt):
   return_stmt()       = true,
   fail_stmt           = true,
-  if_stmt()           = all([at_least_one([syn_is_last_for_sure(s) : s <- b.body]) : b <- stmt.branches])
-                        and at_least_one([syn_is_last_for_sure(s) : s <- stmt.else]),
-  inf_loop_stmt(ss?)  = none([syn_can_break_loop(s) : s <- ss]),
+  if_stmt()           = all((at_least_one((syn_is_last_for_sure(s) : s <- b.body)) : b <- stmt.branches))
+                        and at_least_one((syn_is_last_for_sure(s) : s <- stmt.else)),
+  inf_loop_stmt(ss?)  = none((syn_can_break_loop(s) : s <- ss)),
   //:break_stmt         = //## NOT SURE HERE
-  let_stmt()          = at_least_one([syn_is_last_for_sure(s) : s <- stmt.body]),
+  let_stmt()          = at_least_one((syn_is_last_for_sure(s) : s <- stmt.body)),
   _                   = false;
 
 
 Bool syn_can_break_loop(SynStmt stmt):
   break_stmt  = true,
-  if_stmt()   = at_least_one([at_least_one([syn_can_break_loop(s) : s <- b.body]) : b <- stmt.branches])
-                or at_least_one([syn_can_break_loop(s) : s <- stmt.else]),
+  if_stmt()   = at_least_one((at_least_one((syn_can_break_loop(s) : s <- b.body)) : b <- stmt.branches))
+                or at_least_one((syn_can_break_loop(s) : s <- stmt.else)),
   _           = false;
 
 
-Bool has_top_level_break([SynStmt] stmts)
+Bool has_top_level_break(SynStmt* stmts)
 {
-  for (s : stmts)
+  for s <- stmts:
     return true if s == :break_stmt;
 
-    if (s :: SynIfStmt) //## BAD BAD BAD
+    if s :: SynIfStmt: //## BAD BAD BAD
       //## BAD BAD BAD A LOOP SHOULD NOT BE NECESSARY HERE
-      for (b : s.branches)
+      for b <- s.branches:
         return true if has_top_level_break(b.body);
       ;
       return true if has_top_level_break(s.else);
@@ -145,7 +145,7 @@ Bool never_falls_through(SynStmt stmt):
 
   inf_loop_stmt(ss?)  = not has_top_level_break(ss),
 
-  if_stmt()           = { for (b : stmt.branches) //## BAD BAD BAD A LOOP SHOULDN'T BE NEEDED
+  if_stmt()           = { for b <- stmt.branches: //## BAD BAD BAD A LOOP SHOULDN'T BE NEEDED
                             return false if not never_falls_through(b.body);
                           ;
                           return never_falls_through(stmt.else);
@@ -161,9 +161,9 @@ Bool never_falls_through(SynStmt stmt):
 
 
 //## BAD BAD BAD A LOOP SHOULDN'T BE NEEDED
-Bool never_falls_through([SynStmt] stmts)
+Bool never_falls_through(SynStmt* stmts)
 {
-  for (s : stmts)
+  for s <- stmts:
     return true if never_falls_through(s);
   ;
   return false;
@@ -172,15 +172,15 @@ Bool never_falls_through([SynStmt] stmts)
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-Var* already_def_vars(Var* new_vars, Var* curr_vars) = {v : v <- new_vars, already_def(v, curr_vars)};
+[Var] already_def_vars([Var] new_vars, [Var] curr_vars) = [v : v <- new_vars, already_def(v, curr_vars)];
 
-Bool already_def(Var var, Var* vars):
+Bool already_def(Var var, [Var] vars):
   var(n?)         = already_def(n, vars),
   named_arg(n?)   = already_def(n, vars),
   memb_var(n?)    = already_def(n, vars),
   _               = in(var, vars);
 
-Bool already_def(Atom var_name, Var* vars) =
+Bool already_def(Atom var_name, [Var] vars) =
   in(var(var_name), vars)         or
   in(named_arg(var_name), vars)   or
   in(memb_var(var_name), vars);

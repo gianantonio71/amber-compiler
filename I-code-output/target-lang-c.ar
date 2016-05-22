@@ -1,4 +1,4 @@
-type CCodeOutput = (body: [String], header: [String]);
+type CCodeOutput = [body: String*, header: String*];
 
 CCodeOutput compile_to_c(CompiledPrg prg)
 {
@@ -6,55 +6,55 @@ CCodeOutput compile_to_c(CompiledPrg prg)
 
   symbs = used_symbols(prg);
 
-  symb_decls = ["const Obj " & to_c_expr(s, typesymb2name(ts) = typesymb2str(ts, ptss)) & " = symb(" & to_str(i) & ");" : s @ i <- symbs] & 4 * [""];
-  symb_decls = symb_decls & ["const long long EMB_SYMB_COUNT = " & to_text(length(symbs)) & ";"] & 4 * [""];
+  symb_decls = ("const Obj " & to_c_expr(s, typesymb2name(ts) = typesymb2str(ts, ptss)) & " = symb(" & printed(i) & ");" : s @ i <- symbs) & 4 * ("");
+  symb_decls = symb_decls & ("const long long EMB_SYMB_COUNT = " & printed(length(symbs)) & ";") & 4 * ("");
 
   c_code = symb_decls;
 
-  if (symbs != [])
-    symb_strs  = ["  \"" & _str_(_obj_(s)) & "\"," : s <- symbs];
-    c_code     = c_code & ["const char *map_symb_to_str[EMB_SYMB_COUNT] = {"] & symb_strs & ["};"] & 4 * [""];
-    symb_decls = symb_decls & ["extern const char *map_symb_to_str[EMB_SYMB_COUNT];"] & 4 * [""];
+  if symbs != ():
+    symb_strs  = ("  \"" & _str_(_obj_(s)) & "\"," : s <- symbs);
+    c_code     = c_code & ("const char *map_symb_to_str[EMB_SYMB_COUNT] = {") & symb_strs & ("};") & 4 * ("");
+    symb_decls = symb_decls & ("extern const char *map_symb_to_str[EMB_SYMB_COUNT];") & 4 * ("");
   ;
 
   // print "Symbol declarations generated";
 
   cls_defs = cls_defs(prg);
 
-  all_named_args = merge_values(set([p.named_args : p <- rand_sort(prg.procs)]));
-  all_param_arity_pairs = rand_sort({(var: v, arity: a) : ars @ v <- all_named_args, a <- ars});
+  all_named_args = merge_values(set((p.named_args : p <- rand_sort(prg.procs))));
+  all_param_arity_pairs = rand_sort([[var: v, arity: a] : ars @ v <- all_named_args, a <- ars]);
 
-  env_decl = ["struct Env {"];
+  env_decl = ("struct Env {");
 
-  for (na @ i : all_param_arity_pairs)
+  for na @ i <- all_param_arity_pairs:
     var   = na.var;
     arity = na.arity;
 
     name = _str_(_obj_(var));
 
-    if (arity > 0)
-      ls = [ "  Obj (*n" & to_str(arity) & "_" & name & ")(" & append(["Obj p" & to_str(j) & ", " : j < na.arity]) & "const Obj *C, Env &env);",
-              "  const Obj *C" & to_str(arity) & "_" & name & ";"
-            ];
+    if arity > 0:
+      ls = ( "  Obj (*n" & printed(arity) & "_" & name & ")(" & append(("Obj p" & printed(j) & ", " : j < na.arity)) & "const Obj *C, Env &env);",
+              "  const Obj *C" & printed(arity) & "_" & name & ";"
+            );
     else
-      ls = ["  Obj n_" & name & ";"];
+      ls = ("  Obj n_" & name & ";");
     ;
 
-    ls = [""] & ls if i > 0;
+    ls = ("") & ls if i > 0;
     env_decl = env_decl & ls;
   ;
 
-  env_decl = env_decl & ["};"] & 4 * [""];
+  env_decl = env_decl & ("};") & 4 * ("");
 
   c_code = c_code & env_decl;
 
-  all_cls_arities = {p.arity : pd <- prg.procs, p <- set(pd.params), p != :obj}; //## MAYBE HERE IT WOULD BE BETTER TO DO A NORMAL SORT
+  all_cls_arities = [p.arity : pd <- prg.procs, p <- set(pd.params), p != :obj]; //## MAYBE HERE IT WOULD BE BETTER TO DO A NORMAL SORT
 
-  cls_obj_typedefs = join(intermix([generate_cls_obj_typedef(a) : a <- rand_sort(all_cls_arities)], 2 * [""])) & 4 * [""];
+  cls_obj_typedefs = join(intermix((generate_cls_obj_typedef(a) : a <- rand_sort(all_cls_arities)), 2 * (""))) & 4 * ("");
   c_code = c_code & cls_obj_typedefs;
 
-  all_fn_arities = set([in_arity(d) : d <- rand_sort(prg.procs)]);
-  c_code = c_code & join(intermix([generate_push_call_info_wrapper(a) : a <- rand_sort(all_fn_arities)], 2 * [""])) & 4 * [""];
+  all_fn_arities = set((in_arity(d) : d <- rand_sort(prg.procs)));
+  c_code = c_code & join(intermix((generate_push_call_info_wrapper(a) : a <- rand_sort(all_fn_arities)), 2 * (""))) & 4 * ("");
 
   sorted_cls_defs = rand_sort(cls_defs);
 
@@ -67,46 +67,46 @@ CCodeOutput compile_to_c(CompiledPrg prg)
     cls2id(cls)       = index_first(cls, sorted_cls_defs)
   );
 
-  body = [
+  body = (
     "#include \"lib.h\"\n\n",
     "#include \"iolib.h\"\n\n",
     "",
     "namespace generated",
     "{"
-  ] & indent_lines(c_code & proc_code.body) & ["}"];
+  ) & indent_lines(c_code & proc_code.body) & ("}");
 
-  header = ["namespace generated", "{"] & indent_lines(symb_decls & env_decl & cls_obj_typedefs & proc_code.header) & ["}"];
+  header = ("namespace generated", "{") & indent_lines(symb_decls & env_decl & cls_obj_typedefs & proc_code.header) & ("}");
 
-  return (body: body, header: header);
+  return [body: body, header: header];
 
 
-  [String] generate_cls_obj_typedef(NzNat arity) = [
-    "struct CLS" & to_str(arity) & " {",
-    "  Obj (*fn_ptr)(" & append(arity * ["Obj"], ", ") & ", const Obj *, Env &env);",
+  String* generate_cls_obj_typedef(NzNat arity) = (
+    "struct CLS" & printed(arity) & " {",
+    "  Obj (*fn_ptr)(" & append(arity * ("Obj"), ", ") & ", const Obj *, Env &env);",
     "  const Obj *data;",
     "};"
-  ];
+  );
 
-  String typesymb2str(TypeSymbol ts, [ParTypeSymbol] par_types):
+  String typesymb2str(TypeSymbol ts, ParTypeSymbol* par_types):
     type_symbol(a?)     = upper_camel_case(a),
-    par_type_symbol()   = typesymb2str(ts.symbol, par_types) & "_" & to_str(index_first(ts, par_types));
+    par_type_symbol()   = typesymb2str(ts.symbol, par_types) & "_" & printed(index_first(ts, par_types));
 }
 
 
-[String^] generate_push_call_info_wrapper(Nat arity)
+String+ generate_push_call_info_wrapper(Nat arity)
 {
-  signature = "void push_call_info_wrapper(const char *fn_name" & append([", Obj p" & to_str(i) : i < arity]) & ")";
-  code = [signature, "{", "#ifndef NDEBUG"];
-  if (arity == 0)
-    code = code & ["  push_call_info(fn_name, 0, (Obj *)0);"];
+  signature = "void push_call_info_wrapper(const char *fn_name" & append((", Obj p" & printed(i) : i < arity)) & ")";
+  code = (signature, "{", "#ifndef NDEBUG");
+  if arity == 0:
+    code = code & ("  push_call_info(fn_name, 0, (Obj *)0);");
   else
-    code = code & ["  Obj *params = new_obj_array(" & to_str(arity) & ");"];
-    for (i < arity)
-      code = code & ["  params[" & to_str(i) & "] = p" & to_str(i) & ";"];
+    code = code & ("  Obj *params = new_obj_array(" & printed(arity) & ");");
+    for i < arity:
+      code = code & ("  params[" & printed(i) & "] = p" & printed(i) & ";");
     ;
-    code = code & ["  push_call_info(fn_name, " & to_str(arity) & ", params);"];
+    code = code & ("  push_call_info(fn_name, " & printed(arity) & ", params);");
   ;
-  return nonempty(code & ["#endif", "}"]);
+  return nonempty(code & ("#endif", "}"));
 }
 
 
@@ -120,107 +120,107 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
   {
     name_str = to_c_name(block.name);
 
-    vars_decl = [var_c_type(v) & " " & to_c_var_name(v, true) & ";" : v <- rand_sort(block.memb_vars)] &
-                [to_c_name(t) & " " & to_c_var_name(v, true) & ";" : v, t <- rand_sort_pairs(block.nested_auto_vars)];
+    vars_decl = (var_c_type(v) & " " & to_c_var_name(v, true) & ";" : v <- rand_sort(block.memb_vars)) &
+                (to_c_name(t) & " " & to_c_var_name(v, true) & ";" : v, t <- rand_sort_pairs(block.nested_auto_vars));
 
-    if (block.time_rules_count != 0)
-      size_str = to_text(block.time_rules_count);
-      vars_decl = vars_decl & [
+    if block.time_rules_count != 0:
+      size_str = printed(block.time_rules_count);
+      vars_decl = vars_decl & (
         "long long trigger_times_heap[" & size_str & "];",
         "int time_varying_cond_ids_heap[" & size_str & "];"
-      ];
+      );
     ;
 
-    decl = ["struct " & name_str, "{"] & indent_lines(vars_decl) & ["};"];
+    decl = ("struct " & name_str, "{") & indent_lines(vars_decl) & ("};");
 
     init_vars_decl = gen_vars_decls(block.init_code);
-    init_vars_decl = init_vars_decl & [""] if init_vars_decl != [];
+    init_vars_decl = init_vars_decl & ("") if init_vars_decl != ();
     init_body = init_vars_decl & compile_to_c(block.init_code, nil);
     init_sgn = "void " & init_method_name(block.name) & "(" & name_str & " *self, Env &env)";
-    init_decl = [init_sgn & ";"];
-    init_proc = [init_sgn, "{"] & indent_lines(init_body) & ["}"];
+    init_decl = (init_sgn & ";");
+    init_proc = (init_sgn, "{") & indent_lines(init_body) & ("}");
 
     cleanup_body = compile_to_c(block.cleanup_code, nil);
     cleanup_sgn = "void " & cleanup_method_name(block.name) & "(" & name_str & " *self)";
-    cleanup_decl = [cleanup_sgn & ";"];
-    cleanup_proc = [cleanup_sgn, "{"] & indent_lines(cleanup_body) & ["}"];
+    cleanup_decl = (cleanup_sgn & ";");
+    cleanup_proc = (cleanup_sgn, "{") & indent_lines(cleanup_body) & ("}");
 
-    update_body = gen_vars_decls(block.update_code) & [""] & compile_to_c(block.update_code, nil);
+    update_body = gen_vars_decls(block.update_code) & ("") & compile_to_c(block.update_code, nil);
     // time_arg = if block.time_rules_count != 0 then ", long long " & to_c_var_name(elapsed_time) else "";
     time_arg = ", long long " & to_c_var_name(elapsed_time);
     update_sgn = "void " & update_method_name(block.name) & "(" & name_str & " *self" & time_arg & ", Env &env)";
-    update_decl = [update_sgn & ";"];
-    update_proc = [update_sgn, "{"] & indent_lines(update_body) & ["}"];
+    update_decl = (update_sgn & ";");
+    update_proc = (update_sgn, "{") & indent_lines(update_body) & ("}");
 
-    queue_methods_decls_and_impls = {gen_queue_update_method(block.name, id, method.body, method.two_level_update) : method @ id <- block.queue_update_code};
+    queue_methods_decls_and_impls = [gen_queue_update_method(block.name, id, method.body, method.two_level_update) : method @ id <- block.queue_update_code];
     queue_methods_decls, queue_methods_impls = unzip(rand_sort(queue_methods_decls_and_impls));
-    queue_methods_impls = join(intermix(queue_methods_impls, ["", ""]));
+    queue_methods_impls = join(intermix(queue_methods_impls, ("", "")));
 
     insert_timer_method_decl, insert_timer_method_impl = gen_insert_timer_method(block.name);
     clear_timer_method_decl, clear_timer_method_impl = gen_clear_timer_method(block.name);
 
     queue_input_updates = length(block.inputs) > 2; //## BAD BAD BAD: THE NUMBER 2 IS REPEATED IN THE CODE GENERATION PHASE
-    input_decls, input_impls = unzip([gen_input_setter(block.name, id, i, queue_input_updates) : id @ i <- block.inputs]);
-    input_impls = join(intermix(input_impls, ["", ""]));
+    input_decls, input_impls = unzip((gen_input_setter(block.name, id, i, queue_input_updates) : id @ i <- block.inputs));
+    input_impls = join(intermix(input_impls, ("", "")));
 
-    output_decls, output_impls = unzip([gen_output_getter(block.name, o) : o <- rand_sort(block.outputs)]);
-    output_impls = join(intermix(output_impls, ["", ""]));
+    output_decls, output_impls = unzip((gen_output_getter(block.name, o) : o <- rand_sort(block.outputs)));
+    output_impls = join(intermix(output_impls, ("", "")));
 
-    method_decls, method_impls = unzip(rand_sort({gen_method(block.name, id, b) : b @ id <- block.methods_code}));
-    method_impls = join(intermix(method_impls, ["", ""]));
+    method_decls, method_impls = unzip(rand_sort([gen_method(block.name, id, b) : b @ id <- block.methods_code]));
+    method_impls = join(intermix(method_impls, ("", "")));
 
-    const_data = rand_sort({gen_const_data(block.name, c) : c <- block.const_data});
+    const_data = rand_sort([gen_const_data(block.name, c) : c <- block.const_data]);
 
     has_time_rules = block.time_rules_count != 0;
 
     header = join(
                intermix(
-                 [ decl, const_data, init_decl, update_decl, cleanup_decl, input_decls,
+                 ( decl, const_data, init_decl, update_decl, cleanup_decl, input_decls,
                    output_decls, queue_methods_decls, method_decls,
-                   [insert_timer_method_decl, clear_timer_method_decl] if has_time_rules
-                 ],
-                 ["", ""]
+                   (insert_timer_method_decl, clear_timer_method_decl) if has_time_rules
+                 ),
+                 ("", "")
                )
              );
 
     body = join(
              intermix(
-               [ init_proc, update_proc, cleanup_proc, input_impls, output_impls,
+               ( init_proc, update_proc, cleanup_proc, input_impls, output_impls,
                  queue_methods_impls, method_impls,
                  insert_timer_method_impl if has_time_rules,
                  clear_timer_method_impl  if has_time_rules
-               ],
-               ["", ""]
+               ),
+               ("", "")
              )
            );
 
-    return (body: body, header: header);
+    return [body: body, header: header];
 
 
     String gen_const_data(AutoSymbol block_name, ConstBlockData const) =
       "const long long " & to_c_time_slots_table_name(block_name, const.expr_id) & "[] = {" &
-      append([to_text(l) & "LL" : l <- const.lengths], ", ") & "};";
+      append((printed(l) & "LL" : l <- const.lengths), ", ") & "};";
 
 
-    (String, [String]) gen_method(AutoSymbol block_name, ExMethodSymb name, [Instr] body)
+    (String, String*) gen_method(AutoSymbol block_name, ExMethodSymb name, Instr* body)
     {
-      args_str = append([to_c_name(block_name) & " *self", "long long elapsed_time"] & ["Obj p" & to_text(i) : i < name.arity], ", ");
+      args_str = append((to_c_name(block_name) & " *self", "long long elapsed_time") & ("Obj p" & printed(i) : i < name.arity), ", ");
       ret_type_str = match (name.symbol)
         read_only_method_symb()   = "Obj",
         update_method_symb()      = "void";
       sgn = ret_type_str & " " & user_def_method_name(block_name, name) & "(" & args_str & ", Env &env)";
       vars_decls = gen_vars_decls(body);
-      body_text = vars_decls & ["" if vars_decls != []] & compile_to_c(body, nil);
-      return (sgn & ";", [sgn, "{"] & indent_lines(body_text) & ["}"]);
+      body_text = vars_decls & ("" if vars_decls != ()) & compile_to_c(body, nil);
+      return (sgn & ";", (sgn, "{") & indent_lines(body_text) & ("}"));
     }
 
 
-    (String, [String]) gen_input_setter(AutoSymbol block_name, Atom input_name, Nat node_idx, Bool queue_node)
+    (String, String*) gen_input_setter(AutoSymbol block_name, Atom input_name, Nat node_idx, Bool queue_node)
     {
       sgn = "void " & input_set_method_name(block_name, input_name) & "(" & to_c_name(block_name) & " *self, Obj new_val)";
       pending_input_var_str = to_c_var_name(pending_input_var(input_name));
       marked_for_update_var = to_c_var_name(marked_for_update_var(std_block_node_id(input_name)));
-      body = [
+      body = (
         sgn,
         "{",
         "  if (" & marked_for_update_var & ")",
@@ -234,72 +234,72 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
         // "    internal_fail_if(" & pending_input_var_str & " != null_obj);",
         "    " & pending_input_var_str & " = new_val;",
         "    long long idx = self->update_count_0;" if queue_node,
-        "    self->nodes_to_update_0[idx] = " & to_str(node_idx) & ";" if queue_node,
+        "    self->nodes_to_update_0[idx] = " & printed(node_idx) & ";" if queue_node,
         "    self->update_count_0 = idx + 1;" if queue_node,
         "    " & marked_for_update_var & " = true;",
         "  }",
         "}"
-      ];
+      );
       return (sgn & ";", body);
     }
 
 
-    (String, [String]) gen_output_getter(AutoSymbol block_name, Atom output_name)
+    (String, String*) gen_output_getter(AutoSymbol block_name, Atom output_name)
     {
       sgn = "Obj " & output_get_method_name(block_name, output_name) & "(" & to_c_name(block_name) & " *self)";
-      body = [
+      body = (
         sgn,
         "{",
         "  Obj value = " & to_c_var_name(memb_var(output_name)) & ";",
         "  add_ref(value);",
         "  return value;",
         "}"
-      ];
+      );
       return (sgn & ";", body);
     }
 
 
-    (String, [String]) gen_queue_update_method(AutoSymbol block_name, StdBlockNodeId memb_id, [Instr] body, Bool two_level_update)
+    (String, String*) gen_queue_update_method(AutoSymbol block_name, StdBlockNodeId memb_id, Instr* body, Bool two_level_update)
     {
       method_name = queue_update_method_name(memb_id, block_name);
       other_arg = if two_level_update then ", bool " & to_c_var_name(invalidate_cond_expr_cache) else "";
       sgn = "void " & method_name & "(" & to_c_name(block_name) & " *self" & other_arg & ")";
       vars_decl_text = gen_vars_decls(body);
-      vars_decl_text = [vars_decl_text | ""] if vars_decl_text != [];
+      vars_decl_text = (vars_decl_text | "") if vars_decl_text != ();
       body_text = vars_decl_text & compile_to_c(body, nil);
-      return (sgn & ";", [sgn, "{"] & indent_lines(body_text) & ["}"]);
+      return (sgn & ";", (sgn, "{") & indent_lines(body_text) & ("}"));
     }
 
 
-    (String, [String]) gen_queue_update_method(AutoSymbol block_name, CondNodeId cond_id, [Instr] body, Bool two_level_update)
+    (String, String*) gen_queue_update_method(AutoSymbol block_name, CondNodeId cond_id, Instr* body, Bool two_level_update)
     {
       method_name = queue_update_method_name(cond_id, block_name);
       inval_cache_var_name = to_c_var_name(invalidate_cond_expr_cache);
       sgn = "void " & method_name & "(" & to_c_name(block_name) & " *self, bool " & inval_cache_var_name & ")";
       vars_decl_text = gen_vars_decls(body);
-      vars_decl_text = [vars_decl_text | ""] if vars_decl_text != [];
+      vars_decl_text = (vars_decl_text | "") if vars_decl_text != ();
       body_text = vars_decl_text & compile_to_c(body, nil);
-      return (sgn & ";", [sgn, "{"] & indent_lines(body_text) & ["}"]);
+      return (sgn & ";", (sgn, "{") & indent_lines(body_text) & ("}"));
     }
 
 
-    (String, [String]) gen_queue_update_method(AutoSymbol block_name, NestedAutoInputNodeId input_id, [Instr] body, Bool two_level_update)
+    (String, String*) gen_queue_update_method(AutoSymbol block_name, NestedAutoInputNodeId input_id, Instr* body, Bool two_level_update)
     {
       method_name = queue_update_method_name(input_id, block_name);
       sgn = "void " & method_name & "(" & to_c_name(block_name) & " *self)";
       vars_decl_text = gen_vars_decls(body);
-      vars_decl_text = [vars_decl_text | ""] if vars_decl_text != [];
+      vars_decl_text = (vars_decl_text | "") if vars_decl_text != ();
       body_text = vars_decl_text & compile_to_c(body, nil);
-      return (sgn & ";", [sgn, "{"] & indent_lines(body_text) & ["}"]);
+      return (sgn & ";", (sgn, "{") & indent_lines(body_text) & ("}"));
     }
 
 
-    (String, [String]) gen_insert_timer_method(AutoSymbol block_name)
+    (String, String*) gen_insert_timer_method(AutoSymbol block_name)
     {
       method_name = insert_timer_method_name(block_name);
       sgn = "void " & method_name & "(" & to_c_name(block_name) & " *self, long long cond_idx, long long time)";
 
-      body_text = [
+      body_text = (
         "int n = self->time_triggers_count;",
         "long long *tt = self->trigger_times_heap;",
         "int *ids = self->time_varying_cond_ids_heap;",
@@ -318,18 +318,18 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
         "ids[i] = cond_idx;",
 
         "self->time_triggers_count = n + 1;"
-      ];
+      );
 
-      return (sgn & ";", [sgn, "{"] & indent_lines(body_text) & ["}"]);
+      return (sgn & ";", (sgn, "{") & indent_lines(body_text) & ("}"));
     }
 
 
-    (String, [String]) gen_clear_timer_method(AutoSymbol block_name)
+    (String, String*) gen_clear_timer_method(AutoSymbol block_name)
     {
       method_name = clear_timer_method_name(block_name);
       sgn = "void " & method_name & "(" & to_c_name(block_name) & " *self, long long cond_idx)";
 
-      body_text = [
+      body_text = (
         "int n = self->time_triggers_count;",
         "long long *tt = self->trigger_times_heap;",
         "int *ids = self->time_varying_cond_ids_heap;",
@@ -346,66 +346,66 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
         "  tt[i] = tt[i+1];",
         "  ids[i] = ids[i+1];",
         "}"
-      ];
+      );
 
-      return (sgn & ";", [sgn, "{"] & indent_lines(body_text) & ["}"]);
+      return (sgn & ";", (sgn, "{") & indent_lines(body_text) & ("}"));
     }
   }
 
 
-  CCodeOutput compile_to_c([ObjProcDef] obj_proc_defs, [BoolProcDef] bool_proc_defs, [ClsDef] cls_defs, [Block] blocks)
+  CCodeOutput compile_to_c(ObjProcDef* obj_proc_defs, BoolProcDef* bool_proc_defs, ClsDef* cls_defs, Block* blocks)
   {
-    type_checking_fn_decls = [gen_c_decl(pd) : pd <- bool_proc_defs] & 4 * [""];
+    type_checking_fn_decls = (gen_c_decl(pd) : pd <- bool_proc_defs) & 4 * ("");
     // print "Type checking function declarations generated";
 
-    closure_decls = [gen_c_decl(d, i) : d @ i <- cls_defs] & 4 * [""];
+    closure_decls = (gen_c_decl(d, i) : d @ i <- cls_defs) & 4 * ("");
     // print "Closure declarations generated";
 
-    fn_decls = [gen_c_decl(pd) : pd <- obj_proc_defs] & 4 * [""];
+    fn_decls = (gen_c_decl(pd) : pd <- obj_proc_defs) & 4 * ("");
     // print "Function declarations generated";
 
-    type_checking_fns = join([compile_to_c(d) & ["", ""] : d <- bool_proc_defs]) & 4 * [""];
+    type_checking_fns = join((compile_to_c(d) & ("", "") : d <- bool_proc_defs)) & 4 * ("");
     // print "Type checking functions generated";
 
-    closures = join([compile_to_c(d, i) & ["", ""] : d @ i <- cls_defs]) & 4 * [""];
+    closures = join((compile_to_c(d, i) & ("", "") : d @ i <- cls_defs)) & 4 * ("");
     // print "Closures generated";
 
-    functions = join([compile_to_c(d) & ["", ""] : d <- obj_proc_defs]);
+    functions = join((compile_to_c(d) & ("", "") : d <- obj_proc_defs));
     // print "Functions generated";
 
-    blocks_code = [compile_block_to_c(b) : b <- blocks];
-    blocks_decls = join([b.header & ["", ""] : b <- blocks_code]);
-    blocks_bodies = join(intermix([b.body : b <- blocks_code], ["", ""]));
+    blocks_code = (compile_block_to_c(b) : b <- blocks);
+    blocks_decls = join((b.header & ("", "") : b <- blocks_code));
+    blocks_bodies = join(intermix((b.body : b <- blocks_code), ("", "")));
 
-    body = join([type_checking_fn_decls, closure_decls, fn_decls, blocks_decls, type_checking_fns, closures, functions, blocks_bodies]);
+    body = join((type_checking_fn_decls, closure_decls, fn_decls, blocks_decls, type_checking_fns, closures, functions, blocks_bodies));
 
-    return (body: body, header: fn_decls & ["", ""] & blocks_decls);
+    return [body: body, header: fn_decls & ("", "") & blocks_decls];
   }
 
 
   String gen_c_decl(ObjProcDef pd)
   {
-    par_types = [if p == :obj then "Obj" else "CLS" & to_str(p.arity) & " &" : p <- pd.params];
-    par_list = append(par_types & ["Env &"], ", ");
+    par_types = (if p == :obj then "Obj" else "CLS" & printed(p.arity) & " &" : p <- pd.params);
+    par_list = append(par_types & ("Env &"), ", ");
     return "Obj " & to_c_fn_name(pd.name, in_arity(pd)) & "(" & par_list & ");";
   }
 
 
   String gen_c_decl(BoolProcDef pd)
   {
-    par_list = append(pd.arity * ["Obj"], ", ");
+    par_list = append(pd.arity * ("Obj"), ", ");
     return "bool " & to_c_fn_name(pd.name) & "(" & par_list & ");";
   }
 
 
   String gen_c_decl(ClsDef cd, Nat id)
   {
-    par_list = append(cd.arity * ["Obj"] & ["const Obj *", "Env &"], ", ");
-    return "Obj cls_" & to_str(id) & "(" & par_list & ");";
+    par_list = append(cd.arity * ("Obj") & ("const Obj *", "Env &"), ", ");
+    return "Obj cls_" & printed(id) & "(" & par_list & ");";
   }
 
 
-  [String] compile_to_c(ProcDef pd)
+  String* compile_to_c(ProcDef pd)
   {
     cached = pd.cached? and pd.cached;
 
@@ -424,15 +424,15 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     var_decls = gen_vars_decls(body);
 
     auto_vars = rand_sort(keys(auto_vars_types));
-    auto_var_decls = [to_c_name(auto_vars_types[v]) & " " & to_c_var_name(v, true) & ";" : v <- auto_vars];
+    auto_var_decls = (to_c_name(auto_vars_types[v]) & " " & to_c_var_name(v, true) & ";" : v <- auto_vars);
 
     comp_body = compile_to_c(body, nil);
 
-    code = [signature, "{"] & indent_lines(var_decls) & indent_lines(auto_var_decls) &
-           ["" if var_decls != [] or auto_var_decls != []] & indent_lines(comp_body) & ["}"];
+    code = (signature, "{") & indent_lines(var_decls) & indent_lines(auto_var_decls) &
+           ("" if var_decls != () or auto_var_decls != ()) & indent_lines(comp_body) & ("}");
 
-    if (cached)
-      wrapper_code = [
+    if cached:
+      wrapper_code = (
         "",
         "",
         ret_type_str(pd) & fn_name & "(" & par_list_str & ")",
@@ -446,7 +446,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
         "  add_ref(cached_res);",
         "  return cached_res;",
         "}"
-      ];
+      );
       code = code & wrapper_code;
     ;
 
@@ -462,46 +462,46 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
       bool_proc_def()   = "bool ";
 
     String gen_fn_par(ObjProcPar par, Nat pos):
-      obj   = "Obj p" & to_str(pos),
-      cls() = "CLS" & to_str(par.arity) & " &" & to_c_var_name(if par.name? then par.name else cls_var(pos));
+      obj   = "Obj p" & printed(pos),
+      cls() = "CLS" & printed(par.arity) & " &" & to_c_var_name(if par.name? then par.name else cls_var(pos));
 
-    [String] gen_fn_pars(ProcDef pd):
-      ObjProcDef  = [gen_fn_par(p, i) : p @ i <- pd.params] & ["Env &env"],
-      BoolProcDef = ["Obj p" & to_str(n) : n < arity(pd)];
+    String* gen_fn_pars(ProcDef pd):
+      ObjProcDef  = (gen_fn_par(p, i) : p @ i <- pd.params) & ("Env &env"),
+      BoolProcDef = ("Obj p" & printed(n) : n < arity(pd));
   }
 
 
-  [String] gen_vars_decls([Instr] body)
+  String* gen_vars_decls(Instr* body)
   {
     vars_to_decl = vars_to_declare(body);
 
-    vector_vars = {v : v <- vars_to_decl, v :: VecVar};
+    vector_vars = [v : v <- vars_to_decl, v :: VecVar];
     scalar_vars = vars_to_decl - vector_vars;
 
-    vec_var_ids  = {v.id : v <- vector_vars};
-    new_vec_vars = {vvar(id, nz_nat(max({v.size : v <- vector_vars, v.id == id}))) : id <- vec_var_ids};
+    vec_var_ids  = [v.id : v <- vector_vars];
+    new_vec_vars = [vvar(id, nz_nat(max([v.size : v <- vector_vars, v.id == id]))) : id <- vec_var_ids];
 
     vars_to_decl = scalar_vars & new_vec_vars;
-    return [var_decl(v) : v <- rand_sort(vars_to_decl)];
+    return (var_decl(v) : v <- rand_sort(vars_to_decl));
   }
 
 
   //## DUPLICATED CODE
-  [String] compile_to_c(ClsDef cd, Nat id)
+  String* compile_to_c(ClsDef cd, Nat id)
   {
-    par_list  = ["Obj p" & to_str(n) : n < cd.arity] & ["const Obj C[]", "Env &env"]; //## BAD
-    signature = "Obj cls_" & to_str(id) & "(" & append(par_list, ", ") & ")";
+    par_list  = ("Obj p" & printed(n) : n < cd.arity) & ("const Obj C[]", "Env &env"); //## BAD
+    signature = "Obj cls_" & printed(id) & "(" & append(par_list, ", ") & ")";
 
     vars_decls = gen_vars_decls(cd.body);
     comp_body = compile_to_c(cd.body, nil);
 
-    return [signature, "{"] & indent_lines(vars_decls) & [""] & indent_lines(comp_body) & ["}"];
+    return (signature, "{") & indent_lines(vars_decls) & ("") & indent_lines(comp_body) & ("}");
   }
 
 
   String var_decl(AnyVar v):
     ObjVar    = "Obj "       & to_c_var_name(v) & ";",
-    VecVar    = "Obj "       & to_c_var_name(v) & "[" & to_str(v.size) & "];",
+    VecVar    = "Obj "       & to_c_var_name(v) & "[" & printed(v.size) & "];",
     BoolVar   = "bool "      & to_c_var_name(v) & ";",
     IntVar    = "long long " & to_c_var_name(v) & ";",
     SetItVar  = "SetIter "   & to_c_var_name(v) & ";",
@@ -510,35 +510,35 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     StreamVar = "Stream "    & to_c_var_name(v) & ";";
 
 
-  [String] compile_to_c([Instr] instrs, <Nat, nil> block_id) = join([compile_to_c(instr, block_id) : instr <- instrs]);
+  String* compile_to_c(Instr* instrs, <Nat, nil> block_id) = join((compile_to_c(instr, block_id) : instr <- instrs));
 
-  [String] compile_to_c(Instr instr, <Nat, nil> block_id):
+  String* compile_to_c(Instr instr, <Nat, nil> block_id):
 
-    init_stream(v?)       = mk_call("init", [v]),
-    append()              = mk_call("append", [instr.stream, instr.obj]),
+    init_stream(v?)       = mk_call("init", (v)),
+    append()              = mk_call("append", (instr.stream, instr.obj)),
 
     // get_at()              = mk_call(instr.var, "get_at", [instr.seq, instr.idx]),
 
-    set_at()              = mk_call("set_at", [instr.var, instr.idx, instr.value]),
+    set_at()              = mk_call("set_at", (instr.var, instr.idx, instr.value)),
 
     lookup()              = mk_call(
                               instr.var,
                               "lookup",
-                              [instr.map, instr.key, instr.success_var if instr.success_var?]
+                              (instr.map, instr.key, instr.success_var if instr.success_var?)
                             ),
 
     //## BAD BAD IT'S ALMOST THE SAME AS THE EXPRESSION ABOVE
     ext_lookup()          = mk_call(
                               instr.var,
                               "ext_lookup",
-                              [instr.map, instr.key, instr.success_var if instr.success_var?]
+                              (instr.map, instr.key, instr.success_var if instr.success_var?)
                             ),
 
-    get_set_iter()        = mk_call("get_set_iter", [instr.var, instr.src]),
-    get_seq_iter()        = mk_call("get_seq_iter", [instr.var, instr.src]),
-    get_map_iter()        = mk_call("get_map_iter", [instr.var, instr.src]),
+    get_set_iter()        = mk_call("get_set_iter", (instr.var, instr.src)),
+    get_seq_iter()        = mk_call("get_seq_iter", (instr.var, instr.src)),
+    get_map_iter()        = mk_call("get_map_iter", (instr.var, instr.src)),
 
-    move_forward(v?)      = mk_call("move_forward", [v]),
+    move_forward(v?)      = mk_call("move_forward", (v)),
 
     set_var()             = mk_assignment(instr.var, instr.value),
     set_bvar()            = mk_assignment(instr.var, instr.value), //## BAD
@@ -546,55 +546,55 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
     set_rc_var()          = compile_to_c(instr.value, instr.var),
 
-    init_memb_var()       = [to_c_var_name(instr.var) & " = " & to_c_const(instr.new_state) & ";"],
-    reset_memb_var()      = [to_c_var_name(instr.var) & " = " & to_c_const(instr.new_state) & ";"],
-    clear_loc_var(v?)     = [to_c_var_name(v) & " = null_obj;"],
+    init_memb_var()       = (to_c_var_name(instr.var) & " = " & to_c_const(instr.new_state) & ";"),
+    reset_memb_var()      = (to_c_var_name(instr.var) & " = " & to_c_const(instr.new_state) & ";"),
+    clear_loc_var(v?)     = (to_c_var_name(v) & " = null_obj;"),
 
-    terminate             = ["fail();"],
+    terminate             = ("fail();"),
 
-    add_ref(v?)           = mk_call("add_ref", [v]),
-    release(v?)           = mk_call("release", [v]),
+    add_ref(v?)           = mk_call("add_ref", (v)),
+    release(v?)           = mk_call("release", (v)),
 
-    print_obj()           = mk_call("print", [instr.obj]),
+    print_obj()           = mk_call("print", (instr.obj)),
 
-    ret_val(e?)           = ["return " & to_c_expr(e) & ";"],
+    ret_val(e?)           = ("return " & to_c_expr(e) & ";"),
 
-    no_op                 = [],
+    no_op                 = (),
 
-    repeat(body?)         = ["for ( ; ; )", "{"] & indent_lines(compile_to_c(body, block_id)) & ["}"],
+    repeat(body?)         = ("for ( ; ; )", "{") & indent_lines(compile_to_c(body, block_id)) & ("}"),
 
-    break_loop            = ["break;"],
+    break_loop            = ("break;"),
 
 
     execute_block(body?)  = { new_block_id = _counter_(nil);
                               body_code = compile_to_c(body, new_block_id);
-                              label = ["block_" & to_str(new_block_id) & "_end:;"];
+                              label = ("block_" & printed(new_block_id) & "_end:;");
                               return body_code & label;
                             },
 
     exit_block            = { fail if block_id == nil; //assert block_id != nil; //## BAD
-                              return ["goto block_" & to_str(block_id) & "_end;"];
+                              return ("goto block_" & printed(block_id) & "_end;");
                             },
 
                             //## BUG BUG BUG: IF THERE IS INSIDE ONE OF THE CASES A BREAK STATEMENT MEANT TO TERMIMATE
                             //## AN OUTER LOOP, THAT BREAK WILL TERMINATE THE SWITCH/CASE INSTEAD.
-    switch_on_nat()       = { cases_code = [
-                                ["case " & to_str(i) & ":"] & indent_lines([compile_to_c(c, block_id) | "break;"] & [""])
+    switch_on_nat()       = { cases_code = (
+                                ("case " & printed(i) & ":") & indent_lines((compile_to_c(c, block_id) | "break;") & (""))
                                 : c @ i <- instr.cases
-                              ];
-                              return ["switch (" & to_c_expr(instr.value) & ")", "{"] & indent_lines(join(cases_code)) & ["}"];
+                              );
+                              return ("switch (" & to_c_expr(instr.value) & ")", "{") & indent_lines(join(cases_code)) & ("}");
                             },
 
     call_proc()           = compile_call_proc_to_c(if instr.var? then just(instr.var) else nil, instr.name, instr.params, block_id),
 
     call_cls()            = mk_cls_call(instr.cls_var, instr.var, instr.params), //## INLINE THE FUNCTION
 
-    push_call_info()      = { fn_name = [quote(fn_name_to_str(instr.fn_name))];
-                              params = [if p == nil then :null_obj else value(p) : p <- instr.params];
-                              return [mk_gen_call("push_call_info_wrapper", fn_name, params, [])];
+    push_call_info()      = { fn_name = (printed(fn_name_to_str(instr.fn_name)));
+                              params = (if p == nil then :null_obj else value(p) : p <- instr.params);
+                              return (mk_gen_call("push_call_info_wrapper", fn_name, params, ()));
                             },
 
-    pop_call_info         = mk_call("pop_call_info", []),
+    pop_call_info         = mk_call("pop_call_info", ()),
 
     runtime_check()       = compile_runtime_check_to_c(instr.cond, instr.file, instr.line, instr.text, instr.vars),
 
@@ -608,95 +608,95 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
                                 bound_cls() = compile_cls_scope_to_c(instr.var, bound_cls.cls, bound_cls.env, instr.body, block_id);
                             },
 
-    queue_update()        = [queue_update_method_name(instr.id, instr.type) & "(self);"],
+    queue_update()        = (queue_update_method_name(instr.id, instr.type) & "(self);"),
 
-    queue_cond_update()   = [queue_update_method_name(instr.id, instr.type) & "(self, " & to_c_expr(instr.inval_cache) & ");"],
+    queue_cond_update()   = (queue_update_method_name(instr.id, instr.type) & "(self, " & to_c_expr(instr.inval_cache) & ");"),
 
-    insert_timer()        = [insert_timer_method_name(instr.type) & "(self, " & to_c_expr(instr.idx) & ", " & to_c_expr(instr.time) & ");"],
+    insert_timer()        = (insert_timer_method_name(instr.type) & "(self, " & to_c_expr(instr.idx) & ", " & to_c_expr(instr.time) & ");"),
 
-    clear_timer()         = [clear_timer_method_name(instr.type) & "(self, " & to_c_expr(instr.idx) & ");"],
+    clear_timer()         = (clear_timer_method_name(instr.type) & "(self, " & to_c_expr(instr.idx) & ");"),
 
-    auto_init()           = [init_method_name(instr.type) & "(&" & to_c_var_name(instr.var, false) & ", env);"],
+    auto_init()           = (init_method_name(instr.type) & "(&" & to_c_var_name(instr.var, false) & ", env);"),
 
-    auto_cleanup()        = [cleanup_method_name(instr.type) & "(&" & to_c_var_name(instr.var, false) & ");"],
+    auto_cleanup()        = (cleanup_method_name(instr.type) & "(&" & to_c_var_name(instr.var, false) & ");"),
 
     set_input()           = { value = instr.value;
                               value_str = if value != nil then to_c_expr(value(value)) else "null_obj";
                               method_name = input_set_method_name(instr.type, instr.input);
-                              return [method_name & "(&" & to_c_var_name(instr.var, false) & ", " & value_str & ");"];
+                              return (method_name & "(&" & to_c_var_name(instr.var, false) & ", " & value_str & ");");
                             },
 
     prop_input_updates()  = compile_prop_input_updates_to_c(if instr.var? then just(instr.var) else nil, instr.type, instr.elapsed_time),
     call_method()         = compile_call_method_to_c(if instr.res_var? then just(instr.res_var) else nil, if instr.auto_var? then just(instr.auto_var) else nil, instr.type, instr.name, instr.args);
 
 
-  [String] compile_prop_input_updates_to_c(Maybe[AnyAutoVar] var, AutoSymbol type, IntExpr elapsed_time)
+  String* compile_prop_input_updates_to_c(Maybe[AnyAutoVar] var, AutoSymbol type, IntExpr elapsed_time)
   {
     var_str = if var != nil then "&" & to_c_var_name(value(var), false) else "self";
     name_str = update_method_name(type);
     time_str = to_c_expr(elapsed_time);
-    return [mk_gen_call(name_str, [var_str, time_str], [], ["env"])];
+    return (mk_gen_call(name_str, (var_str, time_str), (), ("env")));
   }
 
 
-  [String] compile_call_method_to_c(Maybe[WriteObjVar] res_var, Maybe[AnyAutoVar] auto_var, AutoSymbol type, ExMethodSymb name, [AtomicExpr] args)
+  String* compile_call_method_to_c(Maybe[WriteObjVar] res_var, Maybe[AnyAutoVar] auto_var, AutoSymbol type, ExMethodSymb name, AtomicExpr* args)
   {
     auto_var_str = if auto_var != nil then "&" & to_c_var_name(value(auto_var), false) else "self";
     name_str = user_def_method_name(type, name);
     // time_str = to_c_expr(elapsed_time);
     time_str = to_c_expr(0);
-    return [
+    return (
       if res_var == nil
-        then mk_gen_call(name_str, [auto_var_str, time_str], args, ["env"])
-        else mk_gen_call(value(res_var), name_str, [auto_var_str, time_str], args, ["env"])
-    ];
+        then mk_gen_call(name_str, (auto_var_str, time_str), args, ("env"))
+        else mk_gen_call(value(res_var), name_str, (auto_var_str, time_str), args, ("env"))
+    );
   }
 
 
-  [String] compile_to_c(FloatExpr expr, ObjVar var):
-    mk_float()            = [mk_gen_call(var, "make_float", [float_to_str(expr.mantissa, expr.dec_exp)], [], [])],
-    neg_float()           = mk_call(var, "neg_float",     [expr.value]),
+  String* compile_to_c(FloatExpr expr, ObjVar var):
+    mk_float()            = (mk_gen_call(var, "make_float", (printed(expr)), (), ())),
+    neg_float()           = mk_call(var, "neg_float",     (expr.value)),
     add_floats()          = mk_call(var, "add_floats",    expr.values),
     sub_floats()          = mk_call(var, "sub_floats",    expr.values),
     mult_floats()         = mk_call(var, "mult_floats",   expr.values),
     div_floats()          = mk_call(var, "div_floats",    expr.values),
-    square_root()         = mk_call(var, "square_root",   [expr.value]),
-    floor_op()            = mk_call(var, "floor",         [expr.value]),
-    ceiling_op()          = mk_call(var, "ceiling",       [expr.value]),
-    int_to_float()        = mk_call(var, "int_to_float",  [expr.value]);
+    square_root()         = mk_call(var, "square_root",   (expr.value)),
+    floor_op()            = mk_call(var, "floor",         (expr.value)),
+    ceiling_op()          = mk_call(var, "ceiling",       (expr.value)),
+    int_to_float()        = mk_call(var, "int_to_float",  (expr.value));
 
 
-  [String] compile_to_c(RefObjExpr expr, ObjVar var):
-    mk_set_from_stream()  = mk_call(var, "make_set",            [expr.stream]),
-    mk_set()              = mk_call(var, "make_set",            [expr.elems, expr.size]),
-    mk_seq_from_stream()  = mk_call(var, "make_seq",            [expr.stream]),
-    mk_seq()              = mk_call(var, "make_seq",            [expr.elems, expr.size]),
-    mk_map_from_streams() = mk_call(var, "make_map",            [expr.key_stream, expr.value_stream]),
-    mk_map()              = mk_call(var, "make_map",            [expr.keys, expr.values, expr.size]),
-    mk_tagged_obj()       = mk_call(var, "make_tagged_obj",     [expr.tag, expr.obj]),
-    mk_array()            = mk_call(var, "make_array",          [expr.size, expr.value]),
-    get_seq_slice()       = mk_call(var, "get_seq_slice",       [expr.seq, expr.idx_first, expr.len]),
-    append_to_seq()       = mk_call(var, "append_to_seq",       [expr.seq, expr.new_elem]),
-    join_seqs()           = mk_call(var, "join_seqs",           [expr.left, expr.right]),
-    join_mult_seqs()      = mk_call(var, "join_mult_seqs",      [expr.seqs]),
-    rev_seq()             = mk_call(var, "rev_seq",             [expr.seq]),
-    merge_sets()          = mk_call(var, "merge_sets",          [expr.sets]),
-    merge_maps()          = mk_call(var, "merge_maps",          [expr.maps]),
-    seq_to_set()          = mk_call(var, "seq_to_set",          [expr.seq]),
-    seq_to_mset()         = mk_call(var, "seq_to_mset",         [expr.seq]),
-    list_to_seq()         = mk_call(var, "list_to_seq",         [expr.list]),
-    internal_sort()       = mk_call(var, "internal_sort",       [expr.set]),
-    symb_to_str(e?)       = mk_call(var, "to_str",              [e]),
-    read_pending_var(v?)  = [to_c_var_name(var) & " = " & to_c_var_name(v) & ";"],
-    read_output()         = [mk_gen_call(var, output_get_method_name(expr.type, expr.output), ["&" & to_c_var_name(expr.var, false)])],
-    add_attachment()      = mk_call(var, "add_attachment",      [expr.target, expr.data]),
-    fetch_attachments(e?) = mk_call(var, "fetch_attachments",   [e]);
+  String* compile_to_c(RefObjExpr expr, ObjVar var):
+    mk_set_from_stream()  = mk_call(var, "make_set",            (expr.stream)),
+    mk_set()              = mk_call(var, "make_set",            (expr.elems, expr.size)),
+    mk_seq_from_stream()  = mk_call(var, "make_seq",            (expr.stream)),
+    mk_seq()              = mk_call(var, "make_seq",            (expr.elems, expr.size)),
+    mk_map_from_streams() = mk_call(var, "make_map",            (expr.key_stream, expr.value_stream)),
+    mk_map()              = mk_call(var, "make_map",            (expr.keys, expr.values, expr.size)),
+    mk_tagged_obj()       = mk_call(var, "make_tagged_obj",     (expr.tag, expr.obj)),
+    mk_array()            = mk_call(var, "make_array",          (expr.size, expr.value)),
+    get_seq_slice()       = mk_call(var, "get_seq_slice",       (expr.seq, expr.idx_first, expr.len)),
+    append_to_seq()       = mk_call(var, "append_to_seq",       (expr.seq, expr.new_elem)),
+    join_seqs()           = mk_call(var, "join_seqs",           (expr.left, expr.right)),
+    join_mult_seqs()      = mk_call(var, "join_mult_seqs",      (expr.seqs)),
+    rev_seq()             = mk_call(var, "rev_seq",             (expr.seq)),
+    merge_sets()          = mk_call(var, "merge_sets",          (expr.sets)),
+    merge_maps()          = mk_call(var, "merge_maps",          (expr.maps)),
+    seq_to_set()          = mk_call(var, "seq_to_set",          (expr.seq)),
+    seq_to_mset()         = mk_call(var, "seq_to_mset",         (expr.seq)),
+    list_to_seq()         = mk_call(var, "list_to_seq",         (expr.list)),
+    internal_sort()       = mk_call(var, "internal_sort",       (expr.set)),
+    symb_to_str(e?)       = mk_call(var, "to_str",              (e)),
+    read_pending_var(v?)  = (to_c_var_name(var) & " = " & to_c_var_name(v) & ";"),
+    read_output()         = (mk_gen_call(var, output_get_method_name(expr.type, expr.output), ("&" & to_c_var_name(expr.var, false)))),
+    add_attachment()      = mk_call(var, "add_attachment",      (expr.target, expr.data)),
+    fetch_attachments(e?) = mk_call(var, "fetch_attachments",   (e));
 
   ///////////////////////////////////////////////////////////////////////////////
 
-  [String] compile_call_proc_to_c(Maybe[ObjVar] var, ObjFnName name, [<ObjExpr, BoundCls>] params, <Nat, nil> block_id)
+  String* compile_call_proc_to_c(Maybe[ObjVar] var, ObjFnName name, <ObjExpr, BoundCls>* params, <Nat, nil> block_id)
   {
-    pars_info = [gen_par_info(p) : p <- params];
+    pars_info = (gen_par_info(p) : p <- params);
     code_frags, args = unzip(pars_info);
     call_code = if var != nil
       then mk_fn_call(value(var), to_c_fn_name(name, length(params)), args)
@@ -704,16 +704,16 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     return join(code_frags) & call_code;
 
 
-    ([String], FnCallParam) gen_par_info(ObjExpr p) = ([], p);
+    (String*, FnCallParam) gen_par_info(ObjExpr p) = ((), p);
 
-    ([String], FnCallParam) gen_par_info(BoundCls p):
-      ClsVar      = ([], p),
+    (String*, FnCallParam) gen_par_info(BoundCls p):
+      ClsVar      = ((), p),
       // fn_ref()    = {
       //   par_id = _counter_(nil);
       //   par_var = cls_var(par_id);
       //   par_name = to_c_expr(par_var);
       //   code = [
-      //     "CLS" & to_str(p.arity) & " " & par_name & ";",
+      //     "CLS" & printed(p.arity) & " " & par_name & ";",
       //     par_name & ".fn_ptr = " & to_c_fn_name(p.name) & ";",
       //     par_name & ".data = 0;"
       //   ];
@@ -724,33 +724,33 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
         par_id = _counter_(nil);
         par_var = cls_var(par_id);
         par_name = to_c_expr(par_var);
-        code = [
-          "CLS" & to_str(p.cls.arity) & " " & par_name & ";",
-          par_name & ".fn_ptr = " & "cls_" & to_str(cls2id(p.cls)) & ";"
-        ];
-        if (p.env != [])
-          var_name = "cd_" & to_str(par_id);
-          code = code & ["Obj " & var_name & "[" & to_str(length(p.env)) & "];"];
-          for (v @ i : p.env)
-            code = code & [var_name & "[" & to_str(i) & "] = " & to_c_expr(v) & ";"];
+        code = (
+          "CLS" & printed(p.cls.arity) & " " & par_name & ";",
+          par_name & ".fn_ptr = " & "cls_" & printed(cls2id(p.cls)) & ";"
+        );
+        if p.env != ():
+          var_name = "cd_" & printed(par_id);
+          code = code & ("Obj " & var_name & "[" & printed(length(p.env)) & "];");
+          for v @ i <- p.env:
+            code = code & (var_name & "[" & printed(i) & "] = " & to_c_expr(v) & ";");
           ;
-          code = code & [par_name & ".data = " & var_name & ";"];
+          code = code & (par_name & ".data = " & var_name & ";");
         else
-          code = code & [par_name & ".data = 0;"];
+          code = code & (par_name & ".data = 0;");
         ;
         return (code, par_var);
       };
   }
 
 
-  [String] compile_branch_to_c(BoolExpr cond, [Instr] when_true, [Instr] when_false, <Nat, nil> block_id)
+  String* compile_branch_to_c(BoolExpr cond, Instr* when_true, Instr* when_false, <Nat, nil> block_id)
   {
-    assert when_true != [];
-    code = ["if (" & to_c_expr(cond) & ")", "{"]     &
+    assert when_true != ();
+    code = ("if (" & to_c_expr(cond) & ")", "{")     &
            indent_lines(compile_to_c(when_true, block_id)) &
-           ["}"];
-    if (when_false != [])
-      code = code & ["else", "{"] & indent_lines(compile_to_c(when_false, block_id)) & ["}"];
+           ("}");
+    if when_false != ():
+      code = code & ("else", "{") & indent_lines(compile_to_c(when_false, block_id)) & ("}");
     ;
     return code;
   }
@@ -774,16 +774,16 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
   // }
 
 
-  [String] compile_cls_scope_to_c(NamedArg var, ClsDef cls, [Var] env, [Instr^] body, <Nat, nil> block_id)
+  String* compile_cls_scope_to_c(NamedArg var, ClsDef cls, Var* env, Instr+ body, <Nat, nil> block_id)
   {
-    scope_id = to_str(_counter_(nil));
+    scope_id = printed(_counter_(nil));
 
     arity = cls.arity;
     env_size = length(env);
 
     var_str = _str_(_obj_(var)); //## BAD, DUPLICATED LOGIC
-    arity_str = to_str(arity);
-    env_size_str = to_str(env_size);
+    arity_str = printed(arity);
+    env_size_str = printed(env_size);
 
     fn_var = "env.n" & arity_str & "_" & var_str;  //## BAD, DUPLICATED LOGIC
     data_var = "env.C" & arity_str & "_" & var_str; //## BAD, DUPLICATED LOGIC
@@ -791,90 +791,90 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     data_bk_var = "BD" & scope_id;
     new_data_var = "ND" & scope_id;
 
-    tmp = append(arity * ["Obj"] & ["const Obj *", "Env &"], ", ");
+    tmp = append(arity * ("Obj") & ("const Obj *", "Env &"), ", ");
 
-    code = [
+    code = (
       "Obj (*" & fn_bk_var & ")(" & tmp & ") = " & fn_var & ";",
       "const Obj *BD" & scope_id & " = " & data_var & ";"
-    ];
+    );
 
-    code = code & ["Obj " & new_data_var & "[" & env_size_str & "];"] if env_size > 0;
+    code = code & ("Obj " & new_data_var & "[" & env_size_str & "];") if env_size > 0;
 
     //## HERE I'M ADDING THE add_ref/release PAIRS IN THE WRONG LAYERS
-    for (i < env_size)
-      code = code & [
-        new_data_var & "[" & to_str(i) & "] = " & to_c_var_name(env[i]) & ";",
-        "add_ref(" & new_data_var & "[" & to_str(i) & "]);"
-      ];
+    for i < env_size:
+      code = code & (
+        new_data_var & "[" & printed(i) & "] = " & to_c_var_name(env[i]) & ";",
+        "add_ref(" & new_data_var & "[" & printed(i) & "]);"
+      );
     ;
 
-    code = code & [
-      fn_var & " = cls_" & to_str(cls2id(cls)) & ";",
-      data_var & " = " & (if env_size > 0 then new_data_var else "0") & ";"
-    ];
+    code = code & (
+      fn_var & " = cls_" & printed(cls2id(cls)) & ";",
+      data_var & " = " & {if env_size > 0 then new_data_var else "0"} & ";"
+    );
 
     code = code & compile_to_c(body, block_id);
 
-    code = code & [
+    code = code & (
       fn_var & " = " & fn_bk_var & ";",
       data_var & " = " & data_bk_var & ";"
-    ];
+    );
 
-    for (i < env_size)
-      code = code & ["release(" & new_data_var & "[" & to_str(i) & "]);"];
+    for i < env_size:
+      code = code & ("release(" & new_data_var & "[" & printed(i) & "]);");
     ;
 
-    code = ["{"] & indent_lines(code) & ["}"];
+    code = ("{") & indent_lines(code) & ("}");
 
     return code;
   }
 
 
-  [String] compile_runtime_check_to_c(AtomicExpr cond, String file, NzNat line, Maybe[String] text, <StdVar, NamedArg>* vars)
+  String* compile_runtime_check_to_c(AtomicExpr cond, String file, NzNat line, Maybe[String] text, [<StdVar, NamedArg>] vars)
   {
-    text_arg = if text != nil then quote(value(text)) else "0";
-    header = [
+    text_arg = if text != nil then printed(value(text)) else "0";
+    header = (
       "if (" & to_c_expr(cond) & " == False_S)",
       "{",
-      "  print_assertion_failed_msg(" & quote(file) & ", " & to_str(line) & ", " & text_arg & ");"
-    ];
-    vars_content = ["  dump_var(" & quote(_str_(name(v))) & ", " & to_c_var_name(v) & ");" : v <- rand_sort(vars)];
-    footer = [
+      "  print_assertion_failed_msg(" & printed(file) & ", " & printed(line) & ", " & text_arg & ");"
+    );
+    vars_content = ("  dump_var(" & printed(_str_(name(v))) & ", " & to_c_var_name(v) & ");" : v <- rand_sort(vars));
+    footer = (
       "  hard_fail(0);",
       "}"
-    ];
+    );
     return header & vars_content & footer;
   }
 
   ///////////////////////////////////////////////////////////////////////////////
   ///////////////////////////////////////////////////////////////////////////////
 
-  String mk_gen_call(String fn_name, [String] leading_params, [FnCallParam] params, [String] trailing_params) =
-    fn_name & "(" & append(leading_params & [to_c_expr(p) : p <- params] & trailing_params, ", ") & ");";
+  String mk_gen_call(String fn_name, String* leading_params, FnCallParam* params, String* trailing_params) =
+    fn_name & "(" & append(leading_params & (to_c_expr(p) : p <- params) & trailing_params, ", ") & ");";
 
-  String mk_gen_call(AnyVar var, String fn_name, [String] leading_params, [FnCallParam] params, [String] trailing_params) =
+  String mk_gen_call(AnyVar var, String fn_name, String* leading_params, FnCallParam* params, String* trailing_params) =
     to_c_var_name(var) & " = " & mk_gen_call(fn_name, leading_params, params, trailing_params);
 
-  String mk_gen_call(AnyVar var, String fn_name, [String] params) = mk_gen_call(var, fn_name, params, [], []);
+  String mk_gen_call(AnyVar var, String fn_name, String* params) = mk_gen_call(var, fn_name, params, (), ());
 
-  [String] mk_call(String fn_name, [FnCallParam] params)             = [mk_gen_call(fn_name, [], params, [])];
-  [String] mk_call(AnyVar var, String fn_name, [FnCallParam] params) = [mk_gen_call(var, fn_name, [], params, [])];
+  String* mk_call(String fn_name, FnCallParam* params)             = (mk_gen_call(fn_name, (), params, ()));
+  String* mk_call(AnyVar var, String fn_name, FnCallParam* params) = (mk_gen_call(var, fn_name, (), params, ()));
 
-  [String] mk_fn_call(String fn_name, [FnCallParam] params)             = [mk_gen_call(fn_name, [], params, ["env"])];
-  [String] mk_fn_call(AnyVar var, String fn_name, [FnCallParam] params) = [mk_gen_call(var, fn_name, [], params, ["env"])];
+  String* mk_fn_call(String fn_name, FnCallParam* params)             = (mk_gen_call(fn_name, (), params, ("env")));
+  String* mk_fn_call(AnyVar var, String fn_name, FnCallParam* params) = (mk_gen_call(var, fn_name, (), params, ("env")));
 
   //## AnyVar IS WRONG HERE, SHOULD ONLY BE OBJ/BOOL/INT VARS
-  [String] mk_assignment(AnyVar var, AnyTypeExpr value) = [to_c_var_name(var) & " = " & to_c_expr(value) & ";"];
+  String* mk_assignment(AnyVar var, AnyTypeExpr value) = (to_c_var_name(var) & " = " & to_c_expr(value) & ";");
 
 
-  [String] mk_cls_call(<ClsVar, NamedArg> cls_var, ObjVar var, [ObjExpr] params):
+  String* mk_cls_call(<ClsVar, NamedArg> cls_var, ObjVar var, ObjExpr* params):
     cls_var(+ symb?) = { //## NO NEED FOR NOW TO HANDLE THE CASE cls_var(Nat), AS THOSE VARIABLES ARE NEVER "CALLED", ONLY PASSED ON
       name = to_c_var_name(cls_var);
-      return [mk_gen_call(var, name & ".fn_ptr", [], params, [name & ".data", "env"])];
+      return (mk_gen_call(var, name & ".fn_ptr", (), params, (name & ".data", "env")));
     },
     named_arg(symb?) = {
-      name = to_str(length(params)) & "_" & _str_(_obj_(cls_var));
-      return [mk_gen_call(var, "env.n" & name, [], params, ["env.C" & name, "env"])];
+      name = printed(length(params)) & "_" & _str_(_obj_(cls_var));
+      return (mk_gen_call(var, "env.n" & name, (), params, ("env.C" & name, "env")));
     };
 }
 
@@ -886,7 +886,7 @@ using String typesymb2name(TypeSymbol)
   //## IT WOULD MUCH BETTER IF WE COULD USE mk_call HERE...
   String to_c_expr(ObjExpr expr):
     object(Atom a?)     = upper_camel_case(a) & "_S",
-    object(Int n?)      = "to_obj(" & to_str(n) & ")",
+    object(Int n?)      = "to_obj(" & printed(n) & ")",
     empty_set           = "empty_set",
     empty_seq           = "empty_seq",
     empty_map           = "empty_map",
@@ -924,16 +924,16 @@ using String typesymb2name(TypeSymbol)
 
     has_elem()            = "has_elem(" & to_c_expr(expr.set) & ", " & to_c_expr(expr.elem) & ")",
 
-    is_eq_bool()          = to_nary_op(" == ", [expr.expr1, expr.expr2], parentesised), //## BAD
-    is_eq_int()           = to_nary_op(" == ", [expr.expr1, expr.expr2], parentesised), //## BAD
+    is_eq_bool()          = to_nary_op(" == ", (expr.expr1, expr.expr2), parentesised), //## BAD
+    is_eq_int()           = to_nary_op(" == ", (expr.expr1, expr.expr2), parentesised), //## BAD
 
     is_eq()               = "are_eq(" & to_c_expr(expr.expr1) & ", " & to_c_expr(expr.expr2) & ")",
 
     //## BUG BUG BUG HUGE BUG HERE, NOT CHECKING THAT THE OPERANDS ARE INTEGERS
-    is_gt()               = to_nary_op(" > ",  [expr.expr1, expr.expr2], parentesised), //## BAD
-    is_ge()               = to_nary_op(" >= ", [expr.expr1, expr.expr2], parentesised), //## BAD
-    is_lt()               = to_nary_op(" < ",  [expr.expr1, expr.expr2], parentesised), //## BAD
-    is_le()               = to_nary_op(" <= ", [expr.expr1, expr.expr2], parentesised), //## BAD
+    is_gt()               = to_nary_op(" > ",  (expr.expr1, expr.expr2), parentesised), //## BAD
+    is_ge()               = to_nary_op(" >= ", (expr.expr1, expr.expr2), parentesised), //## BAD
+    is_lt()               = to_nary_op(" < ",  (expr.expr1, expr.expr2), parentesised), //## BAD
+    is_le()               = to_nary_op(" <= ", (expr.expr1, expr.expr2), parentesised), //## BAD
 
     inline_is_eq()        = parentesize(to_c_expr(expr.expr) & " == " & to_c_expr(expr.value), parentesised),
 
@@ -957,7 +957,7 @@ using String typesymb2name(TypeSymbol)
   String to_c_expr(IntExpr expr) = to_c_expr(expr, false);
 
   String to_c_expr(IntExpr expr, Bool parentesised):
-    Int                 = to_str(expr),
+    Int                 = printed(expr),
     time_slot_length()  = to_c_time_slots_table_name(expr.automaton, expr.expr_id) & "[" & to_c_expr(expr.time_slot) & "]",
     IntVar              = to_c_var_name(expr),
     get_int_val(e?)     = "get_int_val("  & to_c_expr(e) & ")",
@@ -965,11 +965,11 @@ using String typesymb2name(TypeSymbol)
     get_seq_len(e?)     = "get_seq_len("  & to_c_expr(e) & ")",
     get_map_size(e?)    = "get_map_size(" & to_c_expr(e) & ")",
     minus(e?)           = "-" & to_c_expr(e, true),
-    add()               = to_nary_op(" + ", [expr.val1, expr.val2], parentesised),
-    sub()               = to_nary_op(" - ", [expr.val1, expr.val2], parentesised),
-    mult()              = to_nary_op(" * ", [expr.val1, expr.val2], parentesised),
-    div()               = to_nary_op(" / ", [expr.val1, expr.val2], parentesised),
-    mod()               = to_nary_op(" % ", [expr.val1, expr.val2], parentesised),
+    add()               = to_nary_op(" + ", (expr.val1, expr.val2), parentesised),
+    sub()               = to_nary_op(" - ", (expr.val1, expr.val2), parentesised),
+    mult()              = to_nary_op(" * ", (expr.val1, expr.val2), parentesised),
+    div()               = to_nary_op(" / ", (expr.val1, expr.val2), parentesised),
+    mod()               = to_nary_op(" % ", (expr.val1, expr.val2), parentesised),
     mantissa(e?)        = "mantissa(" & to_c_expr(e) & ")",
     dec_exp(e?)         = "dec_exp(" & to_c_expr(e) & ")",
     rand_nat(e?)        = "rand_nat(" & to_c_expr(e) & ")",
@@ -983,9 +983,9 @@ using String typesymb2name(TypeSymbol)
 
   String to_c_expr(ClsVar v) = to_c_var_name(v);
 
-  String to_nary_op(String op, [AnyTypeExpr^] exprs, Bool parentesised)
+  String to_nary_op(String op, AnyTypeExpr+ exprs, Bool parentesised)
   {
-    expr = append([to_c_expr(e, true) : e <- exprs], op);
+    expr = append((to_c_expr(e, true) : e <- exprs), op);
     expr = "(" & expr & ")" if length(exprs) > 1 and parentesised;
     return expr;
   }
@@ -1004,7 +1004,7 @@ using String typesymb2name(TypeSymbol)
 
   String queue_update_method_name(BlockNodeId id, AutoSymbol auto):
     std_block_node_id(a?)   = to_c_name(auto) & "_" & upper_camel_case(a) & "_queue_update",
-    cond_node_id(n?)        = to_c_name(auto) & "_" & to_str(n) & "_queue_update",
+    cond_node_id(n?)        = to_c_name(auto) & "_" & printed(n) & "_queue_update",
     nested_auto_input_id()  = to_c_name(auto) & "_" & upper_camel_case(id.auto) & "_" & upper_camel_case(id.input) & "_queue_update";
 
   String insert_timer_method_name(AutoSymbol auto) = to_c_name(auto) & "_insert_timer";
@@ -1014,59 +1014,59 @@ using String typesymb2name(TypeSymbol)
   //## USE AnyVar?
   String to_c_var_name(ObjVar v)          = to_c_var_name(v, false);
   String to_c_var_name(PendingInputVar v) = to_c_var_name(v, false);
-  String to_c_var_name(VecVar v)          = "V" & to_str(v.id);
-  String to_c_var_name(SetItVar v)        = "s" & to_str(_obj_(v));
-  String to_c_var_name(SeqItVar v)        = "q" & to_str(_obj_(v));
-  String to_c_var_name(MapItVar v)        = "m" & to_str(_obj_(v));
-  String to_c_var_name(StreamVar v)       = "t" & to_str(_obj_(v));
+  String to_c_var_name(VecVar v)          = "V" & printed(v.id);
+  String to_c_var_name(SetItVar v)        = "s" & printed(_obj_(v));
+  String to_c_var_name(SeqItVar v)        = "q" & printed(_obj_(v));
+  String to_c_var_name(MapItVar v)        = "m" & printed(_obj_(v));
+  String to_c_var_name(StreamVar v)       = "t" & printed(_obj_(v));
   String to_c_var_name(BoolVar v)         = to_c_var_name(v, false);
   String to_c_var_name(IntVar v)          = to_c_var_name(v, false);
 
 
   String to_c_var_name(ClsVar v):
     cls_var(+ a?)  = upper_camel_case(a) & "_C",
-    cls_var(* n?)  = "c" & to_str(n);
+    cls_var(* n?)  = "c" & printed(n);
 
 
   String to_c_var_name(<ObjVar, PendingInputVar> v, Bool add_prefix) = to_c_var_name(v, if add_prefix then "" else "self->");
 
   String to_c_var_name(<ObjVar, PendingInputVar> v, String prefix):
     var(Atom a?)                  = upper_camel_case(a) & "_V",
-    fn_par(Nat n?)                = "p"   & to_str(n),
+    fn_par(Nat n?)                = "p" & printed(n),
     named_arg(Atom a?)            = "env.n_"  & _str_(a),
-    cls_ext_par(Nat n?)           = "C["  & to_str(n) & "]",
+    cls_ext_par(Nat n?)           = "C["  & printed(n) & "]",
     memb_var(Atom a?)             = prefix & upper_camel_case(a),
     watched_signal_value_var(a?)  = prefix & upper_camel_case(a) & "_WS",
     memb_copy_var(Atom a?)        = upper_camel_case(a) & "_O",
     pending_state_var(a?)         = prefix & upper_camel_case(a) & "_PV",
-    lvar(Nat n?)                  = "l"   & to_str(n),
-    evar()                        = "V" & to_str(v.id) & "[" & to_c_expr(v.idx) & "]",
+    lvar(Nat n?)                  = "l"   & printed(n),
+    evar()                        = "V" & printed(v.id) & "[" & to_c_expr(v.idx) & "]",
     pending_input_var(Atom a?)    = prefix & upper_camel_case(a) & "_new";
 
 
   String to_c_var_name(AnyAutoVar v, Bool add_prefix):
     loc_auto_var(a?)  = upper_camel_case(a) & "_A",
-    memb_auto_var(a?) = (if add_prefix then "" else "self->") & upper_camel_case(a) & "_A";
+    memb_auto_var(a?) = {if add_prefix then "" else "self->"} & upper_camel_case(a) & "_A";
 
 
   String to_c_var_name(BoolVar v, Bool add_prefix)
   {
     prefix = if add_prefix then "" else "self->";
     return match (v)
-      bvar(n?)                                      = "b" & to_str(n),
+      bvar(n?)                                      = "b" & printed(n),
       memb_has_changed(id?)                         = "hc_" & upper_camel_case(id),
-      rep_cond_value_var(id?)                       = "rc" & to_str(id),
-      rep_cond_is_def_var(id?)                      = "rcd" & to_str(id),
+      rep_cond_value_var(id?)                       = "rc" & printed(id),
+      rep_cond_is_def_var(id?)                      = "rcd" & printed(id),
       invalidate_cond_expr_cache                    = "inval_cache",
-      cond_value_var(n?)                            = prefix & "cond_" & to_str(n),
-      cond_expr_up_to_date_var(Nat n?)              = prefix & "cond_" & to_str(n) & "_expr_up_to_date",
-      cond_expr_value_var(Nat n?)                   = prefix & "cond_" & to_str(n) & "_expr",
-      cond_expr_is_def_var(Nat n?)                  = prefix & "cond_" & to_str(n) & "_expr_is_def",
-      cond_is_def_var(n?)                           = prefix & "cond_" & to_str(n) & "_is_def",
+      cond_value_var(n?)                            = prefix & "cond_" & printed(n),
+      cond_expr_up_to_date_var(Nat n?)              = prefix & "cond_" & printed(n) & "_expr_up_to_date",
+      cond_expr_value_var(Nat n?)                   = prefix & "cond_" & printed(n) & "_expr",
+      cond_expr_is_def_var(Nat n?)                  = prefix & "cond_" & printed(n) & "_expr_is_def",
+      cond_is_def_var(n?)                           = prefix & "cond_" & printed(n) & "_is_def",
       watched_signal_up_to_date_var(a?)             = prefix & upper_camel_case(a) & "_WSUTD",
       has_pending_message_var(a?)                   = prefix & upper_camel_case(a) & "_PS",
       marked_for_update_var(std_block_node_id(a?))  = prefix & upper_camel_case(a) & "_marked_for_update",
-      marked_for_update_var(cond_node_id(n?))       = prefix & "cond_" & to_str(n) & "_marked_for_update",
+      marked_for_update_var(cond_node_id(n?))       = prefix & "cond_" & printed(n) & "_marked_for_update",
       marked_for_update_var(nested_auto_input_id() id?) = prefix & upper_camel_case(id.auto) & "_" & upper_camel_case(id.input) & "_marked_for_update",
       is_new                                        = prefix & "is_new";
   }
@@ -1076,12 +1076,12 @@ using String typesymb2name(TypeSymbol)
   {
     prefix = if add_prefix then "" else "self->";
     return match (v)
-      ivar(n?)                            = "i" & to_str(n),
+      ivar(n?)                            = "i" & printed(n),
       curr_time                           = "curr_time",
       update_time                         = "update_time",
       elapsed_time                        = "elapsed_time",
       update_source_var(a?)               = prefix & upper_camel_case(a) & "_update_source",
-      update_count_var(l?)                = prefix & "update_count_" & to_text(l),
+      update_count_var(l?)                = prefix & "update_count_" & printed(l),
       nodes_to_update_var()               = prefix & "nodes_to_update_" & to_c_expr(v.level) & "[" & to_c_expr(v.index) & "]",
       next_trigger_time_var(a?)           = prefix & upper_camel_case(a) & "_next_trigger_time",
       curr_time_slot_var(a?)              = prefix & upper_camel_case(a) & "_curr_time_slot",
@@ -1096,7 +1096,7 @@ using String typesymb2name(TypeSymbol)
   String to_c_var_name(MembIntVectVar v, Bool add_prefix)
   {
     assert add_prefix;
-    return "nodes_to_update_" & to_text(v.level) & "[" & to_text(v.size) & "]";
+    return "nodes_to_update_" & printed(v.level) & "[" & printed(v.size) & "]";
   }
 
 
@@ -1114,7 +1114,7 @@ using String typesymb2name(TypeSymbol)
   ///////////////////////////////////////////////////////////////////////////////
 
   String to_c_fn_name(FnSymbol fn_symb, Nat arity):
-    fn_symbol(symb?)    = upper_camel_case(symb) & "_" & to_str(arity),
+    fn_symbol(symb?)    = upper_camel_case(symb) & "_" & printed(arity),
     op_symbol(op?)      = _str_(op),
     nested_fn_symbol()  = to_c_fn_name(fn_symb.outer, arity) & "__" & to_c_fn_name(fn_symb.inner, arity),
     unique_fn_symbol()  = to_c_fn_name(fn_symb.symbol, arity) & uppercase_encoding(fn_symb.id); //## IS THIS ENOUGHT TO AVOID CONFLICTS?
@@ -1134,8 +1134,8 @@ using String typesymb2name(TypeSymbol)
     id_str = if symb.id? then uppercase_encoding(symb.id) else "";
     return match (symb.symbol)
       msg_handler                 = "MSG_HANDLER" & if id_str != "" then "_" & id_str else "",
-      update_method_symb(a?)      = upper_camel_case(a) & "_U" & to_text(symb.arity) & id_str,
-      read_only_method_symb(a?)   = upper_camel_case(a) & "_R" & to_text(symb.arity) & id_str;
+      update_method_symb(a?)      = upper_camel_case(a) & "_U" & printed(symb.arity) & id_str,
+      read_only_method_symb(a?)   = upper_camel_case(a) & "_R" & printed(symb.arity) & id_str;
   }
 
   ///////////////////////////////////////////////////////////////////////////////

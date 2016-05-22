@@ -2,21 +2,21 @@
 //   Bool is_subset(Type t1, Type t2);
 //   (TypeVar => Type*) subset_conds(Type t1, Type t2);
 
-using (TypeName => Type) typedefs
+using [TypeName -> Type] typedefs
 {
-  Bool is_subset(Type t1, Type t2) = deep_subset_conds(t1, t2, inst_type_vars=false) == {};
+  Bool is_subset(Type t1, Type t2) = deep_subset_conds(t1, t2, inst_type_vars=false) == [];
 
 
-  (TypeVar => Type*) subset_conds(Type t1, Type t2)
+  [TypeVar -> [Type]] subset_conds(Type t1, Type t2)
   {
     cs = deep_subset_conds(t1, t2, inst_type_vars=true);
     // fail if not cs :: <<subset_when(type_var: TypeVar, inst_type: Type)>*>;
     fail if cs == not_a_subset;
-    return merge_values({
+    return merge_values([
       match (c)
-        subset_when() = (c.type_var => c.inst_type)
+        subset_when() = [c.type_var -> c.inst_type]
       : c <- cs
-    });
+    ]);
   }
 
   ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -28,39 +28,39 @@ using (TypeName => Type) typedefs
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-type SubsetCond = not_a_subset, <subset_if(subset: TypeSymbol, superset: Type), subset_when(type_var: TypeVar, inst_type: Type)>*;
+type SubsetCond = not_a_subset, [<subset_if(subset: TypeSymbol, superset: Type), subset_when(type_var: TypeVar, inst_type: Type)>];
 
 <not_a_subset> not_a_subset                               = :not_a_subset;
-SubsetCond subset_if(TypeSymbol subtype, Type supertype)  = {subset_if(subset: subtype, superset: supertype)};
-SubsetCond subset_when(TypeVar var, Type type)            = {subset_when(type_var: var, inst_type: type)};
+SubsetCond subset_if(TypeSymbol subtype, Type supertype)  = [subset_if(subset: subtype, superset: supertype)];
+SubsetCond subset_when(TypeVar var, Type type)            = [subset_when(type_var: var, inst_type: type)];
 
 
-SubsetCond all_conds(SubsetCond* iss) = if in(not_a_subset, iss)
+SubsetCond all_conds([SubsetCond] iss) = if in(not_a_subset, iss)
                                           then not_a_subset
-                                          else union({is : is <- iss, is != not_a_subset}); //## POINTLESS, BUT NEEDED FOR TYPECHECKING
+                                          else union([is : is <- iss, is != not_a_subset]); //## POINTLESS, BUT NEEDED FOR TYPECHECKING
 
-(TypeSymbol, Type)* subtype_conds(SubsetCond conds) = if conds != not_a_subset then {(c.subset, c.superset) : c <- conds, subset_if() << c} else {fail;};
+[(TypeSymbol, Type)] subtype_conds(SubsetCond conds) = if conds != not_a_subset then [(c.subset, c.superset) : c <- conds, subset_if() << c] else {fail;};
 
-SubsetCond type_var_inst_conds(SubsetCond conds) = if conds != not_a_subset then {c : c <- conds, subset_when() << c} else {fail;};
+SubsetCond type_var_inst_conds(SubsetCond conds) = if conds != not_a_subset then [c : c <- conds, subset_when() << c] else {fail;};
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-using (TypeName => Type) typedefs, Bool inst_type_vars
+using [TypeName -> Type] typedefs, Bool inst_type_vars
 {
   SubsetCond deep_subset_conds(Type t1, Type t2)
   {
     starting_conds = shallow_subset_conds(t1, t2);
     return not_a_subset if starting_conds == not_a_subset;
 
-    tested_hypotheses   = {};
+    tested_hypotheses   = [];
     untested_hypotheses = subtype_conds(starting_conds);
     type_var_conds      = type_var_inst_conds(starting_conds);
 
     loop
-      new_untested_hypotheses = {};
+      new_untested_hypotheses = [];
 
-      for (subtype, supertype : rand_sort(untested_hypotheses))
+      for subtype, supertype <- rand_sort(untested_hypotheses):
         // Trying all the untested supertypes and merging all conditions
         new_conds = shallow_subset_conds(expand_type_ref(subtype, typedefs), supertype);
 
@@ -77,14 +77,14 @@ using (TypeName => Type) typedefs, Bool inst_type_vars
         new_untested_hypotheses = new_untested_hypotheses & new_subtype_conds;
 
         // Adding the new conditions about type variables to the previous ones
-        type_var_conds = all_conds({type_var_conds, new_var_conds});
+        type_var_conds = all_conds([type_var_conds, new_var_conds]);
       ;
 
       // Removing the hypotheses that have already been tested
       new_untested_hypotheses = new_untested_hypotheses - tested_hypotheses;
 
       // If there are no new candidate supertypes to test, we just return the constraints on the type variable
-      return type_var_conds if new_untested_hypotheses == {};
+      return type_var_conds if new_untested_hypotheses == [];
 
       // Generating the next round of candidate supertypes to test
       tested_hypotheses = tested_hypotheses & untested_hypotheses;
@@ -94,53 +94,53 @@ using (TypeName => Type) typedefs, Bool inst_type_vars
 
 
   SubsetCond shallow_subset_conds(Type t1, Type t2):
-    empty_type,           _                   = {},
+    empty_type,           _                   = [],
     _,                    empty_type          = {fail;}, //false, //## BUG: THIS IS ACTUALLY WRONG. COUNTEREXAMPLE: t1 = f(T), with T being the empty type
 
     // Type vars only match themselves or type any
     // _,                    type_var()          = if inst_type_vars then subset_when(t2, t1) else if t1 == t2 then {} else not_a_subset end end,
-    _,                    type_var()          = if inst_type_vars then subset_when(t2, t1), t1 == t2 then {} else not_a_subset,
+    _,                    type_var()          = if inst_type_vars then subset_when(t2, t1), t1 == t2 then [] else not_a_subset,
 
-    type_var(),           _                   = if is_type_any(t2) then {} else not_a_subset,
+    type_var(),           _                   = if is_type_any(t2) then [] else not_a_subset,
 
     // Dealing with all the recursive stuff
-    type_ref(ts1?),       _                   = if t1 != t2 then subset_if(ts1, t2) else {},
+    type_ref(ts1?),       _                   = if t1 != t2 then subset_if(ts1, t2) else [],
     // _,                    type_ref(ts?)       = shallow_subset_conds(t1, expand_type_ref(ts, typedefs)),
     _,                    type_ref(ts?)       = if ts == :builtin_type_symbol(:any) //## BAD BAD BAD: THIS IS A REALLY HORRIBLE HACK
-                                                  then {}
+                                                  then []
                                                   else shallow_subset_conds(t1, expand_type_ref(ts, typedefs)),
 
     // Type unions now
-    union_type(ts1?),     _                   = all_conds({shallow_subset_conds(t, t2) : t <- ts1}),
+    union_type(ts1?),     _                   = all_conds([shallow_subset_conds(t, t2) : t <- ts1]),
     _,                    union_type(ts2?)    = union_shallow_subset_conds(t1, ts2),
 
     // Leaf types
-    symb_type(),          _                   = if t1 == t2 or t2 == atom_type then {} else not_a_subset,
-    atom_type,            _                   = if t1 == t2 then {} else not_a_subset,
-    IntType,              IntType             = if is_integer_subset(t1, t2) then {} else not_a_subset,
+    symb_type(),          _                   = if t1 == t2 or t2 == atom_type then [] else not_a_subset,
+    atom_type,            _                   = if t1 == t2 then [] else not_a_subset,
+    IntType,              IntType             = if is_integer_subset(t1, t2) then [] else not_a_subset,
     IntType,              _                   = not_a_subset,
-    float_type,           _                   = if t1 == t2 then {} else not_a_subset,
+    float_type,           _                   = if t1 == t2 then [] else not_a_subset,
 
     // Sequence types
-    empty_seq_type,       empty_seq_type      = {},
+    empty_seq_type,       empty_seq_type      = [],
     empty_seq_type,       _                   = not_a_subset,
 
     ne_seq_type(),        ne_seq_type()       = shallow_subset_conds(t1.elem_type, t2.elem_type),
     ne_seq_type(),        _                   = not_a_subset,
 
     // Set types
-    empty_set_type,       empty_set_type      = {},
+    empty_set_type,       empty_set_type      = [],
     empty_set_type,       _                   = not_a_subset,
 
     ne_set_type(),        ne_set_type()       = shallow_subset_conds(t1.elem_type, t2.elem_type),
     ne_set_type(),           _                = not_a_subset,
 
     // Map types
-    empty_map_type,       empty_map_type      = {},
-    empty_map_type,       record_type(fs?)    = if not (? f @ l <- fs : not f.optional) then {} else not_a_subset,
+    empty_map_type,       empty_map_type      = [],
+    empty_map_type,       record_type(fs?)    = if not (? f @ l <- fs : not f.optional) then [] else not_a_subset,
     empty_map_type,       _                   = not_a_subset,
 
-    ne_map_type(),        ne_map_type()       = all_conds({shallow_subset_conds(t1.key_type, t2.key_type), shallow_subset_conds(t1.value_type, t2.value_type)}),
+    ne_map_type(),        ne_map_type()       = all_conds([shallow_subset_conds(t1.key_type, t2.key_type), shallow_subset_conds(t1.value_type, t2.value_type)]),
     ne_map_type(),        record_type(fs?)    = map_record_shallow_subset_conds(t1.key_type, t1.value_type, fs),
     ne_map_type(),        _                   = not_a_subset,
 
@@ -151,28 +151,28 @@ using (TypeName => Type) typedefs, Bool inst_type_vars
 
     // Tuple types
     tuple_type(fts1?),    tuple_type(fts2?)   = if length(fts1) == length(fts2)
-                                                  then all_conds(set([shallow_subset_conds(ft1, ft2) : ft1, ft2 <- zip(fts1, fts2)]))
+                                                  then all_conds(set((shallow_subset_conds(ft1, ft2) : ft1, ft2 <- zip(fts1, fts2))))
                                                   else not_a_subset,
-    tuple_type(fts?),     ne_seq_type()       = all_conds({shallow_subset_conds(ft, t2.elem_type) : ft <- set(fts)}),
+    tuple_type(fts?),     ne_seq_type()       = all_conds([shallow_subset_conds(ft, t2.elem_type) : ft <- set(fts)]),
     tuple_type(),         _                   = not_a_subset,
 
     // Tagged types
     // tag_obj_type(),       tag_obj_type()      = all_conds({shallow_subset_conds(t1.tag_type, t2.tag_type), shallow_subset_conds(t1.obj_type, t2.obj_type)}),
     tag_obj_type(),       tag_obj_type()      = { tcs = shallow_subset_conds(t1.tag_type, t2.tag_type);
                                                   return not_a_subset if tcs == not_a_subset;
-                                                  return all_conds({tcs, shallow_subset_conds(t1.obj_type, t2.obj_type)});
+                                                  return all_conds([tcs, shallow_subset_conds(t1.obj_type, t2.obj_type)]);
                                                 },
     tag_obj_type(),       _                   = not_a_subset;
 
 
-  SubsetCond union_shallow_subset_conds(Type t1, Type+ ts2)
+  SubsetCond union_shallow_subset_conds(Type t1, [+Type] ts2)
   {
-    all_conds = {cs : t2 <- ts2, cs = shallow_subset_conds(t1, t2), cs != not_a_subset};
-    return not_a_subset if all_conds == {};
-    return {} if in({}, all_conds);
+    all_conds = [cs : t2 <- ts2, cs = shallow_subset_conds(t1, t2), cs != not_a_subset];
+    return not_a_subset if all_conds == [];
+    return [] if in([], all_conds);
     return only_element(all_conds) if size(all_conds) == 1;
-    var_only_conds = {cs : cs <- all_conds, subtype_conds(cs) == {}};
-    return an_elem(var_only_conds) if var_only_conds != {}; //## COULD WE IMPROVE ON THIS?
+    var_only_conds = [cs : cs <- all_conds, subtype_conds(cs) == []];
+    return an_elem(var_only_conds) if var_only_conds != []; //## COULD WE IMPROVE ON THIS?
     return an_elem(all_conds); //## BAD: THIS IS REALLY REALLY BAD.
   }
 
@@ -181,8 +181,8 @@ using (TypeName => Type) typedefs, Bool inst_type_vars
   {
     labels_1 = keys(fs1);
     labels_2 = keys(fs2);
-    mandatory_labels_1 = {l : f @ l <- fs1, not f.optional};
-    mandatory_labels_2 = {l : f @ l <- fs2, not f.optional};
+    mandatory_labels_1 = [l : f @ l <- fs1, not f.optional];
+    mandatory_labels_2 = [l : f @ l <- fs2, not f.optional];
     optional_labels_1  = labels_1 - mandatory_labels_1;
     optional_labels_2  = labels_2 - mandatory_labels_2;
 
@@ -197,36 +197,36 @@ using (TypeName => Type) typedefs, Bool inst_type_vars
 
     // No particular requirement for optional labels in the supertype
 
-    label_type_map_1 = (l => f.type : f @ l <- fs1);
-    label_type_map_2 = (l => f.type : f @ l <- fs2);
+    label_type_map_1 = [l -> f.type : f @ l <- fs1];
+    label_type_map_2 = [l -> f.type : f @ l <- fs2];
 
-    return all_conds({shallow_subset_conds(label_type_map_1[l], label_type_map_2[l]) : l <- labels_1});
+    return all_conds([shallow_subset_conds(label_type_map_1[l], label_type_map_2[l]) : l <- labels_1]);
   }
 
 
   SubsetCond record_map_shallow_subset_conds(RecordTypeFields record_fields, NeMapType map_type) =
-    all_conds({
-      all_conds({
+    all_conds([
+      all_conds([
         shallow_subset_conds(symb_type(l), map_type.key_type),
         shallow_subset_conds(f.type, map_type.value_type)
-      })
+      ])
       : f @ l <- record_fields
-    });
+    ]);
 
 
   SubsetCond map_record_shallow_subset_conds(Type key_type, Type value_type, RecordTypeFields record_fields)
   {
     //## BUG: WHY is_subset AND NOT shallow_subset_conds? IS THIS A BUG?
-    return not_a_subset if not is_subset(key_type, union_type({symb_type(l) : l <- keys(record_fields)}));
+    return not_a_subset if not is_subset(key_type, union_type([symb_type(l) : l <- keys(record_fields)]));
 
-    if (key_type :: SymbType)
+    if key_type :: SymbType:
       only_key_obj = _obj_(key_type);
       return not_a_subset if (? f @ l <- record_fields : l != only_key_obj and not f.optional);
     else
       return not_a_subset if (? f <- values(record_fields) : not f.optional);
     ;
 
-    return all_conds({shallow_subset_conds(key_type, f.type) : f @ l <- record_fields, type_contains_obj(key_type, _obj_(l))});
+    return all_conds([shallow_subset_conds(key_type, f.type) : f @ l <- record_fields, type_contains_obj(key_type, _obj_(l))]);
   }
 }
 

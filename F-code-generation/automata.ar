@@ -1,65 +1,59 @@
-Block gen_auto_code(Automaton automaton, (AutoSymbol => (Atom => Bool)) auto_input_is_disc, (AutoSymbol => (Atom => Bool)) auto_output_is_disc, AutoSymbol* time_sensitive_autos, (TypeName => Type) typedefs, CompilationOptions options)
+Block gen_auto_code(Automaton automaton, [AutoSymbol -> [Atom -> Bool]] auto_input_is_disc, [AutoSymbol -> [Atom -> Bool]] auto_output_is_disc, [AutoSymbol] time_sensitive_autos, [TypeName -> Type] typedefs, CompilationOptions options)
 {
   nodes = gen_auto_nodes(automaton, auto_input_is_disc, auto_output_is_disc);
-  fail if nodes == []; //## BUG BUG BUG
+  fail if nodes == (); //## BUG BUG BUG
 
-  nodes_idxs = merge([(n.id => i) : n @ i <- nodes]);
-  nodes_levels = merge([(n.id => n.level) : n <- nodes]);
-  downstream_nodes = merge([(n.id => downstream_nodes_ids(n)) : n <- nodes]);
+  nodes_idxs = merge(([n.id -> i] : n @ i <- nodes));
+  nodes_levels = merge(([n.id -> n.level] : n <- nodes));
+  downstream_nodes = merge(([n.id -> downstream_nodes_ids(n)] : n <- nodes));
 
-  levels_sizes = count_vector([n.level : n <- nodes]);
-  levels_offsets = [0] & partial_sums(levels_sizes);
+  levels_sizes = count_vector((n.level : n <- nodes));
+  levels_offsets = (0) & partial_sums(levels_sizes);
 
   input_ids = keys(automaton.inputs);
   disc_sgns_ids = discrete_signals(automaton);
   time_rule_ids = keys(automaton.time_rules);
-  nested_cond_ids = {get_inner_id(n.id) : n <- set(nodes), cond_node() << n, n.parent != nil};
+  nested_cond_ids = [get_inner_id(n.id) : n <- set(nodes), cond_node() << n, n.parent != nil];
   disc_inputs_ids = intersection(input_ids, disc_sgns_ids);
 
-  memb_obj_vars = seq_union([memb_obj_vars(n) : n <- nodes]) &
-                  {(memb_var(id), :blank) : id <- keys(automaton.params)};
+  memb_obj_vars = seq_union((memb_obj_vars(n) : n <- nodes)) &
+                  [(memb_var(id), :blank) : id <- keys(automaton.params)];
 
-  memb_int_vect_vars  = set([nodes_to_update_vect_var(l, nz_nat(s)) : s @ l <- levels_sizes, s > 2]);
+  memb_int_vect_vars  = set((nodes_to_update_vect_var(l, nz_nat(s)) : s @ l <- levels_sizes, s > 2));
 
   // Not adding the arrays used to store the trigger heaps
   // That is done in the target language code generation phase
   is_time_sensitive = in(automaton.name, time_sensitive_autos);
-  memb_int_vars = seq_union([memb_int_vars(n) : n <- nodes]) &
-                  set([(update_count_var(l), s) : s @ l <- levels_sizes, s > 2]) &
-                  {(time_triggers_count_var, 0) if is_time_sensitive, (last_update_time, 0) if is_time_sensitive};
+  memb_int_vars = seq_union((memb_int_vars(n) : n <- nodes)) &
+                  set(((update_count_var(l), s) : s @ l <- levels_sizes, s > 2)) &
+                  [(time_triggers_count_var, 0) if is_time_sensitive, (last_update_time, 0) if is_time_sensitive];
 
-  memb_bool_vars = seq_union([memb_bool_vars(n) : n <- nodes]) & {(is_new, true)};
+  memb_bool_vars = seq_union((memb_bool_vars(n) : n <- nodes)) & [(is_new, true)];
 
-  const_data = {time_slots_len(a, ls) : c @ a <- automaton.time_rules, ls = trigger_times_table(c.time_expr), ls != []};
+  const_data = [time_slots_len(a, ls) : c @ a <- automaton.time_rules, ls = trigger_times_table(c.time_expr), ls != ()];
 
-  time_sensitive_nodes_ids = time_rule_ids & {id : na @ id <- automaton.nested_autos, in(na.type, time_sensitive_autos)};
-  time_varying_node_idxs = merge([(std_block_node_id(a) => i) : a @ i <- rand_sort(time_sensitive_nodes_ids)]);
+  time_sensitive_nodes_ids = time_rule_ids & [id : na @ id <- automaton.nested_autos, in(na.type, time_sensitive_autos)];
+  time_varying_node_idxs = merge(([std_block_node_id(a) -> i] : a @ i <- rand_sort(time_sensitive_nodes_ids)));
 
   //## BAD: I SHOULD BE USING A UNION PATTERN, JUST LIKE THIS:
   // multivalue_node_expr_count = (t.id => length(t.exprs) : t <- set(node_types), state() | derived_disc() << t);
-  multivalue_node_expr_count = (t.id => length(t.exprs) : t <- set(nodes), state() << t) &
-                               (t.id => length(t.exprs) : t <- set(nodes), derived_disc() << t);
+  multivalue_node_expr_count = [t.id -> length(t.exprs) : t <- set(nodes), state() << t] &
+                               [t.id -> length(t.exprs) : t <- set(nodes), derived_disc() << t];
 
   // Generating code for initialization, update and methods
-  let ( automaton                   = automaton,
-        time_sensitive_autos        = time_sensitive_autos,
-
-        options                     = options,
-
-        disc_sgns_ids               = disc_sgns_ids,
-        disc_inputs_ids             = intersection(input_ids, disc_sgns_ids),
-
-        nodes_by_id                 = merge(set([(n.id => n) : n <- nodes])),
-        nodes_ids_by_level          = [set(l) : l <- nodes_ids_by_level(nodes)],
-
-        time_varying_node_idxs      = time_varying_node_idxs,
-
-        multivalue_node_expr_count  = multivalue_node_expr_count,
-
-        nodes_idxs                  = nodes_idxs,
-        nodes_levels                = nodes_levels,
-        levels_offsets              = levels_offsets,
-        levels_sizes                = levels_sizes)
+  let automaton                   = automaton,
+      time_sensitive_autos        = time_sensitive_autos,
+      options                     = options,
+      disc_sgns_ids               = disc_sgns_ids,
+      disc_inputs_ids             = intersection(input_ids, disc_sgns_ids),
+      nodes_by_id                 = merge(set(([n.id -> n] : n <- nodes))),
+      nodes_ids_by_level          = (set(l) : l <- nodes_ids_by_level(nodes)),
+      time_varying_node_idxs      = time_varying_node_idxs,
+      multivalue_node_expr_count  = multivalue_node_expr_count,
+      nodes_idxs                  = nodes_idxs,
+      nodes_levels                = nodes_levels,
+      levels_offsets              = levels_offsets,
+      levels_sizes                = levels_sizes:
 
     init_code               = gen_init_method_body(memb_bool_vars, memb_int_vars, memb_obj_vars);
     update_code             = gen_update_method_body(nodes, nested_cond_ids, downstream_nodes);
@@ -68,19 +62,19 @@ Block gen_auto_code(Automaton automaton, (AutoSymbol => (Atom => Bool)) auto_inp
   ;
 
   // Generating cleanup code
-  cleanup_code = join([[release(v), init_memb_var(v, :blank)] : v, unused_var <- rand_sort(memb_obj_vars)]) &
-                 rand_sort({auto_cleanup(memb_auto_var(id), auto.type) : auto @ id <- automaton.nested_autos});
+  cleanup_code = join(((release(v), init_memb_var(v, :blank)) : v, unused_var <- rand_sort(memb_obj_vars))) &
+                 rand_sort([auto_cleanup(memb_auto_var(id), auto.type) : auto @ id <- automaton.nested_autos]);
 
   // Generating methods for queuing updates
-  queue_update_code = (n.id => gen_queue_update_method(n, nodes_idxs[n.id], levels_sizes[n.level]) : n <- set(nodes));
+  queue_update_code = [n.id -> gen_queue_update_method(n, nodes_idxs[n.id], levels_sizes[n.level]) : n <- set(nodes)];
 
   assert {
     inputs_count = size(automaton.inputs);
-    for (n @ i : nodes)
+    for n @ i <- nodes:
       is_input = match (n)
         input()  = true,
         _        = false;
-      if (i < inputs_count)
+      if i < inputs_count:
         return false if n.level != 0 or not is_input;
       else
         return false if n.level == 0 or is_input;
@@ -89,11 +83,11 @@ Block gen_auto_code(Automaton automaton, (AutoSymbol => (Atom => Bool)) auto_inp
     return true;
   };
 
-  sorted_input_ids = [match (n.id) std_block_node_id(a?) = a : n <- subseq(nodes, 0, size(automaton.inputs))]; //## BAD: RUNTIME TYPE CHECKING SHOULD NOT BE NEEDED HERE
+  sorted_input_ids = (match (n.id) std_block_node_id(a?) = a : n <- subseq(nodes, 0, size(automaton.inputs))); //## BAD: RUNTIME TYPE CHECKING SHOULD NOT BE NEEDED HERE
 
-  memb_vars = {left(v) : v <- memb_bool_vars} &
-              {left(v) : v <- memb_int_vars} &
-              {left(v) : v <- memb_obj_vars} &
+  memb_vars = [left(v) : v <- memb_bool_vars] &
+              [left(v) : v <- memb_int_vars] &
+              [left(v) : v <- memb_obj_vars] &
               memb_int_vect_vars;
 
   return block(
@@ -101,7 +95,7 @@ Block gen_auto_code(Automaton automaton, (AutoSymbol => (Atom => Bool)) auto_inp
     inputs:             sorted_input_ids,
     outputs:            keys(automaton.outputs),
     memb_vars:          memb_vars,
-    nested_auto_vars:   (memb_auto_var(id) => auto.type : auto @ id <- automaton.nested_autos),
+    nested_auto_vars:   [memb_auto_var(id) -> auto.type : auto @ id <- automaton.nested_autos],
     init_code:          init_code,
     update_code:        update_code,
     cleanup_code:       cleanup_code,
@@ -112,21 +106,21 @@ Block gen_auto_code(Automaton automaton, (AutoSymbol => (Atom => Bool)) auto_inp
   );
 
 
-  [[BlockNodeId]] nodes_ids_by_level([AutoNode] nodes)
+  BlockNodeId** nodes_ids_by_level(AutoNode* nodes)
   {
     curr_level = 0;
-    curr_level_ids = [];
-    node_ids_by_level = [];
-    for (n @ i : nodes)
-      if (n.level != curr_level)
+    curr_level_ids = ();
+    node_ids_by_level = ();
+    for n @ i <- nodes:
+      if n.level != curr_level:
         assert n.level == curr_level + 1;
-        node_ids_by_level = [node_ids_by_level | curr_level_ids];
+        node_ids_by_level = (node_ids_by_level | curr_level_ids);
         curr_level = curr_level + 1;
-        curr_level_ids = [];
+        curr_level_ids = ();
       ;
-      curr_level_ids = [curr_level_ids | n.id];
+      curr_level_ids = (curr_level_ids | n.id);
     ;
-    node_ids_by_level = [node_ids_by_level | curr_level_ids] if nodes != [];
+    node_ids_by_level = (node_ids_by_level | curr_level_ids) if nodes != ();
     return node_ids_by_level;
   }
 }
@@ -136,104 +130,104 @@ Block gen_auto_code(Automaton automaton, (AutoSymbol => (Atom => Bool)) auto_inp
 using
 {
   Automaton                   automaton,
-  AutoSymbol*                 time_sensitive_autos,
+  [AutoSymbol]                 time_sensitive_autos,
 
   CompilationOptions          options,
 
-  Atom*                       disc_sgns_ids,
-  Atom*                       disc_inputs_ids,
+  [Atom]                       disc_sgns_ids,
+  [Atom]                       disc_inputs_ids,
 
-  (BlockNodeId => AutoNode)   nodes_by_id,
-  [BlockNodeId*]              nodes_ids_by_level,
+  [BlockNodeId -> AutoNode]   nodes_by_id,
+  [BlockNodeId]*              nodes_ids_by_level,
 
-  (StdBlockNodeId => Nat)     time_varying_node_idxs,
+  [StdBlockNodeId -> Nat]     time_varying_node_idxs,
 
-  (StdBlockNodeId => Nat)     multivalue_node_expr_count,
+  [StdBlockNodeId -> Nat]     multivalue_node_expr_count,
 
-  (BlockNodeId => Nat)        nodes_levels,
-  (BlockNodeId => Nat)        nodes_idxs,
-  [Nat]                       levels_offsets,
-  [Nat]                       levels_sizes;
+  [BlockNodeId -> Nat]        nodes_levels,
+  [BlockNodeId -> Nat]        nodes_idxs,
+  Nat*                       levels_offsets,
+  Nat*                       levels_sizes;
 
 
-  (ExMethodSymb => [Instr]) gen_methods_code(<ReadOnlyMethod, UpdateMethod>* methods, (TypeName => Type) typedefs)
+  [ExMethodSymb -> Instr*] gen_methods_code([<ReadOnlyMethod, UpdateMethod>] methods, [TypeName -> Type] typedefs)
   {
-    return merge({
+    return merge([
       gen_code_for_overloaded_methods(ms, typedefs) : ms @ unused_var <- group_by(methods, ($.name, length($.args)))
-    });
+    ]);
 
 
-    (ExMethodSymb => [Instr]) gen_code_for_overloaded_methods(<ReadOnlyMethod, UpdateMethod>+ methods, (TypeName => Type) typedefs)
+    [ExMethodSymb -> Instr*] gen_code_for_overloaded_methods([+<ReadOnlyMethod, UpdateMethod>] methods, [TypeName -> Type] typedefs)
     {
       a_method = an_elem(methods);
       name = a_method.name;
       arity = length(a_method.args);
-      return (ex_method_symb(name, arity) => gen_method_code(a_method)) if size(methods) == 1;
+      return [ex_method_symb(name, arity) -> gen_method_code(a_method)] if size(methods) == 1;
       sorted_methods = rand_sort(methods);
-      comp_methods = merge([(ex_method_symb(m.name, i, arity) => gen_method_code(m)) : m @ i <- sorted_methods]);
+      comp_methods = merge(([ex_method_symb(m.name, i, arity) -> gen_method_code(m)] : m @ i <- sorted_methods));
       disp_method_code = gen_dispatch_method_body(automaton.name, sorted_methods, typedefs);
-      return comp_methods & (ex_method_symb(name, arity) => disp_method_code);
+      return comp_methods & [ex_method_symb(name, arity) -> disp_method_code];
     }
   }
 
 
-  [Instr] gen_method_code(ReadOnlyMethod method)
+  Instr* gen_method_code(ReadOnlyMethod method)
   {
     res_var = lvar(0);
 
-    auto_vars_types = (memb_auto_var(id) => na.type : na @ id <- automaton.nested_autos);
+    auto_vars_types = [memb_auto_var(id) -> na.type : na @ id <- automaton.nested_autos];
 
-    let ( next_set_it_var_id            = 0,
-          next_seq_it_var_id            = 0,
-          next_map_it_var_id            = 0,
-          next_obj_var_id               = 1,
-          next_int_var_id               = 0,
-          next_bool_var_id              = 0,
-          next_vector_var_id            = 0,
-          next_stream_var_id            = 0,
-          pending_state_var_asgnms_idxs = (),
-          auto_vars_types               = auto_vars_types,
-          self_auto                     = just(automaton.name),
-          ignore_assertions             = options.ignore_assertions)
+    let next_set_it_var_id            = 0,
+        next_seq_it_var_id            = 0,
+        next_map_it_var_id            = 0,
+        next_obj_var_id               = 1,
+        next_int_var_id               = 0,
+        next_bool_var_id              = 0,
+        next_vector_var_id            = 0,
+        next_stream_var_id            = 0,
+        pending_state_var_asgnms_idxs = [:],
+        auto_vars_types               = auto_vars_types,
+        self_auto                     = just(automaton.name),
+        ignore_assertions             = options.ignore_assertions:
 
       // Compiling the body of the method
-      code = [set_var(v, fn_par(i)) : unused_var, v @ i <- method.args] & gen_eval_code(method.expr, res_var);
+      code = (set_var(v, fn_par(i)) : unused_var, v @ i <- method.args) & gen_eval_code(method.expr, res_var);
     ;
 
     // entry_code = [push_call_info(fndef.name, fn_par(i)) : p @ i <- fndef.params])];
     // exit_code = [pop_call_info];
 
-    return [code | ret_val(res_var)];
+    return (code | ret_val(res_var));
   }
 
 
-  [Instr] gen_method_code(UpdateMethod method)
+  Instr* gen_method_code(UpdateMethod method)
   {
-    pending_state_var_asgnms_idxs = (get_inner_id(id) => nat(n + 1) : n @ id <- multivalue_node_expr_count);
-    auto_vars_types = (memb_auto_var(id) => na.type : na @ id <- automaton.nested_autos);
+    pending_state_var_asgnms_idxs = [get_inner_id(id) -> nat(n + 1) : n @ id <- multivalue_node_expr_count];
+    auto_vars_types = [memb_auto_var(id) -> na.type : na @ id <- automaton.nested_autos];
 
-    let ( next_set_it_var_id            = 0,
-          next_seq_it_var_id            = 0,
-          next_map_it_var_id            = 0,
-          next_obj_var_id               = 0,
-          next_int_var_id               = 0,
-          next_bool_var_id              = 0,
-          next_vector_var_id            = 0,
-          next_stream_var_id            = 0,
-          pending_state_var_asgnms_idxs = pending_state_var_asgnms_idxs,
-          auto_vars_types               = auto_vars_types,
-          self_auto                     = just(automaton.name),
-          ignore_assertions             = options.ignore_assertions)
+    let next_set_it_var_id            = 0,
+        next_seq_it_var_id            = 0,
+        next_map_it_var_id            = 0,
+        next_obj_var_id               = 0,
+        next_int_var_id               = 0,
+        next_bool_var_id              = 0,
+        next_vector_var_id            = 0,
+        next_stream_var_id            = 0,
+        pending_state_var_asgnms_idxs = pending_state_var_asgnms_idxs,
+        auto_vars_types               = auto_vars_types,
+        self_auto                     = just(automaton.name),
+        ignore_assertions             = options.ignore_assertions:
 
       // Compiling the body of the method
       method_body = method.body;
-      if (method_body != [])
-        code = [
-          [set_var(v, fn_par(i)) : unused_var, v @ i <- method.args] |
+      if method_body != ():
+        code = (
+          (set_var(v, fn_par(i)) : unused_var, v @ i <- method.args) |
           execute_block(gen_code(method_body, never_used_lvar))
-        ];
+        );
       else
-        code = [];
+        code = ();
       ;
       // fail; //## BUG BUG BUG HUGE SUPER BUG IN THE TYPECHECKER
     ;
@@ -242,95 +236,95 @@ using
   }
 
 
-  [Instr] gen_init_method_body((MembBoolVar, Bool)* memb_bool_vars, (MembIntVar, Int)* memb_int_vars, (<MembVar, MembObjVar, PendingInputVar, PendingStateVar>, <blank, undefined>)* memb_obj_vars)
+  Instr* gen_init_method_body([(MembBoolVar, Bool)] memb_bool_vars, [(MembIntVar, Int)] memb_int_vars, [(<MembVar, MembObjVar, PendingInputVar, PendingStateVar>, <blank, undefined>)] memb_obj_vars)
   {
     // Initializing all boolean member variables
-    code_0 = [set_bvar(var, init_val) : var, init_val <- rand_sort(memb_bool_vars)];
+    code_0 = (set_bvar(var, init_val) : var, init_val <- rand_sort(memb_bool_vars));
 
     // Initializing all integer member variables
-    code_1 = [set_ivar(var, init_val) : var, init_val <- rand_sort(memb_int_vars)];
+    code_1 = (set_ivar(var, init_val) : var, init_val <- rand_sort(memb_int_vars));
 
     // Initializing all object member variables (save for new inputs) to blank
-    code_2 = [init_memb_var(var, init_val) : var, init_val <- rand_sort(memb_obj_vars)];
+    code_2 = (init_memb_var(var, init_val) : var, init_val <- rand_sort(memb_obj_vars));
 
     // Creating the list of node that are initially marked for update
-    marked_nodes = {id : v_iv <- memb_bool_vars, v = left(v_iv), iv = right(v_iv), marked_for_update_var(id?) << v, iv};
-    marked_nodes_by_level = [intersection(ns, marked_nodes) : ns @ l <- nodes_ids_by_level];
+    marked_nodes = [id : v_iv <- memb_bool_vars, v = left(v_iv), iv = right(v_iv), marked_for_update_var(id?) << v, iv];
+    marked_nodes_by_level = (intersection(ns, marked_nodes) : ns @ l <- nodes_ids_by_level);
 
     // Initializing variables that contain the list of nodes that must be updated.
-    code_3 = join([
-      [set_ivar(nodes_to_update_var(l, i), nodes_idxs[n]) : n @ i <- rand_sort(marked_nodes_by_level[l])]
+    code_3 = join((
+      (set_ivar(nodes_to_update_var(l, i), nodes_idxs[n]) : n @ i <- rand_sort(marked_nodes_by_level[l]))
       : ns @ l <- nodes_ids_by_level, size(ns) > 2
-    ]);
+    ));
 
     // Now initializing all parameters.
     //## THESE VARIABLES HAVE ALREADY BEEN INITIALIZED TO BLANK, AND THAT'S REDUNDANT
     code_4 = gen_params_init_code(automaton, options);
 
-    code_5 = rand_sort({auto_init(memb_auto_var(id), auto.type) : auto @ id <- automaton.nested_autos});
+    code_5 = rand_sort([auto_init(memb_auto_var(id), auto.type) : auto @ id <- automaton.nested_autos]);
 
-    return join([code_0, code_1, code_2, code_3, code_4, code_5]);
+    return join((code_0, code_1, code_2, code_3, code_4, code_5));
   }
 
 
-  [Instr] gen_update_method_body([AutoNode^] nodes, Nat* nested_cond_ids, (BlockNodeId => BlockNodeId*) downstream_nodes)
+  Instr* gen_update_method_body(AutoNode+ nodes, [Nat] nested_cond_ids, [BlockNodeId -> [BlockNodeId]] downstream_nodes)
   {
     memb_copy_vars = memb_copy_vars(automaton);
-    memb_copy_var_ids = {name(v) : v <- memb_copy_vars};
+    memb_copy_var_ids = [name(v) : v <- memb_copy_vars];
 
     node_idx_var = ivar(0);
     node_count_var = ivar(1);
 
-    let (auto_name                  = automaton.name,
-         auto_vars_types            = (memb_auto_var(id) => auto.type : auto @ id <- automaton.nested_autos),
-         // multivalue_node_expr_count = multivalue_node_expr_count,
-         memb_copy_var_ids          = memb_copy_var_ids,
-         nested_cond_ids            = nested_cond_ids,
-         next_int_var_id            = 2)
+    let auto_name                  = automaton.name,
+        auto_vars_types            = [memb_auto_var(id) -> auto.type : auto @ id <- automaton.nested_autos],
+        // multivalue_node_expr_count = multivalue_node_expr_count,
+        memb_copy_var_ids          = memb_copy_var_ids,
+        nested_cond_ids            = nested_cond_ids,
+        next_int_var_id            = 2:
 
-      nodes_code_by_id = merge([(n.id => gen_any_node_code(n)) : n <- nodes]);
+      nodes_code_by_id = merge(([n.id -> gen_any_node_code(n)] : n <- nodes));
 
       //## WHAT DOES THIS DO? I HAVE NO IDEA...
       //## AND WHAT IS IT DOING INSIDE THE LET STATEMENT?
-      queue_memb_copy_updates_code = [
+      queue_memb_copy_updates_code = (
         do_if(
           memb_has_changed(id),
-          [mark_for_update(d, false) : d <- rand_sort(downstream_nodes[std_block_node_id(id)])]
+          (mark_for_update(d, false) : d <- rand_sort(downstream_nodes[std_block_node_id(id)]))
         ) : id <- rand_sort(memb_copy_var_ids)
-      ];
+      );
     ;
 
-    levels_code = [gen_level_code(rand_sort(ids), nodes_code_by_id, i, levels_offsets[i], node_idx_var, node_count_var) : ids @ i <- nodes_ids_by_level];
+    levels_code = (gen_level_code(rand_sort(ids), nodes_code_by_id, i, levels_offsets[i], node_idx_var, node_count_var) : ids @ i <- nodes_ids_by_level);
 
-    first_pass_finish_code = [set_bvar(is_new, false)];
-    if (disc_inputs_ids != {})
-      if (levels_sizes[0] > 2)
+    first_pass_finish_code = (set_bvar(is_new, false));
+    if disc_inputs_ids != []:
+      if levels_sizes[0] > 2:
         counter_var = ivar(0); //## ivar(0) IS ALREADY USED ELSEWHERE
-        first_pass_finish_code = [first_pass_finish_code | set_ivar(counter_var, 0)];
-        for (id : rand_sort(disc_inputs_ids))
-          first_pass_finish_code = [first_pass_finish_code |
+        first_pass_finish_code = (first_pass_finish_code | set_ivar(counter_var, 0));
+        for id <- rand_sort(disc_inputs_ids):
+          first_pass_finish_code = (first_pass_finish_code |
             do_if(
               marked_for_update_var(std_block_node_id(id)),
-              [ set_ivar(nodes_to_update_var(0, counter_var), nodes_idxs[std_block_node_id(id)]), // For input nodes, the global index and the level index coincide
+              ( set_ivar(nodes_to_update_var(0, counter_var), nodes_idxs[std_block_node_id(id)]), // For input nodes, the global index and the level index coincide
                 set_ivar(counter_var, add(counter_var, 1))
-              ]
-            )];
+              )
+            ));
         ;
-        first_pass_finish_code = [first_pass_finish_code | set_ivar(update_count_var(0), counter_var)];
+        first_pass_finish_code = (first_pass_finish_code | set_ivar(update_count_var(0), counter_var));
       ;
       //## BUG BUG BUG: WHAT HAPPENS IF THE FIRST TIME THE UPDATE PROCEDURE IS CALLED, IT IS CALLED THROUGH A METHOD?
       //## TRY TO FIGURE OUT WHAT MAKES SENSE IN THAT CASE.
       //## MY CURRENT UNDERSTANDING (WHICH MAY WELL BE WRONG) IS THAT THE UPDATE IS FIRST CALLED
       //## THROUGH THE METHOD, BUT IGNORING THE DISCRETE INPUTS, AND THEN THE DISCRETE INPUTS ARE APPLIED,
       //## BUT WITHOUT THE OVERRIDING PROVIDED BY THE METHOD. DOES THAT MAKE SENSE?
-      first_pass_finish_code = [first_pass_finish_code | prop_input_updates(automaton.name, 0)];
+      first_pass_finish_code = (first_pass_finish_code | prop_input_updates(automaton.name, 0));
     ;
 
-    update_code = [reset_memb_var(memb_var(id), :blank) : id <- rand_sort(disc_sgns_ids)] &
-                  [set_var(v, memb_var(name(v))) : v <- rand_sort(memb_copy_vars)] &
-                  join(levels_code) & [do_if(is_new, first_pass_finish_code)];
+    update_code = (reset_memb_var(memb_var(id), :blank) : id <- rand_sort(disc_sgns_ids)) &
+                  (set_var(v, memb_var(name(v))) : v <- rand_sort(memb_copy_vars)) &
+                  join(levels_code) & (do_if(is_new, first_pass_finish_code));
 
-    init_memb_copies_code = [set_bvar(memb_has_changed(id), false) : id <- rand_sort(memb_copy_var_ids)];
+    init_memb_copies_code = (set_bvar(memb_has_changed(id), false) : id <- rand_sort(memb_copy_var_ids));
 
     update_code = init_memb_copies_code & update_code & queue_memb_copy_updates_code;
     update_code = add_time_loop(update_code) if in(automaton.name, time_sensitive_autos);
@@ -338,92 +332,92 @@ using
     return update_code;
 
 
-    [Instr] add_time_loop([Instr] core_code)
+    Instr* add_time_loop(Instr* core_code)
     {
       i0 = ivar(0); //## NOT SURE ABOUT THIS ONE
 
-      time_varying_nodes_by_idx = merge({(i => a) : i @ a <- time_varying_node_idxs});
+      time_varying_nodes_by_idx = merge([[i -> a] : i @ a <- time_varying_node_idxs]);
       assert time_varying_nodes_by_idx == reverse(time_varying_node_idxs);
 
-      header_code = [
+      header_code = (
         set_ivar(curr_time, update_time),
         do_if(
           is_gt(time_triggers_count_var, 0),
-          [ set_ivar(i0, trigger_times_heap_var(0)),
+          ( set_ivar(i0, trigger_times_heap_var(0)),
             do_if(
               is_le(i0, update_time),
-              [ set_ivar(curr_time, i0),
-                repeat([
+              ( set_ivar(curr_time, i0),
+                repeat((
                   set_ivar(i0, time_varying_cond_ids_heap_var(0)),
                   switch_on_nat(
                     i0,
-                    [ { node_id = time_varying_nodes_by_idx[i];
-                        if (has_key(automaton.nested_autos, get_inner_id(node_id)))
-                          return [queue_update(automaton.name, node_id)];
+                    ( { node_id = time_varying_nodes_by_idx[i];
+                        if has_key(automaton.nested_autos, get_inner_id(node_id)):
+                          return (queue_update(automaton.name, node_id));
                         else
-                          return [queue_cond_update(automaton.name, node_id, false)];
+                          return (queue_cond_update(automaton.name, node_id, false));
                         ;
                       } : i < nz_nat(size(time_varying_nodes_by_idx))
-                    ]
+                    )
                   ),
                   clear_timer(automaton.name, i0),
                   break_if(
-                    or_else([
+                    or_else((
                       is_eq(time_triggers_count_var, 0),
                       neg(is_eq(trigger_times_heap_var(0), curr_time))
-                    ])
+                    ))
                   )
-                ])
-              ]
+                ))
+              )
             )
-          ]
+          )
         )
-      ];
+      );
 
-      return [
+      return (
         set_ivar(update_time, add(last_update_time, elapsed_time)),
         set_ivar(last_update_time, update_time),
-        repeat(nonempty(header_code & core_code & [break_if(is_eq(curr_time, update_time))]))
-      ];
+        repeat(nonempty(header_code & core_code & (break_if(is_eq(curr_time, update_time)))))
+      );
     }
   }
 
 
 
-  [Instr] gen_level_code([BlockNodeId] nodes_ids, (BlockNodeId => [Instr]) nodes_code_by_id, Nat level_idx, Nat level_offset, IntVar node_idx_var, IntVar node_count_var)
+  Instr* gen_level_code(BlockNodeId* nodes_ids, [BlockNodeId -> Instr*] nodes_code_by_id, Nat level_idx, Nat level_offset, IntVar node_idx_var, IntVar node_count_var)
   {
     update_count_var = update_count_var(level_idx);
     node_count = length(nodes_ids);
 
-    nodes_code = [
+    nodes_code = (
       { code = nodes_code_by_id[id];
         is_disc_input = match (id)
           std_block_node_id(a?) = level_idx == 0 and in(a, disc_inputs_ids),
           _                     = false;
-        code = [do_if(neg(is_new), code)] if is_disc_input;
+        code = (do_if(neg(is_new), code)) if is_disc_input;
         return code;
       }
       : id <- nodes_ids
-    ];
+    );
 
-    if (node_count > 2)
+    if node_count > 2:
       switch_expr = sub(nodes_to_update_var(level_idx, node_idx_var), level_offset);
-      code = [
+      code = (
         set_ivar(node_idx_var, 0),
         set_ivar(node_count_var, update_count_var),
-        repeat([
+        repeat((
           break_if(is_eq(node_idx_var, node_count_var)),
           switch_on_nat(switch_expr, nonempty(nodes_code)),
           set_ivar(node_idx_var, add(node_idx_var, 1))
-        ]),
+        )),
         set_ivar(update_count_var, 0)
-      ];
+      );
 
     else
-      code = [do_if(marked_for_update_var(nodes_ids[i]), nodes_code[i]) : i < node_count];
+      code = (do_if(marked_for_update_var(nodes_ids[i]), nodes_code[i]) : i < node_count);
     ;
 
-    code = [do_if(is_eq(curr_time, update_time), code)] if level_idx == 0 and in(automaton.name, time_sensitive_autos);
+    code = (do_if(is_eq(curr_time, update_time), code)) if level_idx == 0 and in(automaton.name, time_sensitive_autos);
 
     return code;
   }
@@ -431,66 +425,66 @@ using
 
 ////////////////////////////////////////////////////////////////////////////////
 
-[Instr] gen_params_init_code(Automaton automaton, CompilationOptions options)
+Instr* gen_params_init_code(Automaton automaton, CompilationOptions options)
 {
   param_ids = keys(automaton.params);
-  dep_map = (a => {unsafe_name(v) : v <- extern_vars(e)} : e @ a <- automaton.params);
+  dep_map = [a -> [unsafe_name(v) : v <- extern_vars(e)] : e @ a <- automaton.params];
   assert not (? ts @ s <- dep_map, t <- ts : not in(t, param_ids));
   sorted_params = topological_sort(dep_map);
-  auto_vars_types = (memb_auto_var(id) => auto.type : auto @ id <- automaton.nested_autos);
-  let (auto_vars_types = auto_vars_types, next_obj_var_id = 0, next_int_var_id = 0, next_bool_var_id = 0, options = options)
-    params_init_code = [
-      [gen_safe_eval_code(automaton.params[p], memb_var(p)) : p <- rand_sort(ps)]
+  auto_vars_types = [memb_auto_var(id) -> auto.type : auto @ id <- automaton.nested_autos];
+  let auto_vars_types = auto_vars_types, next_obj_var_id = 0, next_int_var_id = 0, next_bool_var_id = 0, options = options:
+    params_init_code = (
+      (gen_safe_eval_code(automaton.params[p], memb_var(p)) : p <- rand_sort(ps))
       : ps <- sorted_params
-    ];
+    );
   ;
-  return join([join(cfs) : cfs <- params_init_code]);
+  return join((join(cfs) : cfs <- params_init_code));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-[Nat] dispatch_candidate_args([[Type^]^] arg_types, (TypeName => Type) typedefs)
+Nat* dispatch_candidate_args(Type++ arg_types, [TypeName -> Type] typedefs)
 {
   arity = length(head(arg_types));
 
-  candidates = [];
-  for (i < arity)
-    type_col = [ts[i] : ts <- arg_types];
-    ptypes  = [pseudotype(t, typedefs) : t <- type_col];
-    good = all([all([are_disjoint(p1, p2) : p2 <- right_subseq(ptypes, j+1)]) : p1 @ j <- ptypes]); //## BAD: INEFFICIENT. ALSO A BIT UGLY...
-    candidates = [candidates | i] if good;
+  candidates = ();
+  for i < arity:
+    type_col = (ts[i] : ts <- arg_types);
+    ptypes  = (pseudotype(t, typedefs) : t <- type_col);
+    good = all((all((are_disjoint(p1, p2) : p2 <- right_subseq(ptypes, j+1))) : p1 @ j <- ptypes)); //## BAD: INEFFICIENT. ALSO A BIT UGLY...
+    candidates = (candidates | i) if good;
   ;
 
   return candidates;
 }
 
 
-[Instr] gen_dispatch_method_body(AutoSymbol auto_type, [<ReadOnlyMethod, UpdateMethod>^] methods, (TypeName => Type) typedefs)
+Instr* gen_dispatch_method_body(AutoSymbol auto_type, <ReadOnlyMethod, UpdateMethod>+ methods, [TypeName -> Type] typedefs)
 {
   assert length(methods) > 1;
-  assert size(set([m.name : m <- methods])) == 1;         // All methods must have the same name
-  assert size(set([length(m.args) : m <- methods])) == 1; // All methods have the same arity
+  assert size(set((m.name : m <- methods))) == 1;         // All methods must have the same name
+  assert size(set((length(m.args) : m <- methods))) == 1; // All methods have the same arity
   assert length(head(methods).args) > 0;                  // No-argument methods cannot be polymorphic
 
   a_method  = head(methods);
   name      = a_method.name;
   arity     = length(a_method.args);
 
-  disp_cands = dispatch_candidate_args([[t : t, unused_var <- nonempty(m.args)] : m <- methods], typedefs);
+  disp_cands = dispatch_candidate_args(((t : t, unused_var <- nonempty(m.args)) : m <- methods), typedefs);
 
   //## DO WE NEED TO IMPLEMENT THE CASE IN WHICH THERE'S NO SINGLE ARGUMENT THAT CAN BE USED FOR DISPATCH?
-  fail if disp_cands == [];
+  fail if disp_cands == ();
 
   //## IF THERE'S MORE THAN ONE CANDIDATE PARAMETER, WE SHOULD CHOOSE THE ONE
   //## THAT CAN MAKE THE DISPATCH MORE EFFICIENT, NOT JUST THE FIRST ONE
   disp_arg = head(disp_cands);
 
-  cases = [(
-      ptrns:  [type_to_pseudotype_pattern(left(m.args[disp_arg]), typedefs)],
-      code:   [call_method(auto_type, ex_method_symb(name, i, arity), [fn_par(j) : j < arity]), exit_block]
-    ) : m @ i <- methods
-  ];
-  code = gen_switch_code([fn_par(disp_arg)], lvar(0), cases, next_obj_var_id=1);
+  cases = ([
+      ptrns:  (type_to_pseudotype_pattern(left(m.args[disp_arg]), typedefs)),
+      code:   (call_method(auto_type, ex_method_symb(name, i, arity), (fn_par(j) : j < arity)), exit_block)
+    ] : m @ i <- methods
+  );
+  code = gen_switch_code((fn_par(disp_arg)), lvar(0), cases, next_obj_var_id=1);
 
   return code;
 }

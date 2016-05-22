@@ -1,217 +1,208 @@
-String to_str(Int n)
+String printed(Any obj)
 {
-  m   = n;
-  neg = false;
-  if (m < 0)
-    m   = -m;
-    neg = true;
-  ;
+  pt = print_tree(obj);
+  return string(walk_print_tree(pt, ()));
 
-  assert m >= 0;
 
-  div  = 10;
-  divs = [1];
-  while (div <= m)
-    divs = [div] & divs;
-    div  = 10 * div;
-  ;
+  Nat* walk_print_tree(String str, Nat* buff) = buff & raw_str(str);
 
-  str = "";
-
-  for (d : divs)
-    count = 0;
-    while (m >= d)
-      m     = m - d;
-      count = count + 1;
+  Nat* walk_print_tree(PrintTree pt, Nat* buff)
+  {
+    b = buff;
+    for n <- pt.subnodes:
+      b = walk_print_tree(n, b);
     ;
-    str = str & string([nat(ascii_0 + count)]);
-  ;
-
-  return if neg then "-" & str else str;
-}
-
-
-String float_to_str(Int mantissa, Int dec_exp)
-{
-  mant_str = to_str(mantissa);
-  shift = -dec_exp;
-  padd_zeros = max(0, shift + 1 - length(mant_str));
-  mant_str = append(nat(padd_zeros) * ["0"]) & mant_str;
-  left = substr(mant_str, 0, nil, shift);
-  right = substr(mant_str, nil, shift, 0);
-  return left & "." & right;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
-String to_text(Any obj)
-{
-  return to_txt(obj);
-
-  String to_txt(Any obj):
-    +           = _str_(obj),
-    *           = to_str(obj),
-    ^           = float_to_str(_mantissa_(obj), _dec_exp_(obj)),
-    string()    = if obj :: String then quote(obj) else to_txt_tag_obj(:string, _obj_(obj)),
-    [...]       = "[" & append(intermix([to_txt(x) : x <- obj], ", ")) & "]",
-    {...}       = "{" & append(intermix([to_txt(x) : x <- rand_sort(obj)], ", ")) & "}",
-    (...)       = to_txt(obj, if keys(obj) :: <Atom*> then ": " else " => "),
-    // tag @ iobj  = to_txt(tag,  iobj);
-    tag @ iobj  = to_txt_tag_obj(tag,  iobj);
-
-  String to_txt_tag_obj(Atom tag, Any obj)
-  {
-    str = to_txt(obj);
-    str = "(" & str & ")" if not obj :: Record;
-    return _str_(tag) & str;
-  }
-
-  String to_txt(Map map, String key_val_sep)
-  {
-    es   = rand_sort({(key: k, value: v) : v @ k <- map});
-    strs = [to_txt(e.key) & key_val_sep & to_txt(e.value) : e <- es];
-    return "(" & append(intermix(strs, ", ")) & ")";
+    return b;
   }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 
-String quote(String str)
+String printed(Any obj, Nat line_len)
 {
-  qstr = [];
-  for (ch : _obj_(str))
-    if (ch == ascii_newline)
-      qchs = [ascii_backslash, ascii_lower_n];
-    elif (ch == ascii_backslash)
-      qchs = [ascii_backslash, ascii_backslash];
-    elif (ch == ascii_double_quotes)
-      qchs = [ascii_backslash, ascii_double_quotes];
-    else
-      qchs = [ch];
-    ;
-
-    qstr = qstr & qchs;
-  ;
-  return "\"" & string(qstr) & "\"";
-}
+  pt = print_tree(obj);
+  return string((walk_print_tree(pt, (), 0, line_len) | ascii_newline));
 
 
-String to_text(Any obj, Nat line_len, Nat indent_level)
-{
-  ind_str = indent_level * "  ";
-  return append(intermix([ind_str & l : l <- to_text(obj, line_len)], "\n"));
-}
+  Nat* walk_print_tree(String str, Nat* buff, Nat depth, Nat line_len) = buff & raw_str(str);
 
-
-// [String^] to_text(Any obj, Nat line_len)
-[String] to_text(Any obj, Nat line_len)
-{
-  return to_txt(obj, line_len);
-
-  // [String^] to_txt(Any obj, Nat line_len):
-  [String] to_txt(Any obj, Nat line_len):
-    +           = [_str_(obj)],
-    *           = [to_str(obj)],
-    ^           = [float_to_str(_mantissa_(obj), _dec_exp_(obj))],
-    string()    = if obj :: String then [quote(obj)] else to_txt_tag_obj(:string, _obj_(obj), line_len),
-    [...]       = to_txt_collection(obj, line_len, "[", "]"),
-    {...}       = to_txt_collection(rand_sort(obj), line_len, "{", "}"),
-    (...)       = to_txt_map(obj, line_len),
-    tag @ iobj  = to_txt_tag_obj(tag, iobj, line_len);
-
-  // [String^] to_txt_tag_obj(Atom tag, Any obj, Nat line_len)
-  [String] to_txt_tag_obj(Atom tag, Any obj, Nat line_len)
+  Nat* walk_print_tree(PrintTree node, Nat* buff, Nat depth, Nat line_len)
   {
-    obj_is_record = match (obj)
-      (...)   = keys(obj) :: <Atom*>,
-      _       = false;
-    tag_str      = _str_(tag);
-    obj_lines    = to_txt(obj, line_len);
-    line_count   = length(obj_lines);
-    first_line   = obj_lines[0];
+    subnodes = node.subnodes;
+    len = length(subnodes);
 
-    if (line_count == 1)
-      if (obj_is_record or length(first_line) + length(tag_str) + 2 <= line_len)
-        return [tag_str & if obj_is_record then first_line else "(" & first_line & ")"];
+    // An object needs splitting if it's too long unless it contains a single nested node
+    // (in addition to non-nested ones) and this nested node has an early cut
+    nested_nodes = (n : n <- subnodes, not is_leaf(n));
+    only_subnode_has_early_cut = length(nested_nodes) == 1 and has_early_cut(only_item(nested_nodes));
+    needs_splitting = size(node) > line_len and not only_subnode_has_early_cut;
+
+    new_buff = buff;
+    for n @ i <- subnodes:
+      // We insert a new line here if the object needs splitting, this is not the first node
+      // and if either the node is a nested node or if it's the last one in the sequence
+      is_leaf = is_leaf(n);
+      insert_new_line = needs_splitting and i > 0 and (not is_leaf or i == len-1);
+      new_depth = nat(depth + bit(insert_new_line and not is_leaf));
+      new_buff = insert_new_line(new_buff, new_depth) if insert_new_line;
+      new_buff = walk_print_tree(n, new_buff, new_depth, line_len);
+    ;
+    return new_buff;
+  }
+
+
+  Bool has_early_cut(String str)    = false;
+  Bool has_early_cut(PrintTree pt)  = size(head(pt.subnodes)) == 1;
+
+
+  Nat* insert_new_line(Nat* buff, Nat depth)
+  {
+    new_buff = (buff | ascii_newline);
+    for depth:
+      new_buff = (new_buff | ascii_space, ascii_space);
+    ;
+    return new_buff;
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+type PrintTree          = print_tree_node(subnodes: <PrintTree, String>+, size: Nat);
+
+
+PrintTree print_tree_node(<PrintTree, String>+ ns) = print_tree_node(subnodes: ns, size: nat(sum((size(n) : n <- ns))));
+
+
+Nat size(String str)    = length(str);
+Nat size(PrintTree pt)  = pt.size;
+
+Bool is_leaf(String)    = true;
+Bool is_leaf(PrintTree) = false;
+
+////////////////////////////////////////////////////////////////////////////////
+
+String* printed_print_tree(PrintTree print_tree)
+{
+  return printed_print_tree(print_tree, 0);
+
+
+  String* printed_print_tree(String str, Nat depth) = (depth * "  " & str);
+
+  String* printed_print_tree(PrintTree node, Nat depth) =
+    join(
+      (printed_print_tree(n, nat(depth + bit(not is_leaf(n)))) : n <- node.subnodes)
+    );
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+PrintTree print_tree(Any obj)
+{
+  return print_tree(obj);
+
+
+  PrintTree print_tree(Any obj):
+    +             = print_tree_node((_str_(obj))),
+    *             = print_tree_node((printed_int(obj))),
+    ^             = print_tree_node((printed_float(_mantissa_(obj), _dec_exp_(obj)))),
+    (..)          = seq_print_tree(obj),
+    [..]          = set_print_tree(obj),
+    [->]          = map_print_tree(obj),
+    tag @ iobj    = tag_obj_print_tree(tag, iobj);
+
+
+  String printed_int(Int n)
+  {
+    return "0" if n == 0;
+    m = if n >= 0 then n else -n;
+    rev_chs = ();
+    while m > 0:
+      rev_chs = (rev_chs | nat(ascii_0 + mod(m, 10)));
+      m = m / 10;
+    ;
+    rev_chs = (rev_chs | ascii_minus) if n < 0;
+    return string(reverse(rev_chs));
+  }
+
+
+  String printed_float(Int mantissa, Int dec_exp)
+  {
+    mant_str = printed_int(mantissa);
+    shift = -dec_exp;
+    padd_zeros = max(0, shift + 1 - length(mant_str));
+    mant_str = append(nat(padd_zeros) * ("0")) & mant_str;
+    left = substr(mant_str, 0, nil, shift);
+    right = substr(mant_str, nil, shift, 0);
+    return left & "." & right;
+  }
+
+
+  String printed_raw_string(Nat* chs)
+  {
+    qstr = ();
+    for ch <- chs:
+      if ch == ascii_newline:
+        qchs = (ascii_backslash, ascii_lower_n);
+      elif ch == ascii_backslash:
+        qchs = (ascii_backslash, ascii_backslash);
+      elif ch == ascii_double_quotes:
+        qchs = (ascii_backslash, ascii_double_quotes);
       else
-        return [tag_str & "(", "  " & first_line, ")"];
+        qchs = (ch);
       ;
+
+      qstr = qstr & qchs;
+    ;
+    return "\"" & string(qstr) & "\"";
+  }
+
+
+  PrintTree seq_print_tree(Seq seq)
+  {
+    subnodes = intermix((print_tree(x) : x <- seq), ", ");
+    subnodes = ("(") & subnodes & (")");
+    return print_tree_node(nonempty(subnodes));
+  }
+
+
+  PrintTree set_print_tree(Set set)
+  {
+    subnodes = intermix((print_tree(x) : x <- rand_sort(set)), ", ");
+    subnodes = ("[") & subnodes & ("]");
+    return print_tree_node(nonempty(subnodes));
+  }
+
+
+  PrintTree map_print_tree(Map map)
+  {
+    return print_tree_node(("[:]")) if map == [:];
+    entries = rand_sort_pairs(map);
+    // separator = if map :: Record then ": " else " -> ";
+    // entry_nodes = (print_tree_node((print_tree(k), separator, print_tree(v))) : k, v <- entries);
+    if map :: Record:
+      entry_nodes = [print_tree_node((_str_(k) & ": ", print_tree(v))) : v @ k <- map];
     else
-      middle_lines = subseq(obj_lines, 1, line_count-2);
-      last_line    = rev_at(obj_lines, 0);
-      if (length(first_line) == 1)
-        indent = "";
-        head   = [tag_str & (if obj_is_record then "" else "(") & first_line];
-        tail   = [last_line & if obj_is_record then "" else ")"];
-      else
-        indent = "  ";
-        head = [tag_str & "(", "  " & first_line];
-        tail = ["  " & last_line, ")"];
-      ;
+      entry_nodes = [print_tree_node((print_tree(k), " -> ", print_tree(v))) : v @ k <- map];
     ;
-
-    return head & [indent & l : l <- middle_lines] & tail;
+    nodes = ("[") & intermix(rand_sort(entry_nodes), ", ") & ("]");
+    return print_tree_node(nonempty(nodes));
   }
 
-  // [String^] to_txt_collection(Seq seq, Nat line_len, String left_del, String right_del)
-  [String] to_txt_collection(Seq seq, Nat line_len, String left_del, String right_del)
-  {
-    lines_seq = [to_txt(obj, line_len) : obj <- seq];
-    if (all([length(ls) == 1 : ls <- lines_seq]))
-      len_sum = sum([length(ls[0]) : ls <- lines_seq]);
-      if (len_sum + 2 * length(seq) + 2 < line_len)
-        return [left_del & append(intermix([ls[0] : ls <- lines_seq], ", ")) & right_del];
-      ;
-    ;
-    last_idx = length(lines_seq) - 1;
-    indented_lines_with_commas = join([["  " & l : l <- if i != last_idx then append_to_last(ls, ",") else ls] : ls @ i <- lines_seq]);
-    return [left_del] & indented_lines_with_commas & [right_del];
-  }
 
-  // [String^] append_to_last([String^] lines, String str) = [if i != last_idx then l else l & str : l @ i <- lines] let last_idx = length(lines) - 1;;
-  // [String^] append_to_last([String^] lines, String str)
-  [String] append_to_last([String] lines, String str)
+  PrintTree tag_obj_print_tree(Atom tag, Any obj)
   {
-    fail if lines == [];
-    last_idx = length(lines) - 1;
-    return [if i != last_idx then l else l & str : l @ i <- lines];
-  }
-
-  // [String^] to_txt_map(Map map, Nat line_len)
-  [String] to_txt_map(Map map, Nat line_len)
-  {
-    is_record   = keys(map) :: <Atom*>;
-    key_val_sep = if is_record then ": " else " => ";
-    size        = size(map);
-    es          = rand_sort({(key: k, value: v) : v @ k <- map});
-    lines       = [];
-    single_line = "";
-    is_single_line_so_far = true;
-    for (e @ i : es)
-      key_ls = to_txt(e.key, line_len);
-      value_ls = to_txt(e.value, line_len);
-      // The pair goes in a single line if both key and value must be on a single line and
-      // either it's a record or the entire pair (including the separator) fits in a single line
-      if (length(key_ls) == 1 and length(value_ls) == 1 and (is_record or length(key_ls[0]) + length(value_ls[0]) + 2 < line_len))
-        ls = [key_ls[0] & key_val_sep & value_ls[0]];
-      else
-        ls = append_to_last(key_ls, key_val_sep) & value_ls;
-      ;
-      ls = append_to_last(ls, ",") if i < size - 1;
-      lines = lines & ls;
-      if (is_single_line_so_far)
-        if (length(ls) == 1 and length(single_line) + length(ls[0]) < line_len)
-          single_line = single_line & (if single_line == "" then "" else " ") & ls[0];
-        else
-          is_single_line_so_far = false;
-        ;
-      ;
-    ;
-    if (is_single_line_so_far)
-      return ["(" & single_line & ")"];
+    return print_tree_node((printed_raw_string(obj))) if tag == :string and obj :: Nat*;
+    pt = print_tree(obj);
+    if (obj :: Seq and length(obj) > 1) or (obj :: Record and obj != [:]):
+      assert length(pt.subnodes) > 2;
+      obj_nodes = subseq(pt.subnodes, 1, nil, 1);
     else
-      return ["("] & ["  " & l : l <- lines] & [")"];
+      obj_nodes = (pt);
     ;
+    nodes = (_str_(tag), "(") & obj_nodes & (")");
+    return print_tree_node(nonempty(nodes));
   }
 }
-
-///////////////////////////////////////////////////////////////////////////////

@@ -1,24 +1,24 @@
 
-[Instr^] type_any_cheat_body = [ret_val(true)];
+Instr+ type_any_cheat_body = (ret_val(true));
 
-[Instr^] type_seq_cheat_body = [set_bvar(bvar(0), or(is_empty_seq(fn_par(0)), is_ne_seq(fn_par(0)))), ret_val(bvar(0))];
+Instr+ type_seq_cheat_body = (set_bvar(bvar(0), or(is_empty_seq(fn_par(0)), is_ne_seq(fn_par(0)))), ret_val(bvar(0)));
 
-[Instr^] type_set_cheat_body = [set_bvar(bvar(0), or(is_empty_set(fn_par(0)), is_ne_set(fn_par(0)))), ret_val(bvar(0))];
+Instr+ type_set_cheat_body = (set_bvar(bvar(0), or(is_empty_set(fn_par(0)), is_ne_set(fn_par(0)))), ret_val(bvar(0)));
 
 
 ProcDef apply_cheats(BoolProcDef pd)
 {
-  if (pd.name == :memb_test(:type_symbol(:seq)))
+  if pd.name == :memb_test(:type_symbol(:seq)):
     // print "Seq type cheat applied";
     return bool_proc_def(pd.name, in_arity(pd), type_seq_cheat_body);
   ;
 
-  if (pd.name == :memb_test(:type_symbol(:set)))
+  if pd.name == :memb_test(:type_symbol(:set)):
     // print "Set type cheat applied";
     return bool_proc_def(pd.name, in_arity(pd), type_set_cheat_body);
   ;
 
-  if (pd.name == :memb_test(:type_symbol(:any)))
+  if pd.name == :memb_test(:type_symbol(:any)):
     // print "Any type cheat applied";
     return bool_proc_def(pd.name, in_arity(pd), type_any_cheat_body);
   ;
@@ -28,42 +28,42 @@ ProcDef apply_cheats(BoolProcDef pd)
 
 
 String error_pos_msg(String filename, NzNat line, NzNat col) =
-  "File " & filename & ", line " & to_str(line) & ", column " & to_str(col);
+  "File " & filename & ", line " & printed(line) & ", column " & printed(col);
 
 
-[String] create_error_msg(LexerError err, String filename) = ["Syntax error, invalid token", error_pos_msg(filename, err.line, err.col)];
+String* create_error_msg(LexerError err, String filename) = ("Syntax error, invalid token", error_pos_msg(filename, err.line, err.col));
 
 
-[String] create_error_msg(ParError err, String filename):
-  parenthesis_not_closed(t?)  = ["Opening parenthesis without corresponding closing parenthesis", error_pos_msg(filename, t.line, t.col)],
-  parenthesis_not_opened(t?)  = ["Closing parenthesis without corresponding opening parenthesis", error_pos_msg(filename, t.line, t.col)],
-  mismatched_parenthesis()    = [ "Mismatched parentheses, file " & filename,
-                                  "Line " & to_str(err.left.line) & " column " & to_str(err.left.col) &
-                                  ", line " & to_str(err.right.line) & " column " & to_str(err.right.col)
-                                ];
+String* create_error_msg(ParError err, String filename):
+  parenthesis_not_closed(t?)  = ("Opening parenthesis without corresponding closing parenthesis", error_pos_msg(filename, t.line, t.col)),
+  parenthesis_not_opened(t?)  = ("Closing parenthesis without corresponding opening parenthesis", error_pos_msg(filename, t.line, t.col)),
+  mismatched_parenthesis()    = ( "Mismatched parentheses, file " & filename,
+                                  "Line " & printed(err.left.line) & " column " & printed(err.left.col) &
+                                  ", line " & printed(err.right.line) & " column " & printed(err.right.col)
+                                );
 
 
-[String] create_error_msg(ParserError err, String filename):
-  unexpected_end_of_file()  = ["Unexpected end of file: " & filename],
-  unexpected_token()        = ["Unexpected token", error_pos_msg(filename, err.found.line, err.found.col)],
+String* create_error_msg(ParserError err, String filename):
+  unexpected_end_of_file()  = ("Unexpected end of file: " & filename),
+  unexpected_token()        = ("Unexpected token", error_pos_msg(filename, err.found.line, err.found.col)),
   all_choices_failed()      = create_error_msg(err.error, filename),
   neg_rule_match()          = { pos = source_file_location(err.match.rule_match);
-                                return ["Syntax error in file " & filename, "The exact location of the error is unknown"] if pos == nil;
+                                return ("Syntax error in file " & filename, "The exact location of the error is unknown") if pos == nil;
                                 start_pos, end_pos = value(pos);
                                 start_line, start_col = start_pos;
-                                return ["Syntax error", error_pos_msg(filename, start_line, start_col)];
+                                return ("Syntax error", error_pos_msg(filename, start_line, start_col));
 
                               };
 
 
-Maybe[CCodeOutput] Compile((String => [Nat]) src_files, Bool run_typechecking, Bool add_ref_counting, Bool ignore_assertions, Bool print_intermediate, Bool print_times)
+Maybe[CCodeOutput] Compile([String -> Nat*] src_files, Bool run_typechecking, Bool add_ref_counting, Bool ignore_assertions, Bool print_intermediate, Bool print_times)
 {
   t0 = _ticks_(nil);
 
-  decls = [];
-  for (fn : rand_sort(keys(src_files)))
+  decls = ();
+  for fn <- rand_sort(keys(src_files)):
     res = lex_and_parse_src_file(fn, src_files[fn]);
-    if (is_success(res))
+    if is_success(res):
       decls = decls & get_result(res);
     else
       err_msg = create_error_msg(get_error(res), fn);
@@ -77,20 +77,20 @@ Maybe[CCodeOutput] Compile((String => [Nat]) src_files, Bool run_typechecking, B
 
   Print("Source files parsed\n");
 
-  if (print_intermediate)
-    FileWrite("dump_syn_prg.txt", false, _obj_(to_text(syn_prg, 100, 1)));
+  if print_intermediate:
+    FileWrite("dump_syn_prg.txt", false, raw_str(printed(syn_prg, 100)));
   ;
 
   errs = prg_wf_errors(syn_prg);
 
   t2 = _ticks_(nil);
 
-  if (errs == [])
+  if errs == ():
     Print("Program is well-formed\n");
   else
-    msgs = [create_error_msg(e) : e <- errs];
-    for (m : msgs)
-      for (l : m)
+    msgs = (create_error_msg(e) : e <- errs);
+    for m <- msgs:
+      for l <- m:
         Print(l & "\n");
       ;
       Print("\n");
@@ -102,24 +102,24 @@ Maybe[CCodeOutput] Compile((String => [Nat]) src_files, Bool run_typechecking, B
   t3 = _ticks_(nil);
   Print("Syntax removed\n");
 
-  if (print_intermediate)
-    FileWrite("dump_prg.txt", false, _obj_(to_text(prg, 100, 1)));
+  if print_intermediate:
+    FileWrite("dump_prg.txt", false, raw_str(printed(prg, 100)));
   ;
 
-  if (run_typechecking)
+  if run_typechecking:
     errs = typecheck(prg);
-    if (errs == ())
+    if errs == [:]:
       Print("The programs typechecks\n");
     else
       Print("\nError: the program does not typecheck\n\n");
-      msgs = rand_sort({create_error_msgs(fd, es) : es @ fd <- errs});
-      for (m : msgs)
-        for (l : m)
+      msgs = rand_sort([create_error_msgs(fd, es) : es @ fd <- errs]);
+      for m <- msgs:
+        for l <- m:
           Print(l & "\n");
         ;
         Print("\n");
       ;
-      Print("Number of functions with typechecking errors: " & to_str(size(errs)) & "\n\n");
+      Print("Number of functions with typechecking errors: " & printed(size(errs)) & "\n\n");
       return nil;
     ;
   ;
@@ -130,27 +130,27 @@ Maybe[CCodeOutput] Compile((String => [Nat]) src_files, Bool run_typechecking, B
   t5 = _ticks_(nil);
   Print("Code generated\n");
 
-  if (print_intermediate)
-    FileWrite("dump_code.txt", false, _obj_(to_text(code, 100, 1)));
+  if print_intermediate:
+    FileWrite("dump_code.txt", false, raw_str(printed(code, 100)));
   ;
 
   opt_code = compiled_prg(
     code.bool_procs,
-    {remove_dead_code(pd) : pd <- code.procs},
-    {remove_dead_code(b)  : b  <- code.blocks}
+    [remove_dead_code(pd) : pd <- code.procs],
+    [remove_dead_code(b)  : b  <- code.blocks]
   );
   t6 = _ticks_(nil);
   Print("Dead code removed\n");
 
-  if (print_intermediate)
-    FileWrite("dump_opt_code.txt", false, _obj_(to_text(opt_code, 100, 1)));
+  if print_intermediate:
+    FileWrite("dump_opt_code.txt", false, raw_str(printed(opt_code, 100)));
   ;
 
-  if (add_ref_counting)
+  if add_ref_counting:
     rc_code = compiled_prg(
       opt_code.bool_procs,
-      {add_ref_counting(pd) : pd <- opt_code.procs},
-      {add_ref_counting(b)  : b  <- opt_code.blocks}
+      [add_ref_counting(pd) : pd <- opt_code.procs],
+      [add_ref_counting(b)  : b  <- opt_code.blocks]
     );
     Print("Reference counting added\n");
   else
@@ -159,42 +159,42 @@ Maybe[CCodeOutput] Compile((String => [Nat]) src_files, Bool run_typechecking, B
 
   t7 = _ticks_(nil);
 
-  if (print_intermediate)
-    FileWrite("dump_rc_code.txt", false, _obj_(to_text(rc_code, 100, 1)));
+  if print_intermediate:
+    FileWrite("dump_rc_code.txt", false, raw_str(printed(rc_code, 100)));
   ;
 
-  rc_code = compiled_prg({apply_cheats(d) : d <- rc_code.bool_procs}, rc_code.procs, rc_code.blocks);
+  rc_code = compiled_prg([apply_cheats(d) : d <- rc_code.bool_procs], rc_code.procs, rc_code.blocks);
 
   c_code  = compile_to_c(rc_code);
   t8 = _ticks_(nil);
   Print("C code generated\n");
 
-  if (print_times)
+  if print_times:
     Print("\n");
-    Print("Parsing:             " & to_str(t1-t0) & "ms\n");
-    Print("Error checking:      " & to_str(t2-t1) & "ms\n");
-    Print("Syntax removal:      " & to_str(t3-t2) & "ms\n");
-    if (run_typechecking)
-      Print("Type checking:       " & to_str(t4-t3) & "ms\n");
+    Print("Parsing:             " & printed(t1-t0) & "ms\n");
+    Print("Error checking:      " & printed(t2-t1) & "ms\n");
+    Print("Syntax removal:      " & printed(t3-t2) & "ms\n");
+    if run_typechecking:
+      Print("Type checking:       " & printed(t4-t3) & "ms\n");
     ;
-    Print("Code generation:     " & to_str(t5-t4) & "ms\n");
-    Print("Code optimization:   " & to_str(t6-t5) & "ms\n");
-    if (add_ref_counting)
-      Print("Reference counting:  " & to_str(t7-t6) & "ms\n");
+    Print("Code generation:     " & printed(t5-t4) & "ms\n");
+    Print("Code optimization:   " & printed(t6-t5) & "ms\n");
+    if add_ref_counting:
+      Print("Reference counting:  " & printed(t7-t6) & "ms\n");
     ;
-    Print("C code generation:   " & to_str(t8-t7) & "ms\n");
-    Print("Total time elapsed:  " & to_str(t8-t0) & "ms\n");
+    Print("C code generation:   " & printed(t8-t7) & "ms\n");
+    Print("Total time elapsed:  " & printed(t8-t0) & "ms\n");
   ;
 
   return just(c_code);
 }
 
 
-[Nat] remove_comments([Nat] line)
+Nat* remove_comments(Nat* line)
 {
   len = length(line);
   i = 0;
-  while (i < len-1)
+  while i < len-1:
     return subseq(line, 0, i) if line[i] == ascii_slash and line[i+1] == ascii_slash;
     i = i + 1;
   ;
@@ -202,16 +202,16 @@ Maybe[CCodeOutput] Compile((String => [Nat]) src_files, Bool run_typechecking, B
 }
 
 
-[Nat] trim_spaces([Nat] line)
+Nat* trim_spaces(Nat* line)
 {
   len = length(line);
   skip_front = 0;
-  while (skip_front < len and is_space(line[skip_front]))
+  while skip_front < len and is_space(line[skip_front]):
     skip_front = skip_front + 1;
   ;
-  return [] if skip_front == len;
+  return () if skip_front == len;
   skip_back = 0;
-  while (skip_back < len - skip_front and is_space(line[len-skip_back-1]))
+  while skip_back < len - skip_front and is_space(line[len-skip_back-1]):
     skip_back = skip_back + 1;
   ;
   assert skip_front + skip_back < len;
@@ -219,11 +219,11 @@ Maybe[CCodeOutput] Compile((String => [Nat]) src_files, Bool run_typechecking, B
 }
 
 
-Int Main([String] args)
+Int Main(String* args)
 {
   argc = length(args);
 
-  if (argc < 1)
+  if argc < 1:
     Print("Usage: amberc <project file>\n");
     return 1;
   ;
@@ -239,18 +239,18 @@ Int Main([String] args)
   print_times = false;
   wait_for_key = false;
 
-  for (o : options)
-    if (o == "-stc")
+  for o <- options:
+    if o == "-stc":
       run_typechecking = false;
-    elif (o == "-nrc")
+    elif o == "-nrc":
       add_ref_counting = false;
-    elif (o == "-ia")
+    elif o == "-ia":
       ignore_assertions = true;
-    elif (o == "-p")
+    elif o == "-p":
       print_intermediate = true;
-    elif (o == "-t")
+    elif o == "-t":
       print_times = true;
-    elif (o == "-w")
+    elif o == "-w":
       wait_for_key = true;
     else
       Print("Unknown option: " & o & "\n");
@@ -259,29 +259,29 @@ Int Main([String] args)
   ;
 
   read_res = FileRead(fname);
-  if (read_res == nil)
+  if read_res == nil:
     Print("File not found: " & fname & "\n");
     return 1;
   ;
   prj_file = value(read_res);
 
   //## BAD. SHOULD BE: [s : l <- ls, s = ..., s != ""]
-  prj_file_lines = [string(trim_spaces(remove_comments(l))) : l <- split_lines(prj_file)];
-  src_file_names = [l : l <- prj_file_lines, l != ""];
+  prj_file_lines = (string(trim_spaces(remove_comments(l))) : l <- split_lines(prj_file));
+  src_file_names = (l : l <- prj_file_lines, l != "");
 
-  src_files = ();
-  for (fn : src_file_names)
+  src_files = [:];
+  for fn <- src_file_names:
     fc = FileRead(fn);
-    if (fc == nil)
+    if fc == nil:
       Print("Can't read file: " & fn & "\n");
       return 1;
     ;
-    src_files = src_files & (fn => value(fc));
+    src_files = src_files & [fn -> value(fc)];
   ;
 
   output = Compile(src_files, run_typechecking, add_ref_counting, ignore_assertions, print_intermediate, print_times);
 
-  if (output != nil)
+  if output != nil:
     output = value(output);
     body = append(output.body, "\n");
     header = append(output.header, "\n");
@@ -289,7 +289,7 @@ Int Main([String] args)
     FileWrite("generated.h", false, _obj_(header));
   ;
 
-  if (wait_for_key)
+  if wait_for_key:
     unused_var = GetChar();
   ;
 

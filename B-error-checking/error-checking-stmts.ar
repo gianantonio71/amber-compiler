@@ -1,36 +1,36 @@
 using
 {
-  (BasicTypeSymbol => Nat+)                           type_arity_map,
-  (NamedArg => Nat)                                   curr_function_named_args,
-  (FnSymbol => (Nat => ([Nat], (NamedArg => Nat)+)))  global_functions,
-  (FnSymbol => (Nat => [Nat]))                        local_functions,
-  (FnSymbol => NzNat)                                 closures,
-  (ProcSymbol => (Nat, Bool))                         procedures,
-  (AnyAutoVar => AutoSymbol)                          auto_vars,
-  (AutoSymbol => SynAutoDef)                          automata,
+  [BasicTypeSymbol -> [+Nat]]                         type_arity_map,
+  [NamedArg -> Nat]                                   curr_function_named_args,
+  [FnSymbol -> [Nat -> (Nat*, [+[NamedArg -> Nat]])]] global_functions,
+  [FnSymbol -> [Nat -> Nat*]]                         local_functions,
+  [FnSymbol -> NzNat]                                 closures,
+  [ProcSymbol -> (Nat, Bool)]                         procedures,
+  [AnyAutoVar -> AutoSymbol]                          auto_vars,
+  [AutoSymbol -> SynAutoDef]                          automata,
   Nat                                                 actual_arg_arity;
 
 
-  [ExprWFError] root_stmt_block_wf_errors([SynStmt^] stmts, Var* ext_vars, Bool has_ret_val, Bool allow_proc_calls)
+  ExprWFError* root_stmt_block_wf_errors(SynStmt+ stmts, [Var] ext_vars, Bool has_ret_val, Bool allow_proc_calls)
   {
-    let (allow_proc_calls=allow_proc_calls, has_return_value=has_ret_val, is_inside_loop=false)
-      errs = stmts_wf_errors(stmts, ext_vars, {});
+    let allow_proc_calls=allow_proc_calls, has_return_value=has_ret_val, is_inside_loop=false:
+      errs = stmts_wf_errors(stmts, ext_vars, []);
     ;
-    return if errs != [] then errs else [missing_ret_stmt(stmts) if has_ret_val and not never_falls_through(stmts)];
+    return if errs != () then errs else (missing_ret_stmt(stmts) if has_ret_val and not never_falls_through(stmts));
   }
 }
 
 
 using
 {
-  (BasicTypeSymbol => Nat+)                           type_arity_map,
-  (NamedArg => Nat)                                   curr_function_named_args,
-  (FnSymbol => (Nat => ([Nat], (NamedArg => Nat)+)))  global_functions,
-  (FnSymbol => (Nat => [Nat]))                        local_functions,
-  (FnSymbol => NzNat)                                 closures,
-  (ProcSymbol => (Nat, Bool))                         procedures,
-  (AnyAutoVar => AutoSymbol)                          auto_vars,
-  (AutoSymbol => SynAutoDef)                          automata,
+  [BasicTypeSymbol -> [+Nat]]                         type_arity_map,
+  [NamedArg -> Nat]                                   curr_function_named_args,
+  [FnSymbol -> [Nat -> (Nat*, [+[NamedArg -> Nat]])]] global_functions,
+  [FnSymbol -> [Nat -> Nat*]]                         local_functions,
+  [FnSymbol -> NzNat]                                 closures,
+  [ProcSymbol -> (Nat, Bool)]                         procedures,
+  [AnyAutoVar -> AutoSymbol]                          auto_vars,
+  [AutoSymbol -> SynAutoDef]                          automata,
   Nat                                                 actual_arg_arity,
 
   Bool                                                allow_proc_calls,
@@ -38,28 +38,28 @@ using
   Bool                                                is_inside_loop;
 
 
-  [ExprWFError] stmts_wf_errors([SynStmt^] stmts, Var* ro_vars, StdVar* rw_vars)
+  ExprWFError* stmts_wf_errors(SynStmt+ stmts, [Var] ro_vars, [StdVar] rw_vars)
   {
     curr_rw_vars = rw_vars;
-    for (s : stmts)
+    for s <- stmts:
       errs = stmt_wf_errors(s, ro_vars, curr_rw_vars);
-      return errs if errs != [];
+      return errs if errs != ();
       new_vars = syn_new_vars(s);
-      fail if not new_vars :: StdVar*; //## BAD BAD BAD: FIX THIS
+      fail if not new_vars :: [StdVar]; //## BAD BAD BAD: FIX THIS
       curr_rw_vars = curr_rw_vars & new_vars;
     ;
-    return [];
+    return ();
   }
 
 
-  [ExprWFError] stmt_wf_errors(SynStmt stmt, Var* ro_vars, StdVar* rw_vars)
+  ExprWFError* stmt_wf_errors(SynStmt stmt, [Var] ro_vars, [StdVar] rw_vars)
   {
     errs = stmt_local_wf_errors(stmt, ro_vars, rw_vars);
-    return if errs != [] then errs else stmt_nested_wf_errors(stmt, ro_vars, rw_vars);
+    return if errs != () then errs else stmt_nested_wf_errors(stmt, ro_vars, rw_vars);
   }
 
 
-  [ExprWFError] stmt_nested_wf_errors(SynStmt stmt, Var* ro_vars, StdVar* rw_vars)
+  ExprWFError* stmt_nested_wf_errors(SynStmt stmt, [Var] ro_vars, [StdVar] rw_vars)
   {
     all_vars = ro_vars & rw_vars;
     return match (stmt)
@@ -71,36 +71,36 @@ using
       inf_loop_stmt(ss?)        = stmts_wf_errors(ss, ro_vars, rw_vars, is_inside_loop=true),
       for_stmt()                = for_stmt_wf_errors(stmt, ro_vars, rw_vars, all_vars),
       let_stmt()                = let_stmt_nested_wf_error(stmt, ro_vars, rw_vars, all_vars),
-      break_stmt                = [],
-      fail_stmt                 = [],
+      break_stmt                = (),
+      fail_stmt                 = (),
       assert_stmt()             = expr_wf_errors(stmt.cond, all_vars),
       print_stmt(e?)            = expr_wf_errors(e, all_vars),
       imp_update_stmt()         = expr_wf_errors(stmt.idx, all_vars) & expr_wf_errors(stmt.value, all_vars),
-      return_stmt               = [],
-      proc_call()               = join([expr_wf_errors(e, all_vars) : e <- stmt.args]),
+      return_stmt               = (),
+      proc_call()               = join((expr_wf_errors(e, all_vars) : e <- stmt.args)),
       set_memb_var_stmt()       = expr_wf_errors(stmt.value, all_vars),
-      method_call_stmt()        = join([expr_wf_errors(a, all_vars) : a <- stmt.args]),
+      method_call_stmt()        = join((expr_wf_errors(a, all_vars) : a <- stmt.args)),
       auto_set_input_stmt()     = { val = stmt.value;
-                                    return if val != nil then expr_wf_errors(value(val), all_vars) else [];
+                                    return if val != nil then expr_wf_errors(value(val), all_vars) else ();
                                   },
-      auto_update_stmt()        = [],
+      auto_update_stmt()        = (),
       fn_def_stmt()             = {fail;};
 
 
-    [ExprWFError] if_stmt_wf_errors(SynIfStmt stmt, Var* ro_vars, StdVar* rw_vars, Var* all_vars)
+    ExprWFError* if_stmt_wf_errors(SynIfStmt stmt, [Var] ro_vars, [StdVar] rw_vars, [Var] all_vars)
     {
-      branches_errs = join([expr_wf_errors(b.cond, all_vars) & stmts_wf_errors(b.body, ro_vars, rw_vars) : b <- stmt.branches]);
+      branches_errs = join((expr_wf_errors(b.cond, all_vars) & stmts_wf_errors(b.body, ro_vars, rw_vars) : b <- stmt.branches));
       else_body = stmt.else;
-      else_errs = if else_body != [] then stmts_wf_errors(else_body, ro_vars, rw_vars) else [];
+      else_errs = if else_body != () then stmts_wf_errors(else_body, ro_vars, rw_vars) else ();
       return branches_errs & else_errs;
     }
 
 
-    [ExprWFError] for_stmt_wf_errors(SynForStmt stmt, Var* ro_vars, StdVar* rw_vars, Var* all_vars)
+    ExprWFError* for_stmt_wf_errors(SynForStmt stmt, [Var] ro_vars, [StdVar] rw_vars, [Var] all_vars)
     {
-      iter_errs = [];
-      new_vars = {};
-      for (it : stmt.loops)
+      iter_errs = ();
+      new_vars = [];
+      for it <- stmt.loops:
         iter_errs = iter_errs & iter_wf_errors(it, new_vars & all_vars);
         new_vars = new_vars & syn_new_vars(it);
       ;
@@ -110,15 +110,15 @@ using
     }
 
 
-    [ExprWFError] iter_wf_errors(SynIter iter, Var* vars):
+    ExprWFError* iter_wf_errors(SynIter iter, [Var] vars):
       seq_iter()    = expr_wf_errors(iter.values, vars),
       range_iter()  = expr_wf_errors(iter.start_val, vars) & expr_wf_errors(iter.end_val, vars);
 
 
-    [ExprWFError] let_stmt_nested_wf_error(SynLetStmt stmt, Var* ro_vars, StdVar* rw_vars, Var* all_vars)
+    ExprWFError* let_stmt_nested_wf_error(SynLetStmt stmt, [Var] ro_vars, [StdVar] rw_vars, [Var] all_vars)
     {
-      exprs_errs = join([expr_wf_errors(right(a), all_vars) : a <- stmt.asgnms]);
-      new_vars = set([left(a) : a <- stmt.asgnms]);
+      exprs_errs = join((expr_wf_errors(right(a), all_vars) : a <- stmt.asgnms));
+      new_vars = set((left(a) : a <- stmt.asgnms));
       // No need to remove the new variables from the set of read-write ones,
       // as they are all (kind of) read-only named parameters
       body_errs = stmts_wf_errors(stmt.body, ro_vars & new_vars, rw_vars, closures=remove_keys(closures, new_vars));
@@ -129,90 +129,90 @@ using
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-  [ExprWFError] stmt_local_wf_errors(SynStmt stmt, Var* ro_vars, StdVar* rw_vars):
+  ExprWFError* stmt_local_wf_errors(SynStmt stmt, [Var] ro_vars, [StdVar] rw_vars):
     assignment_stmt()         = asgn_stmt_local_wf_errors(stmt, ro_vars, rw_vars),
     return_stmt()             = ret_stmt_local_wf_errors(stmt, true),
     for_stmt()                = for_stmt_local_wf_errors(stmt, ro_vars, rw_vars),
-    let_stmt()                = [],
+    let_stmt()                = (),
     imp_update_stmt()         = imp_update_stmt_local_wf_errors(stmt, ro_vars, rw_vars),
     proc_call()               = proc_call_stmt_local_wf_errors(stmt, ro_vars, rw_vars),
     return_stmt               = ret_stmt_local_wf_errors(stmt, false),
-    break_stmt                = [break_outside_loop(stmt) if not is_inside_loop],
+    break_stmt                = (break_outside_loop(stmt) if not is_inside_loop),
     method_call_stmt()        = method_call_stmt_local_wf_errors(stmt, ro_vars, rw_vars),
     auto_set_input_stmt()     = auto_set_input_stmt_local_wf_errors(stmt.var, stmt.input, ro_vars, rw_vars),
     auto_update_stmt()        = auto_var_errors(stmt.var, ro_vars, rw_vars),
     fn_def_stmt()             = {fail;},
-    assert_stmt(e?)           = [],
-    print_stmt(e?)            = [],
-    fail_stmt                 = [],
-    if_stmt()                 = [],
-    loop_stmt()               = [],
-    inf_loop_stmt(ss?)        = [],
-    set_memb_var_stmt()       = [];
+    assert_stmt(e?)           = (),
+    print_stmt(e?)            = (),
+    fail_stmt                 = (),
+    if_stmt()                 = (),
+    loop_stmt()               = (),
+    inf_loop_stmt(ss?)        = (),
+    set_memb_var_stmt()       = ();
 
 
-  [ExprWFError] asgn_stmt_local_wf_errors(SynAsgnStmt stmt, Var* ro_vars, StdVar* rw_vars)
+  ExprWFError* asgn_stmt_local_wf_errors(SynAsgnStmt stmt, [Var] ro_vars, [StdVar] rw_vars)
   {
     bad_vars = already_def_vars(set(stmt.vars), ro_vars);
     dupl_vars = dupl_elems(stmt.vars);
-    return [ro_vars_asgnm(stmt, bad_vars) if bad_vars != {}] & [dupl_var_mult_asgnm(v) : v <- rand_sort(dupl_vars)];
+    return (ro_vars_asgnm(stmt, bad_vars) if bad_vars != []) & (dupl_var_mult_asgnm(v) : v <- rand_sort(dupl_vars));
   }
 
 
-  [ExprWFError] ret_stmt_local_wf_errors(<SynReturnStmt, return_stmt> stmt, Bool has_value) =
-    [wrong_return(stmt) if has_value != has_return_value];
+  ExprWFError* ret_stmt_local_wf_errors(<SynReturnStmt, return_stmt> stmt, Bool has_value) =
+    (wrong_return(stmt) if has_value != has_return_value);
 
 
-  [ExprWFError] for_stmt_local_wf_errors(SynForStmt stmt, Var* ro_vars, StdVar* rw_vars)
+  ExprWFError* for_stmt_local_wf_errors(SynForStmt stmt, [Var] ro_vars, [StdVar] rw_vars)
   {
-    errs = [];
-    new_vars = {};
-    for (it : stmt.loops)
+    errs = ();
+    new_vars = [];
+    for it <- stmt.loops:
       dupl_vars = match (it)
-        seq_iter()    = dupl_elems(it.vars & [it.idx_var if it.idx_var?]),
-        range_iter()  = {};
-      errs = errs & [dupl_var_mult_asgnm(v) : v <- rand_sort(dupl_vars)];
+        seq_iter()    = dupl_elems(it.vars & (it.idx_var if it.idx_var?)),
+        range_iter()  = [];
+      errs = errs & (dupl_var_mult_asgnm(v) : v <- rand_sort(dupl_vars));
       it_vars = syn_new_vars(it);
-      bad_vars = already_def_vars(it_vars, union({ro_vars, rw_vars, new_vars}));
-      errs = [errs | vars_redef(stmt, bad_vars)] if bad_vars != {};
+      bad_vars = already_def_vars(it_vars, union([ro_vars, rw_vars, new_vars]));
+      errs = (errs | vars_redef(stmt, bad_vars)) if bad_vars != [];
       new_vars = new_vars & it_vars;
     ;
     return errs;
   }
 
 
-  [ExprWFError] imp_update_stmt_local_wf_errors(SynImpUpdateStmt stmt, Var* ro_vars, StdVar* rw_vars)
+  ExprWFError* imp_update_stmt_local_wf_errors(SynImpUpdateStmt stmt, [Var] ro_vars, [StdVar] rw_vars)
   {
     var = stmt.obj;
     // The variable whose content is update must already exist.
     // Does it have to be a read/write one, or can it be a read-only one too?
     // It has to be a standard variable, so no searching through named parameters
-    var_errs = [undef_update_var(stmt, var) if not in(var, ro_vars) and not in(var, rw_vars)];
+    var_errs = (undef_update_var(stmt, var) if not in(var, ro_vars) and not in(var, rw_vars));
     return var_errs;
   }
 
 
-  [ExprWFError] proc_call_stmt_local_wf_errors(SynProcCallStmt stmt, Var* ro_vars, StdVar* rw_vars)
+  ExprWFError* proc_call_stmt_local_wf_errors(SynProcCallStmt stmt, [Var] ro_vars, [StdVar] rw_vars)
   {
-    return [proc_call_not_allowed(stmt)] if not allow_proc_calls;
-    var_errs = [ro_vars_asgnm(stmt, {stmt.res_var}) if stmt.res_var? and already_def(stmt.res_var, ro_vars)];
-    if (has_key(procedures, stmt.proc_name))
+    return (proc_call_not_allowed(stmt)) if not allow_proc_calls;
+    var_errs = (ro_vars_asgnm(stmt, [stmt.res_var]) if stmt.res_var? and already_def(stmt.res_var, ro_vars));
+    if has_key(procedures, stmt.proc_name):
       arity, has_ret_val = procedures[stmt.proc_name];
-      proc_errs = [
+      proc_errs = (
         wrong_proc_arity(stmt, arity) if length(stmt.args) != arity,
         uncaught_ret_val(stmt)        if has_ret_val and not stmt.res_var?,
         proc_has_no_ret_val(stmt)     if not has_ret_val and stmt.res_var?
-      ];
+      );
     else
-      proc_errs = [undef_proc(stmt)];
+      proc_errs = (undef_proc(stmt));
     ;
     return var_errs & proc_errs;
   }
 
 
-  [ExprWFError] method_call_stmt_local_wf_errors(SynMethodCallStmt stmt, Var* ro_vars, StdVar* rw_vars)
+  ExprWFError* method_call_stmt_local_wf_errors(SynMethodCallStmt stmt, [Var] ro_vars, [StdVar] rw_vars)
   {
-    return [] if not stmt.var?;
+    return () if not stmt.var?;
     var = stmt.var;
     //## HERE I NEED TO KNOW THE CONTEST IN WHICH THE STATEMENT IS CALLED.
     //## IS IT A PROCEDURE, OR A MESSAGE HANDLER?
@@ -220,19 +220,19 @@ using
     // return match (var)
     //   loc_auto_var()  = auto_var_errors(var, ro_vars, rw_vars),
     //   memb_auto_var() = [];
-    return [];
+    return ();
   }
 
 
-  [ExprWFError] auto_set_input_stmt_local_wf_errors(LocAutoVar var, Atom input, Var* ro_vars, StdVar* rw_vars)
+  ExprWFError* auto_set_input_stmt_local_wf_errors(LocAutoVar var, Atom input, [Var] ro_vars, [StdVar] rw_vars)
   {
     errs = auto_var_errors(var, ro_vars, rw_vars);
-    return errs if errs != [];
+    return errs if errs != ();
     auto_def = automata[auto_vars[var]];
-    return [unknown_input(input, auto_def) if not has_key(inputs(auto_def), input)];
+    return (unknown_input(input, auto_def) if not has_key(inputs(auto_def), input));
   }
 
 
-  [ExprWFError] auto_var_errors(LocAutoVar var, Var* ro_vars, StdVar* rw_vars) =
-    [auto_var_not_defined(var, already_def(name(var), ro_vars & rw_vars)) if not has_key(auto_vars, var)];
+  ExprWFError* auto_var_errors(LocAutoVar var, [Var] ro_vars, [StdVar] rw_vars) =
+    (auto_var_not_defined(var, already_def(name(var), ro_vars & rw_vars)) if not has_key(auto_vars, var));
 }

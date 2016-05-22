@@ -1,42 +1,42 @@
 using
 {
-  (BasicTypeSymbol => Nat+)                           type_arity_map,
-  (NamedArg => Nat)                                   curr_function_named_args,
-  (FnSymbol => (Nat => ([Nat], (NamedArg => Nat)+)))  global_functions,
-  (FnSymbol => (Nat => [Nat]))                        local_functions,
-  (FnSymbol => NzNat)                                 closures,
-  (ProcSymbol => (Nat, Bool))                         procedures,
-  (AnyAutoVar => AutoSymbol)                          auto_vars,
-  (AutoSymbol => SynAutoDef)                          automata,
+  [BasicTypeSymbol -> [+Nat]]                         type_arity_map,
+  [NamedArg -> Nat]                                   curr_function_named_args,
+  [FnSymbol -> [Nat -> (Nat*, [+[NamedArg -> Nat]])]] global_functions,
+  [FnSymbol -> [Nat -> Nat*]]                         local_functions,
+  [FnSymbol -> NzNat]                                 closures,
+  [ProcSymbol -> (Nat, Bool)]                         procedures,
+  [AnyAutoVar -> AutoSymbol]                          auto_vars,
+  [AutoSymbol -> SynAutoDef]                          automata,
   Nat                                                 actual_arg_arity;
 
 
-  [ExprWFError] clause_wf_errors(SynClause cls, Var* def_vars):
-    set_elem_clause()   = [already_def_var(cls.var) if already_def(cls.var, def_vars)] & expr_wf_errors(cls.src, def_vars),
-    seq_elem_clause()   = [already_def_var(cls.var) if already_def(cls.var, def_vars)] & expr_wf_errors(cls.src, def_vars), //## BAD: SAME AS ABOVE
+  ExprWFError* clause_wf_errors(SynClause cls, [Var] def_vars):
+    set_elem_clause()   = (already_def_var(cls.var) if already_def(cls.var, def_vars)) & expr_wf_errors(cls.src, def_vars),
+    seq_elem_clause()   = (already_def_var(cls.var) if already_def(cls.var, def_vars)) & expr_wf_errors(cls.src, def_vars), //## BAD: SAME AS ABOVE
     map_entry_clause()  = map_entry_clause_wf_errors(cls.key_var, cls.value_var, cls.src, def_vars),
     and_clause(cs?)     = and_clause_wf_errors(cs, def_vars),
     or_clause()         = clause_wf_errors(cls.left, def_vars) & clause_wf_errors(cls.right, def_vars),
     match_clause()      = ptrn_wf_errors(cls.ptrn, def_vars) & expr_wf_errors(cls.expr, def_vars),
-    asgnm_clause()      = [already_def_var(cls.var) if already_def(cls.var, def_vars)] & expr_wf_errors(cls.expr, def_vars), //## BAD: ALMOST THE SAME AS THE TWO ABOVE
+    asgnm_clause()      = (already_def_var(cls.var) if already_def(cls.var, def_vars)) & expr_wf_errors(cls.expr, def_vars), //## BAD: ALMOST THE SAME AS THE TWO ABOVE
     filter_clause()     = expr_wf_errors(cls.cond, def_vars);
 
 
-  [ExprWFError] map_entry_clause_wf_errors(StdVar key_var, StdVar value_var, SynExpr src_expr, Var* def_vars)
+  ExprWFError* map_entry_clause_wf_errors(StdVar key_var, StdVar value_var, SynExpr src_expr, [Var] def_vars)
   {
-    var_errs = [
+    var_errs = (
       already_def_var(key_var) if already_def(key_var, def_vars),
       already_def_var(value_var) if already_def(value_var, def_vars) or value_var == key_var
-    ];
+    );
     return var_errs & expr_wf_errors(src_expr, def_vars);
   }
 
 
-  [ExprWFError] and_clause_wf_errors([SynClause^] clauses, Var* def_vars)
+  ExprWFError* and_clause_wf_errors(SynClause+ clauses, [Var] def_vars)
   {
-    errs = [];
+    errs = ();
     curr_vars = def_vars;
-    for (c : clauses)
+    for c <- clauses:
       errs = errs & clause_wf_errors(c, curr_vars);
       curr_vars = curr_vars & syn_new_vars(c);
     ;
@@ -44,17 +44,17 @@ using
   }
 
 
-  [ExprWFError] ptrn_wf_errors(SynPtrn ptrn, Var* def_vars):
-    ptrn_symbol       = [],
-    ptrn_float        = [],
-    ptrn_seq          = [],
-    ptrn_set          = [],
-    ptrn_map          = [],
-    ptrn_tag_obj      = [],
-    ptrn_any          = [],
-    ptrn_symbol()     = [],
-    ptrn_integer()    = [],
+  ExprWFError* ptrn_wf_errors(SynPtrn ptrn, [Var] def_vars):
+    ptrn_symbol       = (),
+    ptrn_float        = (),
+    ptrn_seq          = (),
+    ptrn_set          = (),
+    ptrn_map          = (),
+    ptrn_tag_obj      = (),
+    ptrn_any          = (),
+    ptrn_symbol()     = (),
+    ptrn_integer()    = (),
     ptrn_tag_obj()    = ptrn_wf_errors(ptrn.tag, def_vars) & ptrn_wf_errors(ptrn.obj, def_vars),
-    ptrn_var()        = [already_def_var(ptrn.var) if already_def(ptrn.var, def_vars)] & ptrn_wf_errors(ptrn.ptrn, def_vars & {ptrn.var}),
+    ptrn_var()        = (already_def_var(ptrn.var) if already_def(ptrn.var, def_vars)) & ptrn_wf_errors(ptrn.ptrn, def_vars & [ptrn.var]),
     ptrn_type(t?)     = type_wf_errors(t, type_arity_map, true);
 }

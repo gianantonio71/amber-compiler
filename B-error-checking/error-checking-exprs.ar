@@ -1,38 +1,37 @@
 using
 {
-  (BasicTypeSymbol => Nat+)                           type_arity_map,
-  (NamedArg => Nat)                                   curr_function_named_args,
-  (FnSymbol => (Nat => ([Nat], (NamedArg => Nat)+)))  global_functions,
-  (FnSymbol => (Nat => [Nat]))                        local_functions,
-  (FnSymbol => NzNat)                                 closures,
-  (ProcSymbol => (Nat, Bool))                         procedures,
-  (AnyAutoVar => AutoSymbol)                          auto_vars,
-  (AutoSymbol => SynAutoDef)                          automata,
+  [BasicTypeSymbol -> [+Nat]]                         type_arity_map,
+  [NamedArg -> Nat]                                   curr_function_named_args,
+  [FnSymbol -> [Nat -> (Nat*, [+[NamedArg -> Nat]])]] global_functions,
+  [FnSymbol -> [Nat -> Nat*]]                         local_functions,
+  [FnSymbol -> NzNat]                                 closures,
+  [ProcSymbol -> (Nat, Bool)]                         procedures,
+  [AnyAutoVar -> AutoSymbol]                          auto_vars,
+  [AutoSymbol -> SynAutoDef]                          automata,
   Nat                                                 actual_arg_arity;
 
 
-  [ExprWFError] expr_wf_errors(SynExpr expr, Var* def_vars)
+  ExprWFError* expr_wf_errors(SynExpr expr, [Var] def_vars)
   {
     errs = expr_local_wf_errors(expr, def_vars);
-    errs = expr_nested_wf_errors(expr, def_vars) if errs == [];
-    return [attach_anchor_obj_if_needed(e, expr) : e <- errs];
+    errs = expr_nested_wf_errors(expr, def_vars) if errs == ();
+    return (attach_anchor_obj_if_needed(e, expr) : e <- errs);
   }
 
 
-  [ExprWFError] expr_nested_wf_errors(SynExpr expr, Var* def_vars):
-    object()            = [],
-    float_lit()         = [],
-    seq_expr(ses?)      = join([expr_wf_errors(se, def_vars) : se <- ses]),
-    seq_tail_expr()     = expr_wf_errors(expr.seq, def_vars) & join([expr_wf_errors(e, def_vars) : e <- expr.tail]),
-    tuple_expr(es?)     = join([expr_wf_errors(e, def_vars) : e <- es]),
-    set_expr(ses?)      = join([expr_wf_errors(se, def_vars) : se <- rand_sort(ses)]),
-    map_expr(es?)       = join([map_entry_wf_errors(e, def_vars) : e <- rand_sort(es)]),
+  ExprWFError* expr_nested_wf_errors(SynExpr expr, [Var] def_vars):
+    object()            = (),
+    float_lit()         = (),
+    seq_expr(ses?)      = join((expr_wf_errors(se, def_vars) : se <- ses)),
+    seq_tail_expr()     = expr_wf_errors(expr.seq, def_vars) & join((expr_wf_errors(e, def_vars) : e <- expr.tail)),
+    set_expr(ses?)      = join((expr_wf_errors(se, def_vars) : se <- rand_sort(ses))),
+    map_expr(es?)       = join((map_entry_wf_errors(e, def_vars) : e <- rand_sort(es))),
     tag_obj_expr()      = expr_wf_errors(expr.tag, def_vars) & expr_wf_errors(expr.obj, def_vars),
-    FnPar               = {assert in(expr, def_vars); return [];},
-    const_or_var(a?)    = [],
-    cls_par(n?)         = [],
-    fn_call()           = [],
-    builtin_call()      = join([expr_wf_errors(e, def_vars) : e <- expr.args]),
+    FnPar               = {assert in(expr, def_vars); return ();},
+    const_or_var(a?)    = (),
+    cls_par(n?)         = (),
+    fn_call()           = (),
+    builtin_call()      = join((expr_wf_errors(e, def_vars) : e <- expr.args)),
     and()               = expr_wf_errors(expr.left, def_vars) & expr_wf_errors(expr.right, def_vars),
     or()                = expr_wf_errors(expr.left, def_vars) & expr_wf_errors(expr.right, def_vars),
     not(e?)             = expr_wf_errors(e, def_vars),
@@ -42,111 +41,111 @@ using
     cast_expr()         = expr_wf_errors(expr.expr, def_vars) & type_wf_errors(expr.type, type_arity_map),
     accessor()          = expr_wf_errors(expr.expr, def_vars),
     accessor_test()     = expr_wf_errors(expr.expr, def_vars),
-    output_is_def()     = [],
-    ex_qual()           = clauses_exprs_wf_errors(expr.source, [expr.cond], def_vars),
-    set_comp()          = clauses_exprs_wf_errors(expr.source, [expr.expr], def_vars),
-    map_comp()          = clauses_exprs_wf_errors(expr.source, [expr.key_expr, expr.value_expr], def_vars),
+    output_is_def()     = (),
+    ex_qual()           = clauses_exprs_wf_errors(expr.source, (expr.cond), def_vars),
+    set_comp()          = clauses_exprs_wf_errors(expr.source, (expr.expr), def_vars),
+    map_comp()          = clauses_exprs_wf_errors(expr.source, (expr.key_expr, expr.value_expr), def_vars),
     seq_comp()          = seq_comp_expr_nested_wf_errors(expr, def_vars),
     range_comp()        = range_comp_expr_nested_wf_errors(expr, def_vars),
     if_expr()           = expr_wf_errors(expr.else, def_vars) &
-                          join([expr_wf_errors(b.cond, def_vars) &
-                          expr_wf_errors(b.expr, def_vars) : b <- expr.branches]),
+                          join((expr_wf_errors(b.cond, def_vars) &
+                          expr_wf_errors(b.expr, def_vars) : b <- expr.branches)),
     match_expr()        = match_expr_nested_wf_errors(expr, def_vars),
     do_expr(ss?)        = root_stmt_block_wf_errors(ss, def_vars, true, false),
-    let_expr()          = root_stmt_block_wf_errors([expr.stmts | syn_ret_stmt(expr.expr)], def_vars, true, false), //## THIS IS WRONG
-    method_call_expr()  = join([expr_wf_errors(e, def_vars) : e <- expr.args]);
+    let_expr()          = root_stmt_block_wf_errors((expr.stmts | syn_ret_stmt(expr.expr)), def_vars, true, false), //## THIS IS WRONG
+    method_call_expr()  = join((expr_wf_errors(e, def_vars) : e <- expr.args));
 
 
-  [ExprWFError] clauses_exprs_wf_errors([SynClause^] clauses, [SynExpr] exprs, Var* def_vars)
+  ExprWFError* clauses_exprs_wf_errors(SynClause+ clauses, SynExpr* exprs, [Var] def_vars)
   {
     curr_vars = def_vars;
-    clause_errs = [];
-    for (c : clauses)
+    clause_errs = ();
+    for c <- clauses:
       clause_errs = clause_errs & clause_wf_errors(c, curr_vars);
       curr_vars = curr_vars & syn_new_vars(c);
     ;
-    expr_errs = join([expr_wf_errors(e, curr_vars) : e <- exprs]);
+    expr_errs = join((expr_wf_errors(e, curr_vars) : e <- exprs));
     return clause_errs & expr_errs;
   }
 
 
-  [ExprWFError] seq_comp_expr_nested_wf_errors(SynLCExpr expr, Var* def_vars)
+  ExprWFError* seq_comp_expr_nested_wf_errors(SynLCExpr expr, [Var] def_vars)
   {
-    new_def_vars = def_vars & set(expr.vars) & {expr.idx_var if expr.idx_var?};
+    new_def_vars = def_vars & set(expr.vars) & [expr.idx_var if expr.idx_var?];
     src_errs = expr_wf_errors(expr.src_expr, def_vars);
     expr_errs = expr_wf_errors(expr.expr, new_def_vars);
-    sel_expr_errs = if expr.sel_expr? then expr_wf_errors(expr.sel_expr, new_def_vars) else [];
+    sel_expr_errs = if expr.sel_expr? then expr_wf_errors(expr.sel_expr, new_def_vars) else ();
     return src_errs & expr_errs & sel_expr_errs;
   }
 
 
-  [ExprWFError] range_comp_expr_nested_wf_errors(SynRCExpr expr, Var* def_vars)
+  ExprWFError* range_comp_expr_nested_wf_errors(SynRCExpr expr, [Var] def_vars)
   {
-    new_def_vars = def_vars & {expr.var};
+    new_def_vars = def_vars & [expr.var];
     bound_expr_errs = expr_wf_errors(expr.bound_expr, def_vars);
     expr_errs = expr_wf_errors(expr.expr, new_def_vars);
-    sel_expr_errs = if expr.sel_expr? then expr_wf_errors(expr.sel_expr, new_def_vars) else [];
+    sel_expr_errs = if expr.sel_expr? then expr_wf_errors(expr.sel_expr, new_def_vars) else ();
     return bound_expr_errs & expr_errs & sel_expr_errs;
   }
 
 
-  [ExprWFError] match_expr_nested_wf_errors(SynTryExpr expr, Var* def_vars)
+  ExprWFError* match_expr_nested_wf_errors(SynTryExpr expr, [Var] def_vars)
   {
-    exprs_errs = join([expr_wf_errors(e, def_vars) : e <- expr.exprs]);
-    case_exprs_errs = join([expr_wf_errors(c.expr, def_vars & seq_union([syn_new_vars(p) : p <- c.patterns])) : c <- expr.cases]);
+    exprs_errs = join((expr_wf_errors(e, def_vars) : e <- expr.exprs));
+    case_exprs_errs = join((expr_wf_errors(c.expr, def_vars & seq_union((syn_new_vars(p) : p <- c.patterns))) : c <- expr.cases));
     return exprs_errs & case_exprs_errs;
   }
 
   ////////////////////////////////////////////////////////////////////////////////
   ////////////////////////////////////////////////////////////////////////////////
 
-  [ExprWFError] expr_local_wf_errors(SynExpr expr, Var* def_vars):
+  ExprWFError* expr_local_wf_errors(SynExpr expr, [Var] def_vars):
     const_or_var(a?)    = const_or_var_local_wf_errors(a, def_vars),
-    cls_par(n?)         = [undef_impl_cls_arg(expr) if n >= actual_arg_arity],
+    cls_par(n?)         = (undef_impl_cls_arg(expr) if n >= actual_arg_arity),
     fn_call()           = fn_call_local_wf_errors(expr, def_vars),
-    builtin_call()      = [wrong_builtin_arity(expr.name, expr.args) if length(expr.args) != builtin_arities[expr.name]],
+    builtin_call()      = (wrong_builtin_arity(expr.name, expr.args) if length(expr.args) != builtin_arities[expr.name]),
     seq_comp()          = seq_comp_expr_local_wf_errors(expr, def_vars),
-    range_comp()        = [already_def_var(expr.var) if already_def(expr.var, def_vars)], //## BUG BUG BUG
+    range_comp()        = (already_def_var(expr.var) if already_def(expr.var, def_vars)), //## BUG BUG BUG
     match_expr()        = match_expr_local_wf_errors(expr, def_vars),
     output_is_def()     = output_is_def_local_wf_errors(expr.var, expr.output, def_vars),
     method_call_expr()  = method_call_expr_local_wf_errors(expr.var, expr.name, expr.args, def_vars),
-    _                   = [];
+    _                   = ();
 
 
-  [ExprWFError] const_or_var_local_wf_errors(Atom name, Var* def_vars)
+  ExprWFError* const_or_var_local_wf_errors(Atom name, [Var] def_vars)
   {
-    return [] if already_def(name, def_vars) or has_key(auto_vars, loc_auto_var(name));
+    return () if already_def(name, def_vars) or has_key(auto_vars, loc_auto_var(name));
     const_fn = fn_symbol(name);
-    return [not_a_scalar_var(name)] if has_key(closures, const_fn);
+    return (not_a_scalar_var(name)) if has_key(closures, const_fn);
 
-    if (has_key(global_functions, const_fn))
+    if has_key(global_functions, const_fn):
       arity_to_info = global_functions[const_fn];
-      if (has_key(arity_to_info, 0))
+      if has_key(arity_to_info, 0):
         unused_var, all_exp_named_args = arity_to_info[0];
-        assert unused_var == [];
-        return join([exp_named_arg_errors(p, a, def_vars) : p, a <- rand_sort_pairs(only_element(all_exp_named_args))]);
+        assert unused_var == ();
+        return join((exp_named_arg_errors(p, a, def_vars) : p, a <- rand_sort_pairs(only_element(all_exp_named_args))));
       ;
     ;
 
-    return [undef_var_or_const(name)];
+    return (undef_var_or_const(name));
   }
 
 
-  [ExprWFError] seq_comp_expr_local_wf_errors(SynLCExpr expr, Var* def_vars)
+  ExprWFError* seq_comp_expr_local_wf_errors(SynLCExpr expr, [Var] def_vars)
   {
-    new_vars = expr.vars & [expr.idx_var if expr.idx_var?];
+    new_vars = expr.vars & (expr.idx_var if expr.idx_var?);
     dupl_vars = dupl_elems(new_vars);
-    return [dupl_var_mult_asgnm(v) : v <- rand_sort(dupl_vars)] &
-           [already_def_var(v) : v <- rand_sort(already_def_vars(set(new_vars), def_vars))];
+    return (dupl_var_mult_asgnm(v) : v <- rand_sort(dupl_vars)) &
+           (already_def_var(v) : v <- rand_sort(already_def_vars(set(new_vars), def_vars)));
   }
 
 
-  [ExprWFError] match_expr_local_wf_errors(SynTryExpr expr, Var* def_vars)
+  ExprWFError* match_expr_local_wf_errors(SynTryExpr expr, [Var] def_vars)
   {
-    errs = [];
-    for (c : expr.cases)
+    errs = ();
+    for c <- expr.cases:
       curr_vars = def_vars;
-      for (p : c.patterns)
+      for p <- c.patterns:
         errs = errs & ptrn_wf_errors(p, curr_vars);
         curr_vars = curr_vars & syn_new_vars(p);
       ;
@@ -155,14 +154,14 @@ using
   }
 
 
-  [ExprWFError] output_is_def_local_wf_errors(LocAutoVar var, Atom output, Var* def_vars)
+  ExprWFError* output_is_def_local_wf_errors(LocAutoVar var, Atom output, [Var] def_vars)
   {
     //## HERE I SHOULD ALSO CHECK THAT THE AUTOMATON DOES HAVE THAT SPECIFIC OUTPUT.
-    return [auto_var_not_defined(var, already_def(name(var), def_vars)) if not has_key(auto_vars, var)];
+    return (auto_var_not_defined(var, already_def(name(var), def_vars)) if not has_key(auto_vars, var));
   }
 
 
-  [ExprWFError] method_call_expr_local_wf_errors(Atom var_id, ReadOnlyMethodSymb name, [SynExpr] args, Var* def_vars)
+  ExprWFError* method_call_expr_local_wf_errors(Atom var_id, ReadOnlyMethodSymb name, SynExpr* args, [Var] def_vars)
   {
     //## HERE I SHOULD ALSO CHECK THAT THE METHOD EXISTS, THAT IT HAS THE RIGHT AUTOMATON TYPE
     //## AND THAT THE ARITY IS CORRECT
@@ -170,51 +169,51 @@ using
     memb_var = memb_auto_var(var_id);
     auto_var_is_def = has_key(auto_vars, memb_var) or has_key(auto_vars, loc_var);
     //## BAD BAD BAD: CHEATING HERE, I DON'T ACTUALLY KNOW IF THE AUTOMATON VARIABLE IS A LOCAL OR A MEMBER ONE
-    return [auto_var_not_defined(memb_var, already_def(var_id, def_vars)) if not auto_var_is_def];
+    return (auto_var_not_defined(memb_var, already_def(var_id, def_vars)) if not auto_var_is_def);
   }
 
   ////////////////////////////////////////////////////////////////////////////////
   ////////////////////////////////////////////////////////////////////////////////
 
-  [ExprWFError] expr_wf_errors(SynCondExpr cond_expr, Var* def_vars) =
+  ExprWFError* expr_wf_errors(SynCondExpr cond_expr, [Var] def_vars) =
     expr_wf_errors(cond_expr.expr, def_vars) &
     expr_wf_errors(cond_expr.cond, def_vars);
 
 
-  [ExprWFError] map_entry_wf_errors(SynMapExprEntry entry, Var* def_vars) =
-    join([
+  ExprWFError* map_entry_wf_errors(SynMapExprEntry entry, [Var] def_vars) =
+    join((
       expr_wf_errors(entry.key, def_vars),
       expr_wf_errors(entry.value, def_vars),
       expr_wf_errors(entry.cond, def_vars) if entry.cond?
-    ]);
+    ));
 
 
-  [ExprWFError] exp_named_arg_errors(NamedArg arg, Nat exp_arity, Var* def_vars)
+  ExprWFError* exp_named_arg_errors(NamedArg arg, Nat exp_arity, [Var] def_vars)
   {
     cls_symb = fn_symbol(match (arg) named_arg(id?) = id);
-    if (exp_arity == 0)
+    if exp_arity == 0:
       // Looking for a scalar object
-      if (not in(arg, def_vars))
-        if (has_key(closures, cls_symb))
+      if not in(arg, def_vars):
+        if has_key(closures, cls_symb):
           actual_arity = closures[cls_symb];
-          return [invalid_named_arg_arity(arg, exp_arity, actual_arity)];
+          return (invalid_named_arg_arity(arg, exp_arity, actual_arity));
         else
-          return [missing_named_arg(arg)];
+          return (missing_named_arg(arg));
         ;
       ;
     else
       // Looking for a closure
-      if (not has_key(closures, cls_symb))
-        if (in(arg, def_vars))
-          return [invalid_named_arg_arity(arg, exp_arity, 0)];
+      if not has_key(closures, cls_symb):
+        if in(arg, def_vars):
+          return (invalid_named_arg_arity(arg, exp_arity, 0));
         else
-          return [missing_named_arg(arg)];
+          return (missing_named_arg(arg));
         ;
       else
         actual_arity = closures[cls_symb];
-        return [invalid_named_arg_arity(arg, exp_arity, actual_arity)] if actual_arity != exp_arity;
+        return (invalid_named_arg_arity(arg, exp_arity, actual_arity)) if actual_arity != exp_arity;
       ;
     ;
-    return [];
+    return ();
   }
 }

@@ -1,6 +1,6 @@
 type VarStatus  = owner, copy_of(StdObjVar), dependent_on(StdObjVar), inline;
 
-type VarsState  = unreachable_vars_state, vars_state(vars_status: (TrkObjVar => VarStatus), it_vars_map: (ItVar => StdObjVar));
+type VarsState  = unreachable_vars_state, vars_state(vars_status: [TrkObjVar -> VarStatus], it_vars_map: [ItVar -> StdObjVar]);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -30,24 +30,24 @@ StdObjVar parent_var(VarStatus):
 
 VarsState unreachable_vars_state = :unreachable_vars_state;
 
-VarsState blank_vars_state = vars_state((), ());
+VarsState blank_vars_state = vars_state([:], [:]);
 
-VarsState vars_state((TrkObjVar => VarStatus) std_vs, (ItVar => StdObjVar) it_vs)
+VarsState vars_state([TrkObjVar -> VarStatus] std_vs, [ItVar -> StdObjVar] it_vs)
 {
   assert not (? s @ v <- std_vs : not status_is_fine(s, std_vs));
-  assert not (? v <- keys(std_vs) : has_cycles(v, std_vs, {}));
+  assert not (? v <- keys(std_vs) : has_cycles(v, std_vs, []));
   assert not (? cv @ iv <- it_vs : not coll_status_is_fine(cv, std_vs));
 
   return vars_state(vars_status: std_vs, it_vars_map: it_vs);
 
-  Bool status_is_fine(VarStatus status, (TrkObjVar => VarStatus) vars_status):
+  Bool status_is_fine(VarStatus status, [TrkObjVar -> VarStatus] vars_status):
     inline              = true,
     owner               = true,
     copy_of(v?)         = parent_var_status_is_fine(v, vars_status),
     dependent_on(v?)    = parent_var_status_is_fine(v, vars_status);
 
 
-  Bool parent_var_status_is_fine(StdObjVar var, (TrkObjVar => VarStatus) vars_status)
+  Bool parent_var_status_is_fine(StdObjVar var, [TrkObjVar -> VarStatus] vars_status)
   {
     return true if var :: <ReadOnlyObjVar, NamedArg, MembVar, MembObjVar, PendingStateVar>;
     return false if not has_key(vars_status, var);
@@ -56,7 +56,7 @@ VarsState vars_state((TrkObjVar => VarStatus) std_vs, (ItVar => StdObjVar) it_vs
   }
 
 
-  Bool coll_status_is_fine(StdObjVar var, (TrkObjVar => VarStatus) vars_status)
+  Bool coll_status_is_fine(StdObjVar var, [TrkObjVar -> VarStatus] vars_status)
   {
     return true if var :: <ReadOnlyObjVar, NamedArg>;
     return false if not has_key(vars_status, var);
@@ -64,7 +64,7 @@ VarsState vars_state((TrkObjVar => VarStatus) std_vs, (ItVar => StdObjVar) it_vs
     return not is_copy(status);
   }
 
-  Bool has_cycles(TrkObjVar var, (TrkObjVar => VarStatus) vars_status, TrkObjVar* previous_steps)
+  Bool has_cycles(TrkObjVar var, [TrkObjVar -> VarStatus] vars_status, [TrkObjVar] previous_steps)
   {
     return true if in(var, previous_steps);
     return false if not has_key(vars_status, var);
@@ -72,20 +72,20 @@ VarsState vars_state((TrkObjVar => VarStatus) std_vs, (ItVar => StdObjVar) it_vs
     return false if status == owner or status == inline;
     parent_var = parent_var(status);
     return false if not parent_var :: TrkObjVar;
-    return has_cycles(parent_var, vars_status, previous_steps & {var});
+    return has_cycles(parent_var, vars_status, previous_steps & [var]);
   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-(TrkObjVar => VarStatus) vars_status(VarsState state):
+[TrkObjVar -> VarStatus] vars_status(VarsState state):
   vars_state()  = state.vars_status;
 
-(ItVar => StdObjVar) it_vars_map(VarsState state):
+[ItVar -> StdObjVar] it_vars_map(VarsState state):
   vars_state()  = state.it_vars_map;
 
-TrkObjVar* tracked_vars(VarsState state) = keys(vars_status(state));
+[TrkObjVar] tracked_vars(VarsState state) = keys(vars_status(state));
 
 Bool is_tracked(VarsState state, TrkObjVar var) = has_key(vars_status(state), var);
 
@@ -98,9 +98,9 @@ StdObjVar collection_iterated_over(VarsState state, ItVar var) = it_vars_map(sta
 
 StdObjVar deref_copy(VarsState state, StdObjVar var) = deref_copy(vars_status(state), var);
 
-StdObjVar deref_copy((TrkObjVar => VarStatus) status, <ReadOnlyObjVar, NamedArg, MembVar, MembObjVar, PendingStateVar> var) = var;
+StdObjVar deref_copy([TrkObjVar -> VarStatus] status, <ReadOnlyObjVar, NamedArg, MembVar, MembObjVar, PendingStateVar> var) = var;
 
-StdObjVar deref_copy((TrkObjVar => VarStatus) status, TrkObjVar var) =
+StdObjVar deref_copy([TrkObjVar -> VarStatus] status, TrkObjVar var) =
   match (status[var])
     copy_of(v?) = v,
     _           = var;
@@ -116,16 +116,16 @@ StdObjVar root_var(VarsState state, TrkObjVar var) =
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-(TrkObjVar+, ItVar*) group_vars(VarsState state, TrkObjVar var)
+([+TrkObjVar], [ItVar]) group_vars(VarsState state, TrkObjVar var)
 {
   root_var = root_var(state, var);
-  obj_vars = {v : v  <- tracked_vars(state), root_var(state, v) == root_var};
-  it_vars = {iv : cv @ iv <- it_vars_map(state), in(cv, obj_vars)};
+  obj_vars = [v : v  <- tracked_vars(state), root_var(state, v) == root_var];
+  it_vars = [iv : cv @ iv <- it_vars_map(state), in(cv, obj_vars)];
   return (nonempty(obj_vars), it_vars);
 }
 
 
-Bool var_group_is_live(VarsState state, TrkObjVar var, TrkVar* live_vars)
+Bool var_group_is_live(VarsState state, TrkObjVar var, [TrkVar] live_vars)
 {
   obj_vars, it_vars = group_vars(state, var);
   return not disjoint(obj_vars & it_vars, live_vars);
@@ -134,24 +134,24 @@ Bool var_group_is_live(VarsState state, TrkObjVar var, TrkVar* live_vars)
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-(VarsState, [Instr]) release_var(VarsState state, <TrkObjVar, NamedArg, MembVar, MembObjVar, PendingStateVar> var)
+(VarsState, Instr*) release_var(VarsState state, <TrkObjVar, NamedArg, MembVar, MembObjVar, PendingStateVar> var)
 {
-  return (state, []) if var :: TrkObjVar and not is_tracked(state, var);
+  return (state, ()) if var :: TrkObjVar and not is_tracked(state, var);
 
   vars_status = vars_status(state);
   it_vars_map = it_vars_map(state);
 
-  code = []; // Default
+  code = (); // Default
 
   // In all cases, I must remove the variable from the state.
   new_vars_status = remove_key(vars_status, var);
 
-  copies = {v : ov @ v <- vars_status, ov == copy_of(var)};
-  if (copies != {})
+  copies = [v : ov @ v <- vars_status, ov == copy_of(var)];
+  if copies != []:
     // Either owner or dependent variable with no copies
     a_copy = an_elem(copies);
 
-    if (var :: TrkObjVar)
+    if var :: TrkObjVar:
       // Tranferring the status of the original variable to the copy
       new_copy_status = vars_status[var];
     else
@@ -164,34 +164,34 @@ Bool var_group_is_live(VarsState state, TrkObjVar var, TrkVar* live_vars)
 
     // Replacing all references to the variable with references
     // to the copy and updating the status of the copy
-    new_vars_status = (
-      v => if v == a_copy             then new_copy_status,
+    new_vars_status = [
+      v -> if v == a_copy             then new_copy_status,
               s == copy_of(var)       then copy_of(a_copy),
               s == dependent_on(var)  then dependent_on(a_copy)
                                       else s
       : s @ v <- new_vars_status
-    );
-    new_it_vars_map = (iv => if ov == var then a_copy else ov : ov @ iv <- it_vars_map);
+    ];
+    new_it_vars_map = [iv -> if ov == var then a_copy else ov : ov @ iv <- it_vars_map];
 
   else
     // Here the variables has no copies, so there mustn't be any iterators on it left,
     // either because the variable is itself not a copy, and therefore has no iterators
     // in the first place, or because the reference is not going to survive
-    new_it_vars_map = (iv => cv : cv @ iv <- it_vars_map, cv != var);
+    new_it_vars_map = [iv -> cv : cv @ iv <- it_vars_map, cv != var];
 
     // var_status = vars_status[var];
     var_status = lookup(vars_status, var, owner); //## THIS IS A TEMPORARY HACK USED TO ACCOMODATE NAMED PARAMETERS BEFORE copy_of() IS ACTUALLY IMPLEMENTED
 
-    if (var_status == owner)
+    if var_status == owner:
       // Owner variable with no copies
       // Add-refing all children and making them owners and then releasing the variable
-      new_vars_status = (v => if s == dependent_on(var) then owner else s : s @ v <- new_vars_status);
-      code = rand_sort({add_ref(v) : s @ v <- vars_status, s == dependent_on(var)}) & [release(var)];
+      new_vars_status = [v -> if s == dependent_on(var) then owner else s : s @ v <- new_vars_status];
+      code = rand_sort([add_ref(v) : s @ v <- vars_status, s == dependent_on(var)]) & (release(var));
 
-    elif (is_dependent(var_status))
+    elif is_dependent(var_status):
       // Dependent variable that has no copies. No release is needed.
       // Replacing all references to it with references to its parent.
-      new_vars_status = (v => if s == dependent_on(var) then var_status else s : s @ v <- new_vars_status);
+      new_vars_status = [v -> if s == dependent_on(var) then var_status else s : s @ v <- new_vars_status];
     ;
 
     // Nothing to do if the variable is inline or if it is a copy
@@ -202,13 +202,13 @@ Bool var_group_is_live(VarsState state, TrkObjVar var, TrkVar* live_vars)
 }
 
 
-(VarsState, [Instr]) reset_var(VarsState state, TrkObjVar var, VarStatus new_status)
+(VarsState, Instr*) reset_var(VarsState state, TrkObjVar var, VarStatus new_status)
 {
-  if (is_tracked(state, var))
+  if is_tracked(state, var):
     interm_state, instrs = release_var(state, var);
   else
     interm_state = state;
-    instrs = [];
+    instrs = ();
   ;
   interm_vars_status = vars_status(interm_state);
   final_vars_status = update(interm_vars_status, var, new_status);
@@ -218,7 +218,7 @@ Bool var_group_is_live(VarsState state, TrkObjVar var, TrkVar* live_vars)
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-[Instr] gen_state_switch_code(VarsState start_state, VarsState target_state)
+Instr* gen_state_switch_code(VarsState start_state, VarsState target_state)
 {
   assert subset(tracked_vars(target_state), tracked_vars(start_state));
 
@@ -228,60 +228,60 @@ Bool var_group_is_live(VarsState state, TrkObjVar var, TrkVar* live_vars)
   vars_to_remove = start_vars - target_vars;
 
   tmp_state = start_state;
-  vars_rem_code = [];
-  for (v : rand_sort(vars_to_remove))
+  vars_rem_code = ();
+  for v <- rand_sort(vars_to_remove):
     tmp_state, var_rem_code = release_var(tmp_state, v);
     vars_rem_code = vars_rem_code & var_rem_code;
   ;
 
-  add_ref_code = [status_change_code(var_status(tmp_state, v), var_status(target_state, v), v) : v <- rand_sort(target_vars)];
+  add_ref_code = (status_change_code(var_status(tmp_state, v), var_status(target_state, v), v) : v <- rand_sort(target_vars));
 
   return vars_rem_code & join(add_ref_code);
 
 
-  [Instr] status_change_code(VarStatus curr_status, VarStatus new_status, TrkObjVar var):
-    owner,              owner               = [],
+  Instr* status_change_code(VarStatus curr_status, VarStatus new_status, TrkObjVar var):
+    owner,              owner               = (),
 
-    copy_of(v?),        owner               = [add_ref(var)],
-    copy_of(v1?),       copy_of(v2?)        = {assert v1 == v2; return [];},
-    copy_of(v1?),       dependent_on(v2?)   = {assert v1 == v2; return [];},
+    copy_of(v?),        owner               = (add_ref(var)),
+    copy_of(v1?),       copy_of(v2?)        = {assert v1 == v2; return ();},
+    copy_of(v1?),       dependent_on(v2?)   = {assert v1 == v2; return ();},
 
-    dependent_on(v?),   owner               = [add_ref(var)],
-    dependent_on(v1?),  dependent_on(v2?)   = {assert v1 == v2; return [];},
+    dependent_on(v?),   owner               = (add_ref(var)),
+    dependent_on(v1?),  dependent_on(v2?)   = {assert v1 == v2; return ();},
 
-    inline,             owner               = [],
-    inline,             inline              = [];
+    inline,             owner               = (),
+    inline,             inline              = ();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-VarsState reconcile(VarsState* states)
+VarsState reconcile([VarsState] states)
 {
-  common_vars = intersection({tracked_vars(s) : s <- states});
-  new_vars_status = (v => reconcile_vars_status({var_status(s, v) : s <- states}) : v <- common_vars);
+  common_vars = intersection([tracked_vars(s) : s <- states]);
+  new_vars_status = [v -> reconcile_vars_status([var_status(s, v) : s <- states]) : v <- common_vars];
 
-  it_vars_maps = {it_vars_map(s) : s <- states};
-  common_it_vars = intersection({keys(m) : m <- it_vars_maps});
+  it_vars_maps = [it_vars_map(s) : s <- states];
+  common_it_vars = intersection([keys(m) : m <- it_vars_maps]);
 
-  common_coll_map = (iv => intersection({collection_copies(s, iv) : s <- states}): iv <- common_it_vars);
-  new_it_vars_map = (iv => deref_copy(new_vars_status, an_elem(cvs)) : cvs @ iv <- common_coll_map, cvs != {});
+  common_coll_map = [iv -> intersection([collection_copies(s, iv) : s <- states]): iv <- common_it_vars];
+  new_it_vars_map = [iv -> deref_copy(new_vars_status, an_elem(cvs)) : cvs @ iv <- common_coll_map, cvs != []];
 
   return vars_state(new_vars_status, new_it_vars_map);
 
-  StdObjVar+ collection_copies(VarsState state, ItVar it_var) = var_copies(state, collection_iterated_over(state, it_var));
+  [+StdObjVar] collection_copies(VarsState state, ItVar it_var) = var_copies(state, collection_iterated_over(state, it_var));
 
-  StdObjVar+ var_copies(VarsState state, StdObjVar var)
+  [+StdObjVar] var_copies(VarsState state, StdObjVar var)
   {
     vars_status = vars_status(state);
     master_copy = deref_copy(vars_status, var);
-    copies = {v : s @ v <- vars_status, s == copy_of(master_copy)};
-    return nonempty({master_copy} & copies);
+    copies = [v : s @ v <- vars_status, s == copy_of(master_copy)];
+    return nonempty([master_copy] & copies);
   }
 }
 
 
-VarStatus reconcile_vars_status(VarStatus+ status) = reduce(status, reconcile);
+VarStatus reconcile_vars_status([+VarStatus] status) = reduce(status, reconcile);
 
 
 VarStatus reconcile(VarStatus status1, VarStatus status2):
@@ -301,16 +301,16 @@ VarStatus reconcile(VarStatus status1, VarStatus status2):
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-(VarsState, [Instr]) set_var_inline(VarsState state, TrkObjVar var) = reset_var(state, var, inline);
+(VarsState, Instr*) set_var_inline(VarsState state, TrkObjVar var) = reset_var(state, var, inline);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-(VarsState, [Instr]) swallow_var(VarsState state, TrkObjVar var, TrkVar* live_vars)
+(VarsState, Instr*) swallow_var(VarsState state, TrkObjVar var, [TrkVar] live_vars)
 {
   //## SHOULD I REMOVE THE VARIABLE FROM THE LIST OF INLINE ONES?
-  return (state, []) if var_status(state, var) == inline;
+  return (state, ()) if var_status(state, var) == inline;
 
-  return (state, [add_ref(var)]) if var_group_is_live(state, var, live_vars);
+  return (state, (add_ref(var))) if var_group_is_live(state, var, live_vars);
 
   new_state = remove_var_group(state, var);
 
@@ -319,17 +319,17 @@ VarStatus reconcile(VarStatus status1, VarStatus status2):
 
   assert not root_var :: TrkObjVar or var_status(state, root_var) == owner;
 
-  if (is_root_var_or_copy)
+  if is_root_var_or_copy:
     // If <var> is either <root_var> or a copy of it, we consume its reference if it has one,
     // or we add-ref it if it is an external (untracked) variable
-    code = [add_ref(var) if not root_var :: TrkObjVar];
+    code = (add_ref(var) if not root_var :: TrkObjVar);
   else
     // Since in this case <var> generally points to just a subset of <root_var>,
     // we add-ref the subobject and release, if need be, the root object
-    code = [add_ref(var), release(root_var) if root_var :: TrkObjVar];
+    code = (add_ref(var), release(root_var) if root_var :: TrkObjVar);
   ;
 
-  assert code == [add_ref(var) if not is_root_var_or_copy or not root_var :: TrkObjVar, release(root_var) if not is_root_var_or_copy and root_var :: TrkObjVar];
+  assert code == (add_ref(var) if not is_root_var_or_copy or not root_var :: TrkObjVar, release(root_var) if not is_root_var_or_copy and root_var :: TrkObjVar);
 
   return (new_state, code);
 
@@ -350,37 +350,37 @@ VarStatus reconcile(VarStatus status1, VarStatus status2):
 
 ////////////////////////////////////////////////////////////////////////////////
 
-(VarsState, [Instr]) set_rc_var(VarsState state, ElemVar var) = (state, []);
+(VarsState, Instr*) set_rc_var(VarsState state, ElemVar var) = (state, ());
 
-(VarsState, [Instr]) set_rc_var(VarsState state, <MembVar, MembObjVar, PendingStateVar> var) = release_var(state, var);
+(VarsState, Instr*) set_rc_var(VarsState state, <MembVar, MembObjVar, PendingStateVar> var) = release_var(state, var);
 
-(VarsState, [Instr]) set_rc_var(VarsState state, TrkObjVar var) = reset_var(state, var, owner);
+(VarsState, Instr*) set_rc_var(VarsState state, TrkObjVar var) = reset_var(state, var, owner);
 
 ////////////////////////////////////////////////////////////////////////////////
 
 
-(VarsState, [Instr], [Instr]) set_owned_var(VarsState state, ElemVar var, StdObjVar src_var, TrkVar* live_vars) =
-  (state, [], [add_ref(var)]);
+(VarsState, Instr*, Instr*) set_owned_var(VarsState state, ElemVar var, StdObjVar src_var, [TrkVar] live_vars) =
+  (state, (), (add_ref(var)));
 
-(VarsState, [Instr], [Instr]) set_owned_var(VarsState state, ElemVar var, ItVar src_var, TrkVar* live_vars) =
-  (state, [], [add_ref(var)]);
+(VarsState, Instr*, Instr*) set_owned_var(VarsState state, ElemVar var, ItVar src_var, [TrkVar] live_vars) =
+  (state, (), (add_ref(var)));
 
-(VarsState, [Instr], [Instr]) set_owned_var(VarsState state, <MembVar, MembObjVar, PendingStateVar> var, StdObjVar src_var, TrkVar* live_vars)
+(VarsState, Instr*, Instr*) set_owned_var(VarsState state, <MembVar, MembObjVar, PendingStateVar> var, StdObjVar src_var, [TrkVar] live_vars)
 {
   interm_state, rel_instrs = release_var(state, var);
   final_state, swallow_instrs = swallow_var(interm_state, src_var, live_vars);
-  return (final_state, rel_instrs & swallow_instrs, []);
+  return (final_state, rel_instrs & swallow_instrs, ());
 }
 
-(VarsState, [Instr], [Instr]) set_owned_var(VarsState state, <MembVar, MembObjVar, PendingStateVar> var, ItVar src_var, TrkVar* live_vars)
+(VarsState, Instr*, Instr*) set_owned_var(VarsState state, <MembVar, MembObjVar, PendingStateVar> var, ItVar src_var, [TrkVar] live_vars)
 {
   fail; //## NOT NEEDED FOR NOW
 }
 
-(VarsState, [Instr], [Instr]) set_owned_var(VarsState state, TrkObjVar var, ItVar src_var, TrkVar* live_vars) =
+(VarsState, Instr*, Instr*) set_owned_var(VarsState state, TrkObjVar var, ItVar src_var, [TrkVar] live_vars) =
   set_owned_var(state, var, collection_iterated_over(state, src_var), live_vars);
 
-(VarsState, [Instr], [Instr]) set_owned_var(VarsState state, TrkObjVar var, StdObjVar src_var, TrkVar* live_vars)
+(VarsState, Instr*, Instr*) set_owned_var(VarsState state, TrkObjVar var, StdObjVar src_var, [TrkVar] live_vars)
 {
   //## SHOULD I CHECK HERE THAT <src_var> IS ACTUALLY DEFINED?
   assert var != src_var;
@@ -390,12 +390,12 @@ VarStatus reconcile(VarStatus status1, VarStatus status2):
   is_inline = master_var :: TrkObjVar and var_status(interm_state, master_var) == inline;
   new_status = if is_inline then inline else dependent_on(master_var);
   new_state, instrs_2 = reset_var(interm_state, var, new_status);
-  return (new_state, instrs_1 & instrs_2, []);
+  return (new_state, instrs_1 & instrs_2, ());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-(VarsState, [Instr]) make_var_copy(VarsState state, TrkObjVar var, StdObjVar src_var)
+(VarsState, Instr*) make_var_copy(VarsState state, TrkObjVar var, StdObjVar src_var)
 {
   interm_state, instrs_1 = release_var(state, var);
   master_var = deref_copy(interm_state, src_var);
@@ -407,30 +407,30 @@ VarStatus reconcile(VarStatus status1, VarStatus status2):
 
 ////////////////////////////////////////////////////////////////////////////////
 
-(VarsState, [Instr]) init_it_var(VarsState state, ItVar var, StdObjVar src_var)
+(VarsState, Instr*) init_it_var(VarsState state, ItVar var, StdObjVar src_var)
 {
   new_it_vars_map = update(it_vars_map(state), var, deref_copy(state, src_var));
   new_state = vars_state(vars_status(state), new_it_vars_map);
-  return (new_state, []);
+  return (new_state, ());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-(VarsState, [Instr]) set_var_inline(VarsState state, ElemVar var) = (state, []);
+(VarsState, Instr*) set_var_inline(VarsState state, ElemVar var) = (state, ());
 
-(VarsState, [Instr]) set_var_inline(VarsState state, <MembVar, MembObjVar, PendingStateVar> var) = release_var(state, var);
+(VarsState, Instr*) set_var_inline(VarsState state, <MembVar, MembObjVar, PendingStateVar> var) = release_var(state, var);
 
 
-(VarsState, [Instr]) swallow_var(VarsState state, <ReadOnlyObjVar, NamedArg, MembVar, MembObjVar, PendingStateVar> var, TrkVar* live_vars) = (state, [add_ref(var)]);
+(VarsState, Instr*) swallow_var(VarsState state, <ReadOnlyObjVar, NamedArg, MembVar, MembObjVar, PendingStateVar> var, [TrkVar] live_vars) = (state, (add_ref(var)));
 
-(VarsState, [Instr]) swallow_var(VarsState state, Maybe[StdObjVar] maybe_var, TrkVar* live_vars) =
+(VarsState, Instr*) swallow_var(VarsState state, Maybe[StdObjVar] maybe_var, [TrkVar] live_vars) =
   if maybe_var != nil
     then swallow_var(state, value(maybe_var), live_vars)
-    else (state, []);
+    else (state, ());
 
 
-(VarsState, [Instr]) init_it_var(VarsState state, ItVar var, Maybe[StdObjVar] maybe_src_var) =
+(VarsState, Instr*) init_it_var(VarsState state, ItVar var, Maybe[StdObjVar] maybe_src_var) =
   if maybe_src_var == nil
     then {fail;} // (vars_state(rc_vars(state) & {var}), [])
     else init_it_var(state, var, value(maybe_src_var));
