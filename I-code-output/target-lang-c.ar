@@ -5,26 +5,31 @@ CCodeOutput compile_to_c(CompiledPrg prg)
   ptss = par_type_symbols(prg);
 
   symbs = used_symbols(prg);
+  assert length(symbs) <= 64 * 1024; //## IMPLEMENT PROPERLY
 
-  symb_decls = ("const Obj " & to_c_expr(s, typesymb2name(ts) = typesymb2str(ts, ptss)) & " = symb(" & printed(i) & ");" : s @ i <- symbs) & 4 * ("");
-  symb_decls = symb_decls & ("const long long EMB_SYMB_COUNT = " & printed(length(symbs)) & ";") & 4 * ("");
+  symb_names = ("symb_idx_" & printed(match (s) object(a?) = a) : s <- symbs);
 
-  c_code = symb_decls;
+  //## WHY IS PASSING THE typesymb2name() FUNCTION AT ALL NECESSARY? THERE ARE NO TYPES INVOLVED HERE...
+  symb_strs = (to_c_expr(s, typesymb2name(ts) = typesymb2str(ts, ptss)) : s <- symbs);
+  //## REPLACING THE LINE ABOVE WITH THE FOLLOWING ONE CRASHES THE COMPILER. INVESTIGATE
+  // symb_strs = (to_c_expr(s, typesymb2name(ts) = {fail;}) : s <- symbs);
 
-  if symbs != ():
-    symb_strs  = ("  \"" & _str_(_obj_(s)) & "\"," : s <- symbs);
-    c_code     = c_code & ("const char *map_symb_to_str[EMB_SYMB_COUNT] = {") & symb_strs & ("};") & 4 * ("");
-    symb_decls = symb_decls & ("extern const char *map_symb_to_str[EMB_SYMB_COUNT];") & 4 * ("");
-  ;
+  c_code = ("const uint16 " & symb_names[i] & " = " & printed(i) & ";" : i < length(symbs)) & 4 * ("") &
+           ("const OBJ " & symb_strs[i] & " = make_symb(" & symb_names[i] & ");" : i < length(symbs)) & 4 * ("");
 
-  // print "Symbol declarations generated";
+  symb_decls = ("const uint32 EMB_SYMB_COUNT = " & printed(length(symbs)) & ";") & 4 * ("");
+  c_code = c_code & symb_decls;
+
+  symb_strs  = ("  \"" & _str_(_obj_(s)) & "\"," : s <- symbs);
+  c_code     = c_code & ("const char *map_symb_to_str[EMB_SYMB_COUNT] = {") & symb_strs & ("};") & 4 * ("");
+  symb_decls = symb_decls & ("extern const char *map_symb_to_str[EMB_SYMB_COUNT];") & 4 * ("");
 
   cls_defs = cls_defs(prg);
 
   all_named_args = merge_values(set((p.named_args : p <- rand_sort(prg.procs))));
   all_param_arity_pairs = rand_sort([[var: v, arity: a] : ars @ v <- all_named_args, a <- ars]);
 
-  env_decl = ("struct Env {");
+  env_decl = ("struct ENV {");
 
   for na @ i <- all_param_arity_pairs:
     var   = na.var;
@@ -33,11 +38,11 @@ CCodeOutput compile_to_c(CompiledPrg prg)
     name = _str_(_obj_(var));
 
     if arity > 0:
-      ls = ( "  Obj (*n" & printed(arity) & "_" & name & ")(" & append(("Obj p" & printed(j) & ", " : j < na.arity)) & "const Obj *C, Env &env);",
-              "  const Obj *C" & printed(arity) & "_" & name & ";"
+      ls = ( "  OBJ (*n" & printed(arity) & "_" & name & ")(" & append(("OBJ p" & printed(j) & ", " : j < na.arity)) & "const OBJ *C, ENV &env);",
+              "  const OBJ *C" & printed(arity) & "_" & name & ";"
             );
     else
-      ls = ("  Obj n_" & name & ";");
+      ls = ("  OBJ n_" & name & ";");
     ;
 
     ls = ("") & ls if i > 0;
@@ -82,8 +87,8 @@ CCodeOutput compile_to_c(CompiledPrg prg)
 
   String* generate_cls_obj_typedef(NzNat arity) = (
     "struct CLS" & printed(arity) & " {",
-    "  Obj (*fn_ptr)(" & append(arity * ("Obj"), ", ") & ", const Obj *, Env &env);",
-    "  const Obj *data;",
+    "  OBJ (*fn_ptr)(" & append(arity * ("OBJ"), ", ") & ", const OBJ *, ENV &env);",
+    "  const OBJ *data;",
     "};"
   );
 
@@ -95,12 +100,12 @@ CCodeOutput compile_to_c(CompiledPrg prg)
 
 String+ generate_push_call_info_wrapper(Nat arity)
 {
-  signature = "void push_call_info_wrapper(const char *fn_name" & append((", Obj p" & printed(i) : i < arity)) & ")";
+  signature = "void push_call_info_wrapper(const char *fn_name" & append((", OBJ p" & printed(i) : i < arity)) & ")";
   code = (signature, "{", "#ifndef NDEBUG");
   if arity == 0:
-    code = code & ("  push_call_info(fn_name, 0, (Obj *)0);");
+    code = code & ("  push_call_info(fn_name, 0, (OBJ *)0);");
   else
-    code = code & ("  Obj *params = new_obj_array(" & printed(arity) & ");");
+    code = code & ("  OBJ *params = new_obj_array(" & printed(arity) & ");");
     for i < arity:
       code = code & ("  params[" & printed(i) & "] = p" & printed(i) & ";");
     ;
@@ -111,7 +116,7 @@ String+ generate_push_call_info_wrapper(Nat arity)
 
 
 //## THIS SHOULD NOT GO HERE
-type FnCallParam = null_obj, ObjExpr, ElemVar, PendingInputVar, VecVar, BoolExpr, IntExpr, ItVar, StreamVar, ClsVar;
+type FnCallParam = blank_obj, ObjExpr, ElemVar, PendingInputVar, VecVar, BoolExpr, IntExpr, ItVar, StreamVar, ClsVar;
 
 
 using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
@@ -126,7 +131,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     if block.time_rules_count != 0:
       size_str = printed(block.time_rules_count);
       vars_decl = vars_decl & (
-        "long long trigger_times_heap[" & size_str & "];",
+        "int64 trigger_times_heap[" & size_str & "];",
         "int time_varying_cond_ids_heap[" & size_str & "];"
       );
     ;
@@ -136,7 +141,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     init_vars_decl = gen_vars_decls(block.init_code);
     init_vars_decl = init_vars_decl & ("") if init_vars_decl != ();
     init_body = init_vars_decl & compile_to_c(block.init_code, nil);
-    init_sgn = "void " & init_method_name(block.name) & "(" & name_str & " *self, Env &env)";
+    init_sgn = "void " & init_method_name(block.name) & "(" & name_str & " *self, ENV &env)";
     init_decl = (init_sgn & ";");
     init_proc = (init_sgn, "{") & indent_lines(init_body) & ("}");
 
@@ -146,9 +151,9 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     cleanup_proc = (cleanup_sgn, "{") & indent_lines(cleanup_body) & ("}");
 
     update_body = gen_vars_decls(block.update_code) & ("") & compile_to_c(block.update_code, nil);
-    // time_arg = if block.time_rules_count != 0 then ", long long " & to_c_var_name(elapsed_time) else "";
-    time_arg = ", long long " & to_c_var_name(elapsed_time);
-    update_sgn = "void " & update_method_name(block.name) & "(" & name_str & " *self" & time_arg & ", Env &env)";
+    // time_arg = if block.time_rules_count != 0 then ", int64 " & to_c_var_name(elapsed_time) else "";
+    time_arg = ", int64 " & to_c_var_name(elapsed_time);
+    update_sgn = "void " & update_method_name(block.name) & "(" & name_str & " *self" & time_arg & ", ENV &env)";
     update_decl = (update_sgn & ";");
     update_proc = (update_sgn, "{") & indent_lines(update_body) & ("}");
 
@@ -198,17 +203,17 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
 
     String gen_const_data(AutoSymbol block_name, ConstBlockData const) =
-      "const long long " & to_c_time_slots_table_name(block_name, const.expr_id) & "[] = {" &
+      "const int64 " & to_c_time_slots_table_name(block_name, const.expr_id) & "[] = {" &
       append((printed(l) & "LL" : l <- const.lengths), ", ") & "};";
 
 
     (String, String*) gen_method(AutoSymbol block_name, ExMethodSymb name, Instr* body)
     {
-      args_str = append((to_c_name(block_name) & " *self", "long long elapsed_time") & ("Obj p" & printed(i) : i < name.arity), ", ");
+      args_str = append((to_c_name(block_name) & " *self", "int64 elapsed_time") & ("OBJ p" & printed(i) : i < name.arity), ", ");
       ret_type_str = match (name.symbol)
-        read_only_method_symb()   = "Obj",
+        read_only_method_symb()   = "OBJ",
         update_method_symb()      = "void";
-      sgn = ret_type_str & " " & user_def_method_name(block_name, name) & "(" & args_str & ", Env &env)";
+      sgn = ret_type_str & " " & user_def_method_name(block_name, name) & "(" & args_str & ", ENV &env)";
       vars_decls = gen_vars_decls(body);
       body_text = vars_decls & ("" if vars_decls != ()) & compile_to_c(body, nil);
       return (sgn & ";", (sgn, "{") & indent_lines(body_text) & ("}"));
@@ -217,7 +222,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
     (String, String*) gen_input_setter(AutoSymbol block_name, Atom input_name, Nat node_idx, Bool queue_node)
     {
-      sgn = "void " & input_set_method_name(block_name, input_name) & "(" & to_c_name(block_name) & " *self, Obj new_val)";
+      sgn = "void " & input_set_method_name(block_name, input_name) & "(" & to_c_name(block_name) & " *self, OBJ new_val)";
       pending_input_var_str = to_c_var_name(pending_input_var(input_name));
       marked_for_update_var = to_c_var_name(marked_for_update_var(std_block_node_id(input_name)));
       body = (
@@ -225,15 +230,13 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
         "{",
         "  if (" & marked_for_update_var & ")",
         "  {",
-        // "    internal_fail_if(" & pending_input_var_str & " == null_obj);",
         "    release(" & pending_input_var_str & ");",
         "    " & pending_input_var_str & " = new_val;",
         "  }",
         "  else",
         "  {",
-        // "    internal_fail_if(" & pending_input_var_str & " != null_obj);",
         "    " & pending_input_var_str & " = new_val;",
-        "    long long idx = self->update_count_0;" if queue_node,
+        "    int64 idx = self->update_count_0;" if queue_node,
         "    self->nodes_to_update_0[idx] = " & printed(node_idx) & ";" if queue_node,
         "    self->update_count_0 = idx + 1;" if queue_node,
         "    " & marked_for_update_var & " = true;",
@@ -246,11 +249,11 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
     (String, String*) gen_output_getter(AutoSymbol block_name, Atom output_name)
     {
-      sgn = "Obj " & output_get_method_name(block_name, output_name) & "(" & to_c_name(block_name) & " *self)";
+      sgn = "OBJ " & output_get_method_name(block_name, output_name) & "(" & to_c_name(block_name) & " *self)";
       body = (
         sgn,
         "{",
-        "  Obj value = " & to_c_var_name(memb_var(output_name)) & ";",
+        "  OBJ value = " & to_c_var_name(memb_var(output_name)) & ";",
         "  add_ref(value);",
         "  return value;",
         "}"
@@ -297,11 +300,11 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     (String, String*) gen_insert_timer_method(AutoSymbol block_name)
     {
       method_name = insert_timer_method_name(block_name);
-      sgn = "void " & method_name & "(" & to_c_name(block_name) & " *self, long long cond_idx, long long time)";
+      sgn = "void " & method_name & "(" & to_c_name(block_name) & " *self, int64 cond_idx, int64 time)";
 
       body_text = (
         "int n = self->time_triggers_count;",
-        "long long *tt = self->trigger_times_heap;",
+        "int64 *tt = self->trigger_times_heap;",
         "int *ids = self->time_varying_cond_ids_heap;",
 
         "int i = 0;",
@@ -327,11 +330,11 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     (String, String*) gen_clear_timer_method(AutoSymbol block_name)
     {
       method_name = clear_timer_method_name(block_name);
-      sgn = "void " & method_name & "(" & to_c_name(block_name) & " *self, long long cond_idx)";
+      sgn = "void " & method_name & "(" & to_c_name(block_name) & " *self, int64 cond_idx)";
 
       body_text = (
         "int n = self->time_triggers_count;",
-        "long long *tt = self->trigger_times_heap;",
+        "int64 *tt = self->trigger_times_heap;",
         "int *ids = self->time_varying_cond_ids_heap;",
 
         "int i = 0;",
@@ -385,23 +388,23 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
   String gen_c_decl(ObjProcDef pd)
   {
-    par_types = (if p == :obj then "Obj" else "CLS" & printed(p.arity) & " &" : p <- pd.params);
-    par_list = append(par_types & ("Env &"), ", ");
-    return "Obj " & to_c_fn_name(pd.name, in_arity(pd)) & "(" & par_list & ");";
+    par_types = (if p == :obj then "OBJ" else "CLS" & printed(p.arity) & " &" : p <- pd.params);
+    par_list = append(par_types & ("ENV &"), ", ");
+    return "OBJ " & to_c_fn_name(pd.name, in_arity(pd)) & "(" & par_list & ");";
   }
 
 
   String gen_c_decl(BoolProcDef pd)
   {
-    par_list = append(pd.arity * ("Obj"), ", ");
+    par_list = append(pd.arity * ("OBJ"), ", ");
     return "bool " & to_c_fn_name(pd.name) & "(" & par_list & ");";
   }
 
 
   String gen_c_decl(ClsDef cd, Nat id)
   {
-    par_list = append(cd.arity * ("Obj") & ("const Obj *", "Env &"), ", ");
-    return "Obj cls_" & printed(id) & "(" & par_list & ");";
+    par_list = append(cd.arity * ("OBJ") & ("const OBJ *", "ENV &"), ", ");
+    return "OBJ cls_" & printed(id) & "(" & par_list & ");";
   }
 
 
@@ -437,8 +440,8 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
         "",
         ret_type_str(pd) & fn_name & "(" & par_list_str & ")",
         "{",
-        "  static Obj cached_res = null_obj;",
-        "  if (cached_res == null_obj)",
+        "  static OBJ cached_res = make_blank_obj();",
+        "  if (is_blank_obj(cached_res))",
         "  {",
         "    cached_res = " & fn_name & suffix & "(env);",
         "    add_obj_to_cache(cached_res);",
@@ -458,16 +461,16 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
       bool_proc_def()   = pd.arity;
 
     String ret_type_str(ProcDef):
-      obj_proc_def()    = "Obj ",
+      obj_proc_def()    = "OBJ ",
       bool_proc_def()   = "bool ";
 
     String gen_fn_par(ObjProcPar par, Nat pos):
-      obj   = "Obj p" & printed(pos),
+      obj   = "OBJ p" & printed(pos),
       cls() = "CLS" & printed(par.arity) & " &" & to_c_var_name(if par.name? then par.name else cls_var(pos));
 
     String* gen_fn_pars(ProcDef pd):
-      ObjProcDef  = (gen_fn_par(p, i) : p @ i <- pd.params) & ("Env &env"),
-      BoolProcDef = ("Obj p" & printed(n) : n < arity(pd));
+      ObjProcDef  = (gen_fn_par(p, i) : p @ i <- pd.params) & ("ENV &env"),
+      BoolProcDef = ("OBJ p" & printed(n) : n < arity(pd));
   }
 
 
@@ -489,8 +492,8 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
   //## DUPLICATED CODE
   String* compile_to_c(ClsDef cd, Nat id)
   {
-    par_list  = ("Obj p" & printed(n) : n < cd.arity) & ("const Obj C[]", "Env &env"); //## BAD
-    signature = "Obj cls_" & printed(id) & "(" & append(par_list, ", ") & ")";
+    par_list  = ("OBJ p" & printed(n) : n < cd.arity) & ("const OBJ C[]", "ENV &env"); //## BAD
+    signature = "OBJ cls_" & printed(id) & "(" & append(par_list, ", ") & ")";
 
     vars_decls = gen_vars_decls(cd.body);
     comp_body = compile_to_c(cd.body, nil);
@@ -500,14 +503,14 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
 
   String var_decl(AnyVar v):
-    ObjVar    = "Obj "       & to_c_var_name(v) & ";",
-    VecVar    = "Obj "       & to_c_var_name(v) & "[" & printed(v.size) & "];",
+    ObjVar    = "OBJ "       & to_c_var_name(v) & ";",
+    VecVar    = "OBJ "       & to_c_var_name(v) & "[" & printed(v.size) & "];",
     BoolVar   = "bool "      & to_c_var_name(v) & ";",
-    IntVar    = "long long " & to_c_var_name(v) & ";",
-    SetItVar  = "SetIter "   & to_c_var_name(v) & ";",
-    SeqItVar  = "SeqIter "   & to_c_var_name(v) & ";",
-    MapItVar  = "MapIter "   & to_c_var_name(v) & ";",
-    StreamVar = "Stream "    & to_c_var_name(v) & ";";
+    IntVar    = "int64 "     & to_c_var_name(v) & ";",
+    SeqItVar  = "SEQ_ITER "  & to_c_var_name(v) & ";",
+    SetItVar  = "SET_ITER "  & to_c_var_name(v) & ";",
+    MapItVar  = "MAP_ITER "  & to_c_var_name(v) & ";",
+    StreamVar = "STREAM "    & to_c_var_name(v) & ";";
 
 
   String* compile_to_c(Instr* instrs, <Nat, nil> block_id) = join((compile_to_c(instr, block_id) : instr <- instrs));
@@ -548,7 +551,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
     init_memb_var()       = (to_c_var_name(instr.var) & " = " & to_c_const(instr.new_state) & ";"),
     reset_memb_var()      = (to_c_var_name(instr.var) & " = " & to_c_const(instr.new_state) & ";"),
-    clear_loc_var(v?)     = (to_c_var_name(v) & " = null_obj;"),
+    clear_loc_var(v?)     = (to_c_var_name(v) & " = make_null_obj();"),
 
     terminate             = ("fail();"),
 
@@ -590,7 +593,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     call_cls()            = mk_cls_call(instr.cls_var, instr.var, instr.params), //## INLINE THE FUNCTION
 
     push_call_info()      = { fn_name = (printed(fn_name_to_str(instr.fn_name)));
-                              params = (if p == nil then :null_obj else value(p) : p <- instr.params);
+                              params = (if p == nil then :blank_obj else value(p) : p <- instr.params);
                               return (mk_gen_call("push_call_info_wrapper", fn_name, params, ()));
                             },
 
@@ -621,7 +624,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     auto_cleanup()        = (cleanup_method_name(instr.type) & "(&" & to_c_var_name(instr.var, false) & ");"),
 
     set_input()           = { value = instr.value;
-                              value_str = if value != nil then to_c_expr(value(value)) else "null_obj";
+                              value_str = if value != nil then to_c_expr(value(value)) else "make_null_obj()";
                               method_name = input_set_method_name(instr.type, instr.input);
                               return (method_name & "(&" & to_c_var_name(instr.var, false) & ", " & value_str & ");");
                             },
@@ -667,14 +670,14 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
 
 
   String* compile_to_c(RefObjExpr expr, ObjVar var):
-    mk_set_from_stream()  = mk_call(var, "make_set",            (expr.stream)),
-    mk_set()              = mk_call(var, "make_set",            (expr.elems, expr.size)),
-    mk_seq_from_stream()  = mk_call(var, "make_seq",            (expr.stream)),
-    mk_seq()              = mk_call(var, "make_seq",            (expr.elems, expr.size)),
-    mk_map_from_streams() = mk_call(var, "make_map",            (expr.key_stream, expr.value_stream)),
-    mk_map()              = mk_call(var, "make_map",            (expr.keys, expr.values, expr.size)),
-    mk_tagged_obj()       = mk_call(var, "make_tagged_obj",     (expr.tag, expr.obj)),
-    mk_array()            = mk_call(var, "make_array",          (expr.size, expr.value)),
+    mk_set_from_stream()  = mk_call(var, "build_set",           (expr.stream)),
+    mk_set()              = mk_call(var, "build_set",           (expr.elems, expr.size)),
+    mk_seq_from_stream()  = mk_call(var, "build_seq",           (expr.stream)),
+    mk_seq()              = mk_call(var, "build_seq",           (expr.elems, expr.size)),
+    mk_map_from_streams() = mk_call(var, "build_map",           (expr.key_stream, expr.value_stream)),
+    mk_map()              = mk_call(var, "build_map",           (expr.keys, expr.values, expr.size)),
+    mk_tagged_obj()       = mk_call(var, "build_tagged_obj",    (expr.tag, expr.obj)),
+    mk_array()            = mk_call(var, "blank_array",         (expr.size)),
     get_seq_slice()       = mk_call(var, "get_seq_slice",       (expr.seq, expr.idx_first, expr.len)),
     append_to_seq()       = mk_call(var, "append_to_seq",       (expr.seq, expr.new_elem)),
     join_seqs()           = mk_call(var, "join_seqs",           (expr.left, expr.right)),
@@ -684,7 +687,6 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     merge_maps()          = mk_call(var, "merge_maps",          (expr.maps)),
     seq_to_set()          = mk_call(var, "seq_to_set",          (expr.seq)),
     seq_to_mset()         = mk_call(var, "seq_to_mset",         (expr.seq)),
-    list_to_seq()         = mk_call(var, "list_to_seq",         (expr.list)),
     internal_sort()       = mk_call(var, "internal_sort",       (expr.set)),
     symb_to_str(e?)       = mk_call(var, "to_str",              (e)),
     read_pending_var(v?)  = (to_c_var_name(var) & " = " & to_c_var_name(v) & ";"),
@@ -730,7 +732,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
         );
         if p.env != ():
           var_name = "cd_" & printed(par_id);
-          code = code & ("Obj " & var_name & "[" & printed(length(p.env)) & "];");
+          code = code & ("OBJ " & var_name & "[" & printed(length(p.env)) & "];");
           for v @ i <- p.env:
             code = code & (var_name & "[" & printed(i) & "] = " & to_c_expr(v) & ";");
           ;
@@ -791,14 +793,14 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     data_bk_var = "BD" & scope_id;
     new_data_var = "ND" & scope_id;
 
-    tmp = append(arity * ("Obj") & ("const Obj *", "Env &"), ", ");
+    tmp = append(arity * ("OBJ") & ("const OBJ *", "ENV &"), ", ");
 
     code = (
-      "Obj (*" & fn_bk_var & ")(" & tmp & ") = " & fn_var & ";",
-      "const Obj *BD" & scope_id & " = " & data_var & ";"
+      "OBJ (*" & fn_bk_var & ")(" & tmp & ") = " & fn_var & ";",
+      "const OBJ *BD" & scope_id & " = " & data_var & ";"
     );
 
-    code = code & ("Obj " & new_data_var & "[" & env_size_str & "];") if env_size > 0;
+    code = code & ("OBJ " & new_data_var & "[" & env_size_str & "];") if env_size > 0;
 
     //## HERE I'M ADDING THE add_ref/release PAIRS IN THE WRONG LAYERS
     for i < env_size:
@@ -834,7 +836,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
   {
     text_arg = if text != nil then printed(value(text)) else "0";
     header = (
-      "if (" & to_c_expr(cond) & " == False_S)",
+      "if (is_symb(" & to_c_expr(cond) & ", symb_idx_false))",
       "{",
       "  print_assertion_failed_msg(" & printed(file) & ", " & printed(line) & ", " & text_arg & ");"
     );
@@ -886,15 +888,16 @@ using String typesymb2name(TypeSymbol)
   //## IT WOULD MUCH BETTER IF WE COULD USE mk_call HERE...
   String to_c_expr(ObjExpr expr):
     object(Atom a?)     = upper_camel_case(a) & "_S",
-    object(Int n?)      = "to_obj(" & printed(n) & ")",
-    empty_set           = "empty_set",
-    empty_seq           = "empty_seq",
-    empty_map           = "empty_map",
+    object(Int n?)      = "make_int(" & printed(n) & ")",
+    empty_set           = "make_empty_set()",
+    empty_seq           = "make_empty_seq()",
+    empty_map           = "make_empty_map()",
     ObjVar              = to_c_var_name(expr),
     at()                = "at("                 & to_c_expr(expr.seq) & ", " & to_c_expr(expr.idx) & ")",
     get_tag(e?)         = "get_tag("            & to_c_expr(e)        & ")",
     get_inner_obj(e?)   = "get_inner_obj("      & to_c_expr(e)        & ")",
-    to_obj(e?)          = "to_obj("             & to_c_expr(e)        & ")",
+    bool_obj(e?)        = "make_bool("          & to_c_expr(e)        & ")",
+    int_obj(e?)         = "make_int("           & to_c_expr(e)        & ")",
     obj_neg(e?)         = "obj_neg("            & to_c_expr(e)        & ")",
     to_symb(e?)         = "to_symb("            & to_c_expr(e)        & ")",
     get_curr_obj(v?)    = "get_curr_obj("       & to_c_var_name(v)    & ")",
@@ -935,14 +938,14 @@ using String typesymb2name(TypeSymbol)
     is_lt()               = to_nary_op(" < ",  (expr.expr1, expr.expr2), parentesised), //## BAD
     is_le()               = to_nary_op(" <= ", (expr.expr1, expr.expr2), parentesised), //## BAD
 
-    inline_is_eq()        = parentesize(to_c_expr(expr.expr) & " == " & to_c_expr(expr.value), parentesised),
+    inline_is_eq()        = inline_is_eq_to_c_expr(expr.expr, expr.value, parentesised),
 
     is_out_of_range(v?)   = "is_out_of_range(" & to_c_var_name(v) & ")",
 
     //## ONE OF THESE TWO TEST SHOULD NEVER BE CALLED IF THE OTHER IS NOT TRUE.
     //## FIGURE THIS OUT AND ADD A CHECK.
-    var_is_set(v?)        = parentesize(to_c_var_name(v) & " != blank_obj", parentesised),
-    var_is_def(v?)        = parentesize(to_c_var_name(v) & " != null_obj", parentesised),
+    var_is_set(v?)        = "!is_blank_obj(" & to_c_var_name(v) & ")",
+    var_is_def(v?)        = "!is_null_obj(" & to_c_var_name(v) & ")",
 
     neg(e?)               = parentesize("!" & to_c_expr(e, true), parentesised),
 
@@ -952,6 +955,18 @@ using String typesymb2name(TypeSymbol)
     or_else(es?)          = to_nary_op(" || ", es, parentesised),
 
     eval_bool_fn()        = to_c_fn_name(expr.name) & "(" & to_nary_op(", ", expr.params, false) & ")";
+
+
+  String inline_is_eq_to_c_expr(ObjExpr expr, InlineObj value, Bool parentesised)
+  {
+    expr_str = to_c_expr(expr, false);
+    return match (value)
+      object(Atom a?)   = "is_symb(" & expr_str & ", symb_idx_" & printed(a) & ")",
+      object(Int n?)    = "is_int("  & expr_str & ", " & printed(n) & ")",
+      empty_seq         = "is_empty_seq(" & expr_str & ")",
+      empty_set         = "is_empty_set(" & expr_str & ")",
+      empty_map         = "is_empty_map(" & expr_str & ")";
+  }
 
 
   String to_c_expr(IntExpr expr) = to_c_expr(expr, false);
@@ -979,7 +994,8 @@ using String typesymb2name(TypeSymbol)
 
   String to_c_expr(<ElemVar, VecVar, ItVar, StreamVar> var) = to_c_var_name(var);
 
-  String to_c_expr(<null_obj>) = "null_obj";
+  String to_c_expr(<blank_obj>) = "make_blank_obj()";
+  String to_c_expr(<null_obj>) = "make_null_obj()";
 
   String to_c_expr(ClsVar v) = to_c_var_name(v);
 
@@ -1104,10 +1120,10 @@ using String typesymb2name(TypeSymbol)
     to_c_name(auto_name) & "_" & upper_camel_case(table_id) & "_time_slots_table";
 
 
-  String var_c_type(ObjVar)           = "Obj";
-  String var_c_type(PendingInputVar)  = "Obj";
-  String var_c_type(IntVar)           = "long long";
-  String var_c_type(MembIntVectVar)   = "long long";
+  String var_c_type(ObjVar)           = "OBJ";
+  String var_c_type(PendingInputVar)  = "OBJ";
+  String var_c_type(IntVar)           = "int64";
+  String var_c_type(MembIntVectVar)   = "int64";
   String var_c_type(BoolVar)          = "bool";
 
   ///////////////////////////////////////////////////////////////////////////////
@@ -1152,6 +1168,6 @@ using String typesymb2name(TypeSymbol)
   String fn_name_to_str(ProcSymbol proc_symbol): proc_symbol(s?) = capitalize(_str_(s), false); //## UGLY UGLY UGLY
 
 
-  String to_c_const(<blank, undefined> state) = if state == :blank then "blank_obj" else "null_obj";
+  String to_c_const(<blank, undefined> state) = if state == :blank then "make_blank_obj()" else "make_null_obj()";
 
 }
