@@ -1,0 +1,59 @@
+[Int+] retrieve_nested_int_seqs(Expr expr):
+  tuple_expr(es?)   = if es :: IntObj+
+                        then [(match (e) object(n?) = n : e <- es)]
+                        else seq_union((retrieve_nested_int_seqs(e) : e <- es)),
+  _                 = retrieve_from_nested_exprs(expr, retrieve_nested_int_seqs($)); //## BAD BAD: THE ($) PART IS A WORKAROUND FOR A BUG IN THE TYPECHECKER
+
+
+[Int+] retrieve_nested_int_seqs(Statement* stmts) =
+  seq_union((retrieve_from_nested_exprs(s, retrieve_nested_int_seqs($)) : s <- stmts)); //## BAD BAD: THE ($) PART IS A WORKAROUND FOR A BUG IN THE TYPECHECKER
+
+////////////////////////////////////////////////////////////////////////////////
+
+[Int+] retrieve_nested_int_seqs(FnDef fd) = retrieve_nested_int_seqs(fd.expr);
+
+[Int+] retrieve_nested_int_seqs(ProcDef2 pd) = retrieve_nested_int_seqs(pd.body);
+
+////////////////////////////////////////////////////////////////////////////////
+
+[Int+] retrieve_nested_int_seqs(TimeVaryingCond cond) = retrieve_nested_int_seqs(cond.expr);
+
+
+[Int+] retrieve_nested_int_seqs(AutoAtomicAction action):
+  update()        = retrieve_nested_int_seqs(action.value),
+  set_discrete()  = retrieve_nested_int_seqs(action.value),
+  method_call()   = retrieve_nested_int_seqs(action.message);
+
+
+[Int+] retrieve_nested_int_seqs(AutoCondAction action) =
+  retrieve_nested_int_seqs(action.cond) &
+  union([retrieve_nested_int_seqs(a) : a <- action.body & action.else]);
+
+
+[Int+] retrieve_nested_int_seqs(AutoRepAction action) =
+  retrieve_nested_int_seqs(action.cond) &
+  union([retrieve_nested_int_seqs(a) : a <- action.body & action.else]);
+
+
+[Int+] retrieve_nested_int_seqs(ReadOnlyMethod method) = retrieve_nested_int_seqs(method.expr);
+
+
+[Int+] retrieve_nested_int_seqs(UpdateMethod method) = retrieve_nested_int_seqs(method.body);
+
+
+[Int+] retrieve_nested_int_seqs(Automaton auto) =
+  union([retrieve_nested_int_seqs(sv.init_value) : sv @ unused_var <- auto.state]) &
+  union([retrieve_nested_int_seqs(e) : e @ unused_var <- auto.params]) &
+  union([retrieve_nested_int_seqs(e) : e @ unused_var <- auto.rules]) &
+  union([retrieve_nested_int_seqs(c) : c @ unused_var <- auto.time_rules]) &
+  union([retrieve_nested_int_seqs(a) : a <- auto.actions]) &
+  union([retrieve_nested_int_seqs(a) : a <- auto.rep_actions]) &
+  union([retrieve_nested_int_seqs(e) : na @ unused_var_1 <- auto.nested_autos, e @ unused_var_2 <- na.args]) &
+  union([retrieve_nested_int_seqs(m) : m <- auto.read_only_methods]) &
+  union([retrieve_nested_int_seqs(m) : m <- auto.update_methods]);
+
+
+[Int+] retrieve_nested_int_seqs(Program prg) =
+  union([retrieve_nested_int_seqs(fd) : fd <- prg.fndefs]) &
+  union([retrieve_nested_int_seqs(pd) : pd <- prg.proc_defs]) &
+  union([retrieve_nested_int_seqs(a)  : a  <- prg.auto_defs]);

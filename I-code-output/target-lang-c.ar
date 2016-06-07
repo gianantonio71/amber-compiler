@@ -26,30 +26,7 @@ CCodeOutput compile_to_c(CompiledPrg prg)
 
   cls_defs = cls_defs(prg);
 
-  all_named_args = merge_values(set((p.named_args : p <- rand_sort(prg.procs))));
-  all_param_arity_pairs = rand_sort([[var: v, arity: a] : ars @ v <- all_named_args, a <- ars]);
-
-  env_decl = ("struct ENV {");
-
-  for na @ i <- all_param_arity_pairs:
-    var   = na.var;
-    arity = na.arity;
-
-    name = _str_(_obj_(var));
-
-    if arity > 0:
-      ls = ( "  OBJ (*n" & printed(arity) & "_" & name & ")(" & append(("OBJ p" & printed(j) & ", " : j < na.arity)) & "const OBJ *C, ENV &env);",
-              "  const OBJ *C" & printed(arity) & "_" & name & ";"
-            );
-    else
-      ls = ("  OBJ n_" & name & ";");
-    ;
-
-    ls = ("") & ls if i > 0;
-    env_decl = env_decl & ls;
-  ;
-
-  env_decl = env_decl & ("};") & 4 * ("");
+  env_decl = gen_env_decl(prg);
 
   c_code = c_code & env_decl;
 
@@ -61,16 +38,25 @@ CCodeOutput compile_to_c(CompiledPrg prg)
   all_fn_arities = set((in_arity(d) : d <- rand_sort(prg.procs)));
   c_code = c_code & join(intermix((generate_push_call_info_wrapper(a) : a <- rand_sort(all_fn_arities)), 2 * (""))) & 4 * ("");
 
+  int_seqs_decls, int_seqs_defs = gen_int_seqs_decl_and_def(prg.int_seqs);
+
+  c_code = c_code & int_seqs_decls & 4 * ("");
+
   sorted_cls_defs = rand_sort(cls_defs);
+
+  int_seqs_types_and_lengths = ((int_type_c_name(min(s), max(s)), length(s)) : s <- prg.int_seqs);
 
   proc_code = compile_to_c(
     rand_sort(prg.procs),
     rand_sort(prg.bool_procs),
     sorted_cls_defs,
     rand_sort(prg.blocks),
-    typesymb2name(ts) = typesymb2str(ts, ptss),
-    cls2id(cls)       = index_first(cls, sorted_cls_defs)
+    prg.int_seqs,
+    typesymb2name(ts)           = typesymb2str(ts, ptss),
+    cls2id(cls)                 = index_first(cls, sorted_cls_defs),
+    int_seqs_types_and_lengths  = int_seqs_types_and_lengths
   );
+
 
   body = (
     "#include \"lib.h\"\n\n",
@@ -78,7 +64,7 @@ CCodeOutput compile_to_c(CompiledPrg prg)
     "",
     "namespace generated",
     "{"
-  ) & indent_lines(c_code & proc_code.body) & ("}");
+  ) & indent_lines(c_code & proc_code.body & int_seqs_defs) & ("}");
 
   header = ("namespace generated", "{") & indent_lines(symb_decls & env_decl & cls_obj_typedefs & proc_code.header) & ("}");
 
@@ -95,6 +81,119 @@ CCodeOutput compile_to_c(CompiledPrg prg)
   String typesymb2str(TypeSymbol ts, ParTypeSymbol* par_types):
     type_symbol(a?)     = upper_camel_case(a),
     par_type_symbol()   = typesymb2str(ts.symbol, par_types) & "_" & printed(index_first(ts, par_types));
+}
+
+
+String* gen_env_decl(CompiledPrg prg)
+{
+  all_named_args = merge_values(set((p.named_args : p <- rand_sort(prg.procs))));
+  all_param_arity_pairs = rand_sort([[var: v, arity: a] : ars @ v <- all_named_args, a <- ars]);
+
+  env_decl = ("struct ENV {");
+
+  for na @ i <- all_param_arity_pairs:
+    var   = na.var;
+    arity = na.arity;
+
+    name = _str_(_obj_(var));
+
+    if arity > 0:
+      ls = (
+        "  OBJ (*n" & printed(arity) & "_" & name & ")(" & append(("OBJ p" & printed(j) & ", " : j < na.arity)) & "const OBJ *C, ENV &env);",
+        "  const OBJ *C" & printed(arity) & "_" & name & ";"
+      );
+    else
+      ls = ("  OBJ n_" & name & ";");
+    ;
+
+    ls = ("") & ls if i > 0;
+    env_decl = env_decl & ls;
+  ;
+
+  env_decl = env_decl & ("};") & 4 * ("");
+  return env_decl;
+}
+
+
+String int_type_c_name(Int min_val, Int max_val)
+{
+  for lb, up, type_name <- type_bounds:
+    return type_name if min_val >= lb and max_val < up;
+  ;
+  return "int64";
+}
+
+
+(Int, Int, String)+ type_bounds = (
+  (0,             pow(2, 8),    "uint8"),
+  (0,             pow(2, 16),   "uint16"),
+  (0,             pow(2, 32),   "uint32"),
+  (-pow(2, 7),    pow(2, 7),    "int8"),
+  (-pow(2, 15),   pow(2, 15),   "int16"),
+  (-pow(2, 31),   pow(2, 31),   "int32")
+);
+
+
+Int pow(Int b, Nat e)
+{
+  res = 1;
+  for e:
+    res = b * res;
+  ;
+  return res;
+}
+
+
+(String*, String*) gen_int_seqs_decl_and_def(Int+* int_seqs)
+{
+  decls, defs = unzip((gen_int_seq_decl_and_def(s, i) : s @ i <- int_seqs));
+  return (decls, join(intermix(defs, 2 * (""))));
+}
+
+
+(String, String*) gen_int_seq_decl_and_def(Int+ int_seq, Nat seq_id)
+{
+  min = min(int_seq);
+  max = max(int_seq);
+
+  type_name = int_type_c_name(min, max);
+
+  sgn = "const " & type_name & " " & const_int_seq_c_name(seq_id) & "[" & printed(length(int_seq)) & "]";
+
+  decl = "extern " & sgn & ";";
+
+  strs = (printed(n) : n <- int_seq);
+  total_len = sum((length(s) : s <- strs)) + 2 * length(strs);
+  if total_len < 60:
+    def = (sgn & " = {" & append(strs, ", ") & "};");
+  else
+    max_len = nat(max((length(printed(n)) : n <- (min, max))));
+    last_idx = length(int_seq) - 1;
+    strs = (align_text(s, max_len, ascii_space) & if i != last_idx then ", " else "" : s @ i <- strs);
+    cont_lines = ("  " & append(ss) : ss <- split_into_groups(strs, nz_nat(100 / {max_len + 2})));
+    def = (sgn & " = {") & cont_lines & ("};");
+  ;
+
+  return (decl, def);
+
+
+  T+* split_into_groups(T+ items, NzNat max_group_size)
+  {
+    len = length(items);
+    num_of_comp_groups = len / max_group_size;
+    comp_groups_total_size = num_of_comp_groups * max_group_size;
+    last_group_size = len - comp_groups_total_size;
+    groups = (nonempty(subseq(items, i * max_group_size, max_group_size)) : i < num_of_comp_groups);
+    groups = (groups | nonempty(subseq(items, comp_groups_total_size, last_group_size))) if last_group_size > 0;
+    return groups;
+  }
+
+
+  String align_text(String str, Nat len, Nat filler)
+  {
+    str_len = length(str);
+    return {if len >= str_len then string(nat(len-str_len) * (filler)) else ""} & str;
+  }
 }
 
 
@@ -119,7 +218,7 @@ String+ generate_push_call_info_wrapper(Nat arity)
 type FnCallParam = blank_obj, ObjExpr, ElemVar, PendingInputVar, VecVar, BoolExpr, IntExpr, ItVar, StreamVar, ClsVar;
 
 
-using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
+using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef), (String, Nat)* int_seqs_types_and_lengths
 {
   CCodeOutput compile_block_to_c(Block block)
   {
@@ -356,7 +455,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
   }
 
 
-  CCodeOutput compile_to_c(ObjProcDef* obj_proc_defs, BoolProcDef* bool_proc_defs, ClsDef* cls_defs, Block* blocks)
+  CCodeOutput compile_to_c(ObjProcDef* obj_proc_defs, BoolProcDef* bool_proc_defs, ClsDef* cls_defs, Block* blocks, Int+* int_seqs)
   {
     type_checking_fn_decls = (gen_c_decl(pd) : pd <- bool_proc_defs) & 4 * ("");
     // print "Type checking function declarations generated";
@@ -674,6 +773,7 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     mk_set()              = mk_call(var, "build_set",           (expr.elems, expr.size)),
     mk_seq_from_stream()  = mk_call(var, "build_seq",           (expr.stream)),
     mk_seq()              = mk_call(var, "build_seq",           (expr.elems, expr.size)),
+    build_const_int_seq() = compile_build_const_int_seq_to_c(expr.seq_id, var),
     mk_map_from_streams() = mk_call(var, "build_map",           (expr.key_stream, expr.value_stream)),
     mk_map()              = mk_call(var, "build_map",           (expr.keys, expr.values, expr.size)),
     mk_tagged_obj()       = mk_call(var, "build_tagged_obj",    (expr.tag, expr.obj)),
@@ -693,6 +793,14 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef)
     read_output()         = (mk_gen_call(var, output_get_method_name(expr.type, expr.output), ("&" & to_c_var_name(expr.var, false)))),
     add_attachment()      = mk_call(var, "add_attachment",      (expr.target, expr.data)),
     fetch_attachments(e?) = mk_call(var, "fetch_attachments",   (e));
+
+
+  String* compile_build_const_int_seq_to_c(Nat seq_id, ObjVar var)
+  {
+    type, len = int_seqs_types_and_lengths[seq_id];
+    seq_name = const_int_seq_c_name(seq_id);
+    return (mk_gen_call(var, "build_const_" & type & "_seq", (seq_name, printed(len))));
+  }
 
   ///////////////////////////////////////////////////////////////////////////////
 
@@ -1169,5 +1277,7 @@ using String typesymb2name(TypeSymbol)
 
 
   String to_c_const(<blank, undefined> state) = if state == :blank then "make_blank_obj()" else "make_null_obj()";
-
 }
+
+
+String const_int_seq_c_name(Nat seq_id) = "const_int_seq_" & printed(seq_id);

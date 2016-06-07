@@ -9,12 +9,15 @@ CompiledPrg gen_prg_code(Program prg, CompilationOptions options)
   auto_output_is_disc   = [a.name -> [id -> output.discrete : output @ id <- a.outputs] : a <- simpl_prg.auto_defs];
   time_sensitive_autos  = time_sensitive_autos(simpl_prg.auto_defs);
 
-  memb_tests  = gen_needed_memb_test_fns(simpl_prg);
-  fndefs      = [gen_fn_code(fd, options) : fd <- simpl_prg.fndefs];
-  proc_defs   = [gen_proc_code(pd, options) : pd <- simpl_prg.proc_defs];
-  blocks      = [gen_auto_code(ad, auto_input_is_disc, auto_output_is_disc, time_sensitive_autos, prg.typedefs, options) : ad <- simpl_prg.auto_defs];
+  int_seqs = rand_sort(retrieve_nested_int_seqs(prg));
+  int_seqs_ids = merge(([s -> i] : s @ i <- int_seqs));
 
-  return compiled_prg(memb_tests, fndefs & proc_defs, blocks);
+  memb_tests  = gen_needed_memb_test_fns(simpl_prg);
+  fndefs      = [gen_fn_code(fd, int_seqs_ids, options) : fd <- simpl_prg.fndefs];
+  proc_defs   = [gen_proc_code(pd, int_seqs_ids, options) : pd <- simpl_prg.proc_defs];
+  blocks      = [gen_auto_code(ad, int_seqs_ids, auto_input_is_disc, auto_output_is_disc, time_sensitive_autos, prg.typedefs, options) : ad <- simpl_prg.auto_defs];
+
+  return compiled_prg(memb_tests, fndefs & proc_defs, blocks, int_seqs);
 }
 
 
@@ -54,7 +57,7 @@ CompiledPrg gen_prg_code(Program prg, CompilationOptions options)
 }
 
 
-ObjProcDef gen_proc_code(ProcDef2 proc_def, CompilationOptions options)
+ObjProcDef gen_proc_code(ProcDef2 proc_def, [Int+ -> Nat] int_seqs_ids, CompilationOptions options)
 {
   fn_res_var = lvar(0);
   tmp_bvar   = bvar(0);
@@ -72,6 +75,7 @@ ObjProcDef gen_proc_code(ProcDef2 proc_def, CompilationOptions options)
       pending_state_var_asgnms_idxs = [:], // This is required only for (update) methods
       auto_vars_types               = proc_def.auto_vars_types,
       self_auto                     = nil,
+      int_seqs_ids                  = int_seqs_ids,
       ignore_assertions             = options.ignore_assertions:
 
     //// Checking parameter types
@@ -103,7 +107,7 @@ ObjProcDef gen_proc_code(ProcDef2 proc_def, CompilationOptions options)
 }
 
 
-ObjProcDef gen_fn_code(FnDef fndef, CompilationOptions options)
+ObjProcDef gen_fn_code(FnDef fndef, [Int+ -> Nat] int_seqs_ids, CompilationOptions options)
 {
   fn_res_var = lvar(0);
   tmp_bvar   = bvar(0);
@@ -121,6 +125,7 @@ ObjProcDef gen_fn_code(FnDef fndef, CompilationOptions options)
       pending_state_var_asgnms_idxs = [:], // This is required only for (update) methods
       auto_vars_types               = [:],
       self_auto                     = nil,
+      int_seqs_ids                  = int_seqs_ids,
       ignore_assertions             = options.ignore_assertions:
 
     //// Checking parameter types

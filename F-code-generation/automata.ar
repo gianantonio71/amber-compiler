@@ -1,4 +1,4 @@
-Block gen_auto_code(Automaton automaton, [AutoSymbol -> [Atom -> Bool]] auto_input_is_disc, [AutoSymbol -> [Atom -> Bool]] auto_output_is_disc, [AutoSymbol] time_sensitive_autos, [TypeName -> Type] typedefs, CompilationOptions options)
+Block gen_auto_code(Automaton automaton, [Int+ -> Nat] int_seqs_ids, [AutoSymbol -> [Atom -> Bool]] auto_input_is_disc, [AutoSymbol -> [Atom -> Bool]] auto_output_is_disc, [AutoSymbol] time_sensitive_autos, [TypeName -> Type] typedefs, CompilationOptions options)
 {
   nodes = gen_auto_nodes(automaton, auto_input_is_disc, auto_output_is_disc);
   fail if nodes == (); //## BUG BUG BUG
@@ -43,6 +43,7 @@ Block gen_auto_code(Automaton automaton, [AutoSymbol -> [Atom -> Bool]] auto_inp
   // Generating code for initialization, update and methods
   let automaton                   = automaton,
       time_sensitive_autos        = time_sensitive_autos,
+      int_seqs_ids                = int_seqs_ids,
       options                     = options,
       disc_sgns_ids               = disc_sgns_ids,
       disc_inputs_ids             = intersection(input_ids, disc_sgns_ids),
@@ -130,12 +131,12 @@ Block gen_auto_code(Automaton automaton, [AutoSymbol -> [Atom -> Bool]] auto_inp
 using
 {
   Automaton                   automaton,
-  [AutoSymbol]                 time_sensitive_autos,
-
+  [AutoSymbol]                time_sensitive_autos,
+  [Int+ -> Nat]               int_seqs_ids,
   CompilationOptions          options,
 
-  [Atom]                       disc_sgns_ids,
-  [Atom]                       disc_inputs_ids,
+  [Atom]                      disc_sgns_ids,
+  [Atom]                      disc_inputs_ids,
 
   [BlockNodeId -> AutoNode]   nodes_by_id,
   [BlockNodeId]*              nodes_ids_by_level,
@@ -146,8 +147,8 @@ using
 
   [BlockNodeId -> Nat]        nodes_levels,
   [BlockNodeId -> Nat]        nodes_idxs,
-  Nat*                       levels_offsets,
-  Nat*                       levels_sizes;
+  Nat*                        levels_offsets,
+  Nat*                        levels_sizes;
 
 
   [ExMethodSymb -> Instr*] gen_methods_code([<ReadOnlyMethod, UpdateMethod>] methods, [TypeName -> Type] typedefs)
@@ -425,20 +426,28 @@ using
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Instr* gen_params_init_code(Automaton automaton, CompilationOptions options)
+using [Int+ -> Nat] int_seqs_ids
 {
-  param_ids = keys(automaton.params);
-  dep_map = [a -> [unsafe_name(v) : v <- extern_vars(e)] : e @ a <- automaton.params];
-  assert not (? ts @ s <- dep_map, t <- ts : not in(t, param_ids));
-  sorted_params = topological_sort(dep_map);
-  auto_vars_types = [memb_auto_var(id) -> auto.type : auto @ id <- automaton.nested_autos];
-  let auto_vars_types = auto_vars_types, next_obj_var_id = 0, next_int_var_id = 0, next_bool_var_id = 0, options = options:
-    params_init_code = (
-      (gen_safe_eval_code(automaton.params[p], memb_var(p)) : p <- rand_sort(ps))
-      : ps <- sorted_params
-    );
-  ;
-  return join((join(cfs) : cfs <- params_init_code));
+  Instr* gen_params_init_code(Automaton automaton, CompilationOptions options)
+  {
+    param_ids = keys(automaton.params);
+    dep_map = [a -> [unsafe_name(v) : v <- extern_vars(e)] : e @ a <- automaton.params];
+    assert not (? ts @ s <- dep_map, t <- ts : not in(t, param_ids));
+    sorted_params = topological_sort(dep_map);
+    auto_vars_types = [memb_auto_var(id) -> auto.type : auto @ id <- automaton.nested_autos];
+    let next_obj_var_id   = 0,
+        next_int_var_id   = 0,
+        next_bool_var_id  = 0,
+        auto_vars_types   = auto_vars_types,
+        options           = options:
+
+      params_init_code = (
+        (gen_safe_eval_code(automaton.params[p], memb_var(p)) : p <- rand_sort(ps))
+        : ps <- sorted_params
+      );
+    ;
+    return join((join(cfs) : cfs <- params_init_code));
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
