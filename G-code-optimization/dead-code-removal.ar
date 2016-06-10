@@ -44,7 +44,8 @@ Instr* remove_dead_code(Instr instr):
   set_bvar()          = (instr if instr.var != instr.value), //## BAD: IDENTICAL TO ABOVE CASE
   set_ivar()          = (instr if instr.var != instr.value), //## DITTO
   branch()            = remove_dead_branch_code(instr.cond, instr.when_true, instr.when_false),
-  switch_on_nat()     = remove_dead_switch_code(instr.value, instr.cases),
+  switch_on_nat()     = remove_dead_nat_switch_code(instr.value, instr.cases),
+  symb_switch()       = remove_dead_symb_switch_code(instr.value, instr.cases, instr.else),
   repeat(is?)         = remove_dead_loop_code(is),
   execute_block(is?)  = remove_dead_block_code(is),
   cls_scope()         = remove_cls_scope_dead_code(instr.var, instr.bound_cls, instr.body),
@@ -59,11 +60,19 @@ Instr* remove_dead_branch_code(BoolExpr cond, Instr+ if_body, Instr* else_body)
 }
 
 
-Instr* remove_dead_switch_code(IntExpr expr, Instr*+ cases)
+Instr* remove_dead_nat_switch_code(IntExpr expr, Instr*+ cases)
 {
   opt_cases = (remove_dead_code(c) : c <- cases);
   //## HERE WHEN WE OPTIMIZE THEN SINGLE-CASE SWITCH WE SHOULD ALSO ADD A CHECK TO MAKE SURE THE SWITCH VAR IS 0
   return if length(cases) == 1 then only_item(opt_cases) else (switch_on_nat(expr, opt_cases));
+}
+
+
+Instr* remove_dead_symb_switch_code(ObjExpr expr, [+([+Atom], Instr+)] cases, Instr* else)
+{
+  opt_cases = [(left(c), opt_code) : c <- cases, opt_code = remove_dead_code(right(c)), opt_code != ()];
+  opt_else = remove_dead_code(else);
+  return if opt_cases != [] then (symb_switch(expr, opt_cases, opt_else)) else opt_else;
 }
 
 

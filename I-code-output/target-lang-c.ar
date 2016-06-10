@@ -678,14 +678,9 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef), (String, Nat)* int_s
                               return ("goto block_" & printed(block_id) & "_end;");
                             },
 
-                            //## BUG BUG BUG: IF THERE IS INSIDE ONE OF THE CASES A BREAK STATEMENT MEANT TO TERMIMATE
-                            //## AN OUTER LOOP, THAT BREAK WILL TERMINATE THE SWITCH/CASE INSTEAD.
-    switch_on_nat()       = { cases_code = (
-                                ("case " & printed(i) & ":") & indent_lines((compile_to_c(c, block_id) | "break;") & (""))
-                                : c @ i <- instr.cases
-                              );
-                              return ("switch (" & to_c_expr(instr.value) & ")", "{") & indent_lines(join(cases_code)) & ("}");
-                            },
+    switch_on_nat()       = compile_switch_on_nat_to_c(instr.value, instr.cases, block_id),
+
+    symb_switch()         = compile_symb_switch_to_c(instr.value, instr.cases, instr.else, block_id),
 
     call_proc()           = compile_call_proc_to_c(if instr.var? then just(instr.var) else nil, instr.name, instr.params, block_id),
 
@@ -701,8 +696,6 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef), (String, Nat)* int_s
     runtime_check()       = compile_runtime_check_to_c(instr.cond, instr.file, instr.line, instr.text, instr.vars),
 
     branch()              = compile_branch_to_c(instr.cond, instr.when_true, instr.when_false, block_id),
-
-    // symbol_switch()       = compile_symbol_switch_to_c(instr.val, instr.cases, if instr.else? then instr.else else [], block_id),
 
     cls_scope()           = { bound_cls = instr.bound_cls;
                               return match (bound_cls)
@@ -730,6 +723,38 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef), (String, Nat)* int_s
 
     prop_input_updates()  = compile_prop_input_updates_to_c(if instr.var? then just(instr.var) else nil, instr.type, instr.elapsed_time),
     call_method()         = compile_call_method_to_c(if instr.res_var? then just(instr.res_var) else nil, if instr.auto_var? then just(instr.auto_var) else nil, instr.type, instr.name, instr.args);
+
+
+  //## BUG BUG BUG: IF THERE IS INSIDE ONE OF THE CASES A BREAK STATEMENT MEANT TO
+  //## TERMIMATE AN OUTER LOOP, THAT BREAK WILL TERMINATE THE SWITCH/CASE INSTEAD.
+  String* compile_switch_on_nat_to_c(IntExpr value, Instr*+ cases, <Nat, nil> block_id)
+  {
+    cases_code = (
+      ("case " & printed(i) & ":") & indent_lines((compile_to_c(c, block_id) | "break;", ""))
+      : c @ i <- cases
+    );
+    return ("switch (" & to_c_expr(value) & ")", "{") & indent_lines(join(cases_code)) & ("}");
+  }
+
+
+  //## BUG BUG BUG: IF THERE IS INSIDE ONE OF THE CASES A BREAK STATEMENT MEANT TO
+  //## TERMIMATE AN OUTER LOOP, THAT BREAK WILL TERMINATE THE SWITCH/CASE INSTEAD.
+  String* compile_symb_switch_to_c(ObjExpr value, [+([+Atom], Instr+)] cases, Instr* else, <Nat, nil> block_id)
+  {
+    value_str = match (value)
+      get_tag(tag_obj?)   = "get_tag_idx(" & to_c_expr(tag_obj) & ")",
+      _                   = "get_symb_idx(" & to_c_expr(value) & ")";
+
+    body_code = (
+      ("" if i > 0) &
+      ("case symb_idx_" & _str_(a) & ":" : a <- rand_sort(as)) &
+      indent_lines((compile_to_c(is, block_id) | "break;"))
+      : as, is @ i <- rand_sort(cases)
+    );
+    body_code = (body_code | ("", "default:") & indent_lines(compile_to_c(else, block_id))) if else != ();
+
+    return ("switch (" & value_str & ")", "{") & indent_lines(join(body_code)) & ("}");
+  }
 
 
   String* compile_prop_input_updates_to_c(Maybe[AnyAutoVar] var, AutoSymbol type, IntExpr elapsed_time)
@@ -864,24 +889,6 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef), (String, Nat)* int_s
     ;
     return code;
   }
-
-
-  //## HUGE BUG HERE: IF THE CODE IN ONE OF THE CASE STATEMENTS CONTAINS A BREAK
-  //## THAT AFFECTS A LOOP THAT CONTAINS THE SWITCH STATEMENT, THEN THE BREAK WILL
-  //## MISTAKINGLY TERMINATE THE SWITCH, NOT THE LOOP
-  // [String] compile_symbol_switch_to_c(ObjExpr val, (vals: SymbObj+, instrs: [Instr])* cases, [Instr] default, <Nat, nil> block_id)
-  // {
-  //   code = ["switch (" & to_c_expr(val) & ")", "{"];
-  //   for (c : rand_sort(cases))
-  //     case_code = ["case S_" & _str_(_obj_(s)) & ":" : s <- rand_sort(c.vals)] & //## BAD
-  //                  indent_lines(compile_to_c(c.instrs, block_id) & ["break;"]);
-  //     code = code & indent_lines(case_code);
-  //   ;
-  //   if (default != [])
-  //     code = code & ["default:"] & indent_lines(compile_to_c(default, block_id));
-  //   ;
-  //   return code & ["}"];
-  // }
 
 
   String* compile_cls_scope_to_c(NamedArg var, ClsDef cls, Var* env, Instr+ body, <Nat, nil> block_id)
