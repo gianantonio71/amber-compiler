@@ -94,15 +94,22 @@ using [TypeName -> Type] typedefs
     empty_set_type,     _                 = if ptrn == ptrn_empty_set then empty_set_type else empty_type,
     empty_map_type,     _                 = if ptrn == ptrn_empty_map then empty_map_type else empty_type,
 
-    ne_seq_type(),      _                 = if ptrn == ptrn_ne_seq then type else empty_type,
+    ne_seq_type(),      ptrn_ne_seq       = type,
+    ne_seq_type(),      ptrn_tuple(ps?)   = tuple_type((type_pattern_intersection_superset(type.elem_type, p) : p <- ps)),
+    ne_seq_type(),      _                 = empty_type,
+
+    tuple_type(ts?),    ptrn_ne_seq       = type,
+    tuple_type(ts?),    ptrn_tuple(ps?)   = if length(ts) == length(ps)
+                                              then tuple_type((type_pattern_intersection_superset(t, p) : t, p <- nonempty(zip(ts, ps))))
+                                              else empty_type,
+    tuple_type(ts?),    _                 = empty_type,
+
     ne_set_type(),      _                 = if ptrn == ptrn_ne_set then type else empty_type,
     ne_map_type(),      _                 = if ptrn == ptrn_ne_map then type else empty_type,
 
     record_type(fs?),   ptrn_empty_map    = if (? f @ l <- fs : not f.optional) then empty_type else empty_map_type,
     record_type(fs?),   ptrn_ne_map       = type, // This is the reason why this function does not return the exact intersection but a superset of it
     record_type(fs?),   _                 = empty_type,
-
-    tuple_type(ts?),    _                 = if ptrn == ptrn_ne_seq then type else empty_type,
 
     tag_obj_type(),     ptrn_tag_obj()    = { tag_type_int = type_pattern_intersection_superset(type.tag_type, ptrn.tag);
                                               obj_type_int = type_pattern_intersection_superset(type.obj_type, ptrn.obj);

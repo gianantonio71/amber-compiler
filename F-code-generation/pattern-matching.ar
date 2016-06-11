@@ -2,9 +2,32 @@ using Nat next_obj_var_id, [StdVar] loc_bound_vars, Instr+ on_match_code, [Atomi
 {
   Instr* gen_ptrn_matching_code(Pattern ptrn, AtomicExpr obj, PseudoType ptype):
     ptrn_var()        = gen_ptrn_var_matching_code(ptrn.var, ptrn.ptrn, obj, ptype),
+    ptrn_tuple(ps?)   = gen_ptrn_tuple_matching_code(ps, obj, ptype),
     ptrn_tag_obj()    = gen_ptrn_tag_obj_matching_code(ptrn.tag, ptrn.obj, obj, ptype),
     ptrn_union(ps?)   = gen_ptrn_union_matching_code(ps, obj, ptype),
     _                 = opt_do_if(gen_ptrn_matching_expr(ptrn, obj, ptype), on_match_code);
+
+
+  Instr* gen_ptrn_tuple_matching_code(Pattern+ field_ptrns, AtomicExpr obj, PseudoType ptype)
+  {
+    code = gen_ptrn_tuple_matching_code(field_ptrns, obj, 0);
+    code = (do_if(is_eq(get_seq_len(obj), length(field_ptrns)), code));
+    code = (do_if(is_ne_seq(obj), code)) if not is_subset(ptype, pseudotype_seqs);
+    return code;
+
+
+    Instr* gen_ptrn_tuple_matching_code(Pattern+ field_ptrns, AtomicExpr obj, Nat offset)
+    {
+      assert offset <= length(field_ptrns);
+      return on_match_code if offset == length(field_ptrns);
+      code = gen_ptrn_tuple_matching_code(field_ptrns, obj, nat(offset+1));
+      tmp_var = lvar(next_obj_var_id);
+      let next_obj_var_id = nat(next_obj_var_id + 1), on_match_code = nonempty(code):
+        code = (set_var(tmp_var, at(obj, offset))) & gen_ptrn_matching_code(field_ptrns[offset], tmp_var, pseudotype_any);
+      ;
+      return code;
+    }
+  }
 
 
   Instr* gen_ptrn_var_matching_code(StdVar var, Pattern ptrn, AtomicExpr obj, PseudoType ptype) =

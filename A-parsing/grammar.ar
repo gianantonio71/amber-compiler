@@ -1,11 +1,17 @@
 ParsingRule rule_lc_id            = atomic_rule(lowercase_id);
+ParsingRule rule_mc_id            = atomic_rule(mixedcase_id);
+ParsingRule rule_uc_id            = atomic_rule(uppercase_id);
+
 ParsingRule rule_plus             = atomic_rule(plus);
 ParsingRule rule_dot              = atomic_rule(dot);
+ParsingRule rule_double_dot       = atomic_rule(double_dot);
 ParsingRule rule_question_mark    = atomic_rule(question_mark);
 ParsingRule rule_equals           = atomic_rule(equals);
 ParsingRule rule_semicolon        = atomic_rule(semicolon);
 ParsingRule rule_colon            = atomic_rule(colon);
 ParsingRule rule_assign           = atomic_rule(assign);
+ParsingRule rule_lower            = atomic_rule(lower);
+ParsingRule rule_greater          = atomic_rule(greater);
 ParsingRule rule_left_arrow       = atomic_rule(left_arrow);
 ParsingRule rule_right_arrow      = atomic_rule(right_arrow);
 
@@ -97,8 +103,8 @@ ParsingRule rule_declaration =
 ParsingRule rule_proc_def =
   rule_seq((
     rule_choice((
-      (:ret_val,      rule_seq((rule_type, atomic_rule(mixedcase_id)))),
-      (:no_ret_val,   atomic_rule(mixedcase_id))
+      (:ret_val,      rule_seq((rule_type, rule_mc_id))),
+      (:no_ret_val,   rule_mc_id)
     )),
     par_rule(opt_comma_sep_seq(rule_seq((rule_type, optional_rule(rule_id))))),
     brace_rule(rule_seq((rep_rule(rule_auto_var_decl), rep_rule(rule_stmt(:proc)))))
@@ -142,7 +148,7 @@ ParsingRule rule_signature = rule_seq((rule_type, rule_id, optional_rule(par_rul
 ParsingRule rule_typedef =
   rule_seq((
     keyword_type,
-    atomic_rule(mixedcase_id),
+    rule_mc_id,
     rule_equals,
     comma_sep_seq(rule_pretype),
     rule_semicolon
@@ -151,7 +157,7 @@ ParsingRule rule_typedef =
 ParsingRule rule_par_typedef =
   rule_seq((
     keyword_type,
-    atomic_rule(mixedcase_id),
+    rule_mc_id,
     bracket_rule(comma_sep_seq(rule_type_var)),
     rule_equals,
     comma_sep_seq(rule_pretype),
@@ -195,13 +201,13 @@ ParsingRule rule_pretype =
     (:type_symbol,      rule_type_symbol)
   ));
 
-ParsingRule rule_type_name        = atomic_rule(mixedcase_id);
-ParsingRule rule_type_var         = atomic_rule(uppercase_id);
+ParsingRule rule_type_name        = rule_mc_id;
+ParsingRule rule_type_var         = rule_uc_id;
 ParsingRule rule_type_name_par    = rule_seq((rule_type_name, bracket_rule(comma_sep_seq(rule_ref_type))));
-ParsingRule rule_type_union       = rule_seq((atomic_rule(lower), comma_sep_seq(rule_ref_pretype), atomic_rule(greater)));
-ParsingRule rule_type_any_symbol  = rule_seq((atomic_rule(lower), rule_plus, atomic_rule(greater)));
-ParsingRule rule_type_integer     = rule_seq((atomic_rule(lower), int_type_bound, atomic_rule(double_dot), int_type_bound, atomic_rule(greater)));
-ParsingRule rule_type_float       = rule_seq((atomic_rule(lower), atomic_rule(circumflex), atomic_rule(greater)));
+ParsingRule rule_type_union       = rule_seq((rule_lower, comma_sep_seq(rule_ref_pretype), rule_greater));
+ParsingRule rule_type_any_symbol  = rule_seq((rule_lower, rule_plus, rule_greater));
+ParsingRule rule_type_integer     = rule_seq((rule_lower, int_type_bound, rule_double_dot, int_type_bound, rule_greater));
+ParsingRule rule_type_float       = rule_seq((rule_lower, atomic_rule(circumflex), rule_greater));
 ParsingRule rule_type_set         = bracket_rule(rule_seq((optional_rule(rule_plus), rule_ref_type)));
 ParsingRule rule_type_map         = bracket_rule(rule_seq((optional_rule(rule_plus), rule_ref_type, rule_right_arrow, rule_ref_type)));
 
@@ -296,30 +302,33 @@ ParsingRule rule_cls_type =
 ////////////////////////////////////////////////////////////////////////////////
 
 ParsingRule rule_ptrn =
-  rule_seq((
-    rule_choice((
-      (:type,         rule_type),
-      //## THIS WOULDN'T MAKE MUCH SENSE AT THE ROOT, AND THERE'S NO POINT IN ALLOWING IT TO BE FOLLOWED BY ANOTHER
-      //## PATTERN VARIABLE, BUT ON THE OTHER HAND LEAVING IT LIKE THAT IS SIMPLER AND DOESN'T DO ANY REAL HARM
-      (:tag_only,     rule_seq((rule_lc_id, empty_block_rule(parenthesis)))),
-      (:tag_obj,      rule_seq((rule_lc_id, par_rule(rule_ref_ptrn)))),
-      (:tag_obj_any,  rule_seq((rule_lc_id, atomic_rule(at), rule_lc_id))),
-      (:var,          rule_seq((rule_lc_id, rule_question_mark))),
-      (:atom,         rule_lc_id),
-      (:integer,      rule_seq((optional_rule(atomic_rule(minus)), atomic_rule(integer)))),
-      (:atom_any,     rule_plus),
-      (:integer_any,  atomic_rule(asterisk)),
-      (:float,        atomic_rule(circumflex)),
-      (:any,          atomic_rule(underscore)),
-      // (:empty_seq,    empty_block_rule(bracket)),
-      (:seq,          par_rule(atomic_rule(double_dot))),
-      // (:empty_set,    empty_block_rule(brace)),
-      (:set,          bracket_rule(atomic_rule(double_dot))),
-      // (:empty_map,    empty_block_rule(parenthesis)),
-      (:map,          bracket_rule(rule_right_arrow))
-    )),
-    optional_rule_seq((rule_lc_id, rule_question_mark))
-  ));
+  pipe_sep_seq(
+    rule_seq((
+      rule_choice((
+        (:type,         rule_type),
+        //## THIS WOULDN'T MAKE MUCH SENSE AT THE ROOT, AND THERE'S NO POINT IN ALLOWING IT TO BE FOLLOWED BY ANOTHER
+        //## PATTERN VARIABLE, BUT ON THE OTHER HAND LEAVING IT LIKE THAT IS SIMPLER AND DOESN'T DO ANY REAL HARM
+        (:tag_only,     rule_seq((rule_lc_id, empty_block_rule(parenthesis)))),
+        (:tag_obj,      rule_seq((rule_lc_id, par_rule(comma_sep_seq(rule_ref_ptrn))))),
+        (:tag_obj_any,  rule_seq((rule_lc_id, atomic_rule(at), rule_lc_id))),
+        (:var,          rule_seq((rule_lc_id, rule_question_mark))),
+        (:atom,         rule_lc_id),
+        (:integer,      rule_seq((optional_rule(atomic_rule(minus)), atomic_rule(integer)))),
+        (:atom_any,     rule_plus),
+        (:integer_any,  atomic_rule(asterisk)),
+        (:float,        atomic_rule(circumflex)),
+        (:any,          atomic_rule(underscore)),
+        // (:empty_seq,    empty_block_rule(bracket)),
+        (:tuple,        par_rule(comma_sep_seq(rule_ref_ptrn))),
+        (:seq,          par_rule(rule_double_dot)),
+        // (:empty_set,    empty_block_rule(brace)),
+        (:set,          bracket_rule(rule_double_dot)),
+        // (:empty_map,    empty_block_rule(parenthesis)),
+        (:map,          bracket_rule(rule_right_arrow))
+      )),
+      optional_rule_seq((rule_lc_id, rule_question_mark))
+    ))
+  );
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -477,7 +486,7 @@ ParsingRule rule_no_val_ret_stmt =
 ParsingRule rule_proc_call_stmt =
   rule_seq((
     optional_rule_seq((rule_id, rule_equals)),
-    atomic_rule(mixedcase_id),
+    rule_mc_id,
     par_rule(opt_comma_sep_seq(rule_ref_expr)),
     rule_semicolon
   ));

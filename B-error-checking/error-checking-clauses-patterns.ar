@@ -54,7 +54,36 @@ using
     ptrn_any          = (),
     ptrn_symbol()     = (),
     ptrn_integer()    = (),
+    ptrn_tuple(ps?)   = ptrn_tuple_wf_errors(ps, def_vars),
     ptrn_tag_obj()    = ptrn_wf_errors(ptrn.tag, def_vars) & ptrn_wf_errors(ptrn.obj, def_vars),
     ptrn_var()        = (already_def_var(ptrn.var) if already_def(ptrn.var, def_vars)) & ptrn_wf_errors(ptrn.ptrn, def_vars & [ptrn.var]),
-    ptrn_type(t?)     = type_wf_errors(t, type_arity_map, true);
+    ptrn_type(t?)     = type_wf_errors(t, type_arity_map, true),
+    ptrn_union(ps?)   = ptrn_union_wf_errors(ps, def_vars);
+
+
+  ExprWFError* ptrn_tuple_wf_errors(SynPtrn+ ptrns, [Var] def_vars)
+  {
+    curr_vars = def_vars;
+    for p <- ptrns:
+      errs = ptrn_wf_errors(p, curr_vars);
+      return errs if errs != ();
+      curr_vars = curr_vars & syn_new_vars(p);
+    ;
+    return ();
+  }
+
+
+  ExprWFError* ptrn_union_wf_errors(SynPtrn+ ptrns, [Var] def_vars)
+  {
+    assert length(ptrns) > 1;
+    errs = join((ptrn_wf_errors(p, def_vars) : p <- ptrns));
+    return errs if errs != ();
+    new_vars = (syn_new_vars(p) : p <- ptrns);
+    vs0 = new_vars[0];
+    for vs <- new_vars:
+      return (diff_var_sets_in_ptrn_union(ptrns)) if vs != vs0;
+    ;
+    return ();
+    //## CHECK THAT THE PATTERNS DO NOT OVERLAP?
+  }
 }
