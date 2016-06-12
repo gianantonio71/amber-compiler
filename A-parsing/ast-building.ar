@@ -576,37 +576,38 @@ using String filename, Nat** lines
   {
     inner_match = get_rule_match(mtc);
     expr = match (get_rule_name(mtc))
-      tag_obj       = build_tag_obj_expr_ast(inner_match),                  // rule_seq([atomic_rule(qualified_symbol), par_rule(rule_ref_expr)])
-      memb_copy     = memb_copy_var(get_var_id(inner_match)),               // atomic_rule(prev_value_var)
-      is_set        = is_set(memb_var(get_lowercase_id(inner_match, 0))),   // rule_seq([rule_id, atomic_rule(question_mark)]))
-      integer       = object(get_integer(inner_match)),                     // atomic_rule(integer)
-      symbol        = object(get_qualified_symbol(inner_match)),            // atomic_rule(qualified_symbol)
-      string        = build_string_expr_ast(inner_match),                   // atomic_rule(string)
-      float         = get_float_lit(inner_match),                           // atomic_rule(float)
-      true          = object(true),                                         // atomic_rule(keyword(true))
-      false         = object(false),                                        // atomic_rule(keyword(false))
-      nil           = object(nil),                                          // atomic_rule(keyword(nil))
-      set           = build_set_expr_ast(block_node(inner_match)),          // brace_rule(opt_comma_sep_seq(rule_subexpr))
+      tag_obj       = build_tag_obj_expr_ast(inner_match),
+      memb_copy     = memb_copy_var(get_var_id(inner_match)),
+      is_set        = is_set(memb_var(get_lowercase_id(inner_match, 0))),
+      integer       = object(get_integer(inner_match)),
+      symbol        = object(get_qualified_symbol(inner_match)),
+      string        = build_string_expr_ast(inner_match),
+      float         = get_float_lit(inner_match),
+      true          = object(true),
+      false         = object(false),
+      nil           = object(nil),
+      set           = build_set_expr_ast(block_node(inner_match)),
       empty_map     = syn_map_expr(()),
-      map           = build_map_expr_ast(inner_match),                      // par_rule(comma_sep_seq(rule_map_entry))
-      record        = build_record_expr_ast(inner_match),                   // rule_record_expr
-      seq           = build_seq_expr_ast(inner_match),                      // rule_seq_expr
-      seq_tail      = build_seq_tail_expr_ast(inner_match),                 // rule_seq_tail_expr
-      tag_record    = build_tag_record_expr_ast(inner_match),               // rule_tag_record_expr
-      builtin_call  = build_builtin_call_expr_ast(inner_match),             // rule_seq([atomic_rule(builtin), par_rule(comma_sep_seq(rule_ref_expr))])
-      par_expr      = build_expr_ast(block_node(inner_match)),              // par_rule(rule_ref_expr)
-      ex_qual       = build_ex_qual_expr_ast(inner_match),                  // rule_ex_qual_expr
-      set_cp        = build_set_cp_expr_ast(block_node(inner_match)),       // rule_set_cp_expr
-      map_cp        = build_map_cp_expr_ast(inner_match),                   // rule_map_cp_expr
-      seq_cp        = build_seq_cp_expr_ast(inner_match),                   // rule_seq_cp_expr
-      // alt_cp        = build_alt_cp_expr_ast(inner_match),                   // rule_alt_cp_expr
-      if_else       = build_if_else_expr_ast(inner_match),                  // rule_if_expr
-      match_expr    = build_match_expr_ast(inner_match),                    // rule_match_expr
-      proc          = build_proc_expr_ast(block_node(inner_match)),         // brace_rule(rep_rule(rule_ref_stmt, true))
-      method_call   = build_method_call_expr_ast(get_rule_match(mtc)),      // rule_seq([rule_id, rule_dot, rule_id, par_rule(opt_comma_sep_seq(rule_ref_expr))])
-      fn_call       = build_fn_call_expr_ast(inner_match),                  // rule_fn_call_expr
-      const_or_var  = const_or_var(get_lowercase_id(inner_match)),          // rule_id
-      cls_par       = cls_par(get_cls_par_idx(inner_match));                // atomic_rule(qual_var))
+      map           = build_map_expr_ast(inner_match),
+      record        = build_record_expr_ast(inner_match),
+      seq           = build_seq_expr_ast(inner_match),
+      seq_tail      = build_seq_tail_expr_ast(inner_match),
+      tag_record    = build_tag_record_expr_ast(inner_match),
+      builtin_call  = build_builtin_call_expr_ast(inner_match),
+      par_expr      = build_expr_ast(block_node(inner_match)),
+      ex_qual       = build_ex_qual_expr_ast(inner_match),
+      set_cp        = build_set_cp_expr_ast(block_node(inner_match)),
+      map_cp        = build_map_cp_expr_ast(inner_match),
+      seq_cp        = build_seq_cp_expr_ast(inner_match),
+      // alt_cp        = build_alt_cp_expr_ast(inner_match),
+      if_else       = build_if_else_expr_ast(inner_match),
+      match_expr    = build_match_expr_ast(inner_match),
+      proc          = build_proc_expr_ast(block_node(inner_match)),
+      method_call   = build_method_call_expr_ast(get_rule_match(mtc)),
+      fn_call       = build_fn_call_expr_ast(inner_match),
+      const_or_var  = const_or_var(get_lowercase_id(inner_match)),
+      cls_par       = cls_par(get_cls_par_idx(inner_match)),
+      data          = build_data_expr_ast(block_node(rule_seq_node(inner_match, 1)));
 
     return attach_src_code_info(expr, mtc);
   }
@@ -795,6 +796,72 @@ using String filename, Nat** lines
     method_name = read_only_method_symb(get_lowercase_id(nodes[2]));
     args = (build_expr_ast(n) : n <- rep_rule_nodes(block_node(nodes[3])));
     return syn_method_call_expr(auto_var, method_name, args);
+  }
+
+  SynExpr build_data_expr_ast(RuleMatch mtc)
+  {
+    rule_mtc = get_rule_match(mtc);
+    return match (get_rule_name(mtc))
+      symbol        = object(get_lowercase_id(rule_mtc)),
+      integer       = build_int_expr_ast(rule_mtc),
+      float         = get_float_lit(rule_mtc),
+      string        = build_string_expr_ast(rule_mtc),
+      set           = syn_set_expr((build_data_expr_ast(n) : n <- rep_rule_nodes(block_node(rule_mtc)))),
+      seq           = syn_seq_expr((build_data_expr_ast(n) : n <- rep_rule_nodes(block_node(rule_mtc)))),
+      empty_map     = syn_map_expr(()),
+      map           = build_map_expr_ast(rule_mtc),
+      record        = build_record_expr_ast(rule_mtc),
+      tag_obj       = build_tag_obj_expr_ast(rule_mtc),
+      tag_rec       = build_tag_rec_expr_ast(rule_mtc),
+      expr          = build_expr_ast(block_node(rule_seq_node(rule_mtc, 1)));
+
+
+    SynExpr build_int_expr_ast(RuleMatch mtc)
+    {
+      nodes = rule_seq_nodes(mtc); assert length(nodes) == 2;
+      value = get_integer(nodes[1]);
+      value = -value if nodes[0] != null_match;
+      return object(value);
+    }
+
+
+    SynExpr build_string_expr_ast(RuleMatch mtc) =
+      syn_tag_obj_expr(object(:string), syn_seq_expr((object(ch) : ch <- raw_str(get_string(mtc)))));
+
+
+    SynExpr build_map_expr_ast(RuleMatch mtc) =
+      syn_map_expr((
+        [ key:    build_data_expr_ast(rule_seq_node(n, 0)),
+          value:  build_data_expr_ast(rule_seq_node(n, 2))
+        ] : n <- rep_rule_nodes(block_node(mtc))
+      ));
+
+
+    SynExpr build_record_expr_ast(RuleMatch mtc) =
+      syn_map_expr((
+        [ key:    object(get_lowercase_id(rule_seq_node(n, 0))),
+          value:  build_data_expr_ast(rule_seq_node(n, 2))
+        ] : n <- rep_rule_nodes(block_node(mtc))
+      ));
+
+
+    SynExpr build_tag_obj_expr_ast(RuleMatch mtc)
+    {
+      nodes = rule_seq_nodes(mtc); assert length(nodes) == 2;
+      tag = object(get_lowercase_id(nodes[0]));
+      objs = (build_data_expr_ast(n) : n <- rep_rule_nodes(block_node(nodes[1])));
+      obj = if length(objs) > 1 then syn_seq_expr(objs) else only_item(objs);
+      return syn_tag_obj_expr(tag, obj);
+    }
+
+
+    SynExpr build_tag_rec_expr_ast(RuleMatch mtc)
+    {
+      nodes = rule_seq_nodes(mtc); assert length(nodes) == 2;
+      tag = object(get_lowercase_id(nodes[0]));
+      obj = build_record_expr_ast(nodes[1]);
+      return syn_tag_obj_expr(tag, obj);
+    }
   }
 
   ////////////////////////////////////////////////////////////////////////////////
