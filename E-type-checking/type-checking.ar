@@ -49,12 +49,7 @@ using
   [TypeCheckingError] typecheck(Expr expr, Type exp_type)
   {
     errs = typecheck_without_annotations(expr, exp_type);
-    return [annotate(err, expr) : err <- errs];
-
-
-    TypeCheckingError annotate(TypeCheckingError err, Expr expr):
-      annotated_expr_error()  = err,
-      _                       = annotated_expr_error(err, expr);
+    return [add_anchor_if_needed(err, expr) : err <- errs];
 
 
     [TypeCheckingError] typecheck_without_annotations(Expr expr, Type exp_type):
@@ -403,7 +398,10 @@ using
     return errs if errs != [];
     ts = (expr_type(e) : e <- exprs);
     for c <- cases:
-      case_errs = seq_union(([ptrn_cannot_match_type(p, t) if t != empty_type and not may_match(p, t)] : p, t <- zip(c.ptrns, ts)));
+      case_errs = seq_union(([
+          add_anchor_if_needed(ptrn_cannot_match_type(p, t), p) if t != empty_type and not may_match(p, t)
+        ] : p, t <- zip(c.ptrns, ts)
+      ));
       errs = errs & case_errs;
       if case_errs == []:
         new_env = update_environment(exprs, c.ptrns);
@@ -548,23 +546,30 @@ using
   }
 
 
-  [TypeCheckingError] typecheck(Statement stmt, Type exp_type):
-    assignment_stmt()   = typecheck_assignment_stmt(stmt.vars, stmt.value),
-    return_stmt(e?)     = typecheck(e, exp_type),
-    if_stmt()           = typecheck_if_stmt(stmt.cond, stmt.body, stmt.else, exp_type),
-    loop_stmt(ss?)      = typecheck_loop_stmt(ss, exp_type),
-    foreach_stmt()      = { maybe_idx_var = if stmt.idx_var? then just(stmt.idx_var) else nil;
-                            return typecheck_foreach_stmt(stmt.vars, maybe_idx_var, stmt.values, stmt.body, exp_type);
-                          },
-    for_stmt()          = { maybe_var = if stmt.var? then just(stmt.var) else nil;
-                            return typecheck_for_stmt(maybe_var, stmt.start_val,
-                              stmt.end_val, stmt.end_val_incl, stmt.body, exp_type);
-                          },
-    let_stmt()          = typecheck_let_stmt(stmt.asgnms, stmt.body, exp_type),
-    break_stmt          = [],
-    fail_stmt           = [],
-    assert_stmt()       = typecheck(stmt.cond, type_bool),
-    print_stmt(e?)      = typecheck(e, type_any);
+  [TypeCheckingError] typecheck(Statement stmt, Type exp_type)
+  {
+    errs = typecheck_without_annotations(stmt, exp_type);
+    return [add_anchor_if_needed(e, stmt) : e <- errs];
+
+
+    [TypeCheckingError] typecheck_without_annotations(Statement stmt, Type exp_type):
+      assignment_stmt()   = typecheck_assignment_stmt(stmt.vars, stmt.value),
+      return_stmt(e?)     = typecheck(e, exp_type),
+      if_stmt()           = typecheck_if_stmt(stmt.cond, stmt.body, stmt.else, exp_type),
+      loop_stmt(ss?)      = typecheck_loop_stmt(ss, exp_type),
+      foreach_stmt()      = { maybe_idx_var = if stmt.idx_var? then just(stmt.idx_var) else nil;
+                              return typecheck_foreach_stmt(stmt.vars, maybe_idx_var, stmt.values, stmt.body, exp_type);
+                            },
+      for_stmt()          = { maybe_var = if stmt.var? then just(stmt.var) else nil;
+                              return typecheck_for_stmt(maybe_var, stmt.start_val,
+                                stmt.end_val, stmt.end_val_incl, stmt.body, exp_type);
+                            },
+      let_stmt()          = typecheck_let_stmt(stmt.asgnms, stmt.body, exp_type),
+      break_stmt          = [],
+      fail_stmt           = [],
+      assert_stmt()       = typecheck(stmt.cond, type_bool),
+      print_stmt(e?)      = typecheck(e, type_any);
+  }
 
 
   [TypeCheckingError] typecheck_assignment_stmt(Var+ vars, Expr value)
@@ -660,15 +665,22 @@ using
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  [TypeCheckingError] typecheck(Clause cls):
-    set_elem_clause()   = typecheck(cls.src, type_set),
-    map_entry_clause()  = typecheck(cls.src, type_map),
-    seq_elem_clause()   = typecheck(cls.src, type_seq),
-    and_clause()        = typecheck_and_clause(cls.left, cls.right),
-    or_clause()         = typecheck(cls.left) & typecheck(cls.right),
-    match_clause()      = typecheck_match_clause(cls.ptrn, cls.expr),
-    asgnm_clause()      = typecheck(cls.expr, type_any),
-    filter_clause(e?)   = typecheck(e, type_bool);
+  [TypeCheckingError] typecheck(Clause cls)
+  {
+    errs = typecheck_without_annotations(cls);
+    return [add_anchor_if_needed(e, cls) : e <- errs];
+
+
+    [TypeCheckingError] typecheck_without_annotations(Clause cls):
+      set_elem_clause()   = typecheck(cls.src, type_set),
+      map_entry_clause()  = typecheck(cls.src, type_map),
+      seq_elem_clause()   = typecheck(cls.src, type_seq),
+      and_clause()        = typecheck_and_clause(cls.left, cls.right),
+      or_clause()         = typecheck(cls.left) & typecheck(cls.right),
+      match_clause()      = typecheck_match_clause(cls.ptrn, cls.expr),
+      asgnm_clause()      = typecheck(cls.expr, type_any),
+      filter_clause(e?)   = typecheck(e, type_bool);
+  }
 
 
   [TypeCheckingError] typecheck_and_clause(Clause left, Clause right)

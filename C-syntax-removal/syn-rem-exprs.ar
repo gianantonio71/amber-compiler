@@ -10,7 +10,11 @@ using
   [(FnSymbol, Nat) -> Nat*]                       fn_arg_arities;
 
 
-  Expr desugar_expr(SynExpr expr, [Var] def_vars):
+  Expr desugar_expr(SynExpr syn_expr, [Var] def_vars) =
+    transfer_attachments(desugar_expr_plain(syn_expr, def_vars), syn_expr);
+
+
+  Expr desugar_expr_plain(SynExpr expr, [Var] def_vars):
     object()            = expr,
     float_lit()         = expr,
     seq_expr(ses?)      = desugar_seq_expr(ses, def_vars),
@@ -310,16 +314,22 @@ using
 
   //## REMEMBER TO CHECK THAT ALL VAR_PTRN() WITH A "BOUND" VARIABLE
   //## DON'T HAVE A PATTERN ASSOCIATED WITH THAT VARIABLE
-  
-  Clause desugar_clause(SynClause cls, [Var] def_vars):
-    set_elem_clause()   = set_elem_clause(cls.var, desugar_expr(cls.src, def_vars)),
-    map_entry_clause()  = map_entry_clause(cls.key_var, cls.value_var, desugar_expr(cls.src, def_vars)),
-    seq_elem_clause()   = seq_elem_clause(cls.var, desugar_expr(cls.src, def_vars)),
-    and_clause(cs?)     = mk_and_clause(cs, def_vars),
-    or_clause()         = or_clause(desugar_clause(cls.left, def_vars), desugar_clause(cls.right, def_vars)),
-    match_clause()      = match_clause(desugar_ptrn(cls.ptrn), desugar_expr(cls.expr, def_vars)),
-    asgnm_clause()      = asgnm_clause(cls.var, desugar_expr(cls.expr, def_vars)),
-    filter_clause()     = filter_clause(desugar_expr(cls.cond, def_vars));
+
+
+  Clause desugar_clause(SynClause cls, [Var] def_vars)
+  {
+    return transfer_attachments(desugar(cls, def_vars), cls);
+
+    Clause desugar(SynClause cls, [Var] def_vars):
+      set_elem_clause()   = set_elem_clause(cls.var, desugar_expr(cls.src, def_vars)),
+      map_entry_clause()  = map_entry_clause(cls.key_var, cls.value_var, desugar_expr(cls.src, def_vars)),
+      seq_elem_clause()   = seq_elem_clause(cls.var, desugar_expr(cls.src, def_vars)),
+      and_clause(cs?)     = mk_and_clause(cs, def_vars),
+      or_clause()         = or_clause(desugar_clause(cls.left, def_vars), desugar_clause(cls.right, def_vars)),
+      match_clause()      = match_clause(desugar_ptrn(cls.ptrn), desugar_expr(cls.expr, def_vars)),
+      asgnm_clause()      = asgnm_clause(cls.var, desugar_expr(cls.expr, def_vars)),
+      filter_clause()     = filter_clause(desugar_expr(cls.cond, def_vars));
+  }
 
   ////////////////////////////////////////////////////////////////////////////////
 
@@ -338,7 +348,11 @@ using
   }
 
 
-  Statement desugar_stmt(SynStmt stmt, [Var] def_vars):
+  Statement desugar_stmt(SynStmt stmt, [Var] def_vars) =
+    transfer_attachments(desugar_stmt_plain(stmt, def_vars), stmt);
+
+
+  Statement desugar_stmt_plain(SynStmt stmt, [Var] def_vars):
     assignment_stmt()         = assignment_stmt(stmt.vars, desugar_expr(stmt.value, def_vars)),
     imp_update_stmt()         = imp_update_stmt(stmt.obj, desugar_expr(stmt.idx, def_vars), desugar_expr(stmt.value, def_vars)),
     return_stmt(e?)           = return_stmt(desugar_expr(e, def_vars)),
@@ -454,20 +468,25 @@ using
 
   ////////////////////////////////////////////////////////////////////////////////
 
-  Pattern desugar_ptrn(SynPtrn ptrn):
-    ptrn_symbol             = ptrn,
-    ptrn_float              = ptrn,
-    ptrn_any                = ptrn,
-    ptrn_seq                = ptrn_seq,
-    ptrn_set                = ptrn_set,
-    ptrn_map                = ptrn_map,
-    ptrn_symbol()           = ptrn,
-    ptrn_integer(integer)   = ptrn_integer,
-    ptrn_integer(int_obj?)  = ptrn_integer(int_obj),
-    ptrn_tuple(ps?)         = ptrn_tuple((desugar_ptrn(p) : p <- ps)),
-    ptrn_tag_obj            = ptrn_tag_obj(ptrn_symbol, ptrn_any),
-    ptrn_tag_obj()          = ptrn_tag_obj(ptrn.tag, desugar_ptrn(ptrn.obj)),
-    ptrn_var()              = ptrn_var(ptrn.var, desugar_ptrn(ptrn.ptrn)),
-    ptrn_type(type?)        = type_to_pattern(syn_type_to_type(type, nil), typedefs),
-    ptrn_union(ps?)         = ptrn_union(set((desugar_ptrn(p) : p <- ps)));
+  Pattern desugar_ptrn(SynPtrn ptrn)
+  {
+    return transfer_attachments(desugar(ptrn), ptrn);
+
+    Pattern desugar(SynPtrn ptrn):
+      ptrn_symbol             = ptrn,
+      ptrn_float              = ptrn,
+      ptrn_any                = ptrn,
+      ptrn_seq                = ptrn_seq,
+      ptrn_set                = ptrn_set,
+      ptrn_map                = ptrn_map,
+      ptrn_symbol()           = ptrn,
+      ptrn_integer(integer)   = ptrn_integer,
+      ptrn_integer(int_obj?)  = ptrn_integer(int_obj),
+      ptrn_tuple(ps?)         = ptrn_tuple((desugar_ptrn(p) : p <- ps)),
+      ptrn_tag_obj            = ptrn_tag_obj(ptrn_symbol, ptrn_any),
+      ptrn_tag_obj()          = ptrn_tag_obj(ptrn.tag, desugar_ptrn(ptrn.obj)),
+      ptrn_var()              = ptrn_var(ptrn.var, desugar_ptrn(ptrn.ptrn)),
+      ptrn_type(type?)        = type_to_pattern(syn_type_to_type(type, nil), typedefs),
+      ptrn_union(ps?)         = ptrn_union(set((desugar_ptrn(p) : p <- ps)));
+  }
 }

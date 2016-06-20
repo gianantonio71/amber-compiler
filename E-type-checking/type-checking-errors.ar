@@ -35,7 +35,7 @@ type TypeCheckingError =
   invalid_cls_param_type(actual_type: ClsType, expected_type: ClsType),
   loop_did_not_converge(iteractions: NzNat),
   ptrn_cannot_match_type(pattern: Pattern, type: Type),
-  annotated_expr_error(error: TypeCheckingError, expr: Expr);
+  annotated_error(error: TypeCheckingError, anchor: Any);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -100,7 +100,7 @@ TypeCheckingError loop_did_not_converge(NzNat nis) = loop_did_not_converge(itera
 
 TypeCheckingError ptrn_cannot_match_type(Pattern p, Type t) = ptrn_cannot_match_type(pattern: p, type: t);
 
-TypeCheckingError annotated_expr_error(TypeCheckingError err, Expr expr) = annotated_expr_error(error: err, expr: expr);
+TypeCheckingError annotated_error(TypeCheckingError e, Any a) = annotated_error(error: e, anchor: a);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -111,6 +111,11 @@ using [TypeName -> Type] typedefs
     unexpected_actual_type(at, et) if not is_subset(at, et)
   ];
 }
+
+
+TypeCheckingError add_anchor_if_needed(TypeCheckingError err, Any anchor):
+  annotated_error()  = err,
+  _                  = if _fetch_(anchor) != [] then annotated_error(err, anchor) else err;
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -127,9 +132,11 @@ String* create_error_msgs(FnDef fndef, [+TypeCheckingError] errs)
 (String, NzNat, NzNat) source_code_location(FnDef fndef) //## THERE'S AN ALMOST IDENTICAL FUNCTION IN WELL-FORMEDNESS CHECKING
 {
   data = _fetch_(fndef);
-  print data if not data :: [(String, NzNat, NzNat)] or size(data) != 1;
-  fail if not data :: [(String, NzNat, NzNat)];
-  return only_element(data);
+  filtered_data = [e : e <- data, e :: (String, NzNat, NzNat)];
+  return only_element(filtered_data) if size(filtered_data) == 1;
+  err_msg = "CANNOT DETERMINE ERROR POSITION WITHIN SOURCE FILE";
+  err_msg = err_msg & ": " & printed(data) if data != [];
+  return (err_msg, 1, 1);
 }
 
 
@@ -163,6 +170,7 @@ String* create_error_msg(TypeCheckingError err):
                                           "  Expected type: " & user_repr(err.formal_type),
                                           "  Actual type: " & user_repr(err.actual_type)
                                         ),
+
   invalid_return_type()               = ( "Invalid return type.",
                                           "  Expected type: " & user_repr(err.expected_type),
                                           "  Actual type: " & user_repr(err.actual_type)
@@ -173,7 +181,7 @@ String* create_error_msg(TypeCheckingError err):
   invalid_cls_param_type()            = ("Invalid closure parameter type. Actual type: " & user_repr(err.actual_type) & " Expected type: " & user_repr(err.expected_type)),
   loop_did_not_converge()             = ("Cannot infer types of variables updated in loop"),
   ptrn_cannot_match_type()            = ("Pattern cannot match type: " & user_repr(err.pattern)),
-  annotated_expr_error()              = create_annotated_expr_error_msg(err.error, err.expr);
+  annotated_error()                   = create_annotated_error_msg(err.error, err.anchor);
 
 
 String* create_no_dispatchable_function_found_error_msg(FnSymbol name, NzNat arity, [+FnType] signatures, Maybe[Type]* par_types)
@@ -196,17 +204,23 @@ String* create_invalid_params_types_error_msg(FnSymbol fn_name, FnType signature
 }
 
 
-String* create_annotated_expr_error_msg(TypeCheckingError error, Expr expr)
+String* create_annotated_error_msg(TypeCheckingError error, Any anchor)
 {
   err_msg = create_error_msg(error);
   return ("Internal compiler error") if err_msg == ();
-  attached_info = _fetch_(expr);
-  if size(attached_info) == 1 and attached_info :: [+((NzNat, NzNat), (NzNat, NzNat))]:
-    start_pos, end_pos = only_element(attached_info);
+  attached_info = _fetch_(anchor);
+  // if size(attached_info) == 1 and attached_info :: [+((NzNat, NzNat), (NzNat, NzNat))]:
+  if attached_info :: [+((NzNat, NzNat), (NzNat, NzNat))]:
+    start_pos, end_pos = an_elem(attached_info);
     start_line = left(start_pos);
     end_line = left(end_pos);
     line_info = "Line" & if start_line == end_line then " " & printed(start_line) else "s " & printed(start_line) & "-" & printed(end_line);
     err_msg = (if i == 0 then line_info & ": " & l else l : l @ i <- err_msg);
+  ;
+  if size(attached_info) != 1:
+    err_msg_extra_line = "CANNOT DETERMINE ERROR POSITION WITHIN SOURCE FILE";
+    err_msg_extra_line = err_msg_extra_line & ": " & printed(attached_info) if attached_info != [];
+    err_msg = (err_msg | err_msg_extra_line);
   ;
   return err_msg;
 }
