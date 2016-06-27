@@ -169,6 +169,11 @@ using
     cls_call()          = gen_eval_code_for_cls_call(expr.name, expr.params, res_var),
     builtin_call()      = gen_eval_code_for_builtin_call(expr.name, expr.params, res_var),
 
+    incl_test_or_lookup() = gen_eval_code_for_incl_test_or_lookup_expr(expr.collection, expr.value, res_var),
+    map_search()        = gen_eval_code_for_map_search_expr(expr.map, expr.key, expr.value, res_var),
+    key_search()        = gen_eval_code_for_key_search_expr(expr.map, expr.key, res_var),
+    singl_only_elem()   = gen_eval_code_for_singl_only_elem(expr.set, res_var),
+
     and_expr()          = gen_eval_code_for_and_expr(expr.left, expr.right, res_var),
     or_expr()           = gen_eval_code_for_or_expr(expr.left, expr.right, res_var),
     not_expr(e?)        = gen_eval_code_for_not_expr(e, res_var),
@@ -410,6 +415,57 @@ using
   }
 
 
+  Instr+ gen_eval_code_for_incl_test_or_lookup_expr(Expr collection, Expr value, EvalDestVar res_var)
+  {
+    info = gen_eval_info((collection, value));
+    coll_expr = info.exprs[0];
+    value_expr = info.exprs[1];
+    return (info.eval_code | set_var(res_var, search_or_lookup(coll_expr, value_expr)));
+  }
+
+
+  Instr+ gen_eval_code_for_map_search_expr(Expr map, Expr key, Expr value, EvalDestVar res_var)
+  {
+    info = gen_eval_info((map, key, value));
+    map_expr = info.exprs[0];
+    key_expr = info.exprs[1];
+    value_expr = info.exprs[2];
+    found_var = bvar(next_bool_var_id);
+    tmp_var = lvar(info.next_var_id);
+    return (set_var(res_var, obj_false)) if map_expr == empty_map;
+    fail if not map_expr :: StdObjVar;
+    return (
+      info.eval_code |
+      lookup(found_var, tmp_var, map_expr, key_expr),
+      branch(
+        found_var,
+        (set_var(res_var, bool_obj(is_eq(tmp_var, value_expr)))),
+        (set_var(res_var, obj_false))
+      )
+    );
+  }
+
+
+  Instr+ gen_eval_code_for_key_search_expr(Expr map, Expr key, EvalDestVar res_var)
+  {
+    info = gen_eval_info((map, key));
+    map_expr = info.exprs[0];
+    key_expr = info.exprs[1];
+    found_var = bvar(next_bool_var_id);
+    unused_var = lvar(info.next_var_id);
+    return (set_var(res_var, obj_false)) if map_expr == empty_map;
+    fail if not map_expr :: StdObjVar;
+    return (info.eval_code | lookup(found_var, unused_var, map_expr, key_expr), set_var(res_var, bool_obj(found_var)));
+  }
+
+
+  Instr+ gen_eval_code_for_singl_only_elem(Expr set, EvalDestVar res_var)
+  {
+    info = gen_eval_info(set);
+    return (info.eval_code | check(is_eq(get_set_size(info.expr), 1)), set_var(res_var, rand_elem(info.expr)));
+  }
+
+
   Instr+ gen_eval_code_for_and_expr(Expr left_expr, Expr right_expr, EvalDestVar res_var)
   {
     tmp_var, next_var_id = pick_temp_var(res_var);
@@ -547,7 +603,7 @@ using
 
   Instr+ gen_eval_code_for_ex_qual_expr(Clause source, Expr cond, EvalDestVar res_var)
   {
-    action = action(filter_clause(cond), set_found_var_and_leave(res_var));
+    action = match_action(filter_clause(cond), set_found_var_and_leave(res_var));
     code = gen_clause_code(source, [], action);
     return (set_var(res_var, obj_false), execute_block(code));
   }
@@ -980,11 +1036,11 @@ using
   }
 
 
-  Instr+ gen_code_for_auto_set_input_stmt(LocAutoVar var, Atom input, Maybe[Expr] value)
+  Instr+ gen_code_for_auto_set_input_stmt(LocAutoVar var, Atom input, Maybe[Expr] maybe_value)
   {
     auto_type = auto_vars_types[var];
-    if value != nil:
-      val_info = gen_eval_info(value(value));
+    if maybe_value != nil:
+      val_info = gen_eval_info(value(maybe_value));
       return nonempty(val_info.eval_code & (set_input(var, auto_type, input, just(val_info.expr))));
     else
       return (set_input(var, auto_type, input, nil));

@@ -10,7 +10,7 @@
   assignment_stmt() = set(stmt.vars),
   if_stmt()         = {
     bodies = [b.body : b <- set(stmt.branches)] & [stmt.else];
-    return intersection([syn_new_vars(ss) : ss <- bodies, not never_falls_through(ss)]);
+    return intersection([syn_new_vars(ss) : ss <- bodies, syn_may_fall_through(ss)]);
   },
   let_stmt()        = syn_new_vars(stmt.body),
   proc_call()       = [stmt.res_var if stmt.res_var?],
@@ -105,71 +105,68 @@ PseudoType syn_pseudotype(SynType type, [TypeName -> Type] typedefs) = pseudotyp
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-Bool syn_is_last_for_sure(SynStmt stmt):
-  return_stmt()       = true,
-  fail_stmt           = true,
-  if_stmt()           = all((at_least_one((syn_is_last_for_sure(s) : s <- b.body)) : b <- stmt.branches))
-                        and at_least_one((syn_is_last_for_sure(s) : s <- stmt.else)),
-  inf_loop_stmt(ss?)  = none((syn_can_break_loop(s) : s <- ss)),
-  //:break_stmt         = //## NOT SURE HERE
-  let_stmt()          = at_least_one((syn_is_last_for_sure(s) : s <- stmt.body)),
-  _                   = false;
-
-
-Bool syn_can_break_loop(SynStmt stmt):
-  break_stmt  = true,
-  if_stmt()   = at_least_one((at_least_one((syn_can_break_loop(s) : s <- b.body)) : b <- stmt.branches))
-                or at_least_one((syn_can_break_loop(s) : s <- stmt.else)),
-  _           = false;
-
-
-Bool has_top_level_break(SynStmt* stmts)
+//## THIS IS JUST A COPY OF THE CORRENSPONDING FUNCTIONS FOR CORE/LEVEL 2 STATEMENTS
+//## IS THERE A WAY TO WRITE THEM JUST ONCE?
+[+StmtOutcome] syn_outcomes(SynStmt* stmts)
 {
+  os = [:falls_through];
   for s <- stmts:
-    return true if s == :break_stmt;
-
-    if s :: SynIfStmt: //## BAD BAD BAD
-      //## BAD BAD BAD A LOOP SHOULD NOT BE NECESSARY HERE
-      for b <- s.branches:
-        return true if has_top_level_break(b.body);
-      ;
-      return true if has_top_level_break(s.else);
-    ;
+    os = {os - [:falls_through]} & syn_outcomes(s);
+    break if not in(:falls_through, os);
   ;
-
-  return false;
+  return nonempty(os);
 }
 
 
-Bool never_falls_through(SynStmt stmt):
-  return_stmt()       = true,
-  fail_stmt           = true,
+[+StmtOutcome] syn_outcomes(SynStmt stmt):
+  return_stmt           = [:returns],
+  return_stmt()         = [:fails, :returns],
+  if_stmt()             = nonempty(
+                            [:fails] & syn_outcomes(stmt.else) & seq_union((syn_outcomes(b.body) : b <- stmt.branches))
+                          ),
+  loop_stmt(body?)      = loop_stmt_syn_outcomes(stmt.skip_first, stmt.body),
+  inf_loop_stmt(ss?)    = inf_loop_stmt_syn_outcomes(ss),
+  for_stmt()            = [:fails, :falls_through, :returns if in(:returns, syn_outcomes(stmt.body))],
+  let_stmt()            = nonempty([:fails] & syn_outcomes(stmt.body)),
+  break_stmt            = [:breaks],
+  fail_stmt             = [:fails],
+  assignment_stmt()     |
+  assert_stmt()         |
+  print_stmt()          |
+  imp_update_stmt()     |
+  set_memb_var_stmt()   |
+  method_call_stmt()    |
+  proc_call()           |
+  auto_set_input_stmt() |
+  auto_update_stmt()    = [:falls_through, :fails];
 
-  inf_loop_stmt(ss?)  = not has_top_level_break(ss),
 
-  if_stmt()           = { for b <- stmt.branches: //## BAD BAD BAD A LOOP SHOULDN'T BE NEEDED
-                            return false if not never_falls_through(b.body);
-                          ;
-                          return never_falls_through(stmt.else);
-                        },
-
-  let_stmt()          = never_falls_through(stmt.body),
-
-  //## WHY DID I DO THIS? IT MAKES NO SENSE...
-  //loop_stmt()       = never_falls_through(stmt.body),
-  //for_stmt()        = never_falls_through(stmt.body), //## BAD
-
-  _                   = false;
-
-
-//## BAD BAD BAD A LOOP SHOULDN'T BE NEEDED
-Bool never_falls_through(SynStmt* stmts)
+[+StmtOutcome] loop_stmt_syn_outcomes(Bool skip_first, SynStmt+ body)
 {
-  for s <- stmts:
-    return true if never_falls_through(s);
-  ;
-  return false;
+  os = syn_outcomes(body);
+  return [
+    :falls_through  if in(:falls_through, os) or in(:breaks, os) or not skip_first,
+    :returns        if in(:returns, os),
+    :fails
+  ];
 }
+
+
+[+StmtOutcome] inf_loop_stmt_syn_outcomes(SynStmt+ body)
+{
+  os = syn_outcomes(body);
+  return nonempty([
+    :falls_through  if in(:breaks, os),
+    :returns        if in(:returns, os),
+    :fails          if in(:fails, os) or in(:falls_through, os)
+  ]);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+Bool syn_may_fall_through(SynStmt stmt) = in(:falls_through, syn_outcomes(stmt));
+
+Bool syn_may_fall_through(SynStmt* stmts) = in(:falls_through, syn_outcomes(stmts));
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////

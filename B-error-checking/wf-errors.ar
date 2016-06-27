@@ -4,6 +4,7 @@ type WFError            = dupl_typedef((SynAnyTypedef, SynAnyTypedef)),
                           signature_errors(sgn: SynSgn, errors: TypeWFError+),
                           incomp_pos_args(fndefs: (SynFnDef, SynFnDef), arg_indexes: Nat+),
                           overlapping_pos_args_types((SynFnDef, SynFnDef)),
+                          incomp_named_args(fd1: SynFnDef, fd2: SynFnDef, nargs1: [Atom], nargs2: [Atom]),
                           fndef_errors(fndef: SynFnDef, errors: FnDefWFError+),
                           proc_def_errors(proc_def: SynProcDef, errors: ProcDefWFError+),
                           same_name_proc_defs(SynProcDef+);
@@ -24,7 +25,7 @@ type ExprSpecWFError    = already_def_var(Var),
                           missing_named_arg(NamedArg),
                           invalid_named_arg_arity(arg: NamedArg, exp_arity: Nat, actual_arity: Nat),
                           undef_impl_cls_arg(ClsPar),
-                          dupl_named_args(expr: SynFnCall, bad_args: [+NamedArg]),
+                          duplicate_named_args(expr: SynFnCall, bad_args: [+NamedArg]),
                           wrong_fn_arity(expr: SynFnCall, actual_arities: [+Nat]),
                           calling_unknown_function(SynFnCall),
                           wrong_cls_arg_arity(expr: ConstOrVar, exp_arity: NzNat, arities: [+Nat]),
@@ -45,6 +46,7 @@ type ExprSpecWFError    = already_def_var(Var),
                           proc_call_not_allowed(SynProcCallStmt),
                           break_outside_loop(SynBreakStmt),
                           missing_ret_stmt(SynStmt+),
+                          unreachable_stmt(SynStmt),
 
                           auto_var_not_defined(var: AnyAutoVar, is_other_var_type: Bool),
                           unknown_input(name: Atom, automaton: SynAutoDef),
@@ -65,12 +67,13 @@ type ProcDefWFError     = ExprWFError, GenDefSpecWFError, ProcDefSpecWFError;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-WFError dupl_typedef(SynAnyTypedef td1, SynAnyTypedef td2)        = :dupl_typedef((td1, td2));
+WFError dupl_typedef(SynAnyTypedef td1, SynAnyTypedef td2)      = :dupl_typedef((td1, td2));
 WFError typedef_errors(SynAnyTypedef td, TypeWFError+ errs)     = typedef_errors(typedef: td, errors: errs);
-WFError dupl_using_block_param(SynSgn s1, SynSgn s2)              = :dupl_using_block_param((s1, s2));
+WFError dupl_using_block_param(SynSgn s1, SynSgn s2)            = :dupl_using_block_param((s1, s2));
 WFError signature_errors(SynSgn s, TypeWFError+ es)             = signature_errors(sgn: s, errors: es);
 WFError incomp_pos_args(SynFnDef fd1, SynFnDef fd2, Nat+ is)    = incomp_pos_args(fndefs: (fd1, fd2), arg_indexes: is);
-WFError overlapping_pos_args_types(SynFnDef fd1, SynFnDef fd2)    = :overlapping_pos_args_types((fd1, fd2));
+WFError overlapping_pos_args_types(SynFnDef fd1, SynFnDef fd2)  = :overlapping_pos_args_types((fd1, fd2));
+WFError incomp_named_args(SynFnDef fd1, SynFnDef fd2, [Atom] nas1, [Atom] nas2) = incomp_named_args(fd1: fd1, fd2: fd2, nargs1: nas1, nargs2: nas2);
 WFError fndef_errors(SynFnDef fd, FnDefWFError+ errs)           = fndef_errors(fndef: fd, errors: errs);
 WFError proc_def_errors(SynProcDef pd, ProcDefWFError+ es)      = proc_def_errors(proc_def: pd, errors: es);
 WFError same_name_proc_defs(SynProcDef+ pds)                    = :same_name_proc_defs(pds);
@@ -81,10 +84,10 @@ TypeWFError invalid_int_range(<syn_int_range(min: Int, max: Int)> t)  = :invalid
 TypeWFError undef_type_var(TypeVar v)                                 = :undef_type_var(v);
 TypeWFError invalid_tag_type(SynType t)                               = :invalid_tag_type(t);
 TypeWFError undef_type(BasicTypeSymbol ts)                            = :undef_type(ts);
-TypeWFError undef_type_arity(BasicTypeSymbol ts, Nat a, [+Nat] as)      = undef_type_arity(type_symb: ts, arity: a, actual_arities: as);
+TypeWFError undef_type_arity(BasicTypeSymbol ts, Nat a, [+Nat] as)    = undef_type_arity(type_symb: ts, arity: a, actual_arities: as);
 TypeWFError dupl_record_field(SynRecordField f1, SynRecordField f2)   = :dupl_record_field((f1, f2));
 TypeWFError type_var_in_union(TypeVar v)                              = :type_var_in_union(v);
-TypeWFError type_vars_not_allowed(SynType t, [+TypeVar] vs)             = type_vars_not_allowed(type: t, vars: vs);
+TypeWFError type_vars_not_allowed(SynType t, [+TypeVar] vs)           = type_vars_not_allowed(type: t, vars: vs);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -110,7 +113,7 @@ ExprSpecWFError invalid_named_arg(NamedArg p)                           = :inval
 ExprSpecWFError missing_named_arg(NamedArg p)                           = :missing_named_arg(p);
 ExprSpecWFError invalid_named_arg_arity(NamedArg p, Nat ea, Nat aa)     = invalid_named_arg_arity(arg: p, exp_arity: ea, actual_arity: aa);
 ExprSpecWFError undef_impl_cls_arg(ClsPar p)                            = :undef_impl_cls_arg(p);
-ExprSpecWFError dupl_named_args(SynFnCall c, [+NamedArg] ps)            = dupl_named_args(expr: c, bad_args: ps);
+ExprSpecWFError duplicate_named_args(SynFnCall c, [+NamedArg] ps)       = duplicate_named_args(expr: c, bad_args: ps);
 ExprSpecWFError wrong_fn_arity(SynFnCall c, [+Nat] as)                  = wrong_fn_arity(expr: c, actual_arities: as);
 ExprSpecWFError calling_unknown_function(SynFnCall c)                   = :calling_unknown_function(c);
 ExprSpecWFError wrong_cls_arg_arity(ConstOrVar e, NzNat ea, [+Nat] as)  = wrong_cls_arg_arity(expr: e, exp_arity: ea, arities: as);
@@ -131,6 +134,9 @@ ExprSpecWFError undef_proc(SynProcCallStmt s)                               = :u
 ExprSpecWFError proc_call_not_allowed(SynProcCallStmt s)                    = :proc_call_not_allowed(s);
 ExprSpecWFError break_outside_loop(SynBreakStmt s)                          = :break_outside_loop(s);
 ExprSpecWFError missing_ret_stmt(SynStmt+ ss)                               = :missing_ret_stmt(ss);
+ExprSpecWFError unreachable_stmt(SynStmt s)                                 = :unreachable_stmt(s);
+
+
 
 ExprSpecWFError auto_var_not_defined(AnyAutoVar v, Bool b)  = auto_var_not_defined(var: v, is_other_var_type: b);
 ExprSpecWFError unknown_input(Atom n, SynAutoDef a)         = unknown_input(name: n, automaton: a);
@@ -151,7 +157,7 @@ Any anchor_obj(ExprSpecWFError err):
   missing_named_arg()               = nil,
   invalid_named_arg_arity()         = nil,
   undef_impl_cls_arg(p?)            = nil,
-  dupl_named_args()                 = err.expr,
+  duplicate_named_args()            = err.expr,
   wrong_fn_arity()                  = err.expr,
   calling_unknown_function(c?)      = c,
   wrong_cls_arg_arity()             = err.expr,
@@ -172,6 +178,7 @@ Any anchor_obj(ExprSpecWFError err):
   proc_call_not_allowed()           = {fail;},
   break_outside_loop(s?)            = s,
   missing_ret_stmt(ss?)             = head(ss),
+  unreachable_stmt(s?)              = s,
 
   auto_var_not_defined()            = nil,
   unknown_input()                   = nil,
@@ -180,14 +187,14 @@ Any anchor_obj(ExprSpecWFError err):
 
 ////////////////////////////////////////////////////////////////////////////////
 
-ExprWFError attach_anchor_obj_if_needed(ExprWFError error, SynExpr anchor_obj)
+ExprWFError attach_anchor_obj_if_needed(ExprWFError error, SynExpr anchor)
 {
   obj = anchor_obj(error);
   att = _fetch_(obj);
   return error if att != [];
-  new_att = _fetch_(anchor_obj);
+  new_att = _fetch_(anchor);
   return error if new_att == [];
-  return annotated_syn_expr_error(error, anchor_obj);
+  return annotated_syn_expr_error(error, anchor);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -246,6 +253,7 @@ String* create_error_msg(WFError err):
   signature_errors()                  = create_signature_errors_err_msg(err.sgn, err.errors),
   incomp_pos_args()                   = create_incomp_pos_pars_err_msg(left(err.fndefs), right(err.fndefs), err.arg_indexes),
   overlapping_pos_args_types(fds?)    = create_overlapping_pos_pars_types_err_msg(left(fds), right(fds)),
+  incomp_named_args()                 = create_incomp_named_args_err_msg(err.fd1, err.fd2, err.nargs1, err.nargs2),
   fndef_errors()                      = create_fndef_errs_msg(err.fndef, err.errors),
   proc_def_errors()                   = create_proc_def_errs_msg(err.proc_def, err.errors),
   same_name_proc_defs(pds?)           = create_same_name_proc_defs_err_msg(pds);
@@ -276,6 +284,18 @@ String* create_incomp_pos_pars_err_msg(SynFnDef fd1, SynFnDef fd2, Nat+ par_idxs
     "    " & source_code_loc_str(fd1),
     "    " & source_code_loc_str(fd2)
   );
+
+
+String* create_incomp_named_args_err_msg(SynFnDef fd1, SynFnDef fd2, [Atom] nargs1, [Atom] nargs2)
+{
+  diff_args = rand_sort(union(nargs1, nargs2) - intersection(nargs1, nargs2));
+  return (
+    "The following two " & user_repr(fd1.name, arity(fd1)) & " polymorphic functions:",
+    "    " & source_code_loc_str(fd1),
+    "    " & source_code_loc_str(fd2),
+    "have different named arguments: " & append((_str_(a) : a <- diff_args), ", ")
+  );
+}
 
 
 String* create_overlapping_pos_pars_types_err_msg(SynFnDef fd1, SynFnDef fd2) = (
@@ -346,7 +366,7 @@ String* basic_err_msg(ExprSpecWFError err):
                                   return (msg_prefix & msg_content);
                                 },
   undef_impl_cls_arg(p?)      = ("Invalid implicit closure argument: " & user_repr(p)),
-  dupl_named_args()           = ("Duplicated named parameter" & plural(err.bad_args) & ": " & user_repr(np) : np <- rand_sort(err.bad_args)),
+  duplicate_named_args()      = ("Duplicated named parameter" & plural(err.bad_args) & ": " & user_repr(np) : np <- rand_sort(err.bad_args)),
   wrong_fn_arity()            = ("Wrong number of arguments: " & user_repr(err.expr.name) &
                                 ", actual arity: " & append((printed(a) : a <- rand_sort(err.actual_arities)), ", ")),
   calling_unknown_function(c?)  = ("Unknown function: " & user_repr(c.name)),
@@ -370,6 +390,7 @@ String* basic_err_msg(ExprSpecWFError err):
   proc_call_not_allowed()     = {fail;},
   break_outside_loop()        = ("Break statement outside a loop"),
   missing_ret_stmt()          = ("Missing return statement"),
+  unreachable_stmt()          = ("Unreachable statement"),
 
   auto_var_not_defined()      = ({if err.is_other_var_type then "Not an automaton" else "Undefined"} & " variable: " & user_repr(err.var)),
   unknown_input()             = ("Automaton " & user_repr(err.automaton.name) & " has no such input: " & _str_(err.name)),

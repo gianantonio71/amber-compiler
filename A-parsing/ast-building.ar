@@ -539,7 +539,7 @@ using String filename, Nat** lines
   SynExpr build_expr_1_ast(RuleMatch mtc) =
     match (get_rule_name(mtc))
       def_test      = build_expr_1_def_test_ast(get_rule_match(mtc)),
-      sub_dot_seq   = build_expr_1_sub_dot_seq_ast(get_rule_match(mtc));
+      sub_dot_seq   = build_expr_1_sub_dot_pcall_seq_ast(get_rule_match(mtc));
 
   SynExpr build_expr_1_def_test_ast(RuleMatch mtc)
   {
@@ -550,19 +550,40 @@ using String filename, Nat** lines
     return output_is_def(loc_auto_var(var), field);
   }
 
-  SynExpr build_expr_1_sub_dot_seq_ast(RuleMatch mtc)
+  SynExpr build_expr_1_sub_dot_pcall_seq_ast(RuleMatch mtc)
   {
     nodes = rule_seq_nodes(mtc);
     assert length(nodes) == 3;
     expr = build_expr_0_ast(nodes[0]);
     for r <- rep_rule_nodes(nodes[1]):
-      if get_rule_name(r) == :dot:
+      rule_name = get_rule_name(r);
+      if rule_name == :dot:
         field = get_lowercase_id(get_rule_match(r), 1);
         expr = syn_accessor(expr, field);
-      else
-        assert get_rule_name(r) == :sub;
+      elif rule_name == :sub:
         idx_expr = build_expr_ast(block_node(get_rule_match(r)));
         expr = syn_fn_call(op_symbol(:brackets), (expr, idx_expr));
+      elif rule_name == :pcall:
+        assert rule_name == :pcall;
+        par_nodes = rule_seq_nodes(block_node(get_rule_match(r)));
+        assert length(par_nodes) == 2;
+        par_1_expr = build_expr_ast(par_nodes[0]);
+        par_2_node = par_nodes[1];
+        if par_2_node == null_match:
+          expr = syn_unary_pseudo_call(expr, par_1_expr);
+        else
+          par_2_node = rule_seq_node(par_2_node, 1);
+          if get_rule_name(par_2_node) == :key_only:
+            expr = syn_key_search(expr, par_1_expr);
+          else
+            assert get_rule_name(par_2_node) == :pair;
+            par_2_expr = build_expr_ast(rule_seq_node(get_rule_match(par_2_node), 1));
+            expr = syn_map_search(expr, par_1_expr, par_2_expr);
+          ;
+        ;
+      else
+        assert rule_name == :only_elem;
+        expr = syn_singl_only_elem(expr);
       ;
     ;
     if nodes[2] != null_match:
@@ -1208,11 +1229,11 @@ using String filename, Nat** lines
   {
     nodes = rule_seq_nodes(mtc);
     assert length(nodes) == 4;
-    var = var(get_lowercase_id(nodes[0]));
+    first_var = var(get_lowercase_id(nodes[0]));
     expr = build_expr_ast(nodes[3]);
-    return syn_set_elem_clause(var, expr) if nodes[1] == null_match;
+    return syn_set_elem_clause(first_var, expr) if nodes[1] == null_match;
     other_var = var(get_lowercase_id(rule_seq_node(nodes[1], 1)));
-    return syn_map_entry_clause(other_var, var, expr);
+    return syn_map_entry_clause(other_var, first_var, expr);
   }
 
   SynClause build_asgnm_clause_ast(RuleMatch mtc)

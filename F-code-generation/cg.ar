@@ -100,8 +100,8 @@ ObjProcDef gen_proc_code(ProcDef2 proc_def, [Int+ -> Nat] int_seqs_ids, Compilat
 
   debug_code = (push_call_info(proc_def.name, (just(fn_par(i)) : p @ i <- proc_def.params)));
 
-  ret_val = if proc_def.res_type != nil then fn_res_var else object(nil); //## BAD: HERE I'M CHEATING...
-  body = debug_code & body & (pop_call_info, ret_val(ret_val));
+  val = if proc_def.res_type != nil then fn_res_var else object(nil); //## BAD: HERE I'M CHEATING...
+  body = debug_code & body & (pop_call_info, ret_val(val));
 
   return obj_proc_def(proc_def.name, arity(proc_def) * (:obj), [:], nonempty(body), false);
 }
@@ -180,12 +180,17 @@ ObjProcDef gen_fn_code(FnDef fndef, [Int+ -> Nat] int_seqs_ids, CompilationOptio
 
 Program generate_dispatch_functions(Program prg)
 {
-  mult_map = bag(((fd.name, arity(fd)) : fd <- rand_sort(prg.fndefs))); //## BAD: USING A SEQUENCE INSTEAD OF A BAG AND AGAIN A SEQUENCE INSTEAD OF A TUPLE
+  fns_by_name_and_arity = group_by(prg.fndefs, ($.name, arity($)));
+  overloaded_fns = [fns : fns @ unused_var <- fns_by_name_and_arity, size(fns) > 1];
 
-  overloaded_fns = [[fd : fd <- prg.fndefs, (fd.name, arity(fd)) == na] : m @ na <- mult_map, m > 1];
+  assert {
+    mult_map = bag(((fd.name, arity(fd)) : fd <- rand_sort(prg.fndefs))); //## BAD: USING A SEQUENCE INSTEAD OF A BAG AND AGAIN A SEQUENCE INSTEAD OF A TUPLE
+    ref_overloaded_fns = [nonempty([fd : fd <- prg.fndefs, (fd.name, arity(fd)) == na]) : m @ na <- mult_map, m > 1];
+    return overloaded_fns == ref_overloaded_fns;
+  };
+
 
   dispatched_fns = union([generate_dispatch_function(fns, prg.typedefs) : fns <- overloaded_fns]);
-
   new_fns = dispatched_fns & {prg.fndefs - union(overloaded_fns)};
 
   return program(

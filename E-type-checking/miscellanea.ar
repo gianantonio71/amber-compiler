@@ -83,19 +83,10 @@ using [TypeName -> Type] typedefs
   }
 
 
-  [Var -> Type] ptrn_tag_obj_gen_env(TagPtrn tag_ptrn, Pattern obj_ptrn, Type type)
-  {
-    tag_types = match (type)
-      type_var()  = [type_tagged_obj],
-      _           = tagged_obj_types(type);
-
-    envs = [
-      generate_env(tag_ptrn, t.tag_type) & generate_env(obj_ptrn, t.obj_type)
-      : t <- tag_types, may_match(tag_ptrn, t.tag_type), may_match(obj_ptrn, t.obj_type)
-    ];
-
-    return [v -> union_superset(ts) : ts @ v <- merge_values(envs)];
-  }
+  [Var -> Type] ptrn_tag_obj_gen_env(TagPtrn tag_ptrn, Pattern obj_ptrn, Type type):
+    ptrn_symbol     = generate_env(obj_ptrn, untagged_objs_supertype(type)),
+    ptrn_symbol(object(a?)) = generate_env(obj_ptrn, restricted_untagged_objs_supertype(type, a)),
+    ptrn_var()      = [tag_ptrn.var -> tag_supertype(type)] & ptrn_tag_obj_gen_env(tag_ptrn.ptrn, obj_ptrn, type);
 
 
   [Var -> Type] ptrn_var_gen_env(Var var, Pattern ptrn, Type type)
@@ -155,16 +146,3 @@ using [Var -> Type] environment
 ClsExpr rewrite_cls_expr(ClsExpr expr):
   fn_ptr()  = cls_expr(expr.arity * (nil), fn_call(expr.name, (fn_par(i) : i < expr.arity))),
   _         = expr;
-
-////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////
-
-//## WHAT THE HECK IS THIS?
-Type mandatory_record_field_type(RecordType type, SymbObj label)
-{
-  mfs = [f : f @ l <- _obj_(type), l == label];
-  assert size(mfs) >= 0;
-  return empty_type if mfs == [];
-  mf = only_element(mfs);
-  return if mf.optional then empty_type else mf.type;
-}

@@ -16,17 +16,28 @@ using
     name = expr.name;
     args = expr.args;
     named_args = expr.named_args;
+    actual_arity = length(args);
 
     dupl_named_args = dupl_elems((pn : pn, unused_var_1, unused_var_2 <- named_args)); //## UGLY UGLY UGLY
-    return (dupl_named_args(expr, dupl_named_args)) if dupl_named_args != [];
+    return (duplicate_named_args(expr, dupl_named_args)) if dupl_named_args != [];
 
-    actual_arity = length(args);
+    // First we check if function call can actually be a lookup
+    // or a membership test that targets a local variable
+    if name :: <fn_symbol(Atom)>:
+      bare_name = match (name) fn_symbol(n?) = n;
+      if named_args == () and (actual_arity == 1 or actual_arity == 2) and already_def(bare_name, def_vars):
+        // Since this is not actually a function call, it does not change
+        // anything about what implicit closure arguments are accepted.
+        // Therefore, the arguments are checked like ordinary expressions
+        return join((expr_wf_errors(a, def_vars) : a <- args));
+      ;
+    ;
 
     // Closures have priority
     if has_key(closures, name):
       exp_arity = closures[name];
       return (
-        wrong_cls_call_arity(expr, exp_arity) if length(args) != exp_arity,
+        wrong_cls_call_arity(expr, exp_arity) if actual_arity != exp_arity,
         named_args_not_allowed(expr)          if named_args != ()
       );
     ;
@@ -49,7 +60,7 @@ using
     pos_par_errs = join((actual_arg_wf_errors(p, par_arities[i], def_vars) : p @ i <- args));
 
     all_named_arg_errs = [named_args_wf_errors(named_args, enps, def_vars) : enps <- all_exp_named_args];
-    named_arg_errs = if in((), all_named_arg_errs) then () else an_elem(all_named_arg_errs); //## BAD: CHOOSING AN ERROR AT RANDOM...
+    named_arg_errs = if in((), all_named_arg_errs) then () else join(rand_sort(all_named_arg_errs));
 
     return pos_par_errs & named_arg_errs;
 
@@ -114,12 +125,10 @@ using
           errs = errs & exp_named_arg_errors(p, a, def_vars);
         ;
       ;
-
       for np, vs, e <- redef_named_args:
         errs = (errs | invalid_named_arg(np)) if not has_key(exp_named_args, np);
         errs = errs & expr_wf_errors(e, def_vars & set(vs));
       ;
-
       return errs;
     }
   }

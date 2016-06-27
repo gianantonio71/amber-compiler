@@ -15,6 +15,8 @@ ParsingRule rule_greater          = atomic_rule(greater);
 ParsingRule rule_left_arrow       = atomic_rule(left_arrow);
 ParsingRule rule_right_arrow      = atomic_rule(right_arrow);
 ParsingRule rule_dollar           = atomic_rule(dollar);
+ParsingRule rule_comma            = atomic_rule(comma);
+ParsingRule rule_tilde            = atomic_rule(tilde);
 
 ParsingRule rule_id = rule_lc_id; //## I SHOULD EXCLUDE ALL THE KEYWORDS HERE...
 
@@ -569,11 +571,30 @@ ParsingRule rule_expr_2   = rule_seq((rule_expr_1, optional_rule_seq((atomic_rul
 ParsingRule rule_expr_1   =
   rule_choice((
     (:def_test,     rule_seq((rule_lc_id, rule_dot, rule_lc_id , rule_question_mark, rule_question_mark))),
-    (:sub_dot_seq,  rule_seq((rule_expr_0, rep_rule(rule_dot_or_sub), optional_rule(rule_dot_access(true)))))
+    (:sub_dot_seq,  rule_seq((rule_expr_0, rep_rule(rule_dot_sub_pcall), optional_rule(rule_dot_access(true)))))
   ));
 
-ParsingRule rule_dot_or_sub     = rule_choice(((:dot, rule_dot_access(false)), (:sub, rule_subscript_op)));
-ParsingRule rule_subscript_op   = bracket_rule(rule_ref_expr);
+ParsingRule rule_dot_sub_pcall =
+  rule_choice((
+    (:dot,        rule_dot_access(false)),
+    (:sub,        bracket_rule(rule_ref_expr)),
+    (:pcall,      rule_pcall),
+    (:only_elem,  par_rule(rule_tilde))
+  ));
+
+ParsingRule rule_pcall =
+  par_rule(
+    rule_seq((
+      rule_ref_expr,
+      optional_rule_seq((
+        rule_comma,
+        rule_choice((
+          (:key_only, rule_question_mark),
+          (:pair,     rule_seq((rule_comma, rule_ref_expr)))
+        ))
+      ))
+    ))
+  );
 
 ParsingRule rule_dot_access(Bool test)
 {
@@ -581,7 +602,6 @@ ParsingRule rule_dot_access(Bool test)
   lr = rule_neg(lr) if not test;
   return rule_seq((rule_dot, rule_lc_id, lr));
 }
-
 
 ParsingRule rule_expr_0 =
   rule_choice((
@@ -681,7 +701,7 @@ ParsingRule rule_fn_call_expr =
         ),
         rep_rule(
           rule_seq((
-            atomic_rule(comma),
+            rule_comma,
             rule_actual_named_arg
           ))
         )
@@ -759,7 +779,7 @@ ParsingRule rule_seq_cp_expr =
         (:range, rule_seq((rule_id, rule_ops((lower, lower_eq)))))
       )),
       rule_ref_expr,
-      optional_rule_seq((atomic_rule(comma), rule_ref_expr))
+      optional_rule_seq((rule_comma, rule_ref_expr))
     ))
   );
 

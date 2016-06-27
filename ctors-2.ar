@@ -47,16 +47,21 @@ NeType ne_set_type(NeType t)            = ne_set_type(elem_type: t);
 <empty_type> ne_map_type(<empty_type>, NeType)        = empty_type;
 NeType ne_map_type(NeType kt, NeType vt)              = ne_map_type(key_type: kt, value_type: vt);
 
+RecordType ne_record_type(RecordTypeFields fs) = :ne_record_type(fs);
 
 //## BAD: IF THE LANGUAGE HAD SUBSIGNATURES, THIS FUNCTION WOULD NOT BE NEEDED
-NeType record_type_nonempty([SymbObj -> [type: NeType, optional: Bool]] fs) =
-  :record_type([l -> [type: f.type, optional: f.optional] : f @ l <- fs]);
+NeType record_type_nonempty([SymbObj -> [type: NeType, optional: Bool]] fs)
+{
+  return empty_map_type if fs == [:];
+  nonempty = (? f @ l <- fs : not f.optional);
+  return union_type_nonempty([:ne_record_type(fs), empty_map_type if not nonempty]);
+}
 
 Type record_type([SymbObj -> [type: Type, optional: Bool]] fs)
 {
-  return empty_type if (? f @ l <- fs : f.type == empty_type and not f.optional);
+  return empty_type if (? f @ unused_var <- fs : f.type == empty_type and not f.optional);
   rfs = [l -> [type: t, optional: f.optional] : f @ l <- fs, t = f.type, t != empty_type];
-  return :record_type(rfs);
+  return record_type_nonempty(rfs);
 }
 
 //## BAD: IF THE LANGUAGE HAD SUBSIGNATURES, THIS FUNCTION WOULD NOT BE NEEDED
@@ -107,11 +112,6 @@ FnType fn_type(AnyType* ps, Type rt) = fn_type(ps, [:], rt);
 FnType fn_type(AnyType* ps, [NamedArg -> AnyType] nps, Type rt) = fn_type(params: ps, named_args: nps, ret_type: rt);
 
 BuiltInType builtin_type(Type+ pts, Type rt) = builtin_type(param_types: pts, ret_type: rt);
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
-Type map_type(Type kt, Type vt, Bool may_be_empty) = union_type([empty_map_type if may_be_empty, ne_map_type(kt, vt)]);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -195,7 +195,7 @@ ClsFrmParam non_scalar_par(NzNat a)           = non_scalar_par(arity: a);
 
 FloatLit float_lit(Int m, Int e)  = float_lit(mantissa: m, dec_exp: e);
 
-Expr seq_expr(SubExpr* es)           = :seq_expr(es);
+Expr seq_expr(SubExpr* es)          = :seq_expr(es);
 Expr seq_tail_expr(Expr s, Expr+ t) = seq_tail_expr(seq: s, tail: t);
 
 Expr tuple_expr(Expr+ es) = :tuple_expr(es);
@@ -211,6 +211,11 @@ Expr fn_call(FnSymbol name, AnyExpr* params, [NamedArg -> AnyExpr] named_args) =
 
 Expr builtin_call(BuiltIn n, Expr+ ps) = builtin_call(name: n, params: ps);
 Expr cls_call(<ClsVar, NamedArg> n, Expr+ ps) = cls_call(name: n, params: ps);
+
+Expr incl_test_or_lookup(Expr c, Expr v)  = incl_test_or_lookup(collection: c, value: v);
+Expr map_search(Expr m, Expr k, Expr v)   = map_search(map: m, key: k, value: v);
+Expr key_search(Expr m, Expr k)           = key_search(map: m, key: k);
+Expr singl_only_elem(Expr s)              = singl_only_elem(set: s);
 
 Expr and_expr(Expr l, Expr r) = and_expr(left: l, right: r);
 Expr or_expr(Expr l, Expr r) = or_expr(left: l, right: r);
@@ -246,8 +251,11 @@ OutputIsDefExpr output_is_def(LocAutoVar v, Atom o)  = output_is_def(var: v, out
 MethodCallExpr method_call_expr(AnyAutoVar v, ReadOnlyMethodSymb m, Expr* as) = method_call_expr(var: v, name: m, args: as);
 MethodCallExpr method_call_expr(ReadOnlyMethodSymb m, Expr* as) = method_call_expr(name: m, args: as);
 
-Expr cast_expr(Expr e, Type t) = cast_expr(expr: e, type: t);
-Expr membership(Expr obj, Type type) = membership(obj: obj, type: type);
+Expr cast_expr(Expr, <empty_type>)  = {fail;}; //## TRY TO REMOVE...
+Expr membership(Expr, <empty_type>) = {fail;}; //## TRY TO REMOVE...
+
+Expr cast_expr(Expr e, NeType t) = cast_expr(expr: e, type: t);
+Expr membership(Expr obj, NeType type) = membership(obj: obj, type: type);
 
 Expr if_expr(Expr cond, Expr true_expr, Expr false_expr) = if_expr(cond: cond, then: true_expr, else: false_expr);
 

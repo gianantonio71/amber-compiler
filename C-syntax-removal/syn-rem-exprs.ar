@@ -2,6 +2,7 @@ using
 {
   [ClsVar]                                        closures,
   [NamedArg]                                      named_args,
+  [NamedArg -> Nat]                               named_args_arities,
   [MembVar]                                       memb_vars,
   [AnyAutoVar -> [[name: Atom, discrete: Bool]]]  auto_vars_outputs,
   [(FnSymbol, NzNat) -> Nat+]                     local_fns,
@@ -28,6 +29,10 @@ using
     const_or_var(a?)    = desugar_const_or_var_expr(a, def_vars),
     fn_call()           = desugar_fn_call_expr(expr.name, expr.args, expr.named_args, def_vars),
     builtin_call()      = builtin_call(expr.name, (desugar_expr(e, def_vars) : e <- expr.args)),
+    unary_pseudo_call() = incl_test_or_lookup(desugar_expr(expr.target, def_vars), desugar_expr(expr.param, def_vars)),
+    map_search()        = map_search(desugar_expr(expr.map, def_vars), desugar_expr(expr.key, def_vars), desugar_expr(expr.value, def_vars)),
+    key_search()        = key_search(desugar_expr(expr.map, def_vars), desugar_expr(expr.key, def_vars)),
+    singl_only_elem()   = singl_only_elem(desugar_expr(expr.set, def_vars)),
     and()               = and_expr(desugar_expr(expr.left, def_vars), desugar_expr(expr.right, def_vars)),
     or()                = or_expr(desugar_expr(expr.left, def_vars), desugar_expr(expr.right, def_vars)),
     not(e?)             = not_expr(desugar_expr(e, def_vars)),
@@ -111,6 +116,26 @@ using
     //## DO ANY CHECKING AT THE MOMENT
     fn_id = (name, length(args));
     nps = merge(([n -> desugar_named_arg_expr(e, def_vars, ps)] : n, ps, e <- expl_named_args));
+
+    arity = length(args);
+    if name :: <fn_symbol(Atom)> and (arity == 1 or arity == 2) and expl_named_args == ():
+      bare_name = match (name) fn_symbol(a?) = a;
+      target_is_local_var = already_def(bare_name, def_vars);
+      target_is_named_par = already_def(bare_name, named_args) and named_args_arities[named_arg(bare_name)] == 0;
+      if target_is_local_var or target_is_named_par:
+        coll_var = if target_is_local_var then var(bare_name) else named_arg(bare_name);
+        if arity == 1:
+          par = desugar_expr(only_item(args), def_vars);
+          res = incl_test_or_lookup(coll_var, par);
+        else
+          assert arity == 2;
+          key = desugar_expr(args[0], def_vars);
+          value = desugar_expr(args[1], def_vars);
+          res = map_search(coll_var, key, value);
+        ;
+        return res;
+      ;
+    ;
 
     // Closures first
     if name :: <fn_symbol(Atom)>:

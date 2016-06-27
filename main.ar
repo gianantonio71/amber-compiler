@@ -56,7 +56,7 @@ String* create_error_msg(ParserError err, String filename):
                               };
 
 
-Maybe[CCodeOutput] Compile([String -> Nat*] src_files, Bool run_typechecking, Bool add_ref_counting, Bool ignore_assertions, Bool print_intermediate, Bool print_times)
+Maybe[CCodeOutput] Compile([String -> Nat*] src_files, Bool run_typechecking, Bool add_rc, Bool ignore_assertions, Bool verbose_typechecking, Bool print_intermediate, Bool print_times)
 {
   t0 = _ticks_(nil);
 
@@ -107,19 +107,24 @@ Maybe[CCodeOutput] Compile([String -> Nat*] src_files, Bool run_typechecking, Bo
   ;
 
   if run_typechecking:
-    errs = typecheck(prg);
+    errs = typecheck(prg, verbose_typechecking);
     if errs == [:]:
       Print("The programs typechecks\n");
     else
-      Print("\nError: the program does not typecheck\n\n");
-      msgs = rand_sort([create_error_msgs(fd, es) : es @ fd <- errs]);
+      Print("Error: the program does not typecheck\n\n");
+      // msgs = rand_sort([create_error_msgs(fd, es) : es @ fd <- errs]);
+      sorted_fds = sort_set(keys(errs), source_file($a) < source_file($b));
+      msgs = (create_error_msgs(fd, errs[fd]) : fd <- sorted_fds);
       for m <- msgs:
         for l <- m:
           Print(l & "\n");
         ;
         Print("\n");
       ;
-      Print("Number of functions with typechecking errors: " & printed(size(errs)) & "\n\n");
+      Print("Number of functions with typechecking errors: " & printed(size(errs)) & "\n");
+      if not verbose_typechecking:
+        Print("Use the -v option for more detailed error messages\n\n");
+      ;
       return nil;
     ;
   ;
@@ -147,7 +152,7 @@ Maybe[CCodeOutput] Compile([String -> Nat*] src_files, Bool run_typechecking, Bo
     FileWrite("dump_opt_code.txt", false, raw_str(printed(opt_code, 100)));
   ;
 
-  if add_ref_counting:
+  if add_rc:
     rc_code = compiled_prg(
       opt_code.bool_procs,
       [add_ref_counting(pd) : pd <- opt_code.procs],
@@ -186,7 +191,7 @@ Maybe[CCodeOutput] Compile([String -> Nat*] src_files, Bool run_typechecking, Bo
     ;
     Print("Code generation:     " & printed(t5-t4) & "ms\n");
     Print("Code optimization:   " & printed(t6-t5) & "ms\n");
-    if add_ref_counting:
+    if add_rc:
       Print("Reference counting:  " & printed(t7-t6) & "ms\n");
     ;
     Print("C code generation:   " & printed(t8-t7) & "ms\n");
@@ -242,6 +247,7 @@ Int Main(String* args)
   add_ref_counting = true;
   ignore_assertions = false;
 
+  verbose_typechecking = false;
   print_intermediate = false;
   print_times = false;
   wait_for_key = false;
@@ -253,6 +259,8 @@ Int Main(String* args)
       add_ref_counting = false;
     elif o == "-ia":
       ignore_assertions = true;
+    elif o == "-v":
+      verbose_typechecking = true;
     elif o == "-p":
       print_intermediate = true;
     elif o == "-t":
@@ -286,7 +294,7 @@ Int Main(String* args)
     src_files = src_files & [fn -> value(fc)];
   ;
 
-  output = Compile(src_files, run_typechecking, add_ref_counting, ignore_assertions, print_intermediate, print_times);
+  output = Compile(src_files, run_typechecking, add_ref_counting, ignore_assertions, verbose_typechecking, print_intermediate, print_times);
 
   if output != nil:
     output = value(output);

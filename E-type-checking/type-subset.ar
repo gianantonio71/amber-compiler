@@ -137,17 +137,17 @@ using [TypeName -> Type] typedefs, Bool inst_type_vars
 
     // Map types
     empty_map_type,       empty_map_type      = [],
-    empty_map_type,       record_type(fs?)    = if not (? f @ l <- fs : not f.optional) then [] else not_a_subset,
+    // empty_map_type,       record_type(fs?)    = if not (? f @ l <- fs : not f.optional) then [] else not_a_subset,
     empty_map_type,       _                   = not_a_subset,
 
     ne_map_type(),        ne_map_type()       = all_conds([shallow_subset_conds(t1.key_type, t2.key_type), shallow_subset_conds(t1.value_type, t2.value_type)]),
-    ne_map_type(),        record_type(fs?)    = map_record_shallow_subset_conds(t1.key_type, t1.value_type, fs),
+    // ne_map_type(),        ne_record_type(fs?) = map_record_shallow_subset_conds(t1.key_type, t1.value_type, fs),
     ne_map_type(),        _                   = not_a_subset,
 
     // Record types
-    record_type(fs1?),    record_type(fs2?)   = record_shallow_subset_conds(fs1, fs2),
-    record_type(fs?),     ne_map_type()       = record_map_shallow_subset_conds(fs, t2),
-    record_type(),        _                   = not_a_subset,
+    ne_record_type(fs1?), ne_record_type(fs2?)  = record_shallow_subset_conds(fs1, fs2),
+    ne_record_type(fs?),  ne_map_type()       = record_map_shallow_subset_conds(fs, t2),
+    ne_record_type(),     _                   = not_a_subset,
 
     // Tuple types
     tuple_type(fts1?),    tuple_type(fts2?)   = if length(fts1) == length(fts2)
@@ -187,9 +187,15 @@ using [TypeName -> Type] typedefs, Bool inst_type_vars
     optional_labels_2  = labels_2 - mandatory_labels_2;
 
     // Mandatory labels in the subtype must be present in the supertype (can be either mandatory or optional)
-    return not_a_subset if not subset(mandatory_labels_1, mandatory_labels_2 & optional_labels_2);
+    return not_a_subset if not subset(mandatory_labels_1, labels_2);
 
     // Optional labels in the subtype must be optional in the supertype as well
+    //## BUG BUG BUG: THIS IS NOT ACTUALLY TRUE ANYMORE: IF BOTH TYPES
+    //## HAVE JUST ONE LABEL, OPTIONAL IN THE SUBTYPE AND MANDATORY IN
+    //## THE SUPERTYPE, THEN SINCE RECORDS TYPES DON'T INCLUDE THE EMPTY
+    //## MAP ANYMORE, THEN THE LABEL BECOMES IN FACT NON-OPTIONAL IN
+    //## THE SUBTYPE, AND THE TWO TYPES WOULD BECOME THE SAME.
+    //## THINK ABOUT IT
     return not_a_subset if not subset(optional_labels_1, optional_labels_2);
 
     // Mandatory labels in the supertype must be mandatory in the subtype as well
@@ -214,20 +220,22 @@ using [TypeName -> Type] typedefs, Bool inst_type_vars
     ]);
 
 
-  SubsetCond map_record_shallow_subset_conds(Type key_type, Type value_type, RecordTypeFields record_fields)
-  {
-    //## BUG: WHY is_subset AND NOT shallow_subset_conds? IS THIS A BUG?
-    return not_a_subset if not is_subset(key_type, union_type([symb_type(l) : l <- keys(record_fields)]));
+  //## THINK ABOUT THIS ONE, AND ONCE YOU UNDERSTAND IT (IF IT IS CORRECT), COMMENT IT
+  //## IT IS RELATED TO THE COMMENT ABOVE, IN record_shallow_subset_conds()
+  // SubsetCond map_record_shallow_subset_conds(Type key_type, Type value_type, RecordTypeFields record_fields)
+  // {
+  //   //## BUG: WHY is_subset AND NOT shallow_subset_conds? IS THIS A BUG?
+  //   return not_a_subset if not is_subset(key_type, union_type([symb_type(l) : l <- keys(record_fields)]));
 
-    if key_type :: SymbType:
-      only_key_obj = _obj_(key_type);
-      return not_a_subset if (? f @ l <- record_fields : l != only_key_obj and not f.optional);
-    else
-      return not_a_subset if (? f <- values(record_fields) : not f.optional);
-    ;
+  //   if key_type :: SymbType:  // is_symb_singl_type
+  //     only_key_obj = _obj_(key_type);
+  //     return not_a_subset if (? f @ l <- record_fields : l != only_key_obj and not f.optional);
+  //   else
+  //     return not_a_subset if (? f <- values(record_fields) : not f.optional);
+  //   ;
 
-    return all_conds([shallow_subset_conds(key_type, f.type) : f @ l <- record_fields, type_contains_obj(key_type, _obj_(l))]);
-  }
+  //   return all_conds([shallow_subset_conds(key_type, f.type) : f @ l <- record_fields, type_contains_obj(key_type, _obj_(l))]);
+  // }
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

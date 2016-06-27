@@ -5,17 +5,17 @@ ClsType replace_type_vars(ClsType type, [TypeVar -> Type] substitutions) = repla
 
 //## BAD: FIND DECENT NAME, OR EVEN BETTER, REMOVE THE RESTRICTIONS ABOUT CLOSURE PARAMETERS FOR FUNCTIONS WITH SAME NAME AND ARITY
 Type replace_type_vars_computed(Type type, (TypeVar -> Type) replace):
-  empty_type        = empty_type,
-  LeafType          = type,
-  TypeVar           = replace(type),
-  type_ref(ts?)     = type_ref(replace_type_vars_computed(ts, replace)),
-  ne_seq_type()     = ne_seq_type(replace_type_vars_computed(type.elem_type, replace)),
-  ne_set_type()     = ne_set_type(replace_type_vars_computed(type.elem_type, replace)),
-  ne_map_type()     = ne_map_type(replace_type_vars_computed(type.key_type, replace), replace_type_vars_computed(type.value_type, replace)),
-  record_type(fs?)  = record_type([l -> [type: replace_type_vars_computed(f.type, replace), optional: f.optional] : f @ l <- fs]), //## BAD: WOULD BE GOOD TO HAVE A "DECLARATIVE" UPDATE OPERATION
-  tuple_type(ts?)   = tuple_type((replace_type_vars_computed(t, replace) : t <- ts)),
-  tag_obj_type()    = tag_obj_type(type.tag_type, replace_type_vars_computed(type.obj_type, replace)),
-  union_type(ts?)   = union_type([replace_type_vars_computed(t, replace) : t <- ts]);
+  empty_type          = empty_type,
+  LeafType            = type,
+  TypeVar             = replace(type),
+  type_ref(ts?)       = type_ref(replace_type_vars_computed(ts, replace)),
+  ne_seq_type()       = ne_seq_type(replace_type_vars_computed(type.elem_type, replace)),
+  ne_set_type()       = ne_set_type(replace_type_vars_computed(type.elem_type, replace)),
+  ne_map_type()       = ne_map_type(replace_type_vars_computed(type.key_type, replace), replace_type_vars_computed(type.value_type, replace)),
+  ne_record_type(fs?) = record_type([l -> [type: replace_type_vars_computed(f.type, replace), optional: f.optional] : f @ l <- fs]), //## BAD: WOULD BE GOOD TO HAVE A "DECLARATIVE" UPDATE OPERATION
+  tuple_type(ts?)     = tuple_type((replace_type_vars_computed(t, replace) : t <- ts)),
+  tag_obj_type()      = tag_obj_type(type.tag_type, replace_type_vars_computed(type.obj_type, replace)),
+  union_type(ts?)     = union_type([replace_type_vars_computed(t, replace) : t <- ts]);
 
 
 ClsType replace_type_vars_computed(ClsType type, (TypeVar -> Type) replace) =
@@ -37,17 +37,17 @@ TypeSymbol replace_type_vars_computed(TypeSymbol type_symb, (TypeVar -> Type) re
 ////////////////////////////////////////////////////////////////////////////////
 
 [T] retrieve_from_nested_types(Type type, (Type -> [T]) retrieve):
-  empty_type        = [],
-  LeafType          = [],
-  type_ref(ts?)     = retrieve_from_nested_types(ts, retrieve),
-  TypeVar           = [],
-  ne_seq_type()     = retrieve(type.elem_type),
-  ne_set_type()     = retrieve(type.elem_type),
-  ne_map_type()     = retrieve(type.key_type) & retrieve(type.value_type),
-  record_type(fs?)  = union([retrieve(f.type) : f @ unused_var <- fs]),
-  tuple_type(ts?)   = seq_union((retrieve(t) : t <- ts)),
-  tag_obj_type()    = retrieve(type.tag_type) & retrieve(type.obj_type),
-  union_type(ts?)   = union([retrieve(t) : t <- ts]);
+  empty_type          = [],
+  LeafType            = [],
+  type_ref(ts?)       = retrieve_from_nested_types(ts, retrieve),
+  TypeVar             = [],
+  ne_seq_type()       = retrieve(type.elem_type),
+  ne_set_type()       = retrieve(type.elem_type),
+  ne_map_type()       = retrieve(type.key_type) & retrieve(type.value_type),
+  ne_record_type(fs?) = union([retrieve(f.type) : f @ unused_var <- fs]),
+  tuple_type(ts?)     = seq_union((retrieve(t) : t <- ts)),
+  tag_obj_type()      = retrieve(type.tag_type) & retrieve(type.obj_type),
+  union_type(ts?)     = union([retrieve(t) : t <- ts]);
 
 
 [T] retrieve_from_nested_types(TypeSymbol type_symb, (Type -> [T]) retrieve):
@@ -95,6 +95,10 @@ Bool is_param_type(FnType type) = at_least_one((is_param_type(t) : t <- type.par
   fn_call()           = union([any_expr_retrieve_from_nested_exprs(p, retrieve) : p <- set(expr.params) & values(expr.named_args)]),
   cls_call()          = seq_union((retrieve(p) : p <- expr.params)),
   builtin_call()      = seq_union((retrieve(p) : p <- expr.params)),
+  incl_test_or_lookup() = retrieve(expr.collection) & retrieve(expr.value),
+  map_search()        = retrieve(expr.map) & retrieve(expr.key) & retrieve(expr.value),
+  key_search()        = retrieve(expr.map) & retrieve(expr.key),
+  singl_only_elem()   = retrieve(expr.set),
   and_expr()          = retrieve(expr.left) & retrieve(expr.right),
   or_expr()           = retrieve(expr.left) & retrieve(expr.right),
   not_expr(e?)        = retrieve(e),
@@ -184,6 +188,10 @@ Expr replace_nested_exprs(Expr expr, (Expr -> Expr) replace):
                         ),
   cls_call()          = cls_call(expr.name, (replace(p) : p <- expr.params)),
   builtin_call()      = builtin_call(expr.name, (replace(p) : p <- expr.params)),
+  incl_test_or_lookup() = incl_test_or_lookup(replace(expr.collection), replace(expr.value)),
+  map_search()        = map_search(replace(expr.map), replace(expr.key), replace(expr.value)),
+  key_search()        = key_search(replace(expr.map), replace(expr.key)),
+  singl_only_elem()   = singl_only_elem(replace(expr.set)),
   and_expr()          = and_expr(replace(expr.left), replace(expr.right)),
   or_expr()           = or_expr(replace(expr.left), replace(expr.right)),
   not_expr(e?)        = not_expr(replace(e)),
@@ -680,12 +688,12 @@ type StmtOutcome = fails, returns, breaks, falls_through;
 
 [+StmtOutcome] outcomes(Statement* stmts)
 {
-  outcomes = [:falls_through];
+  os = [:falls_through];
   for s <- stmts:
-    outcomes = {outcomes - [:falls_through]} & outcomes(s);
-    break if not in(:falls_through, outcomes);
+    os = {os - [:falls_through]} & outcomes(s);
+    break if not in(:falls_through, os);
   ;
-  return nonempty(outcomes);
+  return nonempty(os);
 }
 
 
@@ -695,14 +703,14 @@ type StmtOutcome = fails, returns, breaks, falls_through;
   return_stmt()     = [:fails, :returns],
   if_stmt()         = nonempty([:fails] & outcomes(stmt.body) & outcomes(stmt.else)), // Shutting up the type checker
   loop_stmt(body?)  = {
-    outcomes = outcomes(body);
+    os = outcomes(body);
     // Failures and returns in the body are transferred to the loop.
     // Fall throughs in the body are neutralized by the loop, but they
     // create the possibility of an infinite loop, which counts as failure.
-    outcomes = {outcomes - [:falls_through]} & [:fails] if in(:falls_through, outcomes);
+    os = {os - [:falls_through]} & [:fails] if in(:falls_through, os);
     // A break in the body becomes a fall through for the loop itself
-    outcomes = {outcomes - [:breaks]} & [:falls_through] if in(:breaks, outcomes);
-    return nonempty(outcomes); // Shutting up the type checker
+    os = {os - [:breaks]} & [:falls_through] if in(:breaks, os);
+    return nonempty(os); // Shutting up the type checker
   },
   foreach_stmt()    = nonempty([:fails, :falls_through] & outcomes(stmt.body) - [:breaks]), // Shutting up the type checker
   for_stmt()        = nonempty([:fails, :falls_through] & outcomes(stmt.body) - [:breaks]), // Shutting up the type checker //## BAD: SAME AS ABOVE

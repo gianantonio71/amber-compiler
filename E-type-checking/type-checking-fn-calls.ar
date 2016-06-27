@@ -67,7 +67,7 @@ SgnSet preprocess_signatures([+FnType] signatures, [TypeName -> Type] tdefs)
     while sgns != []:
       sgn = an_elem(sgns);
       comp_sgns = [s : s <- sgns, other_params_are_eq(sgn, s, par_idx, tdefs)];
-      new_sgn = if size(comp_sgns) > 1 then merge_all_sgns(comp_sgns, par_idx, tdefs) else only_element(comp_sgns);
+      new_sgn = if size(comp_sgns) > 1 then merge_all_sgns(nonempty(comp_sgns), par_idx, tdefs) else only_element(comp_sgns);
       new_sgns = new_sgns & [new_sgn];
       sgns = sgns - comp_sgns;
     ;
@@ -84,8 +84,20 @@ SgnSet preprocess_signatures([+FnType] signatures, [TypeName -> Type] tdefs)
     return fn_type(params, a_sgn.named_args, merged_ret_type);
   }
 
-  Bool other_params_are_eq(FnType sgn1, FnType sgn2, Nat par_idx, [TypeName -> Type] tdefs) =
-    all((types_or_cls_types_are_eq(p1, p2, tdefs) : p1, p2 @ i <- zip(sgn1.params, sgn2.params), i != par_idx));
+  Bool other_params_are_eq(FnType sgn1, FnType sgn2, Nat par_idx, [TypeName -> Type] tdefs)
+  {
+    for p1, p2 @ i <- zip(sgn1.params, sgn2.params):
+      return false if i != par_idx and not types_or_cls_types_are_eq(p1, p2, tdefs);
+    ;
+    nargs = keys(sgn1.named_args);
+    return false if nargs != keys(sgn2.named_args);
+    for a <- rand_sort(nargs):
+      t1 = sgn1.named_args[a];
+      t2 = sgn2.named_args[a];
+      return false if not types_or_cls_types_are_eq(t1, t2, tdefs);
+    ;
+    return true;
+  }
 
   Bool types_or_cls_types_are_eq(AnyType t1, AnyType t2, [TypeName -> Type] tdefs):
     Type,     Type      = is_eq(t1, t2, typedefs=tdefs),
@@ -176,9 +188,18 @@ using
       return fn_call_type(signature, args, named_args);
     }
   }
+}
 
+using
+{
+  [TypeName -> Type]              typedefs,
+  [(FnSymbol, Nat) -> SgnSet]     signatures,
+  [Var -> Type]                   environment,
+  [<ClsVar, NamedArg> -> ClsType] closures,
+  [[Var]]                         var_aliases,
+  Bool                            verbose;
 
-  [TypeCheckingError] typecheck_fn_call(FnSymbol name, AnyExpr* args, [NamedArg -> AnyExpr] named_args, Type exp_type)
+  [TypeCheckingError] fully_typecheck_fn_call(FnSymbol name, AnyExpr* args, [NamedArg -> AnyExpr] named_args, Type exp_type)
   {
     // Making sure the arguments typecheck, when the result can be any object
     arg_errs = [];
@@ -193,12 +214,12 @@ using
     all_sgns = sgn_set.sgns;
     // return typecheck_fn_call(name, only_element(all_sgns), args, named_args, exp_type) if size(all_sgns) == 1;
     for s <- rand_sort(all_sgns):
-      errs = typecheck_fn_call(name, s, args, named_args, exp_type);
+      errs = fully_typecheck_fn_call(name, s, args, named_args, exp_type);
       return [] if errs == [];
     ;
     all_agg_sgns = sgn_set.agg_sgns;
     for s <- rand_sort(all_agg_sgns):
-      errs = typecheck_fn_call(name, s, args, named_args, exp_type);
+      errs = fully_typecheck_fn_call(name, s, args, named_args, exp_type);
       return [] if errs == [];
     ;
 
@@ -224,13 +245,13 @@ using
 
     // There might be more than one candidate signature
     // if the type of one or more parameters is the empty type
-    err_sets = [typecheck_fn_call(name, s, args, named_args, exp_type) : s <- candidate_signatures];
+    err_sets = [fully_typecheck_fn_call(name, s, args, named_args, exp_type) : s <- candidate_signatures];
 
     return if in([], err_sets) then [] else an_elem(err_sets);
   }
 
 
-  [TypeCheckingError] typecheck_fn_call(FnSymbol name, FnType signature, AnyExpr* params, [NamedArg -> AnyExpr] named_args, Type exp_type)
+  [TypeCheckingError] fully_typecheck_fn_call(FnSymbol name, FnType signature, AnyExpr* params, [NamedArg -> AnyExpr] named_args, Type exp_type)
   {
     // We first check that all scalar positional parameters (and those parameters only) match
     // the type of the corresponding formal parameter (we already know they typecheck)
@@ -271,8 +292,8 @@ using
     for n, t <- rand_sort_pairs(signature.named_args):
       // Instantiating type variables in the formal type
       inst_type = replace_type_vars(t, type_var_insts);
-      // Checking to see whether the named parameter has been specified as part of the function call
       if has_key(named_args, n):
+        // The named argument has been specified as part of the function call
         // Here the parameter could be either a scalar or a closure
         par_expr = named_args[n];
         //## THIS IS REALLY BAD, BUT HOW CAN WE AVOID IT?
@@ -280,22 +301,30 @@ using
           Expr,     Type      = typecheck(par_expr, inst_type),
           ClsExpr,  ClsType   = typecheck(par_expr, inst_type);
         named_arg_errs = named_arg_errs & errs;
-      // Now trying among the scalar variables
       elif has_key(environment, n):
-        // The actual parameter is a closure, and the formal parameter too
+        // The argument has been specified implicitly, as a scalar object
+        // The actual parameter is an object, and the formal parameter must be an object too
         // (unless there's a bug in the well-formedness checking code)
         actual_type = environment[n];
         if not is_subset(actual_type, cast_as_type(inst_type)):
           named_arg_errs = named_arg_errs & [invalid_implicit_par_type(signature, n, t, inst_type, actual_type)];
         ;
-      // Now it can only be a closure, and the formal parameter must be a closure as well
-      else
+      elif has_key(closures, n):
+        // Implicitly specified again, this time as a closure.
+        // The formal parameter must be a closure as well
         actual_cls_type = closures[n];
         if not is_subset(actual_cls_type, cast_as_cls_type(inst_type)):
           named_arg_errs = named_arg_errs & [invalid_implicit_par_type(signature, n, t, inst_type, actual_cls_type)];
         ;
+      else
+        // The named argument has not been provided, either implicitly or explicitly
+        named_arg_errs = named_arg_errs & [missing_named_argument(name, n)];
       ;
     ;
+
+    // Now making sure all the function actually has all the provided named arguments
+    invalid_nargs = keys(named_args) - keys(signature.named_args);
+    named_arg_errs = named_arg_errs & [invalid_named_argument(a) : a <- invalid_nargs];
 
     // Now let's see if the type of the result is OK.
     actual_ret_type = replace_type_vars(signature.ret_type, type_var_insts);
@@ -303,5 +332,63 @@ using
 
     //## BAD: HERE I SHOULD PROVIDE MORE INFORMATION ABOUT THESE ERRORS
     return cls_errs & named_arg_errs & ret_type_errs;
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  Result[[TypeVar -> Type], [TypeCheckingError]] try_to_instantiate_type_vars(AnyExpr* params, AnyType* param_types)
+  {
+    actual_types = ();
+    formal_types = ();
+    for p, t <- zip(params, param_types):
+      if p :: Expr and t :: Type:
+        actual_types = (actual_types | expr_type(p));
+        formal_types = (formal_types | t);
+      ;
+    ;
+    type_var_insts = type_var_instantiations_for_subset(actual_types, formal_types);
+
+    // OK, now we have our initial instantiations, based on the type of scalar parameters.
+    // Next we must complete and refine those instantiations by looking at closure parameters
+
+    cls_pars = ((p, t) : p, t <- zip(params, param_types), p :: ClsExpr and t :: ClsType);
+    for 5:
+      new_type_pairs = ();
+      for p, t <- cls_pars:
+        rp = rewrite_cls_expr(p);
+        errs = typecheck_closure_params(rp, t, type_var_insts);
+        return failure(errs) if errs != [];
+        actual_ret_type = get_return_type(rp, t, type_var_insts);
+        if not is_subset(actual_ret_type, replace_type_vars_with_type_any(t.out_type)):
+          return failure([]); //## BAD: ADD MEANINGFUL ERROR MESSAGE
+        ;
+        new_type_pairs = (new_type_pairs | (actual_ret_type, t.out_type));
+      ;
+      new_actual_types, new_formal_types = unzip(new_type_pairs);
+      new_type_var_insts = type_var_instantiations_for_subset(new_actual_types, new_formal_types);
+      return success(type_var_insts) if has_reached_fixpoint(type_var_insts, new_type_var_insts);
+      type_var_insts = merge_insts(type_var_insts, new_type_var_insts);
+    ;
+    return failure([]); //## BAD: ADD MEANINGFUL ERROR MESSAGE
+
+
+    [TypeCheckingError] typecheck_closure_params(ClsExpr expr, ClsType type, [TypeVar -> Type] type_var_insts):
+      ClsVar      = {
+        actual_type = closures[expr];
+        errs = [];
+        for actual_par_type, formal_par_type <- zip(actual_type.in_types, type.in_types):
+          if not is_subset(replace_type_vars(formal_par_type, type_var_insts), actual_par_type):
+            errs = errs & [invalid_cls_var_type(expr, type, type_var_insts)];
+          ;
+        ;
+        return errs;
+      },
+      fn_ptr()    = {fail;},
+      cls_expr()  = {
+        inst_formal_par_types = (replace_type_vars(t, type_var_insts) : t <- type.in_types);
+        new_env = get_updated_env(expr.params, expr.expr, inst_formal_par_types);
+        return typecheck(expr.expr, replace_type_vars_with_type_any(type.out_type), environment=new_env);
+      };
   }
 }

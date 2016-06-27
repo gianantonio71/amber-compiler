@@ -5,39 +5,45 @@ type BasicPseudoType  = symbols, tag_objs, AtomicPseudoType;
 
 type PseudoType       = pseudotype([BasicPseudoType]); //## BAD: THIS ALLOWS FOR INVALID COMBINATIONS, LIKE {symbol(a), symbols}
 
+type NePseudoType     = pseudotype([+BasicPseudoType]);
 
 ///////////////////////////////////////////////////////////////////////////////
 
-PseudoType pseudotype([BasicPseudoType] pts)
+PseudoType pseudotype([]) = :pseudotype([]);
+
+NePseudoType pseudotype([+BasicPseudoType] pts)
 {
   red_symb_pts    = if in(:symbols, pts)  then [pt : pt <- pts, symbol() << pt] else [];
   red_tag_obj_pts = if in(:tag_objs, pts) then [pt : pt <- pts, tag_obj() << pt] else [];
-  return :pseudotype(pts - {red_symb_pts & red_tag_obj_pts});
+  return :pseudotype(nonempty(pts - {red_symb_pts & red_tag_obj_pts}));
 }
 
-[BasicPseudoType] basic_pseudotypes(PseudoType pt) = _obj_(pt);
+
+[BasicPseudoType] basic_pseudotypes(PseudoType pt)   = _obj_(pt);
 
 
-PseudoType pseudotype_union([PseudoType] pseudotypes) = pseudotype(union([pts : pt <- pseudotypes, pseudotype(pts?) << pt]));
+NePseudoType pseudotype_union([+NePseudoType] pseudotypes) = pseudotype(nonempty(union([pts : pt <- pseudotypes, pseudotype(pts?) << pt])));
 
 
-PseudoType pseudotype_any = pseudotype([:symbols, :integers, :empty_set, :ne_sets, :empty_seq, :ne_seqs, :empty_map, :ne_maps, :tag_objs]);
+NePseudoType pseudotype_any = pseudotype([:symbols, :integers, :empty_set, :ne_sets, :empty_seq, :ne_seqs, :empty_map, :ne_maps, :tag_objs]);
 
-PseudoType pseudotype_symbol(Atom a)  = pseudotype([:symbol(a)]);
-PseudoType pseudotype_symbols         = pseudotype([:symbols]);
-PseudoType pseudotype_integers        = pseudotype([:integers]);
-PseudoType pseudotype_floats          = pseudotype([:floats]);
-PseudoType pseudotype_empty_seq       = pseudotype([:empty_seq]);
-PseudoType pseudotype_empty_set       = pseudotype([:empty_set]);
-PseudoType pseudotype_empty_map       = pseudotype([:empty_map]);
-PseudoType pseudotype_ne_seqs         = pseudotype([:ne_seqs]);
-PseudoType pseudotype_ne_sets         = pseudotype([:ne_sets]);
-PseudoType pseudotype_ne_maps         = pseudotype([:ne_maps]);
-PseudoType pseudotype_seqs            = pseudotype([:empty_seq, :ne_seqs]);
-PseudoType pseudotype_sets            = pseudotype([:empty_set, :ne_sets]);
-PseudoType pseudotype_maps            = pseudotype([:empty_map, :ne_maps]);
-PseudoType pseudotype_tag_obj(Atom a) = pseudotype([:tag_obj(a)]);
-PseudoType pseudotype_tag_objs        = pseudotype([:tag_objs]);
+PseudoType pseudotype_empty = pseudotype([]);
+
+NePseudoType pseudotype_symbol(Atom a)  = pseudotype([:symbol(a)]);
+NePseudoType pseudotype_symbols         = pseudotype([:symbols]);
+NePseudoType pseudotype_integers        = pseudotype([:integers]);
+NePseudoType pseudotype_floats          = pseudotype([:floats]);
+NePseudoType pseudotype_empty_seq       = pseudotype([:empty_seq]);
+NePseudoType pseudotype_empty_set       = pseudotype([:empty_set]);
+NePseudoType pseudotype_empty_map       = pseudotype([:empty_map]);
+NePseudoType pseudotype_ne_seqs         = pseudotype([:ne_seqs]);
+NePseudoType pseudotype_ne_sets         = pseudotype([:ne_sets]);
+NePseudoType pseudotype_ne_maps         = pseudotype([:ne_maps]);
+NePseudoType pseudotype_seqs            = pseudotype([:empty_seq, :ne_seqs]);
+NePseudoType pseudotype_sets            = pseudotype([:empty_set, :ne_sets]);
+NePseudoType pseudotype_maps            = pseudotype([:empty_map, :ne_maps]);
+NePseudoType pseudotype_tag_obj(Atom a) = pseudotype([:tag_obj(a)]);
+NePseudoType pseudotype_tag_objs        = pseudotype([:tag_objs]);
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -62,17 +68,17 @@ Bool are_disjoint(PseudoType pt1, PseudoType pt2) = not (? bpt1 <- basic_pseudot
 PseudoType pseudotype(Obj obj) = pseudotype([atomic_pseudotype(obj)]);
 
 AtomicPseudoType atomic_pseudotype(Obj):
-  object(+ a?)        = :symbol(a),
-  object(*)           = :integers,
-  object(^)           = :floats,
-  object([..] s?)    = if s == [] then :empty_set else :ne_sets,
-  object((..) s?)    = if s == () then :empty_seq else :ne_seqs,
-  object([->] m?)    = if m == [:] then :empty_map else :ne_maps,
-  object(tag @ obj)   = :tag_obj(tag); //## REPLACE THE obj VARIABLE WITH _ AS SOON AS THE PARSER ALLOWS IT
+  object(+ a?)      = :symbol(a),
+  object(*)         = :integers,
+  object(^)         = :floats,
+  object([..] s?)   = if s == [] then :empty_set else :ne_sets,
+  object((..) s?)   = if s == () then :empty_seq else :ne_seqs,
+  object([->] m?)   = if m == [:] then :empty_map else :ne_maps,
+  object(tag @ obj) = :tag_obj(tag); //## REPLACE THE obj VARIABLE WITH _ AS SOON AS THE PARSER ALLOWS IT
 
 ///////////////////////////////////////////////////////////////////////////////
 
-PseudoType pseudotype(Pattern ptrn):
+NePseudoType pseudotype(Pattern ptrn):
   ptrn_symbol             = pseudotype_symbols,
   ptrn_float              = pseudotype_floats,
   ptrn_empty_set          = pseudotype_empty_set,
@@ -94,7 +100,8 @@ PseudoType pseudotype(Pattern ptrn):
 
 ///////////////////////////////////////////////////////////////////////////////
 
-Pattern pseudotype_pattern(PseudoType pseudotype) = ptrn_union([pseudotype_pattern(pt) : pt <- basic_pseudotypes(pseudotype)]);
+Pattern pseudotype_pattern(NePseudoType pseudotype):
+  pseudotype(bpts?) = ptrn_union([pseudotype_pattern(pt) : pt <- bpts]);
 
 Pattern pseudotype_pattern(BasicPseudoType pseudotype):
   symbol(a?)  = ptrn_symbol(a),
@@ -116,7 +123,7 @@ Bool matches(Pattern ptrn, PseudoType ptype) = not are_disjoint(pseudotype(ptrn)
 
 ///////////////////////////////////////////////////////////////////////////////
 
-Maybe[Pattern] restrict(Pattern ptrn, PseudoType ptype):
+Maybe[Pattern] restrict(Pattern ptrn, NePseudoType ptype):
   ptrn_symbol       = restrict_ptrn_symbol(ptype),
   ptrn_any          = just(pseudotype_pattern(ptype)),
   ptrn_tag_obj()    = { match (ptrn.tag)
@@ -145,14 +152,14 @@ Maybe[Pattern] restrict_ptrn_any_tag_obj(Pattern obj_ptrn, PseudoType ptype)
 }
 
 
-Maybe[Pattern] restrict_ptrn_var(StdVar var, Pattern ptrn, PseudoType ptype)
+Maybe[Pattern] restrict_ptrn_var(StdVar var, Pattern ptrn, NePseudoType ptype)
 {
   restr_ptrn = restrict(ptrn, ptype);
   return if restr_ptrn != nil then just(ptrn_var(var, value(restr_ptrn))) else nil;
 }
 
 
-Maybe[Pattern] restrict_ptrn_union([+Pattern] ptrns, PseudoType ptype)
+Maybe[Pattern] restrict_ptrn_union([+Pattern] ptrns, NePseudoType ptype)
 {
   restr_ptrns = [value(rp) : p <- ptrns, rp = restrict(p, ptype), rp != nil];
   return if restr_ptrns != [] then just(ptrn_union(restr_ptrns)) else nil;

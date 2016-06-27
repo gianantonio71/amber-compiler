@@ -153,10 +153,10 @@ Int pow(Int b, Nat e)
 
 (String, String*) gen_int_seq_decl_and_def(Int+ int_seq, Nat seq_id)
 {
-  min = min(int_seq);
-  max = max(int_seq);
+  min_elem = min(int_seq);
+  max_elem = max(int_seq);
 
-  type_name = int_type_c_name(min, max);
+  type_name = int_type_c_name(min_elem, max_elem);
 
   sgn = "const " & type_name & " " & const_int_seq_c_name(seq_id) & "[" & printed(length(int_seq)) & "]";
 
@@ -167,7 +167,7 @@ Int pow(Int b, Nat e)
   if total_len < 60:
     def = (sgn & " = {" & append(strs, ", ") & "};");
   else
-    max_len = nat(max((length(printed(n)) : n <- (min, max))));
+    max_len = nat(max((length(printed(n)) : n <- (min_elem, max_elem))));
     last_idx = length(int_seq) - 1;
     strs = (align_text(s, max_len, ascii_space) & if i != last_idx then ", " else "" : s @ i <- strs);
     cont_lines = ("  " & append(ss) : ss <- split_into_groups(strs, nz_nat(100 / {max_len + 2})));
@@ -580,8 +580,14 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef), (String, Nat)* int_s
     vector_vars = [v : v <- vars_to_decl, v :: VecVar];
     scalar_vars = vars_to_decl - vector_vars;
 
-    vec_var_ids  = [v.id : v <- vector_vars];
-    new_vec_vars = [vvar(id, nz_nat(max([v.size : v <- vector_vars, v.id == id]))) : id <- vec_var_ids];
+    vec_vars_by_id = group_by(vector_vars, $.id);
+    new_vec_vars = [vvar(id, nz_nat(max([v.size : v <- vs]))) : vs @ id <- vec_vars_by_id];
+
+    assert {
+      vec_var_ids  = [v.id : v <- vector_vars];
+      ref_new_vec_vars = [vvar(id, nz_nat(max(nonempty([v.size : v <- vector_vars, v.id == id])))) : id <- vec_var_ids];
+      return new_vec_vars == ref_new_vec_vars;
+    };
 
     vars_to_decl = scalar_vars & new_vec_vars;
     return (var_decl(v) : v <- rand_sort(vars_to_decl));
@@ -715,8 +721,8 @@ using String typesymb2name(TypeSymbol), Nat cls2id(ClsDef), (String, Nat)* int_s
 
     auto_cleanup()        = (cleanup_method_name(instr.type) & "(&" & to_c_var_name(instr.var, false) & ");"),
 
-    set_input()           = { value = instr.value;
-                              value_str = if value != nil then to_c_expr(value(value)) else "make_null_obj()";
+    set_input()           = { maybe_value = instr.value;
+                              value_str = if maybe_value != nil then to_c_expr(value(maybe_value)) else "make_null_obj()";
                               method_name = input_set_method_name(instr.type, instr.input);
                               return (method_name & "(&" & to_c_var_name(instr.var, false) & ", " & value_str & ");");
                             },
@@ -1009,6 +1015,7 @@ using String typesymb2name(TypeSymbol)
     empty_map           = "make_empty_map()",
     ObjVar              = to_c_var_name(expr),
     at()                = "at("                 & to_c_expr(expr.seq) & ", " & to_c_expr(expr.idx) & ")",
+    search_or_lookup()  = "search_or_lookup("   & to_c_expr(expr.collection) & ", " & to_c_expr(expr.value) & ")",
     get_tag(e?)         = "get_tag("            & to_c_expr(e)        & ")",
     get_inner_obj(e?)   = "get_inner_obj("      & to_c_expr(e)        & ")",
     bool_obj(e?)        = "make_bool("          & to_c_expr(e)        & ")",
