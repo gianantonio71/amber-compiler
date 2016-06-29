@@ -9,6 +9,7 @@ Block gen_auto_code(Automaton automaton, [Int+ -> Nat] int_seqs_ids, [AutoSymbol
 
   levels_sizes = count_vector((n.level : n <- nodes));
   levels_offsets = (0) & partial_sums(levels_sizes);
+  level_marked_nodes_counts = count_vector((n.level : n <- nodes, needs_initial_update(n)), length(levels_sizes));
 
   input_ids = keys(automaton.inputs);
   disc_sgns_ids = discrete_signals(automaton);
@@ -25,7 +26,7 @@ Block gen_auto_code(Automaton automaton, [Int+ -> Nat] int_seqs_ids, [AutoSymbol
   // That is done in the target language code generation phase
   is_time_sensitive = in(automaton.name, time_sensitive_autos);
   memb_int_vars = seq_union((memb_int_vars(n) : n <- nodes)) &
-                  set(((update_count_var(l), s) : s @ l <- levels_sizes, s > 2)) &
+                  set(((update_count_var(l), level_marked_nodes_counts[l]) : s @ l <- levels_sizes, s > 2)) &
                   [(time_triggers_count_var, 0) if is_time_sensitive, (last_update_time, 0) if is_time_sensitive];
 
   memb_bool_vars = seq_union((memb_bool_vars(n) : n <- nodes)) & [(is_new, true)];
@@ -249,7 +250,8 @@ using
     code_2 = (init_memb_var(var, init_val) : var, init_val <- rand_sort(memb_obj_vars));
 
     // Creating the list of node that are initially marked for update
-    marked_nodes = [id : v_iv <- memb_bool_vars, v = left(v_iv), iv = right(v_iv), marked_for_update_var(id?) << v, iv];
+    marked_nodes = [id : n @ id <- nodes_by_id, needs_initial_update(n)];
+    assert marked_nodes == [id : v_iv <- memb_bool_vars, v = left(v_iv), iv = right(v_iv), marked_for_update_var(id?) << v, iv];
     marked_nodes_by_level = (intersection(ns, marked_nodes) : ns @ l <- nodes_ids_by_level);
 
     // Initializing variables that contain the list of nodes that must be updated.
