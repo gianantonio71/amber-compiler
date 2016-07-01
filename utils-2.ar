@@ -144,7 +144,7 @@ Bool is_param_type(FnType type) = at_least_one((is_param_type(t) : t <- type.par
   let_stmt()                = union([retrieve(e) : e @ unused_var <- stmt.asgnms]) & retrieve_from_nested_exprs(stmt.body, retrieve),
   break_stmt                = [],
   fail_stmt                 = [],
-  assert_stmt()             = retrieve(stmt.cond),
+  assert_stmt()             = retrieve(stmt.cond) & union([retrieve(v) : v <- stmt.env]), //## NOT SURE ABOUT THIS ONE. THE VARIABLES ARE KEPT ARTIFICIALLY ALIVE...
   print_stmt(e?)            = retrieve(e),
   imp_update_stmt()         = retrieve(stmt.idx) & retrieve(stmt.value),
   return_stmt               = [],
@@ -271,7 +271,15 @@ Statement replace_exprs_in_stmt(Statement stmt, (Expr -> Expr) replace):
   let_stmt()          = let_stmt([n -> replace(e) : e @ n <- stmt.asgnms], replace_exprs_in_stmts(stmt.body, replace)),
   break_stmt          = break_stmt,
   fail_stmt           = fail_stmt,
-  assert_stmt()       = assert_stmt(replace(stmt.cond), stmt.file, stmt.line, stmt.text),
+  assert_stmt()       = assert_stmt(
+                          replace(stmt.cond),
+                          //## NEITHER OF THESE IS GOOD. BUT WHAT ALTERNATIVES DO WE HAVE?
+                          [if e :: <StdVar, NamedArg> then e else {fail;} : v <- stmt.env, e = replace(v)],
+                          // [e : v <- stmt.env, e = replace(v), e :: <StdVar, NamedArg>],
+                          stmt.file,
+                          stmt.line,
+                          stmt.text
+                        ),
   print_stmt(e?)      = print_stmt(replace(e)),
   imp_update_stmt()   = imp_update_stmt(stmt.obj, replace(stmt.idx), replace(stmt.value)),
   return_stmt         = return_stmt,

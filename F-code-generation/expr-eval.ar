@@ -797,7 +797,7 @@ using
     print_stmt(e?)            = {info = gen_eval_info(e); return nonempty(info.eval_code & (print_obj(info.expr)));},
     return_stmt               = (exit_block),
     return_stmt(e?)           = nonempty(gen_eval_code(e, res_var) & (exit_block)),
-    assert_stmt()             = gen_code_for_assert_stmt(stmt.cond, stmt.file, stmt.line, stmt.text),
+    assert_stmt()             = gen_code_for_assert_stmt(stmt.cond, stmt.env, stmt.file, stmt.line, stmt.text),
     let_stmt()                = gen_code_for_let_stmt(stmt.asgnms, stmt.body, res_var),
     assignment_stmt()         = gen_code_for_assignment_stmt(stmt.vars, stmt.value, res_var),
     imp_update_stmt()         = gen_code_for_imp_update_stmt(stmt.obj, stmt.idx, stmt.value, res_var),
@@ -863,12 +863,14 @@ using
   }
 
 
-  Instr+ gen_code_for_assert_stmt(Expr cond, String file, NzNat line, Maybe[String] text)
+  Instr+ gen_code_for_assert_stmt(Expr cond, [<StdVar, NamedArg>] env, String file, NzNat line, Maybe[String] text)
   {
-    return (no_op) if ignore_assertions; //## WHY RETURNING [no_op] INSTEAD OF JUST []?
+    return (no_op) if ignore_assertions; //## WHY RETURNING (no_op) INSTEAD OF JUST []?
     info = gen_eval_info(cond);
-    vs = [v : v <- extern_vars(cond), v :: <StdVar, NamedArg>];
-    return nonempty(info.eval_code & (runtime_check(info.expr, file, line, text, vs)));
+    // vs = [v : v <- extern_vars(cond), v :: <StdVar, NamedArg>]; //## BUG BUG BUG: WHAT HAPPENS IF THE ASSERTION CONTAINS A NAMED ARGUMENT THAT IS ALSO A CLOSURE?
+    expr_vars = extern_vars(cond);
+    vars = rand_sort([v : v <- env, in(v, expr_vars)]) & rand_sort([v : v <- env, not in(v, expr_vars)]);
+    return (info.eval_code | runtime_check(info.expr, file, line, text, vars));
   }
 
 
