@@ -186,3 +186,70 @@ Bool already_def(Atom var_name, [Var] vars) =
 
 FnSymbol named_arg_to_fn_symb(NamedArg p):
   named_arg(n?)   = fn_symbol(n);
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+Bool may_override(AutoDecl):
+  syn_input()             |
+  syn_output()            |
+  syn_state()             = false,
+  syn_plain_rule()        |
+  syn_cond_rule()         |
+  syn_foreach_rule()      |
+  syn_time_varying_rule() |
+  syn_nested_auto()       |
+  syn_method_call()       = true;
+
+
+Bool may_be_overriden(AutoDecl decl):
+  syn_input()   = true,
+  _             = may_override(decl);
+
+
+Atom auto_decl_id(AutoDecl decl):
+  syn_input()             |
+  syn_output()            |
+  syn_state()             |
+  syn_plain_rule()        |
+  syn_cond_rule()         |
+  syn_foreach_rule()      |
+  syn_time_varying_rule() |
+  syn_nested_auto()       = decl.name,
+  syn_method_call()       = decl.target;
+
+
+[SynAutoDef] resolve_inheritance([SynAutoDef] automata)
+{
+  autos_by_id = [a.name -> a : a <- automata];
+
+  parent_child_rels = [a.name -> [auto_symbol(a.parent) if a.parent?] : a <- automata];
+  sorted_auto_ids = topological_sort(parent_child_rels);
+
+  resolved_autos_by_id = [:];
+  for ids <- sorted_auto_ids:
+    layer_autos_by_id = [id -> resolve_inheritance(autos_by_id[id], resolved_autos_by_id) : id <- ids];
+    resolved_autos_by_id = resolved_autos_by_id & layer_autos_by_id;
+  ;
+
+  return values(resolved_autos_by_id);
+
+
+  SynAutoDef resolve_inheritance(SynAutoDef child, [AutoSymbol -> SynAutoDef] resolved_autos_by_id)
+  {
+    return child if not child.parent?;
+    parent = resolved_autos_by_id[auto_symbol(child.parent)];
+
+    child_decls = set(child.decls);
+
+    overriding_ids = [auto_decl_id(d) : d <- set(child.decls), may_override(d)];
+    inherited_decls = (d : d <- parent.decls, not may_be_overriden(d) or not in(auto_decl_id(d), overriding_ids));
+
+    return syn_auto_def(
+      name:       child.name,
+      pos_inputs: child.pos_inputs,
+      res_type:   child.res_type if child.res_type?,
+      decls:      child.decls & inherited_decls
+    );
+  }
+}

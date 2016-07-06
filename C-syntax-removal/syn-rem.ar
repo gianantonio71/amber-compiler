@@ -22,18 +22,10 @@ Program rem_syntax(SynPrg prg)
       [syn_fndef_to_fndefs(fd, set(ub.signatures), typedefs, fn_arg_arities) : ub <- ublocks, fd <- set(ub.fn_defs)]
   );
 
-  auto_interfaces = [a.name -> interface_info(a) : a <- automata];
-  read_only_methods_by_automaton = merge_values([[m.automaton -> m] : m <- read_only_methods]);
-  update_methods_by_automaton = merge_values([[m.automaton -> m] : m <- update_methods]);
-  let typedefs = typedefs, fn_arg_arities = fn_arg_arities, auto_interfaces = auto_interfaces:
-    desugared_automata = [
-      syn_auto_def_to_auto_def(a, rms, ums)
-      : a <- automata,
-        rms = lookup(read_only_methods_by_automaton, a.name, []),
-        ums = lookup(update_methods_by_automaton, a.name, [])
-    ];
-  ;
+  no_inheritance_automata = resolve_inheritance(automata);
+  desugared_automata = desugar_automata(no_inheritance_automata, read_only_methods, update_methods, typedefs, fn_arg_arities);
 
+  auto_interfaces = [a.name -> interface_info(a) : a <- no_inheritance_automata];
   desugared_proc_defs = [syn_proc_def_to_proc_def(pd, typedefs, fn_arg_arities, auto_interfaces) : pd <- proc_defs];
 
   return program(
@@ -43,6 +35,25 @@ Program rem_syntax(SynPrg prg)
     proc_defs:      desugared_proc_defs,
     auto_defs:      desugared_automata
   );
+}
+
+
+[Automaton] desugar_automata([SynAutoDef] automata, [SynReadOnlyMethodDef] read_only_methods, [SynUpdateMethodDef] update_methods, [TypeName -> Type] typedefs, [FnSymbol -> [Nat -> Nat*]] fn_arg_arities)
+{
+  auto_interfaces = [a.name -> interface_info(a) : a <- automata];
+  read_only_methods_by_automaton = merge_values([[m.automaton -> m] : m <- read_only_methods]);
+  update_methods_by_automaton = merge_values([[m.automaton -> m] : m <- update_methods]);
+
+  let typedefs = typedefs, fn_arg_arities = fn_arg_arities, auto_interfaces = auto_interfaces:
+    desugared_automata = [
+      syn_auto_def_to_auto_def(a, rms, ums)
+      : a <- automata,
+        rms = lookup(read_only_methods_by_automaton, a.name, []),
+        ums = lookup(update_methods_by_automaton, a.name, [])
+    ];
+  ;
+
+  return desugared_automata;
 }
 
 
