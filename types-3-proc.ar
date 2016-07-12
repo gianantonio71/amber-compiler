@@ -50,7 +50,7 @@ type BoolVar        = bvar(Nat),
 
 type IntArgVar      = elapsed_time;
 
-type IntVar         = ivar(Nat), curr_time, update_time, MembIntVar, IntArgVar;
+type IntVar         = ivar(Nat), update_time, curr_time, MembIntVar, IntArgVar;
 
 type StreamVar      = svar(Nat); //## DOES THIS NEED CLEANUP?
 
@@ -218,8 +218,8 @@ type BasicInstr     = init_stream(StreamVar),
 
                       set_rc_var(var: WriteObjVar, value: <FloatExpr, RefObjExpr>),
 
-                      init_memb_var(var: <MembVar, MembObjVar, PendingInputVar, PendingStateVar>, new_state: <blank, undefined>),
-                      reset_memb_var(var: <MembVar>, new_state: <blank, undefined>),
+                      init_memb_var(var: <MembVar, MembCopyVar, MembObjVar, PendingInputVar, PendingStateVar>, new_state: <blank, undefined>),
+                      reset_memb_var(var: <MembVar, MembCopyVar>, new_state: <blank, undefined>),
                       clear_loc_var(LocVar), //## BAD: I DON'T LIKE THE ABILITY TO CLEAR A NON-MEMBER VARIABLE
 
                       add_ref(ObjVar),
@@ -232,6 +232,11 @@ type BasicInstr     = init_stream(StreamVar),
                       call_proc(var: WriteObjVar?, name: ObjFnName, params: <AtomicExpr, BoundCls>*),
                       call_cls(var: WriteObjVar, cls_var: <ClsVar, NamedArg>, params: AtomicExpr*),
 
+                      push_call_info(fn_name: ObjFnName, params: Maybe[FnPar]*),
+                      pop_call_info,
+
+                      runtime_check(cond: AtomicExpr, file: String, line: NzNat, text: Maybe[String], vars: <StdVar, NamedArg>*),
+
                       //## THESE TYPES SHOULD BE REFINED, BlockNodeId IS TOO GENERAL
                       queue_update(type: AutoSymbol, id: BlockNodeId),
                       queue_cond_update(type: AutoSymbol, id: BlockNodeId, inval_cache: Bool),
@@ -239,17 +244,17 @@ type BasicInstr     = init_stream(StreamVar),
                       insert_timer(type: AutoSymbol, idx: IntExpr, time: IntExpr),
                       clear_timer(type: AutoSymbol, idx: IntExpr),
 
-                      auto_init(var: AnyAutoVar, type: AutoSymbol),
+                      auto_pre_init(var: AnyAutoVar, type: AutoSymbol),
                       auto_cleanup(var: AnyAutoVar, type: AutoSymbol),
 
                       set_input(var: AnyAutoVar, type: AutoSymbol, input: Atom, value: Maybe[AtomicExpr]),
-                      prop_input_updates(var: AnyAutoVar?, type: AutoSymbol, elapsed_time: IntExpr),
-                      call_method(res_var: WriteObjVar?, auto_var: AnyAutoVar?, type: AutoSymbol, name: ExMethodSymb, args: AtomicExpr*),
 
-                      push_call_info(fn_name: ObjFnName, params: Maybe[FnPar]*),
-                      pop_call_info,
+                      auto_init(var: AnyAutoVar?, type: AutoSymbol),
+                      auto_update(var: AnyAutoVar?, type: AutoSymbol),
+                      auto_update_node(type: AutoSymbol, node: BlockNodeId, time_var: IntVar?),
+                      auto_apply(var: AnyAutoVar?, type: AutoSymbol, elapsed_time: IntExpr),
 
-                      runtime_check(cond: AtomicExpr, file: String, line: NzNat, text: Maybe[String], vars: <StdVar, NamedArg>*);
+                      call_method(res_var: WriteObjVar?, auto_var: AnyAutoVar?, type: AutoSymbol, name: ExMethodSymb, args: AtomicExpr*);
 
 type JumpInstr      = break_loop,
                       exit_block,
@@ -306,9 +311,10 @@ type Block          = block(
                         outputs:            [Atom],
                         memb_vars:          [<MembVar, MembObjVar, PendingInputVar, PendingStateVar, MembIntVar, MembIntVectVar, MembBoolVar>],
                         nested_auto_vars:   [MembAutoVar -> AutoSymbol],
-                        init_code:          Instr*,
-                        update_code:        Instr*,
+                        pre_init_code:      Instr*,
                         cleanup_code:       Instr*,
+                        apply_code:         Instr*,
+                        nodes_update_code:  [BlockNodeId -> Instr*],
                         queue_update_code:  [BlockNodeId -> [body: Instr*, two_level_update: Bool]],
                         methods_code:       [ExMethodSymb -> Instr*],
                         const_data:         [ConstBlockData],

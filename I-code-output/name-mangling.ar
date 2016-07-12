@@ -1,0 +1,200 @@
+using String typesymb2name(TypeSymbol)
+{
+  String to_c_var_decl_name(<ObjVar, PendingInputVar, BoolVar, IntVar, AnyAutoVar> v) = to_c_var_name(v, false);
+  String to_c_var_ref_name(<ObjVar, PendingInputVar, BoolVar, IntVar, AnyAutoVar> v) = to_c_var_name(v, true);
+
+  String to_c_var_decl_name(<VecVar, SetItVar, SeqItVar, MapItVar, StreamVar, ClsVar> v) = to_c_var_name(v);
+  String to_c_var_ref_name(<VecVar, SetItVar, SeqItVar, MapItVar, StreamVar, ClsVar> v)  = to_c_var_name(v);
+
+  /////////////////////////////////////////////////////////////////////////////////////
+
+  String to_c_var_decl_name(MembIntVectVar v) = "nodes_to_update_" & printed(v.level) & "[" & printed(v.size) & "]";
+
+  /////////////////////////////////////////////////////////////////////////////////////
+
+  String to_c_var_name(VecVar v)          = "V" & printed(v.id);
+  String to_c_var_name(SetItVar v)        = "s" & printed(_obj_(v));
+  String to_c_var_name(SeqItVar v)        = "q" & printed(_obj_(v));
+  String to_c_var_name(MapItVar v)        = "m" & printed(_obj_(v));
+  String to_c_var_name(StreamVar v)       = "t" & printed(_obj_(v));
+
+  String to_c_var_name(ClsVar v):
+    cls_var(+ a?)  = upper_camel_case(a) & "_C",
+    cls_var(* n?)  = "c" & printed(n);
+
+  /////////////////////////////////////////////////////////////////////////////////////
+
+  String to_c_var_name(<ObjVar, PendingInputVar> v, Bool add_prefix)
+  {
+    prefix = if add_prefix
+      then match (v)
+        memb_copy_var()   = "self_aux.",
+        _                 = "self->"
+      else "";
+
+    return match (v)
+      var(Atom a?)                  = upper_camel_case(a) & "_V",
+      fn_par(Nat n?)                = "p" & printed(n),
+      named_arg(Atom a?)            = "env.n_"  & _str_(a),
+      cls_ext_par(Nat n?)           = "C["  & printed(n) & "]",
+      memb_var(Atom a?)             = prefix & upper_camel_case(a),
+      watched_signal_value_var(a?)  = prefix & upper_camel_case(a) & "_WS",
+      memb_copy_var(Atom a?)        = prefix & upper_camel_case(a) & "_O",
+      pending_state_var(a?)         = prefix & upper_camel_case(a) & "_PV",
+      lvar(Nat n?)                  = "l" & printed(n),
+      evar()                        = "V" & printed(v.id) & "[" & to_c_expr(v.idx) & "]",
+      pending_input_var(Atom a?)    = prefix & upper_camel_case(a) & "_new";
+  }
+
+
+  String to_c_var_name(BoolVar v, Bool add_prefix)
+  {
+    prefix = if add_prefix
+      then match (v)
+        memb_has_changed()    |
+        rep_cond_value_var()  |
+        rep_cond_is_def_var() = "self_aux.",
+        _                     = "self->"
+      else "";
+
+    return match (v)
+      bvar(n?)                                      = "b" & printed(n),
+      memb_has_changed(id?)                         = prefix & "hc_" & upper_camel_case(id),
+      rep_cond_value_var(id?)                       = prefix & "rc" & printed(id),
+      rep_cond_is_def_var(id?)                      = prefix & "rcd" & printed(id),
+      invalidate_cond_expr_cache                    = "inval_cache",
+      cond_value_var(n?)                            = prefix & "cond_" & printed(n),
+      cond_expr_up_to_date_var(Nat n?)              = prefix & "cond_" & printed(n) & "_expr_up_to_date",
+      cond_expr_value_var(Nat n?)                   = prefix & "cond_" & printed(n) & "_expr",
+      cond_expr_is_def_var(Nat n?)                  = prefix & "cond_" & printed(n) & "_expr_is_def",
+      cond_is_def_var(n?)                           = prefix & "cond_" & printed(n) & "_is_def",
+      watched_signal_up_to_date_var(a?)             = prefix & upper_camel_case(a) & "_WSUTD",
+      has_pending_message_var(a?)                   = prefix & upper_camel_case(a) & "_PS",
+      marked_for_update_var(std_block_node_id(a?))  = prefix & upper_camel_case(a) & "_marked_for_update",
+      marked_for_update_var(cond_node_id(n?))       = prefix & "cond_" & printed(n) & "_marked_for_update",
+      marked_for_update_var(nested_auto_input_id() id?) = prefix & upper_camel_case(id.auto) & "_" & upper_camel_case(id.input) & "_marked_for_update",
+      is_new                                        = prefix & "is_new";
+  }
+
+
+  String to_c_var_name(IntVar v, Bool add_prefix)
+  {
+    prefix = if add_prefix then "self->" else "";
+    return match (v)
+      ivar(n?)                            = "i" & printed(n),
+      curr_time                           = "curr_time",
+      update_time                         = "update_time",
+      elapsed_time                        = "elapsed_time",
+      update_source_var(a?)               = prefix & upper_camel_case(a) & "_update_source",
+      update_count_var(l?)                = prefix & "update_count_" & printed(l),
+      nodes_to_update_var()               = prefix & "nodes_to_update_" & to_c_expr(v.level) & "[" & to_c_expr(v.index) & "]",
+      next_trigger_time_var(a?)           = prefix & upper_camel_case(a) & "_next_trigger_time",
+      curr_time_slot_var(a?)              = prefix & upper_camel_case(a) & "_curr_time_slot",
+      time_triggers_count_var             = prefix & "time_triggers_count",
+      trigger_times_heap_var(i?)          = prefix & "trigger_times_heap[" & to_c_expr(i) & "]",
+      time_varying_cond_ids_heap_var(i?)  = prefix & "time_varying_cond_ids_heap[" & to_c_expr(i) & "]",
+      last_update_time                    = prefix & "last_update_time",
+      nested_auto_int_var()               = to_c_var_name(v.auto_var, true) & "." & to_c_var_name(v.memb_var, false);
+  }
+
+
+  String to_c_var_name(AnyAutoVar v, Bool add_prefix):
+    loc_auto_var(a?)  = upper_camel_case(a) & "_A",
+    memb_auto_var(a?) = {if add_prefix then "self->" else ""} & upper_camel_case(a) & "_A";
+
+  ///////////////////////////////////////////////////////////////////////////////
+  ///////////////////////////////////////////////////////////////////////////////
+
+  String to_c_fn_name(FnSymbol fn_symb, Nat arity):
+    fn_symbol(symb?)    = upper_camel_case(symb) & "_" & printed(arity),
+    op_symbol(op?)      = _str_(op),
+    nested_fn_symbol()  = to_c_fn_name(fn_symb.outer, arity) & "__" & to_c_fn_name(fn_symb.inner, arity),
+    unique_fn_symbol()  = to_c_fn_name(fn_symb.symbol, arity) & uppercase_encoding(fn_symb.id); //## IS THIS ENOUGHT TO AVOID CONFLICTS?
+
+  String to_c_fn_name(BoolFnName n, Nat) = to_c_fn_name(n);
+  String to_c_fn_name(BoolFnName): memb_test(ts?)   = "is_" & typesymb2name(ts); //## UGLY UGLY UGLY
+
+  String to_c_fn_name(ProcSymbol s, Nat) = to_c_fn_name(s);
+  String to_c_fn_name(ProcSymbol): proc_symbol(s?)  = upper_camel_case(s) & "_P"; //## UGLY UGLY UGLY
+
+}
+
+
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+String to_c_time_slots_table_name(AutoSymbol auto_name, Atom table_id) =
+  to_c_name(auto_name) & "_" & upper_camel_case(table_id) & "_time_slots_table";
+
+
+String var_c_type(ObjVar)           = "OBJ";
+String var_c_type(PendingInputVar)  = "OBJ";
+String var_c_type(IntVar)           = "int64";
+String var_c_type(MembIntVectVar)   = "int64";
+String var_c_type(BoolVar)          = "bool";
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+String fn_name_to_str(FnSymbol fn_symb):
+  fn_symbol(symb?)    = _str_(symb),
+  op_symbol(op?)      = _str_(op),
+  //## BUG: THIS DOESN'T SPECIFY WHICH OF THE OUTER FUNCTIONS
+  //## WITH THE SAME NAME THE NESTED FUNCTION BELONGS TO
+  nested_fn_symbol()  = fn_name_to_str(fn_symb.outer) & ":" & fn_name_to_str(fn_symb.inner),
+  unique_fn_symbol()  = fn_name_to_str(fn_symb.symbol); //## BAD: THE DISPATCH FUNCTION WILL APPEAR ON THE STACK, AND IT WILL BE INDISTINGUISHABLE FROM ONE OF THE REAL FUNCTIONS
+
+String fn_name_to_str(ProcSymbol proc_symbol): proc_symbol(s?) = capitalize(_str_(s), false); //## UGLY UGLY UGLY
+
+
+String to_c_const(<blank, undefined> state) = if state == :blank then "make_blank_obj()" else "make_null_obj()";
+
+///////////////////////////////////////////////////////////////////////////////
+
+String to_c_name(AutoSymbol): auto_symbol(a?) = upper_camel_case(a);
+
+String aux_struct_c_name(AutoSymbol symb) = to_c_name(symb) & "_AUX";
+
+String to_c_name(ExMethodSymb symb)
+{
+  id_str = if symb.id? then uppercase_encoding(symb.id) else "";
+  return match (symb.symbol)
+    msg_handler                 = "MSG_HANDLER" & if id_str != "" then "_" & id_str else "",
+    update_method_symb(a?)      = upper_camel_case(a) & "_U" & printed(symb.arity) & id_str,
+    read_only_method_symb(a?)   = upper_camel_case(a) & "_R" & printed(symb.arity) & id_str;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+String input_set_method_name(AutoSymbol auto, Atom input)   = to_c_name(auto) & "_" & upper_camel_case(input) & "_SET";
+
+String output_get_method_name(AutoSymbol auto, Atom output) = to_c_name(auto) & "_" & upper_camel_case(output) & "_GET";
+
+String user_def_method_name(AutoSymbol auto, ExMethodSymb method) = to_c_name(auto) & "_" & to_c_name(method);
+
+String pre_init_method_name(AutoSymbol name)    = to_c_name(name) & "_PREINIT";
+
+String node_update_method_name(AutoSymbol type, BlockNodeId node) = node_specific_method_name_prefix(node, type) & "_UPDATE";
+
+String apply_method_name(AutoSymbol name)  = to_c_name(name) & "_APPLY";
+
+String cleanup_method_name(AutoSymbol name) = to_c_name(name) & "_CLEANUP";
+
+String queue_update_method_name(BlockNodeId id, AutoSymbol auto) = node_specific_method_name_prefix(id, auto) & "_QUEUE_UPDATE";
+
+String node_specific_method_name_prefix(BlockNodeId id, AutoSymbol auto):
+  std_block_node_id(a?)   = to_c_name(auto) & "_" & upper_camel_case(a),
+  cond_node_id(n?)        = to_c_name(auto) & "_" & printed(n),
+  nested_auto_input_id()  = to_c_name(auto) & "_" & upper_camel_case(id.auto) & "_" & upper_camel_case(id.input);
+
+
+String insert_timer_method_name(AutoSymbol auto) = to_c_name(auto) & "_INSERT_TIMER";
+
+String clear_timer_method_name(AutoSymbol auto) = to_c_name(auto) & "_CLEAR_TIMER";
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+String const_int_seq_c_name(Nat seq_id) = "const_int_seq_" & printed(seq_id);

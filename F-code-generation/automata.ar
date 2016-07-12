@@ -57,8 +57,9 @@ Block gen_auto_code(Automaton automaton, [Int+ -> Nat] int_seqs_ids, [AutoSymbol
       levels_offsets              = levels_offsets,
       levels_sizes                = levels_sizes:
 
-    init_code               = gen_init_method_body(memb_bool_vars, memb_int_vars, memb_obj_vars);
-    update_code             = gen_update_method_body(nodes, nested_cond_ids, downstream_nodes);
+    pre_init_code           = gen_pre_init_method_body(memb_bool_vars, memb_int_vars, memb_obj_vars);
+    nodes_update_code       = gen_nodes_update_code(nodes, nested_cond_ids);
+    apply_code              = gen_apply_method_body(nodes, nested_cond_ids, downstream_nodes);
     read_only_methods_code  = gen_methods_code(automaton.read_only_methods, typedefs);
     update_methods_code     = gen_methods_code(automaton.update_methods, typedefs);
   ;
@@ -98,9 +99,10 @@ Block gen_auto_code(Automaton automaton, [Int+ -> Nat] int_seqs_ids, [AutoSymbol
     outputs:            keys(automaton.outputs),
     memb_vars:          memb_vars,
     nested_auto_vars:   [memb_auto_var(id) -> auto.type : auto @ id <- automaton.nested_autos],
-    init_code:          init_code,
-    update_code:        update_code,
+    pre_init_code:      pre_init_code,
     cleanup_code:       cleanup_code,
+    nodes_update_code:  nodes_update_code,
+    apply_code:         apply_code,
     queue_update_code:  queue_update_code,
     methods_code:       read_only_methods_code & update_methods_code,
     const_data:         const_data,
@@ -238,7 +240,7 @@ using
   }
 
 
-  Instr* gen_init_method_body([(MembBoolVar, Bool)] memb_bool_vars, [(MembIntVar, Int)] memb_int_vars, [(<MembVar, MembObjVar, PendingInputVar, PendingStateVar>, <blank, undefined>)] memb_obj_vars)
+  Instr* gen_pre_init_method_body([(MembBoolVar, Bool)] memb_bool_vars, [(MembIntVar, Int)] memb_int_vars, [(<MembVar, MembObjVar, PendingInputVar, PendingStateVar>, <blank, undefined>)] memb_obj_vars)
   {
     // Initializing all boolean member variables
     code_0 = (set_bvar(var, init_val) : var, init_val <- rand_sort(memb_bool_vars));
@@ -264,31 +266,50 @@ using
     //## THESE VARIABLES HAVE ALREADY BEEN INITIALIZED TO BLANK, AND THAT'S REDUNDANT
     code_4 = gen_params_init_code(automaton, options);
 
-    code_5 = rand_sort([auto_init(memb_auto_var(id), auto.type) : auto @ id <- automaton.nested_autos]);
+    code_5 = rand_sort([auto_pre_init(memb_auto_var(id), auto.type) : auto @ id <- automaton.nested_autos]);
 
     return join((code_0, code_1, code_2, code_3, code_4, code_5));
   }
 
 
-  Instr* gen_update_method_body(AutoNode+ nodes, [Nat] nested_cond_ids, [BlockNodeId -> [BlockNodeId]] downstream_nodes)
+  [BlockNodeId -> Instr*] gen_nodes_update_code(AutoNode+ nodes, [Nat] nested_cond_ids)
   {
     memb_copy_vars = memb_copy_vars(automaton);
     memb_copy_var_ids = [name(v) : v <- memb_copy_vars];
-
-    node_idx_var = ivar(0);
-    node_count_var = ivar(1);
 
     let auto_name                  = automaton.name,
         auto_vars_types            = [memb_auto_var(id) -> auto.type : auto @ id <- automaton.nested_autos],
         // multivalue_node_expr_count = multivalue_node_expr_count,
         memb_copy_var_ids          = memb_copy_var_ids,
         nested_cond_ids            = nested_cond_ids,
-        next_int_var_id            = 2:
+        next_int_var_id            = 0:
 
-      nodes_code_by_id = merge(([n.id -> gen_any_node_code(n)] : n <- nodes));
+      nodes_code_by_id = merge(([n.id -> gen_node_update_code(n)] : n <- nodes));
+    ;
+
+    return nodes_code_by_id;
+  }
+
+
+  Instr* gen_apply_method_body(AutoNode+ nodes, [Nat] nested_cond_ids, [BlockNodeId -> [BlockNodeId]] downstream_nodes)
+  {
+    memb_copy_vars = memb_copy_vars(automaton);
+    memb_copy_var_ids = [name(v) : v <- memb_copy_vars];
+    memb_copy_vars = rand_sort(memb_copy_vars);
+
+    node_idx_var = ivar(0);
+    node_count_var = ivar(1);
+    curr_time_var = ivar(2);
+    a_free_var = ivar(3);
+
+    let auto_name                  = automaton.name,
+        auto_vars_types            = [memb_auto_var(id) -> auto.type : auto @ id <- automaton.nested_autos],
+        // multivalue_node_expr_count = multivalue_node_expr_count,
+        memb_copy_var_ids          = memb_copy_var_ids,
+        nested_cond_ids            = nested_cond_ids,
+        next_int_var_id            = 4:
 
       //## WHAT DOES THIS DO? I HAVE NO IDEA...
-      //## AND WHAT IS IT DOING INSIDE THE LET STATEMENT?
       queue_memb_copy_updates_code = (
         do_if(
           memb_has_changed(id),
@@ -297,7 +318,7 @@ using
       );
     ;
 
-    levels_code = (gen_level_code(rand_sort(ids), nodes_code_by_id, i, levels_offsets[i], node_idx_var, node_count_var) : ids @ i <- nodes_ids_by_level);
+    levels_code = (gen_level_code(rand_sort(ids), i, levels_offsets[i], node_idx_var, node_count_var, curr_time_var) : ids @ i <- nodes_ids_by_level);
 
     first_pass_finish_code = (set_bvar(is_new, false));
     if disc_inputs_ids != []:
@@ -320,40 +341,41 @@ using
       //## MY CURRENT UNDERSTANDING (WHICH MAY WELL BE WRONG) IS THAT THE UPDATE IS FIRST CALLED
       //## THROUGH THE METHOD, BUT IGNORING THE DISCRETE INPUTS, AND THEN THE DISCRETE INPUTS ARE APPLIED,
       //## BUT WITHOUT THE OVERRIDING PROVIDED BY THE METHOD. DOES THAT MAKE SENSE?
-      first_pass_finish_code = (first_pass_finish_code | prop_input_updates(automaton.name, 0));
+      first_pass_finish_code = (first_pass_finish_code | auto_apply(automaton.name, 0));
     ;
 
-    update_code = (reset_memb_var(memb_var(id), :blank) : id <- rand_sort(disc_sgns_ids)) &
-                  (set_var(v, memb_var(name(v))) : v <- rand_sort(memb_copy_vars)) &
-                  join(levels_code) & (do_if(is_new, first_pass_finish_code));
+    apply_code = (reset_memb_var(memb_var(id), :blank) : id <- rand_sort(disc_sgns_ids)) &
+                 (init_memb_var(v, :blank) : v <- memb_copy_vars) &
+                 (set_var(v, memb_var(name(v))) : v <- memb_copy_vars) &
+                 join(levels_code) &
+                 (reset_memb_var(v, :blank) : v <- memb_copy_vars) &
+                 (do_if(is_new, first_pass_finish_code));
 
     init_memb_copies_code = (set_bvar(memb_has_changed(id), false) : id <- rand_sort(memb_copy_var_ids));
 
-    update_code = init_memb_copies_code & update_code & queue_memb_copy_updates_code;
-    update_code = add_time_loop(update_code) if in(automaton.name, time_sensitive_autos);
+    apply_code = init_memb_copies_code & apply_code & queue_memb_copy_updates_code;
+    apply_code = add_time_loop(apply_code, curr_time_var, a_free_var) if in(automaton.name, time_sensitive_autos);
 
-    return update_code;
+    return apply_code;
 
 
-    Instr* add_time_loop(Instr* core_code)
+    Instr* add_time_loop(Instr* core_code, IntVar curr_time_var, IntVar a_free_var)
     {
-      i0 = ivar(0); //## NOT SURE ABOUT THIS ONE
-
       time_varying_nodes_by_idx = merge([[i -> a] : i @ a <- time_varying_node_idxs]);
       assert time_varying_nodes_by_idx == reverse(time_varying_node_idxs);
 
       header_code = (
-        set_ivar(curr_time, update_time),
+        set_ivar(curr_time_var, update_time),
         do_if(
           is_gt(time_triggers_count_var, 0),
-          ( set_ivar(i0, trigger_times_heap_var(0)),
+          ( set_ivar(a_free_var, trigger_times_heap_var(0)),
             do_if(
-              is_le(i0, update_time),
-              ( set_ivar(curr_time, i0),
+              is_le(a_free_var, update_time),
+              ( set_ivar(curr_time_var, a_free_var),
                 repeat((
-                  set_ivar(i0, time_varying_cond_ids_heap_var(0)),
+                  set_ivar(a_free_var, time_varying_cond_ids_heap_var(0)),
                   switch_on_nat(
-                    i0,
+                    a_free_var,
                     ( { node_id = time_varying_nodes_by_idx[i];
                         if has_key(automaton.nested_autos, get_inner_id(node_id)):
                           return (queue_update(automaton.name, node_id));
@@ -363,11 +385,11 @@ using
                       } : i < nz_nat(size(time_varying_nodes_by_idx))
                     )
                   ),
-                  clear_timer(automaton.name, i0),
+                  clear_timer(automaton.name, a_free_var),
                   break_if(
                     or_else((
                       is_eq(time_triggers_count_var, 0),
-                      neg(is_eq(trigger_times_heap_var(0), curr_time))
+                      neg(is_eq(trigger_times_heap_var(0), curr_time_var))
                     ))
                   )
                 ))
@@ -380,20 +402,26 @@ using
       return (
         set_ivar(update_time, add(last_update_time, elapsed_time)),
         set_ivar(last_update_time, update_time),
-        repeat(nonempty(header_code & core_code & (break_if(is_eq(curr_time, update_time)))))
+        repeat(nonempty(header_code & core_code & (break_if(is_eq(curr_time_var, update_time)))))
       );
     }
   }
 
 
-
-  Instr* gen_level_code(BlockNodeId* nodes_ids, [BlockNodeId -> Instr*] nodes_code_by_id, Nat level_idx, Nat level_offset, IntVar node_idx_var, IntVar node_count_var)
+  Instr* gen_level_code(BlockNodeId* nodes_ids, Nat level_idx, Nat level_offset, IntVar node_idx_var, IntVar node_count_var, IntVar curr_time_var)
   {
+    is_time_sensitive = in(automaton.name, time_sensitive_autos);
+
     update_count_var = update_count_var(level_idx);
     node_count = length(nodes_ids);
 
     nodes_code = (
-      { code = nodes_code_by_id[id];
+      { code = (
+          if is_time_sensitive
+            then auto_update_node(automaton.name, id, curr_time_var)
+            else auto_update_node(automaton.name, id),
+          set_bvar(marked_for_update_var(id), false)
+        );
         is_disc_input = match (id)
           std_block_node_id(a?) = level_idx == 0 and in(a, disc_inputs_ids),
           _                     = false;
@@ -420,7 +448,7 @@ using
       code = (do_if(marked_for_update_var(nodes_ids[i]), nodes_code[i]) : i < node_count);
     ;
 
-    code = (do_if(is_eq(curr_time, update_time), code)) if level_idx == 0 and in(automaton.name, time_sensitive_autos);
+    code = (do_if(is_eq(curr_time_var, update_time), code)) if level_idx == 0 and is_time_sensitive;
 
     return code;
   }

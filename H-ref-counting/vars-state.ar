@@ -49,7 +49,7 @@ VarsState vars_state([TrkObjVar -> VarStatus] std_vs, [ItVar -> StdObjVar] it_vs
 
   Bool parent_var_status_is_fine(StdObjVar var, [TrkObjVar -> VarStatus] vars_status)
   {
-    return true if var :: <ReadOnlyObjVar, NamedArg, MembVar, MembObjVar, PendingStateVar>;
+    return true if var :: <ReadOnlyObjVar, NamedArg, MembVar, MembCopyVar, MembObjVar, PendingStateVar>;
     return false if not has_key(vars_status, var);
     parent_status = vars_status[var];
     return parent_status == owner or is_dependent(parent_status);
@@ -98,7 +98,7 @@ StdObjVar collection_iterated_over(VarsState state, ItVar var) = it_vars_map(sta
 
 StdObjVar deref_copy(VarsState state, StdObjVar var) = deref_copy(vars_status(state), var);
 
-StdObjVar deref_copy([TrkObjVar -> VarStatus] status, <ReadOnlyObjVar, NamedArg, MembVar, MembObjVar, PendingStateVar> var) = var;
+StdObjVar deref_copy([TrkObjVar -> VarStatus] status, <ReadOnlyObjVar, NamedArg, MembVar, MembCopyVar, MembObjVar, PendingStateVar> var) = var;
 
 StdObjVar deref_copy([TrkObjVar -> VarStatus] status, TrkObjVar var) =
   match (status[var])
@@ -134,7 +134,7 @@ Bool var_group_is_live(VarsState state, TrkObjVar var, [TrkVar] live_vars)
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-(VarsState, Instr*) release_var(VarsState state, <TrkObjVar, NamedArg, MembVar, MembObjVar, PendingStateVar> var)
+(VarsState, Instr*) release_var(VarsState state, <TrkObjVar, NamedArg, MembVar, MembCopyVar, MembObjVar, PendingStateVar> var)
 {
   return (state, ()) if var :: TrkObjVar and not is_tracked(state, var);
 
@@ -352,7 +352,7 @@ VarStatus reconcile(VarStatus status1, VarStatus status2):
 
 (VarsState, Instr*) set_rc_var(VarsState state, ElemVar var) = (state, ());
 
-(VarsState, Instr*) set_rc_var(VarsState state, <MembVar, MembObjVar, PendingStateVar> var) = release_var(state, var);
+(VarsState, Instr*) set_rc_var(VarsState state, <MembVar, MembCopyVar, MembObjVar, PendingStateVar> var) = release_var(state, var);
 
 (VarsState, Instr*) set_rc_var(VarsState state, TrkObjVar var) = reset_var(state, var, owner);
 
@@ -365,14 +365,14 @@ VarStatus reconcile(VarStatus status1, VarStatus status2):
 (VarsState, Instr*, Instr*) set_owned_var(VarsState state, ElemVar var, ItVar src_var, [TrkVar] live_vars) =
   (state, (), (add_ref(var)));
 
-(VarsState, Instr*, Instr*) set_owned_var(VarsState state, <MembVar, MembObjVar, PendingStateVar> var, StdObjVar src_var, [TrkVar] live_vars)
+(VarsState, Instr*, Instr*) set_owned_var(VarsState state, <MembVar, MembCopyVar, MembObjVar, PendingStateVar> var, StdObjVar src_var, [TrkVar] live_vars)
 {
   interm_state, rel_instrs = release_var(state, var);
   final_state, swallow_instrs = swallow_var(interm_state, src_var, live_vars);
   return (final_state, rel_instrs & swallow_instrs, ());
 }
 
-(VarsState, Instr*, Instr*) set_owned_var(VarsState state, <MembVar, MembObjVar, PendingStateVar> var, ItVar src_var, [TrkVar] live_vars)
+(VarsState, Instr*, Instr*) set_owned_var(VarsState state, <MembVar, MembCopyVar, MembObjVar, PendingStateVar> var, ItVar src_var, [TrkVar] live_vars)
 {
   fail; //## NOT NEEDED FOR NOW
 }
@@ -419,10 +419,10 @@ VarStatus reconcile(VarStatus status1, VarStatus status2):
 
 (VarsState, Instr*) set_var_inline(VarsState state, ElemVar var) = (state, ());
 
-(VarsState, Instr*) set_var_inline(VarsState state, <MembVar, MembObjVar, PendingStateVar> var) = release_var(state, var);
+(VarsState, Instr*) set_var_inline(VarsState state, <MembVar, MembCopyVar, MembObjVar, PendingStateVar> var) = release_var(state, var);
 
 
-(VarsState, Instr*) swallow_var(VarsState state, <ReadOnlyObjVar, NamedArg, MembVar, MembObjVar, PendingStateVar> var, [TrkVar] live_vars) = (state, (add_ref(var)));
+(VarsState, Instr*) swallow_var(VarsState state, <ReadOnlyObjVar, NamedArg, MembVar, MembCopyVar, MembObjVar, PendingStateVar> var, [TrkVar] live_vars) = (state, (add_ref(var)));
 
 (VarsState, Instr*) swallow_var(VarsState state, Maybe[StdObjVar] maybe_var, [TrkVar] live_vars) =
   if maybe_var != nil
