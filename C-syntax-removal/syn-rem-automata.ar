@@ -9,15 +9,17 @@ using
   {
     decls = set(auto_def.decls);
 
-    syn_inputs                  = [d : d <- decls, syn_input()              << d];
-    syn_outputs                 = [d : d <- decls, syn_output()             << d];
-    syn_state_vars              = [d : d <- decls, syn_state()              << d];
-    syn_plain_rules_lookalikes  = [d : d <- decls, syn_plain_rule()         << d];
-    syn_cond_rules              = [d : d <- decls, syn_cond_rule()          << d];
-    syn_foreach_rules           = [d : d <- decls, syn_foreach_rule()       << d];
-    syn_time_varying_rules      = [d : d <- decls, syn_time_varying_rule()  << d];
-    syn_nested_autos            = [d : d <- decls, syn_nested_auto()        << d];
-    syn_method_calls            = [d : d <- decls, syn_method_call()        << d];
+    syn_inputs                  = [d : d <- decls, syn_input()                        << d];
+    syn_outputs                 = [d : d <- decls, syn_output()                       << d];
+    syn_state_vars              = [d : d <- decls, syn_state()                        << d];
+    syn_plain_rules_lookalikes  = [d : d <- decls, syn_plain_rule()                   << d];
+    syn_cond_rules              = [d : d <- decls, syn_cond_rule()                    << d];
+    syn_foreach_rules           = [d : d <- decls, syn_foreach_rule()                 << d];
+    syn_time_varying_rules      = [d : d <- decls, syn_time_varying_boolean_rule()    << d] &
+                                  [d : d <- decls, syn_time_varying_unchanged_rule()  << d] &
+                                  [d : d <- decls, syn_time_varying_inactive_rule()   << d];
+    syn_nested_autos            = [d : d <- decls, syn_nested_auto()                  << d];
+    syn_method_calls            = [d : d <- decls, syn_method_call()                  << d];
 
     assert decls == syn_inputs & syn_outputs & syn_state_vars & syn_plain_rules_lookalikes & syn_cond_rules &
                     syn_foreach_rules & syn_time_varying_rules & syn_nested_autos & syn_method_calls;
@@ -46,15 +48,7 @@ using
     ];
 
     // Reducing time-varying expressions with a constant time expression to plain rules
-    fake_time_varying_rules = [
-      syn_plain_rule(
-        r.name,
-        if initial_value(r.time_expr) == true then r.cond else object(false),
-        false
-      ) :
-      r <- syn_time_varying_rules,
-      is_const(r.time_expr)
-    ];
+    fake_time_varying_rules = [rewrite_fake_time_rule(r) : r <- syn_time_varying_rules, is_fake(r)];
     syn_plain_rules = syn_plain_rules & fake_time_varying_rules;
     syn_time_varying_rules = [r : r <- syn_time_varying_rules, not is_const(r.time_expr)];
 
@@ -75,10 +69,7 @@ using
     rep_actions = rep_actions_1 & rep_actions_2 & rep_actions_3;
 
     // Desugaring time-varying rules
-    time_rules = [
-      r.name -> time_varying_cond(e, r.time_expr, r.rule_type) :
-      r <- syn_time_varying_rules, e = syn_expr_to_expr(r.cond, memb_vars, auto_vars_outputs, [])
-    ];
+    time_rules = [r.name -> syn_time_varying_rule_to_cond(r, memb_vars, auto_vars_outputs) : r <- syn_time_varying_rules];
 
     // Desugaring nested automata
     nested_autos = [
@@ -126,6 +117,26 @@ using
       read_only_methods:  [desugar_read_only_method(m, memb_vars, auto_vars_outputs) : m <- read_only_methods],
       update_methods:     [desugar_update_method(m, memb_vars, auto_vars_outputs) : m <- update_methods]
     );
+  }
+
+
+  Bool is_fake(SynTimeVaryingRule rule):
+    syn_time_varying_boolean_rule()   |
+    syn_time_varying_unchanged_rule() = is_const(rule.time_expr),
+    syn_time_varying_inactive_rule()  = is_const(rule.time_expr) and
+                                        (initial_value(rule.time_expr) == false or rule.starts_at_time_0);
+
+
+  SynPlainRule rewrite_fake_time_rule(SynTimeVaryingRule rule)
+  {
+    assert is_fake(rule);
+
+    value = match (rule)
+      syn_time_varying_boolean_rule()   = if initial_value(rule.time_expr) == true then rule.cond else object(false),
+      syn_time_varying_unchanged_rule() = object(initial_value(rule.time_expr)),
+      syn_time_varying_inactive_rule()  = object(initial_value(rule.time_expr));
+
+    return syn_plain_rule(rule.name, value, false);
   }
 
 
@@ -343,6 +354,12 @@ using
 
     return rep_action(change_cond, [action], []);
   }
+
+
+  TimeVaryingCond syn_time_varying_rule_to_cond(SynTimeVaryingRule rule, [MembVar] memb_vars, [MembAutoVar -> [[name: Atom, discrete: Bool, default: Bool]]] auto_vars_outputs):
+    syn_time_varying_boolean_rule()   = time_varying_boolean_cond(syn_expr_to_expr(rule.cond, memb_vars, auto_vars_outputs, []), rule.time_expr),
+    syn_time_varying_unchanged_rule() = time_varying_unchanged_cond(syn_expr_to_expr(rule.cond, memb_vars, auto_vars_outputs, []), rule.time_expr),
+    syn_time_varying_inactive_rule()  = time_varying_since_cond([memb_var(s) : s <- set(rule.signals)], rule.time_expr, rule.starts_at_time_0);
 
 
   Expr syn_expr_to_expr(SynExpr expr, [MembVar] memb_vars, [MembAutoVar -> [[name: Atom, discrete: Bool, default: Bool]]] auto_vars_outputs, [StdVar] def_vars) =

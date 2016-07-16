@@ -56,7 +56,7 @@ AutoNode* gen_auto_nodes(Automaton automaton, [AutoSymbol -> [Atom -> Bool]] aut
   state_trigger_up_nodes        = map_state_trigger_up_nodes(cond_nodes, rep_cond_nodes);
   state_value_up_nodes          = map_state_value_up_nodes(automaton, cond_nodes, rep_cond_nodes);
   rules_up_nodes                = [std_block_node_id(a) -> expr_deps(e) : e @ a <- automaton.rules];
-  time_rules_up_nodes           = [std_block_node_id(a) -> expr_deps(c.expr) : c @ a <- automaton.time_rules];
+  time_rules_up_nodes           = [std_block_node_id(a) -> time_rule_deps(c) : c @ a <- automaton.time_rules];
   nested_autos_trigger_up_nodes = map_nested_autos_trigger_up_nodes(automaton, cond_nodes, rep_cond_nodes);
   nested_autos_value_up_nodes   = map_nested_autos_value_up_nodes(automaton, cond_nodes, rep_cond_nodes);
 
@@ -262,7 +262,10 @@ using
 
     if has_key(automaton.time_rules, core_id):
       time_cond = automaton.time_rules[core_id];
-      return time_varying_node(node_id, time_cond.expr, time_cond.time_expr, time_cond.rule_type, dep_nodes, level);
+      return match (time_cond)
+        time_varying_boolean_cond()   = time_varying_node(node_id, time_cond.expr, time_cond.time_expr, :boolean, dep_nodes, level),
+        time_varying_unchanged_cond() = time_varying_node(node_id, time_cond.expr, time_cond.time_expr, :unchanged, dep_nodes, level),
+        time_varying_since_cond()     = discrete_time_varying_node(node_id, time_cond.signals, time_cond.time_expr, time_cond.starts_at_time_0, dep_nodes, level);
     ;
 
     if has_key(automaton.state, core_id):
@@ -338,6 +341,13 @@ using
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
+
+
+[AutoNodeDependency] time_rule_deps(TimeVaryingCond cond):
+  time_varying_boolean_cond()   |
+  time_varying_unchanged_cond() = expr_deps(cond.expr),
+  time_varying_since_cond()     = union([expr_deps(s) : s <- cond.signals]);
+
 
 [AutoNodeDependency] cond_deps(CondInfo cond)
 {

@@ -3,6 +3,7 @@ using
   AutoSymbol                  auto_name,
   [MembAutoVar -> AutoSymbol] auto_vars_types,
   [AutoSymbol]                time_sensitive_autos,
+  [BlockNodeId -> AutoNode]   nodes_by_id,
   [BlockNodeId -> Nat]        nodes_idxs,
   [BlockNodeId -> Nat]        nodes_levels,
   [StdBlockNodeId -> Nat]     multivalue_node_expr_count,
@@ -25,7 +26,7 @@ using
     pending_input_var = pending_input_var(id);
 
     body = (set_var(memb_var, l0), set_bvar(memb_has_changed(id), true) if in(id, memb_copy_var_ids)) &
-           (mark_for_update(n, false) : n <- rand_sort(node.downstream_nodes));
+           (mark_for_update(n) : n <- rand_sort(node.downstream_nodes));
 
     return nonempty((read_pending_var(l0, pending_input_var), init_memb_var(pending_input_var, :blank)) & body) if node.discrete;
 
@@ -47,7 +48,7 @@ using
     eval_code = gen_safe_eval_code(node.expr, nv_var, next_obj_var_id = 1, next_bool_var_id = 0);
     cond = neg(is_eq(var, nv_var));
     body = (set_var(var, nv_var), set_bvar(memb_has_changed(id), true) if in(id, memb_copy_var_ids)) &
-           (mark_for_update(n, false) : n <- rand_sort(node.downstream_nodes));
+           (mark_for_update(n) : n <- rand_sort(node.downstream_nodes));
     return (eval_code | do_if(cond, body));
   }
 
@@ -69,7 +70,7 @@ using
     ;
     cond = neg(is_eq(var, nv_var));
     body = (set_var(var, nv_var), set_bvar(memb_has_changed(id), true) if in(id, memb_copy_var_ids)) &
-           (mark_for_update(n, false) : n <- rand_sort(node.downstream_nodes));
+           (mark_for_update(n) : n <- rand_sort(node.downstream_nodes));
     return (eval_instr, do_if(cond, body));
   }
 
@@ -84,7 +85,7 @@ using
       cases = nonempty((gen_safe_eval_code(e, nv_var) : e <- node.exprs) & ((clear_loc_var(nv_var))));
       eval_instr = switch_on_nat(update_source_var(id), cases);
     ;
-    return nonempty((eval_instr, set_var(var, nv_var)) & (mark_for_update(n, false) : n <- rand_sort(node.downstream_nodes)));
+    return nonempty((eval_instr, set_var(var, nv_var)) & (mark_for_update(n) : n <- rand_sort(node.downstream_nodes)));
   }
 
 
@@ -106,7 +107,7 @@ using
     cond_eval_code = gen_cond_eval_code(id, node.cond, node.parent);
 
     // Propagating the update to dependent conditions
-    dep_conds_update_prop_code = (mark_for_update(n, true) : n <- rand_sort(all_subcond_ids));
+    dep_conds_update_prop_code = (mark_for_update_from_parent_cond(n) : n <- rand_sort(all_subcond_ids));
 
     // Base case, the condition stays defined. b1 holds the value of the condition, b0 whether it has changed
     // If the condition has changed, we queue the updates for the appropriate branch
@@ -150,7 +151,7 @@ using
       )
     );
 
-    return cond_eval_code & (branch(var_is_def(l0), cond_is_def_branch, cond_is_undef_branch));
+    return cond_eval_code & (branch(is_null(l0), cond_is_undef_branch, cond_is_def_branch));
   }
 
 
@@ -170,21 +171,23 @@ using
     // Executing all the actions associated with the condition
     action_exec_code = (
       branch(
-        var_is_def(l0),
+        is_null(l0),
+
+        // The condition is not defined, we execute all assignments with a null value
+        join(rand_sort([gen_clear_code(a) : a <- all_actions])) &
+        (mark_for_update_from_parent_cond(n) : n <- rand_sort(all_subcond_ids)),
+
         // The condition is defined, we run the normal actions
         ( branch_or_no_op(
             inline_is_eq(l0, obj_true),
             // The condition is true, running the 'then' branch
             join(rand_sort([gen_update_code(a) : a <- then_actions])) &
-            (mark_for_update(n, true) : n <- rand_sort(then_subcond_ids)),
+            (mark_for_update_from_parent_cond(n) : n <- rand_sort(then_subcond_ids)),
             // The condition is false, running the 'else' branch
             join(rand_sort([gen_update_code(a) : a <- else_actions])) &
-            (mark_for_update(n, true) : n <- rand_sort(else_subcond_ids))
+            (mark_for_update_from_parent_cond(n) : n <- rand_sort(else_subcond_ids))
           )
-        ),
-        // The condition is not defined, we execute all assignments with a null value
-        join(rand_sort([gen_clear_code(a) : a <- all_actions])) &
-        (mark_for_update(n, true) : n <- rand_sort(all_subcond_ids))
+        )
       )
     );
 
@@ -336,7 +339,7 @@ using
         do_if_not(
           is_eq(l0, watched_signal_value_var),
           ( branch(
-              is_eq(l0, obj_true),
+              is_true(l0),
               // Here the old value of the watched signal can only be false or blank
               // The possible transitions are: A/F -> D
               // No timer can be active at this stage, so there's nothing to clear
@@ -387,9 +390,9 @@ using
         watched_signal_up_to_date_var,
         gen_safe_eval_code(node.cond, l0, next_obj_var_id = 1, next_bool_var_id = 0) &
         ( branch(
-            var_is_def(l0),
-            (do_if(var_is_def(watched_signal_value_var), watched_signal_stays_defined_code)),
-            (do_if(var_is_def(watched_signal_value_var), watched_signal_becomes_undefined_code))
+            is_null(l0),
+            (do_if_not(is_null(watched_signal_value_var), watched_signal_becomes_undefined_code)),
+            (do_if_not(is_null(watched_signal_value_var), watched_signal_stays_defined_code))
           ),
           set_var(watched_signal_value_var, l0),
           set_bvar(watched_signal_up_to_date_var, true)
@@ -402,9 +405,118 @@ using
       // If the condition has changed, we update it and we add the downstream nodes to the update queue
       do_if_not(
         is_eq(cond_var, l0),
-        (set_var(cond_var, l0)) & (mark_for_update(n, false) : n <- rand_sort(node.downstream_nodes))
+        (set_var(cond_var, l0)) & (mark_for_update(n) : n <- rand_sort(node.downstream_nodes))
       )
     );
+  }
+
+
+  Instr* gen_node_update_code(AutoDiscTimeVaryingNode node)
+  {
+    node_id = node.id;
+    id = get_inner_id(node_id);
+    time_expr = node.time_expr;
+    signals = rand_sort(node.signals);
+
+    time_varying_node_idx = time_varying_node_idxs[node_id];
+
+    init_val = initial_value(time_expr);
+    init_slot_len = initial_slot_length(time_expr);
+
+    i0 = ivar(next_int_var_id);
+    i1 = ivar(nat(next_int_var_id + 1));
+    i2 = ivar(nat(next_int_var_id + 2));
+    i3 = ivar(nat(next_int_var_id + 3));
+
+    l0 = lvar(0);
+    cond_var = memb_var(id);
+
+    next_trigger_time_var = next_trigger_time_var(id);
+    curr_time_slot_var = curr_time_slot_var(id);
+
+    clear_timer_instr = clear_timer(auto_name, time_varying_node_idx);
+    update_l0_instr = set_var(l0, to_obj(if init_val == true then is_even(curr_time_slot_var) else is_odd(curr_time_slot_var)));
+
+    // Handling the case in which all the watched signals are undefined.
+    // The resulting signals is undefined too. Note that this happens
+    // only if all the watched signals are undefined. It's enought that
+    // one of them is defined to restart the timer
+    cond_is_undef_code = (
+      clear_timer_instr,
+      set_ivar(curr_time_slot_var, -1),
+      set_ivar(next_trigger_time_var, -1),
+      clear_loc_var(l0)
+    );
+
+    // Here we handle the case when at least one of the watched signals is set
+    // The same code is also run during the first update if the timer starts at 0
+    restart_timer_code = (
+      clear_timer_instr,
+      set_ivar(curr_time_slot_var, 0),
+      set_ivar(i0, add(curr_time, init_slot_len)),
+      set_ivar(next_trigger_time_var, i0),
+      insert_timer(auto_name, time_varying_node_idx, i0),
+      update_l0_instr
+    );
+
+    // Now handling the case in which the timer has expired before any of the
+    // watched signals was set again
+    advance_to_next_time_slot_code = (
+      do_if_not(is_eq(next_trigger_time_var, curr_time), terminate),
+      set_ivar(i0, add(curr_time_slot_var, 1)),
+      set_ivar(curr_time_slot_var, i0),
+      set_ivar(i1, time_slot_length(time_expr, auto_name, id, i0)),
+      branch(
+        is_eq(i1, 0),
+        (set_ivar(next_trigger_time_var, -1)),
+        ( set_ivar(i2, add(curr_time, i1)),
+          set_ivar(next_trigger_time_var, i2),
+          insert_timer(auto_name, time_varying_node_idx, i2)
+        )
+      ),
+      update_l0_instr
+    );
+
+    // All possible cases and subcases:
+    //   A) At least one of the signals is non-blank and non-null
+    //      We restart the timer.
+    //   B) No signal is both non-blank and non-null, and at least one is null
+    //      We clear the timer, and set the condition to null
+    //   C) The signals are all blank
+    //      C1) This is the first update
+    //          If the timer starts at time 0 we restart the timer
+    //          Otherwise we just set the condition to false
+    //      C2) A timer has just expired
+    //          We advance to the next time slot
+
+    restart_timer_conds = (is_neither_blank_nor_null(s) : s <- signals);
+    restart_timer_conds = (restart_timer_conds | is_new) if node.starts_at_time_0;
+    restart_timer_cond = or(restart_timer_conds);
+
+    advance_to_next_time_slot_cond = and((is_blank(s) : s <- signals));
+
+    code = (
+      branch(
+        restart_timer_cond,
+        restart_timer_code,
+        ( branch(
+            advance_to_next_time_slot_cond,
+            advance_to_next_time_slot_code,
+            cond_is_undef_code
+          )
+        )
+      )
+    );
+
+    code = (branch(is_new, (set_var(l0, obj_false)), code)) if not node.starts_at_time_0;
+
+    update_memb_var_instr =
+      do_if_not(
+        is_eq(cond_var, l0),
+        (set_var(cond_var, l0)) & (mark_for_update(n) : n <- rand_sort(node.downstream_nodes))
+      );
+
+    return (code | update_memb_var_instr);
   }
 
 
@@ -420,7 +532,7 @@ using
       //## SHOULD I CHECK THAT THE INPUT IS NOT NULL BEFORE SETTING IT, OR IS THIS ALREADY DONE
       //## INSIDE THE NESTED AUTOMATON?
       set_input(auto_var, auto_vars_types[auto_var], node_id.input, just(nv_var)),
-      mark_for_update(std_block_node_id(node_id.auto), false)
+      mark_for_update(std_block_node_id(node_id.auto))
     );
 
     code = eval_code & set_var_code;
@@ -429,13 +541,13 @@ using
       tmp_var = lvar(1);
       code = (
         read_output(tmp_var, av, auto_vars_types[av], o),
-        do_if(var_is_set(tmp_var), code)
+        do_if_not(is_blank(tmp_var), code)
       );
     ;
 
     disc_vars = rand_sort(node.disc_vars);
     if disc_vars != ():
-      cond = and((var_is_set(v) : v <- disc_vars));
+      cond = and((is_not_blank(v) : v <- disc_vars));
       code = (do_if(cond, code));
     ;
 
@@ -470,7 +582,7 @@ using
     ;
 
     //## CURRENTLY WE PROPAGATE THE UPDATE WITHOUT CHECKING WHAT INPUTS (IF ANY) HAVE CHANGED. FIX
-    prop_code = (mark_for_update(id, false) : id <- rand_sort(union(values(node.downstream_nodes_by_output))));
+    prop_code = (mark_for_update(id) : id <- rand_sort(union(values(node.downstream_nodes_by_output))));
 
     triggers_count_var = nested_auto_int_var(auto_var, time_triggers_count_var);
     first_trigger_var  = nested_auto_int_var(auto_var, trigger_times_heap_var(0));
@@ -518,7 +630,7 @@ using
         // Evaluating the local condition and permanently storing its value
         loc_cond_eval_code & (
           set_bvar(cv_var, inline_is_eq(l0, obj_true)),
-          set_bvar(cd_var, var_is_def(l0)),
+          set_bvar(cd_var, is_not_null(l0)),
           set_bvar(utd_var, true)
         ),
 
@@ -581,7 +693,7 @@ using
       cond_eval_code = (
         cond_eval_code |
         set_bvar(cv_var, is_eq(l0, obj_true)),
-        set_bvar(cd_var, var_is_def(l0))
+        set_bvar(cd_var, is_not_null(l0))
       );
     ;
 
@@ -594,10 +706,10 @@ using
                                   marked_for_update_var(std_block_node_id(action.target_var)),
                                   set_ivar(update_source_var(action.target_var), action.expr_idx)
                                 ),
-                                mark_for_update(std_block_node_id(action.target_var), false)
+                                mark_for_update(std_block_node_id(action.target_var))
                               ),
     method_call_action()    = ( set_bvar(has_pending_message_var(action.target_auto), true),
-                                mark_for_update(std_block_node_id(action.target_auto), false)
+                                mark_for_update(std_block_node_id(action.target_auto))
                               );
 
 
@@ -609,19 +721,31 @@ using
                                     marked_for_update_var(node_id),
                                     set_ivar(update_source_var(target_var), multivalue_node_expr_count[node_id])
                                   ),
-                                  mark_for_update(node_id, false)
+                                  mark_for_update(node_id)
                                 );
                               },
     //## DECIDE WHAT TO DO HERE AND IMPLEMENT IT PROPERLY
     method_call_action()    = (terminate);
+}
 
 
-  Instr mark_for_update(BlockNodeId node_id, Bool from_cond):
-    std_block_node_id(a?)   = if has_key(time_varying_node_idxs, node_id) and not has_key(auto_vars_types, memb_auto_var(a))
-                                then queue_cond_update(auto_name, node_id, true)
-                                else queue_update(auto_name, node_id),
-    cond_node_id(n?)        = queue_cond_update(auto_name, node_id, not from_cond and in(n, nested_cond_ids)),
-    nested_auto_input_id()  = queue_update(auto_name, node_id);
+using AutoSymbol auto_name, [BlockNodeId -> AutoNode] nodes_by_id
+{
+  Instr mark_for_update(BlockNodeId node_id) =
+    match (nodes_by_id[node_id])
+      input()                       |
+      derived()                     |
+      state()                       |
+      derived_disc()                |
+      discrete_time_varying_node()  |
+      nested_auto_input_node()      |
+      nested_auto_node()            = queue_update(auto_name, node_id),
+      cond_node()                   |
+      rep_cond_node()               |
+      time_varying_node()           = queue_cond_update(auto_name, node_id, true);
+
+
+  Instr mark_for_update_from_parent_cond(CondNodeId node_id) = queue_cond_update(auto_name, node_id, false);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -669,6 +793,10 @@ using
   code = (gen_std_queue_update_code(node.id, node.level, index, level_size) | inval_cache_instr);
   return [body: code, two_level_update: true];
 }
+
+
+[body: Instr*, two_level_update: Bool] gen_queue_update_method(AutoDiscTimeVaryingNode node, Nat index, Nat level_size) =
+  gen_std_queue_update_method(node, index, level_size);
 
 
 [body: Instr*, two_level_update: Bool] gen_queue_update_method(AutoNestedAutoInputNode node, Nat index, Nat level_size) =
