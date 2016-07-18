@@ -26,7 +26,7 @@ CCodeOutput compile_to_c(CompiledPrg prg)
 
   cls_defs = cls_defs(prg);
 
-  env_decl = gen_env_decl(prg);
+  env_decl = gen_env_decl(prg) & 4 * ("");
 
   c_code = c_code & env_decl;
 
@@ -52,9 +52,10 @@ CCodeOutput compile_to_c(CompiledPrg prg)
     sorted_cls_defs,
     rand_sort(prg.blocks),
     prg.int_seqs,
-    typesymb2name(ts)           = typesymb2str(ts, ptss),
-    cls2id(cls)                 = index_first(cls, sorted_cls_defs),
-    int_seqs_types_and_lengths  = int_seqs_types_and_lengths
+    typesymb2name(ts)               = typesymb2str(ts, ptss),
+    cls2id(cls)                     = index_first(cls, sorted_cls_defs),
+    int_seqs_types_and_lengths      = int_seqs_types_and_lengths,
+    cached_semi_consts_by_named_arg = cached_semi_consts_by_named_arg(prg)
   );
 
 
@@ -110,7 +111,13 @@ String* gen_env_decl(CompiledPrg prg)
     env_decl = env_decl & ls;
   ;
 
-  env_decl = env_decl & ("};") & 4 * ("");
+  semi_consts_cache_vars = rand_sort([p.name : p <- prg.procs, p.cached and p.named_args != [:]]);
+  semi_consts_cache_vars_decls = ("  OBJ " & to_c_semi_const_memo_var_name(v) & ";" : v <- semi_consts_cache_vars);
+  env_decl = (env_decl | "") & semi_consts_cache_vars_decls if semi_consts_cache_vars_decls != ();
+
+  env_decl = env_decl & ("};");
+
+
   return env_decl;
 }
 
@@ -220,9 +227,10 @@ type FnCallParam = blank_obj, ObjExpr, ElemVar, PendingInputVar, VecVar, BoolExp
 
 using
 {
-  String                typesymb2name(TypeSymbol),
-  Nat                   cls2id(ClsDef),
-  (String, Nat)*        int_seqs_types_and_lengths;
+  String                            typesymb2name(TypeSymbol),
+  Nat                               cls2id(ClsDef),
+  (String, Nat)*                    int_seqs_types_and_lengths,
+  [(NamedArg, Nat) -> [+FnSymbol]]  cached_semi_consts_by_named_arg;
 
 
   CCodeOutput compile_block_to_c(Block block)
@@ -566,19 +574,22 @@ using
            ("" if var_decls != () or auto_var_decls != ()) & indent_lines(comp_body) & ("}");
 
     if cached:
+      is_real_const = pd.cached? and pd.named_args == [:];
+      cache_var_name = if is_real_const then "cached_res" else "env." & to_c_semi_const_memo_var_name(pd.name);
+
       wrapper_code = (
         "",
         "",
         ret_type_str(pd) & fn_name & "(" & par_list_str & ")",
         "{",
-        "  static OBJ cached_res = make_blank_obj();",
-        "  if (is_blank_obj(cached_res))",
+        "  static OBJ " & cache_var_name & " = make_blank_obj();" if is_real_const,
+        "  if (is_blank_obj(" & cache_var_name & "))",
         "  {",
-        "    cached_res = " & fn_name & suffix & "(env);",
-        "    add_obj_to_cache(cached_res);",
+        "    " & cache_var_name & " = " & fn_name & suffix & "(env);",
+        "    add_obj_to_cache(" & cache_var_name & ");" if is_real_const,
         "  }",
-        "  add_ref(cached_res);",
-        "  return cached_res;",
+        "  add_ref(" & cache_var_name & ");",
+        "  return " & cache_var_name & ";",
         "}"
       );
       code = code & wrapper_code;
@@ -680,9 +691,10 @@ using
 
     move_forward(v?)      = mk_call("move_forward", (v)),
 
-    set_var()             = mk_assignment(instr.var, instr.value),
-    set_bvar()            = mk_assignment(instr.var, instr.value), //## BAD
-    set_ivar()            = mk_assignment(instr.var, instr.value), //## BAD
+    set_var()             = compile_set_var_to_c(instr.var, instr.value),
+
+    set_bvar()            |
+    set_ivar()            = mk_assignment(instr.var, instr.value),
 
     set_rc_var()          = compile_to_c(instr.value, instr.var),
 
@@ -759,17 +771,28 @@ using
                               return (method_name & "(&" & to_c_var_ref_name(instr.var) & ", " & value_str & ");");
                             },
 
-
-                      // auto_init(var: AnyAutoVar?, type: AutoSymbol),
-                      // auto_update(var: AnyAutoVar?, type: AutoSymbol),
-                      // auto_update_node(type: AutoSymbol, node: BlockNodeId),
-
-
     auto_update_node()    = compile_auto_update_node_to_c(instr.type, instr.node, if instr.time_var? then just(instr.time_var) else nil),
 
     auto_apply()          = compile_auto_apply_to_c(if instr.var? then just(instr.var) else nil, instr.type, instr.elapsed_time),
     call_method()         = compile_call_method_to_c(if instr.res_var? then just(instr.res_var) else nil, if instr.auto_var? then just(instr.auto_var) else nil, instr.type, instr.name, instr.args);
 
+
+
+  String* gen_cache_clearing_code(NamedArg narg, Nat arity)
+  {
+    code = ();
+    for fn_symb <- rand_sort(lookup(cached_semi_consts_by_named_arg, (narg, arity), [])):
+      cache_var_name = to_c_semi_const_memo_var_name(fn_symb);
+      code = (code | "release(env." & cache_var_name & ");", "env." & cache_var_name & " = make_blank_obj();");
+    ;
+    return code;
+  }
+
+
+  String* compile_set_var_to_c(WriteObjVar var, ObjExpr value) = mk_assignment(var, value);
+
+  String* compile_set_var_to_c(NamedArg var, ObjExpr value) =
+    mk_assignment(var, value) & gen_cache_clearing_code(var, 0);
 
 
   String* compile_auto_update_node_to_c(AutoSymbol type, BlockNodeId node, Maybe[IntVar] maybe_time_var)
@@ -780,7 +803,7 @@ using
 
 
   //## BUG BUG BUG: IF THERE IS INSIDE ONE OF THE CASES A BREAK STATEMENT MEANT TO
-  //## TERMIMATE AN OUTER LOOP, THAT BREAK WILL TERMINATE THE SWITCH/CASE INSTEAD.
+  //## TERMINATE AN OUTER LOOP, THAT BREAK WILL TERMINATE THE SWITCH/CASE INSTEAD.
   String* compile_switch_on_nat_to_c(IntExpr value, Instr*+ cases, <Nat, nil> block_id)
   {
     cases_code = (
@@ -984,7 +1007,9 @@ using
       data_var & " = " & {if env_size > 0 then new_data_var else "0"} & ";"
     );
 
-    code = code & compile_to_c(body, block_id);
+    cache_clearing_code = gen_cache_clearing_code(var, cls.arity);
+
+    code = code & cache_clearing_code & compile_to_c(body, block_id) & cache_clearing_code;
 
     code = code & (
       fn_var & " = " & fn_bk_var & ";",
