@@ -1,21 +1,5 @@
-using
+using Program program, Automaton automaton, CompilationOptions options
 {
-  AutoSymbol                  auto_name,
-  [MembAutoVar -> AutoSymbol] auto_vars_types,
-  [AutoSymbol]                time_sensitive_autos,
-  [BlockNodeId -> AutoNode]   nodes_by_id,
-  [BlockNodeId -> Nat]        nodes_idxs,
-  [BlockNodeId -> Nat]        nodes_levels,
-  [StdBlockNodeId -> Nat]     multivalue_node_expr_count,
-  [StdBlockNodeId -> Nat]     time_varying_node_idxs,
-  [Atom]                      memb_copy_var_ids,
-  [Nat]                       nested_cond_ids,
-  Nat                         next_int_var_id,
-  [Int+ -> Nat]               int_seqs_ids,
-  CompilationOptions          options;
-
-
-
   Instr+ gen_node_update_code(AutoInputNode node)
   {
     id = get_inner_id(node.id);
@@ -25,7 +9,7 @@ using
     memb_var = memb_var(id);
     pending_input_var = pending_input_var(id);
 
-    body = (set_var(memb_var, l0), set_bvar(memb_has_changed(id), true) if in(id, memb_copy_var_ids)) &
+    body = (set_var(memb_var, l0), set_bvar(memb_has_changed(id), true) if in(id, memb_copy_vars_ids)) &
            (mark_for_update(n) : n <- rand_sort(node.downstream_nodes));
 
     return nonempty((read_pending_var(l0, pending_input_var), init_memb_var(pending_input_var, :blank)) & body) if node.discrete;
@@ -45,9 +29,9 @@ using
 
     var = memb_var(id);
     nv_var = lvar(0);
-    eval_code = gen_safe_eval_code(node.expr, nv_var, next_obj_var_id = 1, next_bool_var_id = 0);
+    eval_code = gen_safe_eval_code(node.expr, nv_var, next_obj_var_id = 1, next_int_var_id = 0, next_bool_var_id = 0);
     cond = neg(is_eq(var, nv_var));
-    body = (set_var(var, nv_var), set_bvar(memb_has_changed(id), true) if in(id, memb_copy_var_ids)) &
+    body = (set_var(var, nv_var), set_bvar(memb_has_changed(id), true) if in(id, memb_copy_vars_ids)) &
            (mark_for_update(n) : n <- rand_sort(node.downstream_nodes));
     return (eval_code | do_if(cond, body));
   }
@@ -60,7 +44,7 @@ using
     var = memb_var(id);
     nv_var = lvar(0);
     pv_var = pending_state_var(id);
-    let next_obj_var_id = 1, next_bool_var_id = 0:
+    let next_obj_var_id = 1, next_int_var_id = 0, next_bool_var_id = 0:
       extra_cases = (
         (clear_loc_var(nv_var)),
         (read_pending_var(nv_var, pv_var), init_memb_var(pv_var, :blank))
@@ -69,7 +53,7 @@ using
       eval_instr = switch_on_nat(update_source_var(id), cases);
     ;
     cond = neg(is_eq(var, nv_var));
-    body = (set_var(var, nv_var), set_bvar(memb_has_changed(id), true) if in(id, memb_copy_var_ids)) &
+    body = (set_var(var, nv_var), set_bvar(memb_has_changed(id), true) if in(id, memb_copy_vars_ids)) &
            (mark_for_update(n) : n <- rand_sort(node.downstream_nodes));
     return (eval_instr, do_if(cond, body));
   }
@@ -81,7 +65,7 @@ using
 
     var = memb_var(id);
     nv_var = lvar(0);
-    let next_obj_var_id = 1, next_bool_var_id = 0:
+    let next_obj_var_id = 1, next_int_var_id = 0, next_bool_var_id = 0:
       cases = nonempty((gen_safe_eval_code(e, nv_var) : e <- node.exprs) & ((clear_loc_var(nv_var))));
       eval_instr = switch_on_nat(update_source_var(id), cases);
     ;
@@ -201,15 +185,15 @@ using
     id = get_inner_id(node_id);
     time_expr = node.time_expr;
 
-    time_varying_node_idx = time_varying_node_idxs[node_id];
+    time_varying_node_idx = time_varying_nodes_indexes[node_id];
 
     init_val = initial_value(time_expr);
     init_slot_len = initial_slot_length(time_expr);
 
-    i0 = ivar(next_int_var_id);
-    i1 = ivar(nat(next_int_var_id + 1));
-    i2 = ivar(nat(next_int_var_id + 2));
-    i3 = ivar(nat(next_int_var_id + 3));
+    i0 = ivar(0);
+    i1 = ivar(1);
+    i2 = ivar(2);
+    i3 = ivar(3);
 
     l0 = lvar(0);
     cond_var = memb_var(id);
@@ -232,7 +216,7 @@ using
     watched_signal_becomes_undefined_code = (
       set_ivar(next_trigger_time_var, -1),
       set_ivar(curr_time_slot_var, -1),
-      clear_timer(auto_name, time_varying_node_idx)
+      clear_timer(automaton.name, time_varying_node_idx)
     );
 
     // // The watched signal was undefined and has just become defined.
@@ -264,12 +248,12 @@ using
         is_eq(next_trigger_time_var, curr_time),
         ( set_ivar(i1, add(curr_time_slot_var, 1)),
           set_ivar(curr_time_slot_var, i1),
-          set_ivar(i2, time_slot_length(time_expr, auto_name, id, i1)),
+          set_ivar(i2, time_slot_length(time_expr, automaton.name, id, i1)),
           branch(
             neg(is_eq(i2, 0)),
             ( set_ivar(i3, add(curr_time, i2)),
               set_ivar(next_trigger_time_var, i3),
-              insert_timer(auto_name, time_varying_node_idx, i3)
+              insert_timer(automaton.name, time_varying_node_idx, i3)
             ),
             (set_ivar(next_trigger_time_var, -1))
           )
@@ -296,11 +280,11 @@ using
       watched_signal_stays_defined_code = (
         do_if_not(
           is_eq(l0, watched_signal_value_var),
-          ( clear_timer(auto_name, time_varying_node_idx),
+          ( clear_timer(automaton.name, time_varying_node_idx),
             set_ivar(curr_time_slot_var, 0),
             set_ivar(i0, add(curr_time, init_slot_len)),
             set_ivar(next_trigger_time_var, i0),
-            insert_timer(auto_name, time_varying_node_idx, i0)
+            insert_timer(automaton.name, time_varying_node_idx, i0)
           )
         )
       );
@@ -348,14 +332,14 @@ using
               ( set_ivar(curr_time_slot_var, 0),
                 set_ivar(i0, add(curr_time, init_slot_len)),
                 set_ivar(next_trigger_time_var, i0),
-                insert_timer(auto_name, time_varying_node_idx, i0)
+                insert_timer(automaton.name, time_varying_node_idx, i0)
               ),
               // The old value of the watched signal can only be true or blank
               // The possible transitions are: A/C/D/E -> F
               // First we clear any pending timer (There's one set up only if coming from D)
               // We need to clear the next trigger time and the current time slot
               // Any existing timer has already been cleared
-              ( clear_timer(auto_name, time_varying_node_idx),
+              ( clear_timer(automaton.name, time_varying_node_idx),
                 set_ivar(next_trigger_time_var, -1),
                 set_ivar(curr_time_slot_var, -1)
               )
@@ -388,7 +372,7 @@ using
       // the code for the four possible cases listed above
       do_if_not(
         watched_signal_up_to_date_var,
-        gen_safe_eval_code(node.cond, l0, next_obj_var_id = 1, next_bool_var_id = 0) &
+        gen_safe_eval_code(node.cond, l0, next_obj_var_id = 1, next_int_var_id = 0, next_bool_var_id = 0) &
         ( branch(
             is_null(l0),
             (do_if_not(is_null(watched_signal_value_var), watched_signal_becomes_undefined_code)),
@@ -418,15 +402,14 @@ using
     time_expr = node.time_expr;
     signals = rand_sort(node.signals);
 
-    time_varying_node_idx = time_varying_node_idxs[node_id];
+    time_varying_node_idx = time_varying_nodes_indexes[node_id];
 
     init_val = initial_value(time_expr);
     init_slot_len = initial_slot_length(time_expr);
 
-    i0 = ivar(next_int_var_id);
-    i1 = ivar(nat(next_int_var_id + 1));
-    i2 = ivar(nat(next_int_var_id + 2));
-    i3 = ivar(nat(next_int_var_id + 3));
+    i0 = ivar(0);
+    i1 = ivar(1);
+    i2 = ivar(2);
 
     l0 = lvar(0);
     cond_var = memb_var(id);
@@ -434,7 +417,7 @@ using
     next_trigger_time_var = next_trigger_time_var(id);
     curr_time_slot_var = curr_time_slot_var(id);
 
-    clear_timer_instr = clear_timer(auto_name, time_varying_node_idx);
+    clear_timer_instr = clear_timer(automaton.name, time_varying_node_idx);
     update_l0_instr = set_var(l0, to_obj(if init_val == true then is_even(curr_time_slot_var) else is_odd(curr_time_slot_var)));
 
     // Handling the case in which all the watched signals are undefined.
@@ -455,7 +438,7 @@ using
       set_ivar(curr_time_slot_var, 0),
       set_ivar(i0, add(curr_time, init_slot_len)),
       set_ivar(next_trigger_time_var, i0),
-      insert_timer(auto_name, time_varying_node_idx, i0),
+      insert_timer(automaton.name, time_varying_node_idx, i0),
       update_l0_instr
     );
 
@@ -465,13 +448,13 @@ using
       do_if_not(is_eq(next_trigger_time_var, curr_time), terminate),
       set_ivar(i0, add(curr_time_slot_var, 1)),
       set_ivar(curr_time_slot_var, i0),
-      set_ivar(i1, time_slot_length(time_expr, auto_name, id, i0)),
+      set_ivar(i1, time_slot_length(time_expr, automaton.name, id, i0)),
       branch(
         is_eq(i1, 0),
         (set_ivar(next_trigger_time_var, -1)),
         ( set_ivar(i2, add(curr_time, i1)),
           set_ivar(next_trigger_time_var, i2),
-          insert_timer(auto_name, time_varying_node_idx, i2)
+          insert_timer(automaton.name, time_varying_node_idx, i2)
         )
       ),
       update_l0_instr
@@ -526,7 +509,7 @@ using
     node_id = node.id;
     auto_var = memb_auto_var(node_id.auto);
 
-    eval_code = gen_safe_eval_code(node.value, nv_var, next_obj_var_id = 1, next_bool_var_id = 0);
+    eval_code = gen_safe_eval_code(node.value, nv_var, next_obj_var_id = 1, next_int_var_id = 0, next_bool_var_id = 0);
 
     set_var_code = (
       //## SHOULD I CHECK THAT THE INPUT IS NOT NULL BEFORE SETTING IT, OR IS THIS ALREADY DONE
@@ -563,7 +546,7 @@ using
     auto_type = auto_vars_types[auto_var];
     update_source_var = update_source_var(inner_id);
 
-    elapsed_time_expr = if in(auto_type, time_sensitive_autos)
+    elapsed_time_expr = if is_time_sensitive(auto_type)
       then sub(curr_time, nested_auto_int_var(auto_var, last_update_time))
       else 0;
 
@@ -571,7 +554,7 @@ using
     maybe_msg = node.message;
     if maybe_msg != nil:
       meth_symb, msg = value(maybe_msg);
-      msg_eval_info = gen_safe_eval_info(msg, next_obj_var_id = 0, next_bool_var_id = 0);
+      msg_eval_info = gen_safe_eval_info(msg, next_obj_var_id = 0, next_int_var_id = 0, next_bool_var_id = 0);
       pend_msg_var = has_pending_message_var(inner_id);
       msg_sending_code = (
         call_method(auto_var, auto_type, ex_method_symb(meth_symb, 1), (msg_eval_info.expr)),
@@ -589,8 +572,8 @@ using
     timer_code = (
       do_if(
         is_gt(triggers_count_var, 0),
-        insert_timer(auto_name, time_varying_node_idxs[node.id], first_trigger_var)
-      ) if in(auto_type, time_sensitive_autos)
+        insert_timer(automaton.name, time_varying_nodes_indexes[node.id], first_trigger_var)
+      ) if is_time_sensitive(auto_type)
     );
 
     return update_code & prop_code & timer_code;
@@ -602,7 +585,7 @@ using
     l0 = lvar(0);
 
     // Evaluating the local condition. If there's no parent, that's all we need to do
-    loc_cond_eval_code = gen_safe_eval_code(cond, l0, next_obj_var_id = 1, next_bool_var_id = 0);
+    loc_cond_eval_code = gen_safe_eval_code(cond, l0, next_obj_var_id = 1, next_int_var_id = 0, next_bool_var_id = 0);
     return loc_cond_eval_code if parent == nil;
 
     // Local condition variables
@@ -658,7 +641,7 @@ using
     l0 = lvar(0);
 
     // Evaluating the local condition.
-    cond_eval_code = gen_safe_eval_code(cond, l0, next_obj_var_id = 1, next_bool_var_id = 0);
+    cond_eval_code = gen_safe_eval_code(cond, l0, next_obj_var_id = 1, next_int_var_id = 0, next_bool_var_id = 0);
 
     // Anding the local condition with the 'parent == trigger' one, if a parent exists
     if parent != nil:
@@ -729,7 +712,7 @@ using
 }
 
 
-using AutoSymbol auto_name, [BlockNodeId -> AutoNode] nodes_by_id
+using Program program, Automaton automaton
 {
   Instr mark_for_update(BlockNodeId node_id) =
     match (nodes_by_id[node_id])
@@ -739,13 +722,13 @@ using AutoSymbol auto_name, [BlockNodeId -> AutoNode] nodes_by_id
       derived_disc()                |
       discrete_time_varying_node()  |
       nested_auto_input_node()      |
-      nested_auto_node()            = queue_update(auto_name, node_id),
+      nested_auto_node()            = queue_update(automaton.name, node_id),
       cond_node()                   |
       rep_cond_node()               |
-      time_varying_node()           = queue_cond_update(auto_name, node_id, true);
+      time_varying_node()           = queue_cond_update(automaton.name, node_id, true);
 
 
-  Instr mark_for_update_from_parent_cond(CondNodeId node_id) = queue_cond_update(auto_name, node_id, false);
+  Instr mark_for_update_from_parent_cond(CondNodeId node_id) = queue_cond_update(automaton.name, node_id, false);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

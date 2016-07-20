@@ -60,3 +60,39 @@
   union([retrieve_nested_int_seqs(fd) : fd <- prg.fndefs]) &
   union([retrieve_nested_int_seqs(pd) : pd <- prg.proc_defs]) &
   union([retrieve_nested_int_seqs(a)  : a  <- prg.auto_defs]);
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+using Program program
+{
+  Int+* int_seqs = rand_sort(retrieve_nested_int_seqs(program));
+
+  [Int+ -> Nat] int_seqs_ids = merge(([s -> i] : s @ i <- int_seqs));
+
+  Bool input_is_discrete(AutoSymbol auto, Atom input) = auto_input_is_discrete_map[auto][input];
+
+  Bool output_is_discrete(AutoSymbol auto, Atom output) = auto_output_is_discrete_map[auto][output];
+
+  Bool is_time_sensitive(AutoSymbol auto) = in(auto, time_sensitive_autos);
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  [AutoSymbol -> [Atom -> Bool]] auto_input_is_discrete_map =
+    [a.name -> [id -> input.discrete  : input  @ id <- a.inputs]  : a <- program.auto_defs];
+
+
+  [AutoSymbol -> [Atom -> Bool]] auto_output_is_discrete_map =
+    [a.name -> [id -> output.discrete : output @ id <- a.outputs] : a <- program.auto_defs];
+
+
+  [AutoSymbol] time_sensitive_autos
+  {
+    automata = program.auto_defs;
+    autos_with_time_rules = [a.name : a <- automata, a.time_rules != [:]];
+    auto_shallow_deps = [a.name -> [na.type : na @ unused_var <- a.nested_autos] : a <- automata];
+    auto_deep_deps = transitive_closure(auto_shallow_deps);
+    autos_with_time_sensitive_nested_autos =  [a.name : a <- automata, not disjoint(auto_deep_deps[a.name], autos_with_time_rules)];
+    return autos_with_time_rules & autos_with_time_sensitive_nested_autos;
+  }
+}
