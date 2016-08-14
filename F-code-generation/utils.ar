@@ -23,9 +23,9 @@
 
 
 [Int+] retrieve_nested_int_seqs(AutoAtomicAction action):
-  update()        = retrieve_nested_int_seqs(action.value),
-  set_discrete()  = retrieve_nested_int_seqs(action.value),
-  method_call()   = retrieve_nested_int_seqs(action.message);
+  state_update()        = retrieve_nested_int_seqs(action.value),
+  discrete_signal_def() = retrieve_nested_int_seqs(action.value),
+  msg_send()            = retrieve_nested_int_seqs(action.message);
 
 
 [Int+] retrieve_nested_int_seqs(AutoCondAction action) =
@@ -38,28 +38,37 @@
   union([retrieve_nested_int_seqs(a) : a <- action.body & action.else]);
 
 
-[Int+] retrieve_nested_int_seqs(ReadOnlyMethod method) = retrieve_nested_int_seqs(method.expr);
+[Int+] retrieve_nested_int_seqs(Method method) = retrieve_nested_int_seqs(method.expr);
 
 
-[Int+] retrieve_nested_int_seqs(UpdateMethod method) = retrieve_nested_int_seqs(method.body);
+[Int+] retrieve_nested_int_seqs(Update update) = retrieve_nested_int_seqs(update.body);
+
+
+[Int+] retrieve_nested_int_seqs(Handler handler) = retrieve_nested_int_seqs(handler.body);
 
 
 [Int+] retrieve_nested_int_seqs(Automaton auto) =
   union([retrieve_nested_int_seqs(sv.init_value) : sv @ unused_var <- auto.state]) &
-  union([retrieve_nested_int_seqs(e) : e @ unused_var <- auto.params]) &
+  union([retrieve_nested_int_seqs(p.value) : p @ unused_var <- auto.params]) &
   union([retrieve_nested_int_seqs(e) : e @ unused_var <- auto.rules]) &
   union([retrieve_nested_int_seqs(c) : c @ unused_var <- auto.time_rules]) &
   union([retrieve_nested_int_seqs(a) : a <- auto.actions]) &
   union([retrieve_nested_int_seqs(a) : a <- auto.rep_actions]) &
   union([retrieve_nested_int_seqs(e) : na @ unused_var_1 <- auto.nested_autos, e @ unused_var_2 <- na.args]) &
-  union([retrieve_nested_int_seqs(m) : m <- auto.read_only_methods]) &
-  union([retrieve_nested_int_seqs(m) : m <- auto.update_methods]);
+  union([retrieve_nested_int_seqs(m) : m <- auto.methods]);
+
+
+[Int+] retrieve_nested_int_seqs(DataBase db) =
+  union([retrieve_nested_int_seqs(m) : m <- db.methods]) &
+  union([retrieve_nested_int_seqs(u) : u <- db.updates]) &
+  union([retrieve_nested_int_seqs(h) : h <- db.handlers]);
 
 
 [Int+] retrieve_nested_int_seqs(Program prg) =
   union([retrieve_nested_int_seqs(fd) : fd <- prg.fndefs]) &
   union([retrieve_nested_int_seqs(pd) : pd <- prg.proc_defs]) &
-  union([retrieve_nested_int_seqs(a)  : a  <- prg.auto_defs]);
+  union([retrieve_nested_int_seqs(a)  : a  <- prg.auto_defs]) &
+  union([retrieve_nested_int_seqs(db) : db <- prg.data_bases]);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -95,4 +104,46 @@ using Program program
     autos_with_time_sensitive_nested_autos =  [a.name : a <- automata, not disjoint(auto_deep_deps[a.name], autos_with_time_rules)];
     return autos_with_time_rules & autos_with_time_sensitive_nested_autos;
   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+type Artifact = FnDef, DataBase, Automaton, ProcDef2;
+
+
+using Artifact artifact
+{
+  AutoSymbol var_type(MembAutoVar var) =
+    match (artifact)
+      automaton()   = artifact.nested_autos[bare_id(var)].type;
+
+
+  AutoSymbol var_type(LocAutoVar var) =
+    match (artifact)
+      proc_def()    = artifact.auto_vars[var];
+
+
+  DBSymbol var_type(MembDBVar var) =
+    match (artifact)
+      automaton()   = artifact.nested_dbs[var],
+      data_base()   = artifact.nested_dbs[var];
+
+
+  DBSymbol var_type(LocDBVar var) =
+    match (artifact)
+      proc_def()    = artifact.db_vars[var];
+
+
+  DBSymbol var_type(NestedDBVar var) = {fail;}; //## IMPLEMENT IMPLEMENT IMPLEMENT
+
+
+  AutoSymbol this_auto_symbol =
+    match (artifact)
+      automaton() = artifact.name;
+
+
+  DBSymbol this_db_symbol =
+    match (artifact)
+      data_base()  = artifact.name;
 }

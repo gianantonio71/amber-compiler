@@ -43,13 +43,8 @@ using Program program, Automaton automaton, CompilationOptions options
 
     var = memb_var(id);
     nv_var = lvar(0);
-    pv_var = pending_state_var(id);
     let next_obj_var_id = 1, next_int_var_id = 0, next_bool_var_id = 0:
-      extra_cases = (
-        (clear_loc_var(nv_var)),
-        (read_pending_var(nv_var, pv_var), init_memb_var(pv_var, :blank))
-      );
-      cases = nonempty((gen_safe_eval_code(e, nv_var) : e <- node.exprs) & extra_cases);
+      cases = nonempty((gen_safe_eval_code(e, nv_var) : e <- node.exprs) & ((clear_loc_var(nv_var))));
       eval_instr = switch_on_nat(update_source_var(id), cases);
     ;
     cond = neg(is_eq(var, nv_var));
@@ -502,7 +497,6 @@ using Program program, Automaton automaton, CompilationOptions options
     return (code | update_memb_var_instr);
   }
 
-
   Instr* gen_node_update_code(AutoNestedAutoInputNode node)
   {
     nv_var = lvar(0);
@@ -514,21 +508,13 @@ using Program program, Automaton automaton, CompilationOptions options
     set_var_code = (
       //## SHOULD I CHECK THAT THE INPUT IS NOT NULL BEFORE SETTING IT, OR IS THIS ALREADY DONE
       //## INSIDE THE NESTED AUTOMATON?
-      set_input(auto_var, auto_vars_types[auto_var], node_id.input, just(nv_var)),
+      set_input(auto_var, auto_vars_types[auto_var], node_id.input, nv_var),
       mark_for_update(std_block_node_id(node_id.auto))
     );
 
     code = eval_code & set_var_code;
 
-    for av, o <- rand_sort(node.disc_nested_auto_outputs):
-      tmp_var = lvar(1);
-      code = (
-        read_output(tmp_var, av, auto_vars_types[av], o),
-        do_if_not(is_blank(tmp_var), code)
-      );
-    ;
-
-    disc_vars = rand_sort(node.disc_vars);
+    disc_vars = rand_sort(node.discrete_signals);
     if disc_vars != ():
       cond = and((is_not_blank(v) : v <- disc_vars));
       code = (do_if(cond, code));
@@ -551,18 +537,6 @@ using Program program, Automaton automaton, CompilationOptions options
       else 0;
 
     update_code = (auto_apply(auto_var, auto_type, elapsed_time_expr));
-    maybe_msg = node.message;
-    if maybe_msg != nil:
-      meth_symb, msg = value(maybe_msg);
-      msg_eval_info = gen_safe_eval_info(msg, next_obj_var_id = 0, next_int_var_id = 0, next_bool_var_id = 0);
-      pend_msg_var = has_pending_message_var(inner_id);
-      msg_sending_code = (
-        call_method(auto_var, auto_type, ex_method_symb(meth_symb, 1), (msg_eval_info.expr)),
-        auto_apply(auto_var, auto_type, 0),
-        set_bvar(pend_msg_var, false)
-      );
-      update_code = (update_code | do_if(pend_msg_var, msg_eval_info.eval_code & msg_sending_code));
-    ;
 
     //## CURRENTLY WE PROPAGATE THE UPDATE WITHOUT CHECKING WHAT INPUTS (IF ANY) HAVE CHANGED. FIX
     prop_code = (mark_for_update(id) : id <- rand_sort(union(values(node.downstream_nodes_by_output))));
@@ -579,6 +553,29 @@ using Program program, Automaton automaton, CompilationOptions options
     return update_code & prop_code & timer_code;
   }
 
+
+  Instr* gen_node_update_code(AutoNestedDBNode node)
+  {
+    inner_id = get_inner_id(node.id);
+
+    db_var = memb_db_var(inner_id);
+    db_type = automaton.nested_dbs[db_var];
+
+    msg_eval_info = gen_safe_eval_info(node.message, next_obj_var_id = 0, next_int_var_id = 0, next_bool_var_id = 0);
+    atomic_msg_expr = msg_eval_info.expr;
+    msg_send_instr = send_msg(db_var, db_type, atomic_msg_expr, true);
+
+    //## CURRENTLY WE PROPAGATE THE UPDATE WITHOUT CHECKING WHAT INPUTS (IF ANY) HAVE CHANGED. FIX
+    prop_code = (mark_for_update(id) : id <- rand_sort(union(values(node.downstream_nodes_by_state_var))));
+
+    msg_send_code = (msg_send_instr) & prop_code;
+    msg_send_code = (do_if_not(is_null(atomic_msg_expr), msg_send_code)) if atomic_msg_expr :: NullableVar;
+
+    return msg_eval_info.eval_code & msg_send_code;
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
 
   Instr* gen_cond_eval_code(Nat id, Expr cond, Maybe[[id: CondNodeId, trigger: Bool]] parent)
   {
@@ -685,32 +682,31 @@ using Program program, Automaton automaton, CompilationOptions options
 
 
   Instr+ gen_update_code(AutoNodeAction action):
-    state_update_action()   = ( do_if_not(
-                                  marked_for_update_var(std_block_node_id(action.target_var)),
+    state_update_action()   = ( do_if(
+                                  up_to_date_var(std_block_node_id(action.target_var)),
                                   set_ivar(update_source_var(action.target_var), action.expr_idx)
                                 ),
                                 mark_for_update(std_block_node_id(action.target_var))
                               ),
-    method_call_action()    = ( set_bvar(has_pending_message_var(action.target_auto), true),
-                                mark_for_update(std_block_node_id(action.target_auto))
-                              );
+    msg_send_action()       = (mark_for_update(std_block_node_id(action.target_db)));
 
 
-  Instr+ gen_clear_code(AutoNodeAction action):
+  Instr* gen_clear_code(AutoNodeAction action):
     state_update_action()   = { target_var = action.target_var;
                                 node_id = std_block_node_id(target_var);
                                 return (
-                                  do_if_not(
-                                    marked_for_update_var(node_id),
+                                  do_if(
+                                    up_to_date_var(node_id),
                                     set_ivar(update_source_var(target_var), multivalue_node_expr_count[node_id])
                                   ),
                                   mark_for_update(node_id)
                                 );
                               },
-    //## DECIDE WHAT TO DO HERE AND IMPLEMENT IT PROPERLY
-    method_call_action()    = (terminate);
+    msg_send_action()       = ();
 }
 
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 
 using Program program, Automaton automaton
 {
@@ -722,7 +718,8 @@ using Program program, Automaton automaton
       derived_disc()                |
       discrete_time_varying_node()  |
       nested_auto_input_node()      |
-      nested_auto_node()            = queue_update(automaton.name, node_id),
+      nested_auto_node()            |
+      nested_db_node()              = queue_update(automaton.name, node_id),
       cond_node()                   |
       rep_cond_node()               |
       time_varying_node()           = queue_cond_update(automaton.name, node_id, true);
@@ -789,6 +786,10 @@ using Program program, Automaton automaton
 [body: Instr*, two_level_update: Bool] gen_queue_update_method(AutoNestedAutoNode node, Nat index, Nat level_size) =
   gen_std_queue_update_method(node, index, level_size);
 
+
+[body: Instr*, two_level_update: Bool] gen_queue_update_method(AutoNestedDBNode node, Nat index, Nat level_size) =
+  gen_std_queue_update_method(node, index, level_size);
+
 ////////////////////////////////////////////////////////////////////////////////
 
 [body: Instr*, two_level_update: Bool] gen_std_queue_update_method(AutoNode node, Nat index, Nat level_size) =
@@ -798,7 +799,7 @@ using Program program, Automaton automaton
 Instr* gen_std_queue_update_code(BlockNodeId node_id, Nat level, Nat index, Nat level_size)
 {
   idx_var = ivar(0);
-  mark_var = marked_for_update_var(node_id);
+  up_to_date_var = up_to_date_var(node_id);
   count_var = update_count_var(level);
   nodes_var = nodes_to_update_var(level, idx_var);
 
@@ -810,5 +811,5 @@ Instr* gen_std_queue_update_code(BlockNodeId node_id, Nat level, Nat index, Nat 
     )
     else ();
 
-  return (do_if(neg(mark_var), (set_bvar(mark_var, true)) & extra_code));
+  return (do_if(up_to_date_var, (set_bvar(up_to_date_var, false)) & extra_code));
 }

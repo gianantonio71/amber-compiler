@@ -31,13 +31,13 @@ type ExprSpecWFError    = already_def_var(Var),
                           wrong_cls_arg_arity(expr: ConstOrVar, exp_arity: NzNat, arities: [+Nat]),
                           wrong_cls_call_arity(expr: SynFnCall, exp_arity: Nat),
                           named_args_not_allowed(expr: SynFnCall),
-                          not_a_scalar_var(name: Atom),
+                          not_a_scalar_var(names: Atom+),
                           dupl_var_mult_asgnm(StdVar),
                           diff_var_sets_in_ptrn_union(SynPtrn+),
 
                           ro_vars_asgnm(stmt: <SynAsgnStmt, SynProcCallStmt>, vars: [+Var]),
                           wrong_return(<SynReturnStmt, return_stmt>),
-                          vars_redef(stmt: SynForStmt, vars: [+Var]),
+                          vars_redef(stmt: SynForStmt[SynStmt], vars: [+Var]),
                           undef_update_var(stmt: SynImpUpdateStmt, var: StdVar),
                           wrong_proc_arity(stmt: SynProcCallStmt, exp_arity: Nat),
                           uncaught_ret_val(SynProcCallStmt),
@@ -50,6 +50,9 @@ type ExprSpecWFError    = already_def_var(Var),
 
                           auto_var_not_defined(var: AnyAutoVar, is_other_var_type: Bool),
                           unknown_input(name: Atom, automaton: SynAutoDef),
+                          unknown_output(name: Atom, automaton: SynAutoDef),
+                          unknown_db_field(name: Atom, database: SynDBDef),
+                          not_a_discrete_signal(name: Atom, automaton: SynAutoDef),
 
                           annotated_syn_expr_error(error: ExprWFError, expr: SynExpr);
 
@@ -119,13 +122,14 @@ ExprSpecWFError calling_unknown_function(SynFnCall c)                   = :calli
 ExprSpecWFError wrong_cls_arg_arity(ConstOrVar e, NzNat ea, [+Nat] as)  = wrong_cls_arg_arity(expr: e, exp_arity: ea, arities: as);
 ExprSpecWFError wrong_cls_call_arity(SynFnCall c, Nat ea)               = wrong_cls_call_arity(expr: c, exp_arity: ea);
 ExprSpecWFError named_args_not_allowed(SynFnCall c)                     = named_args_not_allowed(expr: c);
-ExprSpecWFError not_a_scalar_var(Atom a)                                = not_a_scalar_var(name: a);
+ExprSpecWFError not_a_scalar_var(Atom a)                                = not_a_scalar_var(names: (a));
+ExprSpecWFError not_a_scalar_var(Atom+ as)                              = not_a_scalar_var(names: as);
 ExprSpecWFError dupl_var_mult_asgnm(StdVar v)                           = :dupl_var_mult_asgnm(v);
 ExprSpecWFError diff_var_sets_in_ptrn_union(SynPtrn+ ps)                = :diff_var_sets_in_ptrn_union(ps);
 
 ExprSpecWFError ro_vars_asgnm(<SynAsgnStmt, SynProcCallStmt> s, [+Var] vs)  = ro_vars_asgnm(stmt: s, vars: vs);
 ExprSpecWFError wrong_return(<SynReturnStmt, return_stmt> s)                = :wrong_return(s);
-ExprSpecWFError vars_redef(SynForStmt s, [+Var] vs)                         = vars_redef(stmt: s, vars: vs);
+ExprSpecWFError vars_redef(SynForStmt[SynStmt] s, [+Var] vs)                = vars_redef(stmt: s, vars: vs);
 ExprSpecWFError undef_update_var(SynImpUpdateStmt s, StdVar v)              = undef_update_var(stmt: s, var: v);
 ExprSpecWFError wrong_proc_arity(SynProcCallStmt s, Nat a)                  = wrong_proc_arity(stmt: s, exp_arity: a);
 ExprSpecWFError uncaught_ret_val(SynProcCallStmt s)                         = :uncaught_ret_val(s);
@@ -136,10 +140,11 @@ ExprSpecWFError break_outside_loop(SynBreakStmt s)                          = :b
 ExprSpecWFError missing_ret_stmt(SynStmt+ ss)                               = :missing_ret_stmt(ss);
 ExprSpecWFError unreachable_stmt(SynStmt s)                                 = :unreachable_stmt(s);
 
-
-
 ExprSpecWFError auto_var_not_defined(AnyAutoVar v, Bool b)  = auto_var_not_defined(var: v, is_other_var_type: b);
 ExprSpecWFError unknown_input(Atom n, SynAutoDef a)         = unknown_input(name: n, automaton: a);
+ExprSpecWFError unknown_output(Atom n, SynAutoDef a)        = unknown_output(name: n, automaton: a);
+ExprSpecWFError unknown_db_field(Atom n, SynDBDef db)       = unknown_db_field(name: n, database: db);
+ExprSpecWFError not_a_discrete_signal(Atom n, SynAutoDef a) = not_a_discrete_signal(name: n, automaton: a);
 
 ExprSpecWFError annotated_syn_expr_error(ExprWFError er, SynExpr en)  = annotated_syn_expr_error(error: er, expr: en);
 
@@ -182,6 +187,9 @@ Any anchor_obj(ExprSpecWFError err):
 
   auto_var_not_defined()            = nil,
   unknown_input()                   = nil,
+  unknown_output()                  = nil,
+  unknown_db_field()                = nil,
+  not_a_discrete_signal()           = nil,
 
   annotated_syn_expr_error()        = err.expr;
 
@@ -375,7 +383,7 @@ String* basic_err_msg(ExprSpecWFError err):
                                 ", actual arity: " & append((printed(a) : a <- rand_sort(err.arities)), ", ")),
   wrong_cls_call_arity()      = ("Wrong number of arguments: " & user_repr(err.expr.name) & ", actual arity: " & printed(err.exp_arity)),
   named_args_not_allowed()    = ("Closures cannot have named parameters: " & user_repr(err.expr.name)),
-  not_a_scalar_var()          = ("Invalid use of closure variable: " & _str_(err.name)),
+  not_a_scalar_var()          = ("Invalid use of non-object variable: " & append((_str_(n) : n <- err.names), ".")),
   dupl_var_mult_asgnm(v?)     = ("Duplicated variable in multiple assignment: " & user_repr(v)),
   diff_var_sets_in_ptrn_union(ps?)  = ("Individual patterns in a union must define the same set of variables"),
 
@@ -394,7 +402,9 @@ String* basic_err_msg(ExprSpecWFError err):
 
   auto_var_not_defined()      = ({if err.is_other_var_type then "Not an automaton" else "Undefined"} & " variable: " & user_repr(err.var)),
   unknown_input()             = ("Automaton " & user_repr(err.automaton.name) & " has no such input: " & _str_(err.name)),
-
+  unknown_output()            = ("Automaton " & user_repr(err.automaton.name) & " has no such output: " & _str_(err.name)),
+  unknown_db_field()          = ("Automaton " & user_repr(db_symbol(err.database.name)) & " has no such state variable or nested automaton: " & _str_(err.name)),
+  not_a_discrete_signal()     = ("Not a discrete signal: " & user_repr(err.automaton.name) & "." & _str_(err.name)),
   annotated_syn_expr_error()  = basic_err_msg(err.error);
 
 

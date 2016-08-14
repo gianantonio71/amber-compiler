@@ -81,8 +81,8 @@ type SynCmpExpr       = eq(left: SynExpr, right: SynExpr),
 type SynMembExpr      = membership(obj: SynExpr, type: SynType);
 type SynCastExpr      = cast_expr(expr: SynExpr, type: SynType);
 
-type SynAccExpr       = accessor(expr: SynExpr, field: SymbObj);
-type SynAccTestExpr   = accessor_test(expr: SynExpr, field: SymbObj);
+type SynAccExpr       = accessor(expr: SynExpr, field: Atom);
+type SynAccTestExpr   = accessor_test(expr: SynExpr, field: Atom);
 
 type SynExQualExpr    = ex_qual(source: SynClause+, cond: SynExpr);
 type SynSCExpr        = set_comp(expr: SynExpr, source: SynClause+);
@@ -97,7 +97,7 @@ type SynDoExpr        = do_expr(SynStmt+);
 
 type SynLetExpr       = let_expr(expr: SynExpr, stmts: SynAsgnStmt+);
 
-type SynMethodCallExpr  = method_call_expr(var: Atom, name: ReadOnlyMethodSymb, args: SynExpr*);
+type SynMethodCallExpr  = method_call_expr(var: Atom, name: MethodSymbol, args: SynExpr*);
 
 type SynIsSetExpr     = IsSetExpr;
 
@@ -140,36 +140,45 @@ type SynCase    = case(patterns: SynPtrn+, expr: SynExpr);
 
 /////////////////////////////////////////////////////////////////////////////////////
 
-type SynStmt  = SynAsgnStmt, SynReturnStmt, SynIfStmt, SynLoopStmt, SynInfLoopStmt,
-                SynForStmt, SynLetStmt, SynBreakStmt, SynFailStmt, SynAssertStmt,
-                SynPrintStmt, SynImpUpdateStmt, SynFnDefStmt,
-                SynSetMembVarStmt, SynMethodCallStmt,
-                SynProcOnlyStmt;  //## BAD: MIXING PURE AND IMPURE STATEMENTS
+type SynStmt  = SynAtomicFnStmt, SynAtomicMethStmt, SynAtomicProcStmt,
+                SynAutoOrDBCtrlStmt, SynCompStmt[SynStmt], SynFnDefStmt;
+
+type SynAtomicFnStmt  = SynAsgnStmt, SynReturnStmt, SynBreakStmt, SynFailStmt,
+                        SynAssertStmt, SynPrintStmt, SynImpUpdateStmt;
 
 type SynAsgnStmt      = assignment_stmt(vars: StdVar+, value: SynExpr);
 type SynReturnStmt    = return_stmt(SynExpr);
-type SynIfStmt        = if_stmt(branches: [cond: SynExpr, body: SynStmt+]+, else: SynStmt*);
-type SynLoopStmt      = loop_stmt(cond: SynExpr, skip_first: Bool, body: SynStmt+);
-type SynInfLoopStmt   = inf_loop_stmt(SynStmt+);
-type SynForStmt       = for_stmt(loops: SynIter+, body: SynStmt+);
-type SynLetStmt       = let_stmt(asgnms: (NamedArg, SynExpr)+, body: SynStmt+);
-type SynBreakStmt     = break_stmt; //## REPLACE WITH BreakStmt
-type SynFailStmt      = fail_stmt;  //## REPLACE WITH FailStmt
+type SynBreakStmt     = break_stmt;
+type SynFailStmt      = fail_stmt;
 type SynAssertStmt    = assert_stmt(cond: SynExpr, file: String, line: NzNat, text: Maybe[String]);
 type SynPrintStmt     = print_stmt(SynExpr);
 type SynImpUpdateStmt = imp_update_stmt(obj: StdVar, idx: SynExpr, value: SynExpr);
 
-type SynSetMembVarStmt  = set_memb_var_stmt(var: PendingStateVar, value: SynExpr);
-type SynMethodCallStmt  = method_call_stmt(var: Atom?, name: Atom, args: SynExpr*);
+type SynAtomicMethStmt  = send_msg_stmt(var: Atom, msg: SynExpr),
+                          try_update_stmt(name: Atom, args: SynExpr*),
+                          set_memb_var_stmt(var: Atom, value: SynExpr);
 
-type SynProcCallStmt      = proc_call(res_var: StdVar?, proc_name: ProcSymbol, args: SynExpr*); //## RENAME IN proc_call_stmt(...)
+type SynAtomicProcStmt  = SynNoValRetStmt, SynProcCallStmt;
 
-type SynAutoSetInputStmt  = auto_set_input_stmt(var: LocAutoVar, input: Atom, value: Maybe[SynExpr]);
-type SynAutoUpdateStmt    = auto_update_stmt(var: LocAutoVar, elapsed_time: SynExpr?);
+type SynNoValRetStmt  = return_stmt;
+type SynProcCallStmt  = proc_call_stmt(res_var: StdVar?, proc_name: ProcSymbol, args: SynExpr*);
 
-type SynProcOnlyStmt      = return_stmt, SynProcCallStmt, SynAutoSetInputStmt, SynAutoUpdateStmt;
+type SynAutoOrDBCtrlStmt  = set_input_ctrl_stmt(var: Atom, input: Atom, value: SynExpr),
+                            clear_input_ctrl_stmt(var: Atom, input: Atom),
+                            apply_ctrl_stmt(var: Atom, elapsed_time: SynExpr?),
+                            send_msg_ctrl_stmt(res_var: Atom, db_var: Atom, msg: SynExpr);
+
+type SynCompStmt[T] = SynIfStmt[T], SynLoopStmt[T], SynInfLoopStmt[T], SynForStmt[T], SynLetStmt[T];
+
+type SynIfStmt[T]       = if_stmt(branches: [cond: SynExpr, body: T+]+, else: T*);
+type SynLoopStmt[T]     = loop_stmt(cond: SynExpr, skip_first: Bool, body: T+);
+type SynInfLoopStmt[T]  = inf_loop_stmt(T+);
+type SynForStmt[T]      = for_stmt(loops: SynIter+, body: T+);
+type SynLetStmt[T]      = let_stmt(asgnms: (NamedArg, SynExpr)+, body: T+);
 
 type SynFnDefStmt   = fn_def_stmt(fn_def: SynFnDef);
+
+/////////////////////////////////////////////////////////////////////////////////////
 
 type SynSeqIter     = seq_iter(vars: StdVar+, idx_var: StdVar?, values: SynExpr);
 type SynRangeIter   = range_iter(var: StdVar?, start_val: SynExpr, end_val: SynExpr, end_val_incl: Bool);
@@ -194,7 +203,8 @@ type SynProcDef     = syn_proc_def(
                         name:       ProcSymbol,
                         args:       [var: StdVar, type: SynType]*,
                         res_type:   Maybe[SynType],
-                        auto_vars:  [var: LocAutoVar, type: Atom]*,
+                        auto_vars:  [var: Atom, type: Atom]*,
+                        db_vars:    [var: Atom, type: Atom]*,
                         body:       SynStmt*
                       );
 
@@ -204,18 +214,17 @@ type SynSgn         = syn_sgn(
                         res_type: SynType
                       );
 
-type SynUsingBlock  = using_block(
+type SynImplBlock   = implicit_block(
                         signatures: SynSgn+,
                         fn_defs:    SynFnDef+
                       );
 
-type SynSubtypeDecl = SubtypeDecl;
-
 ////////////////////////////////////////////////////////////////////////////////
 
-type SynInputDecl   = syn_input(name: Atom, type: SynType, discrete: Bool);
-type SynOutputDecl  = syn_output(name: Atom, type: SynType, discrete: Bool);
-type SynStateDecl   = syn_state(name: Atom, type: SynType, init_value: SynExpr);
+type InputDecl      = input_decl(name: Atom, type: SynType, discrete: Bool);
+type OutputDecl     = output_decl(name: Atom, type: SynType, discrete: Bool);
+type StateVarDecl   = state_var_decl(name: Atom, type: SynType, init_value: SynExpr);
+type ConstDecl      = const_decl(name: Atom, type: SynType?, value: SynExpr);
 
 type SynPlainRule   = syn_plain_rule(name: Atom, expr: SynExpr, discrete: Bool);
 type SynCondRule    = syn_cond_rule(name: Atom, branches: [expr: SynExpr, cond: SynExpr]+, discrete: Bool);
@@ -232,46 +241,60 @@ type SynTimeVaryingRule = syn_time_varying_boolean_rule(name: Atom, cond: SynExp
 
 type SynNestedAuto  = syn_nested_auto(name: Atom, auto_name: Atom, args: (Atom, SynExpr)*);
 
-type SynMethodCall  = syn_method_call(
+type SynMsgSend     = syn_msg_send(
                         target:   Atom,
-                        method:   Atom,
                         message:  SynExpr,
                         cond:     Maybe[SynExpr],
                         signals:  Atom*
                       );
 
-type AutoDecl       = SynInputDecl, SynOutputDecl, SynStateDecl, SynPlainRule, SynCondRule,
-                      SynForeachRule, SynTimeVaryingRule, SynNestedAuto, SynMethodCall;
+type RuleDecl       = SynPlainRule, SynCondRule, SynForeachRule, SynTimeVaryingRule, SynNestedAuto, SynMsgSend;
 
 type SynMethodStmt  = syn_memb_asgnm(memb_var: Atom, value: SynExpr),
-                      syn_nested_call(auto_var: Atom, method: UpdateMethodSymb, args: SynExpr*);
+                      syn_nested_call(auto_var: Atom, method: UpdateSymbol, args: SynExpr*);
 
-type SynReadOnlyMethodDef = syn_read_only_method_def(
-                              automaton:  AutoSymbol,
-                              name:       ReadOnlyMethodSymb,
-                              args:       (SynType, StdVar)*,
-                              ret_type:   SynType,
-                              expr:       SynExpr
-                            );
+type SynMethodDef = syn_method_def(
+                      target:     <AutoSymbol, DBSymbol>,
+                      name:       MethodSymbol,
+                      args:       (SynType, StdVar)*,
+                      ret_type:   SynType,
+                      expr:       SynExpr
+                    );
 
-type SynUpdateMethodDef   = syn_update_method_def(
-                              automaton:  AutoSymbol,
-                              name:       UpdateMethodSymb,
-                              args:       (SynType, StdVar)*,
-                              body:       SynStmt*
-                            );
+type SynUpdateDef   = syn_update_def(
+                        target:   DBSymbol,
+                        name:     UpdateSymbol,
+                        args:     (SynType, StdVar)*,
+                        body:     SynStmt*
+                      );
+
+type HandlerDef     = handler_def(target: DBSymbol, type: SynType, body: SynStmt*);
 
 type SynAutoDef     = syn_auto_def(
                         name:       AutoSymbol,
                         pos_inputs: Atom*,
                         res_type:   SynType?,
                         parent:     Atom?,
-                        decls:      AutoDecl*  //## SHOULD I ALLOW EMPTY AUTOMATON DEFINITIONS?
+                        inputs:     InputDecl*,
+                        outputs:    OutputDecl*,
+                        state_vars: StateVarDecl*,
+                        nested_dbs: NestedDBDecl*,
+                        consts:     ConstDecl*,
+                        rules:      RuleDecl*
+                      );
+
+type NestedDBDecl   = nested_db_decl(name: Atom, type: Atom);
+
+type DataBaseDecl   = StateVarDecl, NestedDBDecl;
+
+type SynDBDef       = syn_db_def(
+                        name:   Atom,
+                        decls:  DataBaseDecl*
                       );
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type PrgDecl        = SynTypedef, SynParTypedef, SynFnDef, SynUsingBlock, SynSubtypeDecl,
-                      SynProcDef, SynAutoDef, SynReadOnlyMethodDef, SynUpdateMethodDef;
+type PrgDecl        = SynTypedef, SynParTypedef, SynFnDef, SynImplBlock, SynProcDef,
+                      SynAutoDef, SynDBDef, SynMethodDef, HandlerDef, SynUpdateDef;
 
 type SynPrg         = prg(PrgDecl*);

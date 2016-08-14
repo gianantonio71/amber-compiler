@@ -1,0 +1,86 @@
+using SynPrg syn_prg, SynDBDef db_def
+{
+  DataBase desugar_data_base
+  {
+    name = db_symbol(db_def.name);
+    state_vars = [
+      memb_var(v.name) -> [
+        type:       syn_type_to_type(v.type, nil),
+        init_value: desugar_db_expr(v.init_value, [])
+      ] : v <- db_state_vars
+    ];
+    methods  = [desugar_db_method(m) : m <- lookup(methods_by_target, name, [])];
+    updates  = [desugar_update(u)    : u <- lookup(updates_by_target, name, [])];
+    handlers = [desugar_handler(h)   : h <- lookup(handlers_by_target, name, [])];
+
+    return data_base(
+      name:         name,
+      state_vars:   state_vars,
+      nested_dbs:   db_vars_types,
+      methods:      methods,
+      updates:      updates,
+      handlers:     handlers
+    );
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  Method desugar_db_method(SynMethodDef syn_method)
+  {
+    args = ((syn_type_to_type(t, nil), v) : t, v <- syn_method.args);
+    ret_type = syn_type_to_type(syn_method.ret_type, nil);
+    expr = desugar_db_expr(syn_method.expr, set((v : unused_var, v <- syn_method.args)));
+    return method(syn_method.name, args, ret_type, expr);
+  }
+
+
+  Update desugar_update(SynUpdateDef syn_method)
+  {
+    args = ((syn_type_to_type(t, nil), v) : t, v <- syn_method.args);
+    body = desugar_db_update_stmts(syn_method.body, set((v : unused_var, v <- syn_method.args)));
+    return update(syn_method.name, args, body);
+  }
+
+
+  Handler desugar_handler(HandlerDef handler_def)
+  {
+    type = syn_type_to_type(handler_def.type, nil);
+    body = desugar_db_update_stmts(handler_def.body, [var(:it)]);
+    return handler(type, body);
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  Expr desugar_db_expr(SynExpr expr, [StdVar] def_vars) =
+    desugar_expr(
+      expr,
+      def_vars,
+      syn_artifact = db_def,
+      closures = [],
+      named_args = [],
+      named_args_arities = [:],
+      memb_vars = db_memb_vars,
+      auto_vars_types = [:],
+      db_vars_types = db_vars_types,
+      local_fns = [:],
+      curr_outer_fn = nil
+    );
+
+
+  Statement* desugar_db_update_stmts(SynStmt* stmts, [StdVar] def_vars) =
+    desugar_stmts(
+      stmts,
+      def_vars,
+      syn_artifact = db_def,
+      closures = [],
+      named_args = [],
+      named_args_arities = [:],
+      memb_vars = db_memb_vars,
+      auto_vars_types = [:],
+      db_vars_types = db_vars_types,
+      local_fns = [:],
+      curr_outer_fn = nil
+    );
+}

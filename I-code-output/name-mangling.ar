@@ -1,7 +1,7 @@
 using String typesymb2name(TypeSymbol)
 {
-  String to_c_var_decl_name(<ObjVar, PendingInputVar, BoolVar, IntVar, AnyAutoVar> v) = to_c_var_name(v, false);
-  String to_c_var_ref_name(<ObjVar, PendingInputVar, BoolVar, IntVar, AnyAutoVar> v) = to_c_var_name(v, true);
+  String to_c_var_decl_name(<ObjVar, PendingInputVar, BoolVar, IntVar, AnyAutoVar, AnyDBVar> v) = to_c_var_name(v, false);
+  String to_c_var_ref_name(<ObjVar, PendingInputVar, BoolVar, IntVar, AnyAutoVar, AnyDBVar> v)  = to_c_var_name(v, true);
 
   String to_c_var_decl_name(<VecVar, SetItVar, SeqItVar, MapItVar, StreamVar, ClsVar> v) = to_c_var_name(v);
   String to_c_var_ref_name(<VecVar, SetItVar, SeqItVar, MapItVar, StreamVar, ClsVar> v)  = to_c_var_name(v);
@@ -26,10 +26,16 @@ using String typesymb2name(TypeSymbol)
 
   String to_c_var_name(<ObjVar, PendingInputVar> v, Bool add_prefix)
   {
+    assert match (v)
+      qual_auto_memb_var()  |
+      qual_db_memb_var()    = add_prefix,
+      _                     = true;
+
     prefix = if add_prefix
       then match (v)
-        memb_copy_var()   = "self_aux.",
-        _                 = "self->"
+        memb_copy_var()     |
+        pending_state_var() = "self_aux.",
+        _                   = "self->"
       else "";
 
     return match (v)
@@ -38,9 +44,11 @@ using String typesymb2name(TypeSymbol)
       named_arg(Atom a?)            = "env.n_"  & _str_(a),
       cls_ext_par(Nat n?)           = "C["  & printed(n) & "]",
       memb_var(Atom a?)             = prefix & upper_camel_case(a),
+      qual_auto_memb_var()          = to_c_var_name(v.auto_var, true) & "." & to_c_var_name(v.memb_var, false),
+      qual_db_memb_var()            = to_c_var_name(v.db_var, true) & "." & to_c_var_name(v.memb_var, false),
       watched_signal_value_var(a?)  = prefix & upper_camel_case(a) & "_WS",
       memb_copy_var(Atom a?)        = prefix & upper_camel_case(a) & "_O",
-      pending_state_var(a?)         = prefix & upper_camel_case(a) & "_PV",
+      pending_state_var(a?)         = prefix & upper_camel_case(a) & "_PS",
       lvar(Nat n?)                  = "l" & printed(n),
       evar()                        = "V" & printed(v.id) & "[" & to_c_expr(v.idx) & "]",
       pending_input_var(Atom a?)    = prefix & upper_camel_case(a) & "_new";
@@ -69,10 +77,9 @@ using String typesymb2name(TypeSymbol)
       cond_expr_is_def_var(Nat n?)                  = prefix & "cond_" & printed(n) & "_expr_is_def",
       cond_is_def_var(n?)                           = prefix & "cond_" & printed(n) & "_is_def",
       watched_signal_up_to_date_var(a?)             = prefix & upper_camel_case(a) & "_WSUTD",
-      has_pending_message_var(a?)                   = prefix & upper_camel_case(a) & "_PS",
-      marked_for_update_var(std_block_node_id(a?))  = prefix & upper_camel_case(a) & "_marked_for_update",
-      marked_for_update_var(cond_node_id(n?))       = prefix & "cond_" & printed(n) & "_marked_for_update",
-      marked_for_update_var(nested_auto_input_id() id?) = prefix & upper_camel_case(id.auto) & "_" & upper_camel_case(id.input) & "_marked_for_update",
+      up_to_date_var(std_block_node_id(a?))         = prefix & upper_camel_case(a) & "_UTD",
+      up_to_date_var(cond_node_id(n?))              = prefix & "cond_" & printed(n) & "_UTD",
+      up_to_date_var(nested_auto_input_id() id?)    = prefix & upper_camel_case(id.auto) & "_" & upper_camel_case(id.input) & "_UTD",
       is_new                                        = prefix & "is_new";
   }
 
@@ -101,6 +108,12 @@ using String typesymb2name(TypeSymbol)
   String to_c_var_name(AnyAutoVar v, Bool add_prefix):
     loc_auto_var(a?)  = upper_camel_case(a) & "_A",
     memb_auto_var(a?) = {if add_prefix then "self->" else ""} & upper_camel_case(a) & "_A";
+
+
+  String to_c_var_name(AnyDBVar v, Bool add_prefix):
+    loc_db_var(a?)  = upper_camel_case(a) & "_DB",
+    memb_db_var(a?) = {if add_prefix then "self->" else ""} & upper_camel_case(a) & "_DB",
+    nested_db_var() = to_c_var_name(v.outer, add_prefix) & "." & to_c_var_name(v.inner, false);
 
   ///////////////////////////////////////////////////////////////////////////////
   ///////////////////////////////////////////////////////////////////////////////
@@ -164,27 +177,39 @@ String to_c_const(<blank, undefined> state) = if state == :blank then "make_blan
 
 ////////////////////////////////////////////////////////////////////////////////
 
-String to_c_name(AutoSymbol): auto_symbol(a?) = upper_camel_case(a);
+String to_c_name(AutoSymbol): auto_symbol(a?) = upper_camel_case(a) & "_AT";
 
-String aux_struct_c_name(AutoSymbol symb) = to_c_name(symb) & "_AUX";
+String to_c_name(DBSymbol): db_symbol(a?) = upper_camel_case(a) & "_DBT";
 
-String to_c_name(ExMethodSymb symb)
+String aux_struct_c_name(<AutoSymbol, DBSymbol> symb) = to_c_name(symb) & "_AUX";
+
+String to_c_name(MethodId meth_id)
 {
-  id_str = if symb.id? then uppercase_encoding(symb.id) else "";
-  return match (symb.symbol)
-    msg_handler                 = "MSG_HANDLER" & if id_str != "" then "_" & id_str else "",
-    update_method_symb(a?)      = upper_camel_case(a) & "_U" & printed(symb.arity) & id_str,
-    read_only_method_symb(a?)   = upper_camel_case(a) & "_R" & printed(symb.arity) & id_str;
+  id_str = if meth_id.id? then uppercase_encoding(meth_id.id) else "";
+  return upper_camel_case(bare_id(meth_id.symbol)) & "_M" & printed(meth_id.arity) & id_str;
 }
 
+String to_c_name(UpdateId id):
+  main_handler    = "HANDLER",
+  handler_id(n?)  = "HANDLER_" & printed(n),
+  update_id()     = { id_str = if id.id? then uppercase_encoding(id.id) else "";
+                      return upper_camel_case(bare_id(id.symbol)) & "_U" & printed(id.arity) & id_str;
+                    };
+
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
+
+String update_entry_point_name(DBSymbol db) = to_c_name(db) & "_EP";
+
+String init_method_name(DBSymbol db) = to_c_name(db) & "_INIT";
+
+String cleanup_method_name(DBSymbol db) = to_c_name(db) & "_CLEANUP";
+
+String update_name(DBSymbol db, UpdateId id) = to_c_name(db) & "_" & to_c_name(id);
 
 String input_set_method_name(AutoSymbol auto, Atom input)   = to_c_name(auto) & "_" & upper_camel_case(input) & "_SET";
 
-String output_get_method_name(AutoSymbol auto, Atom output) = to_c_name(auto) & "_" & upper_camel_case(output) & "_GET";
-
-String user_def_method_name(AutoSymbol auto, ExMethodSymb method) = to_c_name(auto) & "_" & to_c_name(method);
+String user_def_method_name(<AutoSymbol, DBSymbol> type, MethodId method) = to_c_name(type) & "_" & to_c_name(method);
 
 String pre_init_method_name(AutoSymbol name)    = to_c_name(name) & "_PREINIT";
 

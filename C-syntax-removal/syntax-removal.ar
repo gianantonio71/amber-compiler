@@ -1,0 +1,108 @@
+using SynPrg syn_prg
+{
+  Program desugared_prg = program(
+    typedefs:     typedefs,
+    fndefs:       union([syn_fndef_to_fndefs(fd, ias) : efd <- ext_syn_fn_defs, (fd?, ias?) << efd]),
+    proc_defs:    [syn_proc_def_to_proc_def(pd) : pd <- syn_proc_defs],
+    auto_defs:    [desugar_automaton(auto_def=a) : a <- resolve_inheritance(syn_auto_defs)],
+    data_bases:   [desugar_data_base(db_def=db) : db <- syn_db_defs]
+  );
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  [FnDef] syn_fndef_to_fndefs(SynFnDef fndef, [SynSgn] named_args)
+  {
+    lfns = [(lfd.name, nz_nat(arity(lfd))) -> nonempty((arity(p) : p <- lfd.args)) : lfd <- set(fndef.local_fns)];
+    main_fn = mk_fndef(fndef, fndef.name, fndef.name, named_args, lfns);
+    loc_fns = ();
+    for fd <- fndef.local_fns:
+      fn_symb = nested_fn_symbol(fndef.name, fd.name);
+      loc_fns = (loc_fns | mk_fndef(fd, fn_symb, fndef.name, named_args, lfns));
+    ;
+    return [main_fn] & set(loc_fns);
+
+
+    //## BAD BAD BAD TOO MANY PARAMETERS
+    FnDef mk_fndef(SynFnDef fndef, FnSymbol fn_name, FnSymbol outer_fn, [SynSgn] named_args, [(FnSymbol, NzNat) -> Nat+] lfns)
+    {
+      pars = (desugar_fn_par(p) : p <- fndef.args);
+      npars = [np.name -> syn_sgn_to_any_expr(np) : np <- named_args];
+      maybe_res_type = if fndef.res_type? then just(syn_type_to_type(fndef.res_type, nil)) else nil;
+      expr = desugar_expr(
+        fndef.expr,
+        [var(p.var_name) : p <- set(fndef.args), p.var_name? and (not p.type? or p.type :: SynType)],
+        syn_artifact        = fndef,
+        closures            = [cls_var(p.var_name) : p <- set(fndef.args), p.var_name?, p.type?, p.type :: SynClsType],
+        named_args          = [a.name : a <- named_args], //## BAD BAD BAD
+        named_args_arities  = [a.name -> arity(a) : a <- named_args], //## BAD BAD BAD
+        memb_vars           = [],
+        auto_vars_types     = [:],
+        db_vars_types       = [:],
+        local_fns           = lfns,
+        curr_outer_fn       = just(outer_fn)
+      );
+      new_fd = fn_def(fn_name, pars, npars, maybe_res_type, expr);
+      return transfer_attachments(new_fd, fndef);
+    }
+
+    T attach(T obj, Any data) = _attach_(obj, data);  //## BAD BAD BAD: THIS IS A WORKAROUND FOR A BUG IN THE TYPECHECKER
+
+    FnFrmPar desugar_fn_par(SynFnArg arg)
+    {
+      maybe_var_name = if arg.var_name? then just(arg.var_name) else nil;
+      if arg.type?:
+        return desugar_fn_par(maybe_var_name, arg.type);
+      else
+        return scalar_par(maybe_var_name);
+      ;
+    }
+
+    ScalarFrmParam desugar_fn_par(Maybe[Atom] maybe_var_name, SynType type) =
+      scalar_par(maybe_var_name, syn_type_to_type(type, nil));
+
+    ClsFrmParam desugar_fn_par(Maybe[Atom] maybe_var_name, SynClsType type) =
+      non_scalar_par(value(maybe_var_name), syn_type_to_type(type, nil));
+
+    AnyType syn_sgn_to_any_expr(SynSgn signature)
+    {
+      arg_types = (syn_type_to_type(p, nil) : p <- signature.args);
+      ret_type = syn_type_to_type(signature.res_type, nil);
+      return if arg_types == () then ret_type else cls_type(arg_types, ret_type);
+    }
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  ProcDef2 syn_proc_def_to_proc_def(SynProcDef pd)
+  {
+    args = ([var: p.var, type: syn_type_to_type(p.type, nil)] : p <- pd.args);
+    maybe_ret_type = if pd.res_type != nil then just(syn_type_to_type(value(pd.res_type), nil)) else nil;
+    auto_vars = [loc_auto_var(v.var) -> auto_symbol(v.type) : v <- set(pd.auto_vars)];
+    db_vars = [loc_db_var(v.var) -> db_symbol(v.type) : v <- set(pd.db_vars)];
+
+    body = desugar_stmts(
+      pd.body,
+      set((p.var : p <- pd.args)),
+      syn_artifact        = pd,
+      closures            = [],
+      named_args          = [],
+      named_args_arities  = [:],
+      memb_vars           = [],
+      auto_vars_types     = auto_vars,
+      db_vars_types       = db_vars,
+      local_fns           = [:],
+      curr_outer_fn       = nil
+    );
+
+    return proc_def(
+      name:       pd.name,
+      args:       args,
+      res_type:   maybe_ret_type,
+      auto_vars:  auto_vars,
+      db_vars:    db_vars,
+      body:       body
+    );
+  }
+}

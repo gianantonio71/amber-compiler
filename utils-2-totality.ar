@@ -1,0 +1,103 @@
+Bool is_total(Expr expr):
+  object()              = true,
+  float_lit()           = true,
+  Var                   = true, //## NOT SURE ABOUT THIS ONE, ESPECIALLY (BUT NOT EXCLUSIVELY) ABOUT PendingStateVar...
+  seq_expr(ses?)        = all((is_total(se) : se <- ses)),
+  tuple_expr(es?)       = all((is_total(e) : e <- es)),
+  seq_tail_expr()       = all((is_total(e) : e <- expr.tail)) and is_total(expr.seq),
+  set_expr(ses?)        = not (? se <- ses : not is_total(se)),
+  map_expr(es?)         = not (? e <- es : not is_total(e)),
+  tag_obj_expr()        = is_total(expr.tag) and is_total(expr.obj),
+  builtin_call()        = all((is_total(e) : e <- expr.params)) and is_total(expr.name),
+  map_search()          = is_total(expr.map) and is_total(expr.key) and is_total(expr.value),
+  key_search()          = is_total(expr.map) and is_total(expr.key),
+  and_expr()            = is_total(expr.left) and is_total(expr.right),
+  or_expr()             = is_total(expr.left) and is_total(expr.right),
+  not_expr(e?)          = is_total(e),
+  eq()                  = is_total(expr.left) and is_total(expr.right),
+  membership()          = is_total(expr.obj),
+  cast_expr()           = {fail;},
+  accessor()            = is_total(expr.expr),
+  accessor_test()       = is_total(expr.expr),
+  if_expr()             = is_total(expr.cond) and is_total(expr.then) and is_total(expr.else),
+  ex_qual()             = is_total(expr.source) and is_total(expr.cond),
+  set_comp()            = is_total(expr.source) and is_total(expr.expr),
+  map_comp()            = is_total(expr.source) and is_total(expr.key_expr) and is_total(expr.value_expr),
+  seq_comp()            = is_total(expr.src_expr) and (not expr.sel_expr? or is_total(expr.sel_expr)) and is_total(expr.expr),
+  range_comp()          = is_total(expr.bound_expr) and (not expr.sel_expr? or is_total(expr.sel_expr)) and is_total(expr.expr),
+
+  output_is_def()       = true, //## THIS ONE SHOULD BE FINE, BUT AGAIN I'M NOT 100% SURE...
+  is_set()              = true, //## NOT TOO SURE ABOUT THIS ONE EITHER...
+
+  fn_call()             = false,
+  cls_call()            = false,
+  unary_pseudo_call()   = false,
+  singl_only_elem()     = false,
+  match_expr()          = false,
+  do_expr()             = false;
+
+
+Bool is_total(CondExpr expr) = is_total(expr.cond) and is_total(expr.expr);
+
+
+Bool is_total([key: Expr, value: Expr, cond: Expr?] map_entry) =
+  is_total(map_entry.key) and is_total(map_entry.value) and (not map_entry.cond? or is_total(map_entry.cond));
+
+
+Bool is_total(Clause cls):
+  set_elem_clause()   = is_total(cls.src),
+  map_entry_clause()  = is_total(cls.src),
+  seq_elem_clause()   = is_total(cls.src),
+  and_clause()        = is_total(cls.left) and is_total(cls.right),
+  or_clause()         = is_total(cls.left) and is_total(cls.right),
+  match_clause()      = is_total(cls.expr),
+  asgnm_clause()      = is_total(cls.expr),
+  filter_clause(e?)   = is_total(e);
+
+
+Bool is_total(BuiltIn name):
+  neg       |
+  add       |
+  sub       |
+  mult      |
+  lt        |
+  le        |
+  gt        |
+  ge        |
+  str       |
+  len       |
+  cat       |
+  set       |
+  rev       |
+  mset      |
+  tag       |
+  obj       |
+  in        |
+  has_key   |
+  isort     |
+  union     |
+  fneg      |
+  fadd      |
+  fsub      |
+  fmult     |
+  fdiv      |
+  float     |
+  rand_nat  |
+  rand_elem |
+  counter   |
+  attach    |
+  fetch     |
+  ticks     = true,
+
+  div       |
+  mod       |
+  symb      |
+  at        |
+  slice     |
+  lookup    |
+  merge     |
+  fsqrt     |
+  floor     |
+  ceiling   |
+  mantissa  |
+  dec_exp   = false;

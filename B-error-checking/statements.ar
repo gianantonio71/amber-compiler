@@ -1,5 +1,7 @@
 using
 {
+  SynPrg                        syn_prg,
+
   [BasicTypeSymbol -> [+Nat]]                         type_arity_map,
   [NamedArg -> Nat]                                   curr_function_named_args,
   [FnSymbol -> [Nat -> (Nat*, [+[NamedArg -> Nat]])]] global_functions,
@@ -7,6 +9,7 @@ using
   [FnSymbol -> NzNat]                                 closures,
   [ProcSymbol -> (Nat, Bool)]                         procedures,
   [AnyAutoVar -> AutoSymbol]                          auto_vars,
+  [AnyDBVar -> DBSymbol]                              db_vars,
   [AutoSymbol -> SynAutoDef]                          automata,
   Nat                                                 actual_arg_arity;
 
@@ -23,6 +26,8 @@ using
 
 using
 {
+  SynPrg                        syn_prg,
+
   [BasicTypeSymbol -> [+Nat]]                         type_arity_map,
   [NamedArg -> Nat]                                   curr_function_named_args,
   [FnSymbol -> [Nat -> (Nat*, [+[NamedArg -> Nat]])]] global_functions,
@@ -30,6 +35,7 @@ using
   [FnSymbol -> NzNat]                                 closures,
   [ProcSymbol -> (Nat, Bool)]                         procedures,
   [AnyAutoVar -> AutoSymbol]                          auto_vars,
+  [AnyDBVar -> DBSymbol]                              db_vars,
   [AutoSymbol -> SynAutoDef]                          automata,
   Nat                                                 actual_arg_arity,
 
@@ -78,17 +84,21 @@ using
       print_stmt(e?)            = expr_wf_errors(e, all_vars),
       imp_update_stmt()         = expr_wf_errors(stmt.idx, all_vars) & expr_wf_errors(stmt.value, all_vars),
       return_stmt               = (),
-      proc_call()               = join((expr_wf_errors(e, all_vars) : e <- stmt.args)),
+      proc_call_stmt()          = join((expr_wf_errors(e, all_vars) : e <- stmt.args)),
+
+      send_msg_stmt()           = expr_wf_errors(stmt.msg, all_vars),
+      try_update_stmt()         = join((expr_wf_errors(e, all_vars) : e <- stmt.args)),
       set_memb_var_stmt()       = expr_wf_errors(stmt.value, all_vars),
-      method_call_stmt()        = join((expr_wf_errors(a, all_vars) : a <- stmt.args)),
-      auto_set_input_stmt()     = { val = stmt.value;
-                                    return if val != nil then expr_wf_errors(value(val), all_vars) else ();
-                                  },
-      auto_update_stmt()        = (),
+
+      set_input_ctrl_stmt()     = expr_wf_errors(stmt.value, all_vars),
+      clear_input_ctrl_stmt()   = (),
+      apply_ctrl_stmt()         = if stmt.elapsed_time? then expr_wf_errors(stmt.elapsed_time, all_vars) else (),
+      send_msg_ctrl_stmt()      = expr_wf_errors(stmt.msg, all_vars),
+
       fn_def_stmt()             = {fail;};
 
 
-    ExprWFError* if_stmt_wf_errors(SynIfStmt stmt, [Var] ro_vars, [StdVar] rw_vars, [Var] all_vars)
+    ExprWFError* if_stmt_wf_errors(SynIfStmt[SynStmt] stmt, [Var] ro_vars, [StdVar] rw_vars, [Var] all_vars)
     {
       branches_errs = join((expr_wf_errors(b.cond, all_vars) & stmts_wf_errors(b.body, ro_vars, rw_vars) : b <- stmt.branches));
       else_body = stmt.else;
@@ -97,7 +107,7 @@ using
     }
 
 
-    ExprWFError* for_stmt_wf_errors(SynForStmt stmt, [Var] ro_vars, [StdVar] rw_vars, [Var] all_vars)
+    ExprWFError* for_stmt_wf_errors(SynForStmt[SynStmt] stmt, [Var] ro_vars, [StdVar] rw_vars, [Var] all_vars)
     {
       iter_errs = ();
       new_vars = [];
@@ -116,7 +126,7 @@ using
       range_iter()  = expr_wf_errors(iter.start_val, vars) & expr_wf_errors(iter.end_val, vars);
 
 
-    ExprWFError* let_stmt_nested_wf_error(SynLetStmt stmt, [Var] ro_vars, [StdVar] rw_vars, [Var] all_vars)
+    ExprWFError* let_stmt_nested_wf_error(SynLetStmt[SynStmt] stmt, [Var] ro_vars, [StdVar] rw_vars, [Var] all_vars)
     {
       exprs_errs = join((expr_wf_errors(right(a), all_vars) : a <- stmt.asgnms));
       new_vars = set((left(a) : a <- stmt.asgnms));
@@ -136,12 +146,19 @@ using
     for_stmt()                = for_stmt_local_wf_errors(stmt, ro_vars, rw_vars),
     let_stmt()                = (),
     imp_update_stmt()         = imp_update_stmt_local_wf_errors(stmt, ro_vars, rw_vars),
-    proc_call()               = proc_call_stmt_local_wf_errors(stmt, ro_vars, rw_vars),
+    proc_call_stmt()          = proc_call_stmt_local_wf_errors(stmt, ro_vars, rw_vars),
     return_stmt               = ret_stmt_local_wf_errors(stmt, false),
     break_stmt                = (break_outside_loop(stmt) if not is_inside_loop),
-    method_call_stmt()        = method_call_stmt_local_wf_errors(stmt, ro_vars, rw_vars),
-    auto_set_input_stmt()     = auto_set_input_stmt_local_wf_errors(stmt.var, stmt.input, ro_vars, rw_vars),
-    auto_update_stmt()        = auto_var_errors(stmt.var, ro_vars, rw_vars),
+
+    send_msg_stmt()           = {fail;},
+    try_update_stmt()         = {fail;},
+    set_memb_var_stmt()       = {fail;},
+
+    set_input_ctrl_stmt()     |
+    clear_input_ctrl_stmt()   = set_or_clear_input_ctrl_stmt_local_wf_errors(stmt.var, stmt.input, ro_vars, rw_vars),
+    apply_ctrl_stmt()         = auto_var_errors(loc_auto_var(stmt.var), ro_vars, rw_vars),
+    send_msg_ctrl_stmt()      = send_msg_ctrl_stmt_local_wf_errors(stmt.res_var, stmt.db_var, ro_vars, rw_vars),
+
     fn_def_stmt()             = {fail;},
     assert_stmt(e?)           = (),
     print_stmt(e?)            = (),
@@ -154,8 +171,16 @@ using
 
   ExprWFError* asgn_stmt_local_wf_errors(SynAsgnStmt stmt, [Var] ro_vars, [StdVar] rw_vars)
   {
-    bad_vars = already_def_vars(set(stmt.vars), ro_vars);
+    vars = set(stmt.vars);
+    bad_vars = [
+      v : v <- vars,
+          var_id = bare_id(v),
+          has_key(auto_vars, loc_auto_var(var_id)) or
+          has_key(db_vars, loc_db_var(var_id))
+    ];
+    bad_vars = bad_vars & already_def_vars(vars, ro_vars);
     dupl_vars = dupl_elems(stmt.vars);
+    //## BAD BAD: HERE I'M TREATING AUTOMATON VARIABLES AS IF THEY WERE READ-ONLY SCALAR ONES
     return (ro_vars_asgnm(stmt, bad_vars) if bad_vars != []) & (dupl_var_mult_asgnm(v) : v <- rand_sort(dupl_vars));
   }
 
@@ -164,7 +189,7 @@ using
     (wrong_return(stmt) if has_value != has_return_value);
 
 
-  ExprWFError* for_stmt_local_wf_errors(SynForStmt stmt, [Var] ro_vars, [StdVar] rw_vars)
+  ExprWFError* for_stmt_local_wf_errors(SynForStmt[SynStmt] stmt, [Var] ro_vars, [StdVar] rw_vars)
   {
     errs = ();
     new_vars = [];
@@ -211,12 +236,18 @@ using
   }
 
 
-  ExprWFError* method_call_stmt_local_wf_errors(SynMethodCallStmt stmt, [Var] ro_vars, [StdVar] rw_vars)
+  ExprWFError* set_or_clear_input_ctrl_stmt_local_wf_errors(Atom var_id, Atom input, [Var] ro_vars, [StdVar] rw_vars)
   {
-    return () if not stmt.var?;
-    var = stmt.var;
-    //## HERE I NEED TO KNOW THE CONTEST IN WHICH THE STATEMENT IS CALLED.
-    //## IS IT A PROCEDURE, OR A MESSAGE HANDLER?
+    var = loc_auto_var(var_id);
+    errs = auto_var_errors(var, ro_vars, rw_vars);
+    return errs if errs != ();
+    auto_def = automata[auto_vars[var]];
+    return (unknown_input(input, auto_def) if not has_key(inputs(auto_def), input));
+  }
+
+
+  ExprWFError* send_msg_ctrl_stmt_local_wf_errors(Atom res_var_id, Atom db_var_id, [Var] ro_vars, [StdVar] rw_vars)
+  {
     //## IMPLEMENT IMPLEMENT IMPLEMENT
     // return match (var)
     //   loc_auto_var()  = auto_var_errors(var, ro_vars, rw_vars),
@@ -225,15 +256,6 @@ using
   }
 
 
-  ExprWFError* auto_set_input_stmt_local_wf_errors(LocAutoVar var, Atom input, [Var] ro_vars, [StdVar] rw_vars)
-  {
-    errs = auto_var_errors(var, ro_vars, rw_vars);
-    return errs if errs != ();
-    auto_def = automata[auto_vars[var]];
-    return (unknown_input(input, auto_def) if not has_key(inputs(auto_def), input));
-  }
-
-
   ExprWFError* auto_var_errors(LocAutoVar var, [Var] ro_vars, [StdVar] rw_vars) =
-    (auto_var_not_defined(var, already_def(name(var), ro_vars & rw_vars)) if not has_key(auto_vars, var));
+    (auto_var_not_defined(var, already_def(bare_id(var), ro_vars & rw_vars)) if not has_key(auto_vars, var));
 }

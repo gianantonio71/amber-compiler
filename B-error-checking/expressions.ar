@@ -1,5 +1,7 @@
 using
 {
+  SynPrg                        syn_prg,
+
   [BasicTypeSymbol -> [+Nat]]                         type_arity_map,
   [NamedArg -> Nat]                                   curr_function_named_args,
   [FnSymbol -> [Nat -> (Nat*, [+[NamedArg -> Nat]])]] global_functions,
@@ -7,6 +9,7 @@ using
   [FnSymbol -> NzNat]                                 closures,
   [ProcSymbol -> (Nat, Bool)]                         procedures,
   [AnyAutoVar -> AutoSymbol]                          auto_vars,
+  [AnyDBVar -> DBSymbol]                              db_vars,
   [AutoSymbol -> SynAutoDef]                          automata,
   Nat                                                 actual_arg_arity;
 
@@ -43,8 +46,8 @@ using
     neq()               = expr_wf_errors(expr.left, def_vars) & expr_wf_errors(expr.right, def_vars),
     membership()        = expr_wf_errors(expr.obj, def_vars) & type_wf_errors(expr.type, type_arity_map),
     cast_expr()         = expr_wf_errors(expr.expr, def_vars) & type_wf_errors(expr.type, type_arity_map),
-    accessor()          = expr_wf_errors(expr.expr, def_vars),
-    accessor_test()     = expr_wf_errors(expr.expr, def_vars),
+    accessor()          = if expr :: AccessorChain then () else expr_wf_errors(expr.expr, def_vars),
+    accessor_test()     = if expr.expr :: ConstOrVar then () else expr_wf_errors(expr.expr, def_vars),
     output_is_def()     = (),
     ex_qual()           = clauses_exprs_wf_errors(expr.source, (expr.cond), def_vars),
     set_comp()          = clauses_exprs_wf_errors(expr.source, (expr.expr), def_vars),
@@ -105,6 +108,8 @@ using
 
   ExprWFError* expr_local_wf_errors(SynExpr expr, [Var] def_vars):
     const_or_var(a?)    = const_or_var_local_wf_errors(a, def_vars),
+    accessor()          = accessor_local_wf_errors(expr, def_vars),
+    accessor_test()     = accessor_test_local_wf_errors(expr.expr, expr.field, def_vars),
     cls_par(n?)         = (undef_impl_cls_arg(expr) if n >= actual_arg_arity),
     fn_call()           = fn_call_local_wf_errors(expr, def_vars),
     builtin_call()      = (wrong_builtin_arity(expr.name, expr.args) if length(expr.args) != builtin_arities[expr.name]),
@@ -118,9 +123,20 @@ using
 
   ExprWFError* const_or_var_local_wf_errors(Atom name, [Var] def_vars)
   {
-    return () if already_def(name, def_vars) or has_key(auto_vars, loc_auto_var(name));
+    return () if already_def(name, def_vars);
+
+    for v <- (loc_auto_var(name), memb_auto_var(name)):
+      if has_key(auto_vars, v):
+        interface = auto_interfaces[auto_vars[v]];
+        return (not_a_scalar_var(name) if not interface.default_output);
+      ;
+    ;
+
     const_fn = fn_symbol(name);
-    return (not_a_scalar_var(name)) if has_key(closures, const_fn);
+
+    is_db_var = has_key(db_vars, loc_db_var(name)) or has_key(db_vars, memb_db_var(name));
+    is_closure = has_key(closures, const_fn);
+    return (not_a_scalar_var(name)) if is_db_var or is_closure;
 
     if has_key(global_functions, const_fn):
       arity_to_info = global_functions[const_fn];
@@ -132,6 +148,80 @@ using
     ;
 
     return (undef_var_or_const(name));
+  }
+
+
+  ExprWFError* accessor_local_wf_errors(SynAccExpr expr, [Var] def_vars)
+  {
+    return () if not expr :: AccessorChain;
+
+    symbols = destructure_accessor_chain(expr);
+    target = head(symbols);
+    fields = nonempty(tail(symbols));
+
+    for v <- (loc_auto_var(target), memb_auto_var(target)):
+      if has_key(auto_vars, v):
+        auto_type = auto_vars[v];
+        interface = auto_interfaces[auto_type];
+        // If the automaton has a default output, or if the first field identifies an output
+        // then all the accessors are actually applied to an object, so we defer any further
+        // checks until typechecking
+        field = head(fields);
+        return () if interface.default_output or has_key(interface.outputs, field);
+        // If the first field does not identify an output, for now we give up
+        return (unknown_output(field, automata[auto_type]));
+      ;
+    ;
+
+    for v <- (loc_db_var(target), memb_db_var(target)):
+      if has_key(db_vars, v):
+        db_type = db_vars[v];
+        for f <- fields:
+          interface = db_interfaces[db_type];
+          if in(f, interface.memb_vars):
+            // If the field identifies a member variable, again all other accessors are
+            // applied to an object, so we defer checking until typechecking
+            return ();
+          elif has_key(interface.nested_dbs, f):
+            // The next step in the chain is another database
+            db_type = db_symbol(interface.nested_dbs[f]);
+          else
+            // The specified field does not exist
+            return (unknown_db_field(f, db_defs_by_id[db_type]));
+          ;
+        ;
+        // We went through the whole sequence of accessors, and we didn't get to an actual object
+        return (not_a_scalar_var(nonempty((target) & fields)));
+      ;
+    ;
+
+    return const_or_var_local_wf_errors(target, def_vars);
+  }
+
+
+  ExprWFError* accessor_test_local_wf_errors(SynExpr expr, Atom field, [Var] def_vars)
+  {
+    return () if not expr :: ConstOrVar;
+    target = match (expr) const_or_var(a?) = a;
+
+    for v <- (loc_auto_var(target), memb_auto_var(target)):
+      if has_key(auto_vars, v):
+        auto_type = auto_vars[v];
+        interface = auto_interfaces[auto_type];
+        if interface.default_output:
+          // If the automaton has a default output then the accessor test is actually
+          // applied to an object, so we defer any further checks until typechecking
+          return ();
+        elif has_key(interface.outputs, field):
+          is_discrete = interface.outputs[field].discrete;
+          return (not_a_discrete_signal(field, automata[auto_type]) if not is_discrete);
+        else
+          return (unknown_output(target, automata[auto_type]));
+        ;
+      ;
+    ;
+
+    return const_or_var_local_wf_errors(target, def_vars);
   }
 
 
@@ -161,11 +251,11 @@ using
   ExprWFError* output_is_def_local_wf_errors(LocAutoVar var, Atom output, [Var] def_vars)
   {
     //## HERE I SHOULD ALSO CHECK THAT THE AUTOMATON DOES HAVE THAT SPECIFIC OUTPUT.
-    return (auto_var_not_defined(var, already_def(name(var), def_vars)) if not has_key(auto_vars, var));
+    return (auto_var_not_defined(var, already_def(bare_id(var), def_vars)) if not has_key(auto_vars, var));
   }
 
 
-  ExprWFError* method_call_expr_local_wf_errors(Atom var_id, ReadOnlyMethodSymb name, SynExpr* args, [Var] def_vars)
+  ExprWFError* method_call_expr_local_wf_errors(Atom var_id, MethodSymbol name, SynExpr* args, [Var] def_vars)
   {
     //## HERE I SHOULD ALSO CHECK THAT THE METHOD EXISTS, THAT IT HAS THE RIGHT AUTOMATON TYPE
     //## AND THAT THE ARITY IS CORRECT

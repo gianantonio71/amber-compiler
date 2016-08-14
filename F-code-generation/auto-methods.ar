@@ -9,8 +9,7 @@ using Automaton automaton
   [Atom] discrete_inputs_ids = [id : input @ id <- automaton.inputs, input.discrete];
 
 
-  [Atom] discrete_signals_ids =
-    discrete_inputs_ids & union([set_discrete_signals_ids(a) : a <- all_actions]);
+  [Atom] discrete_signals_ids = discrete_inputs_ids & union([set_discrete_signals_ids(a) : a <- all_actions]);
 
 
   [NestedAutoInputNodeId -> Expr] nested_auto_inputs = [
@@ -19,8 +18,7 @@ using Automaton automaton
   ];
 
 
-  [Atom -> (UpdateMethodSymb, Expr)] nested_auto_calls =
-    [name(c.target) -> (c.method, c.message) : a <- all_actions, c <- retrieve_method_calls(a)];
+  [Atom -> Expr] nested_msg_sends = [bare_id(c.target) -> c.message : a <- all_actions, c <- retrieve_msg_sends(a)];
 
 
   [MembAutoVar -> AutoSymbol] auto_vars_types = [memb_auto_var(id) -> na.type : na @ id <- automaton.nested_autos];
@@ -40,7 +38,7 @@ using Automaton automaton
   [MembCopyVar] memb_copy_vars
   {
     assert not (? s <- values(automaton.state)  : memb_copy_vars_in_expr(s.init_value) != []);
-    assert not (? p <- values(automaton.params) : memb_copy_vars_in_expr(p) != []);
+    assert not (? p <- values(automaton.params) : memb_copy_vars_in_expr(p.value) != []);
 
     return union(
       [memb_copy_vars_in_expr(r) : r <- values(automaton.rules)] &
@@ -49,7 +47,7 @@ using Automaton automaton
   }
 
 
-  [Atom] memb_copy_vars_ids = [name(v) : v <- memb_copy_vars];
+  [Atom] memb_copy_vars_ids = [bare_id(v) : v <- memb_copy_vars];
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -66,4 +64,13 @@ using Program program, Automaton automaton
   }
 
   [StdBlockNodeId -> Nat] time_varying_nodes_indexes = merge(([n -> i] : n @ i <- sorted_time_varying_nodes));
+
+
+  Bool is_discrete(MembVar v) = in(bare_id(v), discrete_signals_ids);
+
+  Bool is_discrete(QualAutoMembVar v)
+  {
+    auto_type = automaton.nested_autos[bare_id(v.auto_var)].type;
+    return output_is_discrete(auto_type, bare_id(v.memb_var));
+  }
 }

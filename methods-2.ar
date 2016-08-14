@@ -1,26 +1,28 @@
-Atom name(StdVar):            var(a?)       = a;
-Atom name(NamedArg):          named_arg(a?) = a;
-Atom name(MembVar):           memb_var(a?)  = a;
-Atom name(MembCopyVar):       memb_copy_var(a?)  = a;
-Atom name(PendingStateVar):   pending_state_var(a?) = a;
+Atom bare_id(StdVar):            var(a?)       = a;
+Atom bare_id(NamedArg):          named_arg(a?) = a;
+Atom bare_id(MembVar):           memb_var(a?)  = a;
+Atom bare_id(MembCopyVar):       memb_copy_var(a?)  = a;
+Atom bare_id(PendingStateVar):   pending_state_var(a?) = a;
 
-Atom name(AnyAutoVar):
-  loc_auto_var(a?)  = a,
+Atom bare_id(AnyAutoVar):
+  loc_auto_var(a?)  |
   memb_auto_var(a?) = a;
 
-Atom unsafe_name(Var):
-  var(a?)           = a,
-  fn_par()          = {fail;},
-  named_arg(a?)     = a,
-  cls_ext_par()     = {fail;},
-  memb_var(a?)      = a,
-  memb_copy_var(a?) = a;
+Atom bare_id(AnyDBVar):
+  loc_db_var(a?)    |
+  memb_db_var(a?)   = a;
 
 Atom bare_id(FnSymbol):
   fn_symbol(a?)   = a;
 
 Atom bare_id(AutoSymbol):
   auto_symbol(a?) = a;
+
+Atom bare_id(MethodSymbol):
+  method_symbol(a?) = a;
+
+Atom bare_id(UpdateSymbol):
+  update_symbol(a?) = a;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -83,7 +85,7 @@ ClsExpr cast_as_cls_expr(Expr)          = {fail;};
 //Nat arity(<FnDef, Signature> obj) = length(obj.params);
 Nat arity(FnDef fd) = length(fd.params);
 
-Nat arity(ProcDef2 pd) = length(pd.params);
+Nat arity(ProcDef2 pd) = length(pd.args);
 
 NzNat arity(ClsType t)  = nz_nat(length(t.in_types));
 Nat arity(Type)         = 0;
@@ -144,5 +146,24 @@ Type return_type(FnDef fn_def) = if fn_def.res_type? then fn_def.res_type else {
 // (Var => NzNat) cls_vars(FnDef fn_def) = (p.var => length(p.type.in_types) : p <- set(fn_def.params), p.var? and (p.type? and p.type :: ClsType)) &
 //                                         (v => length(t.in_types) : t @ v <- fn_def.named_args, t :: ClsType);
 
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+//## FIND BETTER NAME FOR THESE FUNCTIONS
+
+MembVar one_level_down(QualAutoMembVar var) = var.memb_var;
+
+<MembVar, QualDBMembVar> one_level_down(QualDBMembVar var) =
+  match (var.db_var)
+    loc_db_var()    = var.memb_var,
+    memb_db_var()   = var.memb_var,
+    nested_db_var() = qual_db_memb_var(one_level_down(var.db_var), var.memb_var);
+
+AnyDBVar one_level_down(NestedDBVar var) =
+  match (var.outer)
+    loc_db_var()    = var.inner,
+    memb_db_var()   = var.inner,
+    nested_db_var() = one_level_down(var.outer);
 
 

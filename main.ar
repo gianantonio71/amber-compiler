@@ -81,7 +81,7 @@ Maybe[CCodeOutput] Compile([String -> Nat*] src_files, Bool run_typechecking, Bo
     FileWrite("dump_syn_prg.txt", false, raw_str(printed(syn_prg, 100)));
   ;
 
-  errs = prg_wf_errors(syn_prg);
+  errs = prg_wf_errors(syn_prg=syn_prg);
 
   t2 = _ticks_(nil);
 
@@ -98,7 +98,7 @@ Maybe[CCodeOutput] Compile([String -> Nat*] src_files, Bool run_typechecking, Bo
     return nil;
   ;
 
-  prg = rem_syntax(syn_prg);
+  prg = desugared_prg(syn_prg=syn_prg);
   t3 = _ticks_(nil);
   Print("Syntax removed\n");
 
@@ -140,10 +140,11 @@ Maybe[CCodeOutput] Compile([String -> Nat*] src_files, Bool run_typechecking, Bo
   ;
 
   opt_code = compiled_prg(
-    code.bool_procs,
-    [remove_dead_code(pd) : pd <- code.procs],
-    [remove_dead_code(b)  : b  <- code.blocks],
-    code.int_seqs
+    bool_procs:   code.bool_procs,
+    procs:        [remove_dead_code(pd) : pd <- code.procs],
+    blocks:       [remove_dead_code(b)  : b  <- code.blocks],
+    trans_blocks: [remove_dead_code(b)  : b <- code.trans_blocks],
+    int_seqs:     code.int_seqs
   );
   t6 = _ticks_(nil);
   Print("Dead code removed\n");
@@ -154,10 +155,11 @@ Maybe[CCodeOutput] Compile([String -> Nat*] src_files, Bool run_typechecking, Bo
 
   if add_rc:
     rc_code = compiled_prg(
-      opt_code.bool_procs,
-      [add_ref_counting(pd) : pd <- opt_code.procs],
-      [add_ref_counting(b)  : b  <- opt_code.blocks],
-      opt_code.int_seqs
+      bool_procs:   opt_code.bool_procs,
+      procs:        [add_ref_counting(pd) : pd <- opt_code.procs],
+      blocks:       [add_ref_counting(b)  : b  <- opt_code.blocks],
+      trans_blocks: [add_ref_counting(b)  : b <- opt_code.trans_blocks],
+      int_seqs:     opt_code.int_seqs
     );
     Print("Reference counting added\n");
   else
@@ -171,10 +173,11 @@ Maybe[CCodeOutput] Compile([String -> Nat*] src_files, Bool run_typechecking, Bo
   ;
 
   rc_code = compiled_prg(
-    [apply_cheats(d) : d <- rc_code.bool_procs],
-    rc_code.procs,
-    rc_code.blocks,
-    rc_code.int_seqs
+    bool_procs:   [apply_cheats(d) : d <- rc_code.bool_procs],
+    procs:        rc_code.procs,
+    blocks:       rc_code.blocks,
+    trans_blocks: rc_code.trans_blocks,
+    int_seqs:     rc_code.int_seqs
   );
 
   c_code  = compile_to_c(rc_code);

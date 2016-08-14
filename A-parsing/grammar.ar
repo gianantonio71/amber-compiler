@@ -25,37 +25,40 @@ ParsingRule rule_keyword(Atom kw) = atomic_rule(keyword(kw));
 ParsingRule keyword_after     = rule_keyword(:after);
 ParsingRule keyword_and       = rule_keyword(:and);
 ParsingRule keyword_assert    = rule_keyword(:assert);
-ParsingRule keyword_auto      = rule_keyword(:auto);
 ParsingRule keyword_break     = rule_keyword(:break);
-ParsingRule keyword_discrete  = rule_keyword(:discrete);
-ParsingRule keyword_elapsed   = rule_keyword(:elapsed);
+ParsingRule keyword_cell      = rule_keyword(:cell);
 ParsingRule keyword_elif      = rule_keyword(:elif);
 ParsingRule keyword_else      = rule_keyword(:else);
 ParsingRule keyword_every     = rule_keyword(:every);
 ParsingRule keyword_fail      = rule_keyword(:fail);
-ParsingRule keyword_false     = rule_keyword(:false);
 ParsingRule keyword_for       = rule_keyword(:for);
 ParsingRule keyword_if        = rule_keyword(:if);
-ParsingRule keyword_in        = rule_keyword(:in);
-ParsingRule keyword_input     = rule_keyword(:input);
 ParsingRule keyword_let       = rule_keyword(:let);
 ParsingRule keyword_loop      = rule_keyword(:loop);
 ParsingRule keyword_match     = rule_keyword(:match);
-ParsingRule keyword_nil       = rule_keyword(:nil);
 ParsingRule keyword_not       = rule_keyword(:not);
 ParsingRule keyword_or        = rule_keyword(:or);
-ParsingRule keyword_output    = rule_keyword(:output);
 ParsingRule keyword_print     = rule_keyword(:print);
 ParsingRule keyword_return    = rule_keyword(:return);
+ParsingRule keyword_schema    = rule_keyword(:schema);
 ParsingRule keyword_since     = rule_keyword(:since);
-ParsingRule keyword_state     = rule_keyword(:state);
 ParsingRule keyword_then      = rule_keyword(:then);
-ParsingRule keyword_true      = rule_keyword(:true);
 ParsingRule keyword_type      = rule_keyword(:type);
-ParsingRule keyword_update    = rule_keyword(:update);
 ParsingRule keyword_using     = rule_keyword(:using);
 ParsingRule keyword_while     = rule_keyword(:while);
-ParsingRule keyword_with      = rule_keyword(:with);
+
+// Used only by automata control statements
+ParsingRule keyword_apply     = rule_keyword(:apply);
+ParsingRule keyword_auto      = rule_keyword(:auto);
+ParsingRule keyword_clear     = rule_keyword(:clear);
+
+// These are not real keyword, more like labels
+ParsingRule keyword_input     = rule_keyword(:input);
+ParsingRule keyword_output    = rule_keyword(:output);
+ParsingRule keyword_dynamic   = rule_keyword(:dynamic);
+ParsingRule keyword_rules     = rule_keyword(:rules);
+ParsingRule keyword_state     = rule_keyword(:state);
+ParsingRule keyword_static    = rule_keyword(:static);
 
 ParsingRule rule_ops(TokenMatchingRule+ ops) = rule_anon_choice((atomic_rule(op) : op <- ops));
 
@@ -75,10 +78,12 @@ ParsingRule rule_ref_fndef_proc                 = rule_ref(:fndef_proc);
 ParsingRule rule_ref_fndef_switch               = rule_ref(:fndef_switch);
 ParsingRule rule_ref_basic_time_expr            = rule_ref(:basic_time_expr);
 
-ParsingRule rule_ref_stmt(<fn, proc, meth> ctx):
-  fn    = rule_ref(:stmt),
-  proc  = rule_ref(:proc_stmt),
-  meth  = rule_ref(:meth_stmt);
+ParsingRule rule_ref_stmt(StmtCtx ctx):
+  pure          = rule_ref(:stmt_pure),
+  auto_method   = rule_ref(:stmt_auto_method),
+  db_method     = rule_ref(:stmt_db_method),
+  update        = rule_ref(:stmt_update),
+  proc          = rule_ref(:stmt_proc);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -92,13 +97,16 @@ ParsingRule rule_declaration =
     (:fndef,                    rule_std_fndef(true)),
     (:fndef_proc,               rule_proc_fndef(true)),
     (:fndef_switch,             rule_switch_fndef),
-    (:using_block_1,            rule_using_block_1),
-    (:using_block_2,            rule_using_block_2),
+    (:implicit_block_1,         rule_implicit_block_1),
+    (:implicit_block_2,         rule_implicit_block_2),
     (:proc_def,                 rule_proc_def),
+    (:db_def,                   rule_db_def),
     (:auto_def,                 rule_auto_def),
-    (:std_read_only_method,     rule_std_read_only_method_def),
-    (:proc_read_only_method,    rule_proc_read_only_method_def),
-    (:switch_read_only_method,  rule_switch_read_only_method_def),
+    (:std_method,               rule_std_method_def),
+    (:switch_method,            rule_switch_method_def),
+    (:proc_auto_method,         rule_proc_auto_method_def),
+    (:proc_db_method,           rule_proc_db_method_def),
+    (:msg_handler,              rule_msg_handler_def),
     (:update_method,            rule_update_method_def)
   ));
 
@@ -112,28 +120,44 @@ ParsingRule rule_proc_def =
       (:no_ret_val,   rule_mc_id)
     )),
     par_rule(opt_comma_sep_seq(rule_seq((rule_type, optional_rule(rule_id))))),
-    brace_rule(rule_seq((rep_rule(rule_auto_var_decl), rep_rule(rule_stmt(:proc)))))
+    brace_rule(rule_seq((rep_rule(rule_auto_or_db_var_decl), rep_rule(rule_stmt(:proc)))))
+  ));
+
+ParsingRule rule_auto_or_db_var_decl =
+  rule_choice((
+    (:auto_var,   rule_auto_var_decl),
+    (:db_var,     rule_db_var_decl)
   ));
 
 ParsingRule rule_auto_var_decl =
   rule_seq((
     keyword_auto,
     rule_lc_id,
+    rule_colon,
     rule_lc_id,
+    rule_semicolon
+  ));
+
+ParsingRule rule_db_var_decl =
+  rule_seq((
+    keyword_auto,
+    rule_lc_id,
+    rule_colon,
+    rule_mc_id,
     rule_semicolon
   ));
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-ParsingRule rule_using_block_1 =
+ParsingRule rule_implicit_block_1 =
   rule_seq((
     keyword_using,
     comma_sep_seq(rule_signature),
     brace_rule(rep_rule(rule_fndef, true))
   ));
 
-ParsingRule rule_using_block_2 =
+ParsingRule rule_implicit_block_2 =
   rule_seq((
     keyword_using,
     brace_rule(
@@ -273,7 +297,7 @@ ParsingRule rule_proc_fndef(Bool arity_0_allowed) =
     optional_rule(rule_type),
     rule_anon_choice((rule_id, atomic_rule(operator))),
     maybe_optional_rule(par_rule(comma_sep_seq(rule_fn_arg)), arity_0_allowed),
-    brace_rule(rep_rule(rule_stmt(:fn), true))
+    brace_rule(rep_rule(rule_stmt(:pure), true))
   ));
 
 ParsingRule rule_switch_fndef = //## rule_try_fndef? rule_match_fndef?
@@ -338,29 +362,40 @@ ParsingRule rule_ptrn =
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-ParsingRule rule_stmt(<fn, proc, meth> ctx) =
+type StmtCtx = pure, auto_method, db_method, update, proc;
+
+ParsingRule rule_stmt(StmtCtx ctx) =
   rule_choice((
     (:asgnm,              rule_asgnm_stmt),
-    (:ret,                rule_ret_stmt)              if ctx == :fn or ctx == :proc,
-    (:if_stmt,            rule_if_stmt(ctx)),
-    (:loop_stmt,          rule_loop_stmt(ctx)),
-    (:while_stmt,         rule_while_stmt(ctx)),
-    (:let_stmt,           rule_let_stmt(ctx)),
-    (:break_stmt,         rule_break_stmt),
-    (:for_stmt,           rule_for_stmt(ctx)),
+    (:ret_val,            rule_ret_val_stmt)            if ctx != :update,
+    (:break_stmt,         rule_break_stmt)              if ctx != :auto_method,
     (:fail_stmt,          rule_fail_stmt),
     (:assert_stmt,        rule_assert_stmt),
     (:print_stmt,         rule_print_stmt),
     (:imp_update,         rule_imp_update_stmt),
-    (:fn,                 rule_ref_fndef)             if ctx == :fn,
-    (:fn_proc,            rule_ref_fndef_proc)        if ctx == :fn,
-    (:fn_case,            rule_ref_fndef_switch)      if ctx == :fn,
-    (:no_val_ret,         rule_no_val_ret_stmt)       if ctx == :proc or ctx == :meth,
-    (:proc_call,          rule_proc_call_stmt)        if ctx == :proc,
-    (:auto_set_input,     rule_auto_set_input_stmt)   if ctx == :proc,
-    (:auto_update,        rule_auto_update_stmt)      if ctx == :proc,
-    (:set_memb_var,       rule_set_memb_var_stmt)     if ctx == :meth,
-    (:method_call,        rule_method_call_stmt)      if ctx == :proc or ctx == :meth
+
+    (:no_val_ret,         rule_no_val_ret_stmt)         if in(ctx, [:update, :proc]),
+    (:proc_call,          rule_proc_call_stmt)          if ctx == :proc,
+
+    (:send_msg,           rule_send_msg_stmt)           if ctx == :update,
+    (:try_update,         rule_try_update_stmt)         if ctx == :update,
+    (:set_memb_var,       rule_set_memb_var_stmt)       if ctx == :update,
+
+    (:ctrl_set_input,     rule_set_input_ctrl_stmt)     if ctx == :proc,
+    (:ctrl_clear_input,   rule_clear_input_ctrl_stmt)   if ctx == :proc,
+    (:ctrl_apply,         rule_apply_ctrl_stmt)         if ctx == :proc,
+    (:ctrl_send_msg,      rule_send_msg_ctrl_stmt)      if ctx == :proc,
+
+    (:if_stmt,            rule_if_stmt(ctx)),
+
+    (:loop_stmt,          rule_loop_stmt(ctx))          if ctx != :auto_method,
+    (:while_stmt,         rule_while_stmt(ctx))         if ctx != :auto_method,
+    (:let_stmt,           rule_let_stmt(ctx))           if ctx != :auto_method,
+    (:for_stmt,           rule_for_stmt(ctx))           if ctx != :auto_method,
+
+    (:fn,                 rule_ref_fndef)               if ctx == :pure,
+    (:fn_proc,            rule_ref_fndef_proc)          if ctx == :pure,
+    (:fn_case,            rule_ref_fndef_switch)        if ctx == :pure
   ));
 
 ParsingRule rule_asgnm_stmt =
@@ -373,7 +408,7 @@ ParsingRule rule_asgnm_stmt =
     rule_semicolon
   ));
 
-ParsingRule rule_ret_stmt =
+ParsingRule rule_ret_val_stmt =
   rule_seq((
     keyword_return,
     rule_ref_expr,
@@ -381,7 +416,7 @@ ParsingRule rule_ret_stmt =
     rule_semicolon
   ));
 
-ParsingRule rule_if_stmt(<fn, proc, meth> ctx) =
+ParsingRule rule_if_stmt(StmtCtx ctx) =
   rule_seq((
     keyword_if,
     rule_ref_expr,
@@ -404,7 +439,7 @@ ParsingRule rule_if_stmt(<fn, proc, meth> ctx) =
     rule_semicolon
   ));
 
-ParsingRule rule_loop_stmt(<fn, proc, meth> ctx) =
+ParsingRule rule_loop_stmt(StmtCtx ctx) =
   rule_seq((
     keyword_loop,
     rep_rule(rule_ref_stmt(ctx), true),
@@ -412,7 +447,7 @@ ParsingRule rule_loop_stmt(<fn, proc, meth> ctx) =
     rule_semicolon
   ));
 
-ParsingRule rule_while_stmt(<fn, proc, meth> ctx) =
+ParsingRule rule_while_stmt(StmtCtx ctx) =
   rule_seq((
     keyword_while,
     rule_ref_expr,
@@ -421,7 +456,7 @@ ParsingRule rule_while_stmt(<fn, proc, meth> ctx) =
     rule_semicolon
   ));
 
-ParsingRule rule_for_stmt(<fn, proc, meth> ctx) =
+ParsingRule rule_for_stmt(StmtCtx ctx) =
   rule_seq((
     keyword_for,
     rep_rule(rule_for_range, rule_semicolon, true, false),
@@ -439,7 +474,7 @@ ParsingRule rule_for_range =
     (:repeat,       rule_ref_expr)
   ));
 
-ParsingRule rule_let_stmt(<fn, proc, meth> ctx) =
+ParsingRule rule_let_stmt(StmtCtx ctx) =
   rule_seq((
     keyword_let,
     comma_sep_seq(rule_seq((rule_id, rule_equals, rule_ref_expr))),
@@ -496,24 +531,20 @@ ParsingRule rule_proc_call_stmt =
     rule_semicolon
   ));
 
-ParsingRule rule_auto_set_input_stmt =
+ParsingRule rule_send_msg_stmt =
   rule_seq((
     rule_lc_id,
-    rule_dot,
-    rule_lc_id,
-    rule_equals,
+    rule_left_arrow,
     rule_expr,
+    optional_rule_seq((keyword_if, rule_expr)),
     rule_semicolon
   ));
 
-ParsingRule rule_auto_update_stmt =
+ParsingRule rule_try_update_stmt =
   rule_seq((
-    keyword_update,
     rule_lc_id,
-    optional_rule_seq((
-      keyword_elapsed,
-      rule_expr
-    )),
+    par_rule(opt_comma_sep_seq(rule_expr)),
+    optional_rule_seq((keyword_if, rule_expr)),
     rule_semicolon
   ));
 
@@ -526,13 +557,44 @@ ParsingRule rule_set_memb_var_stmt =
     rule_semicolon
   ));
 
-ParsingRule rule_method_call_stmt =
+ParsingRule rule_set_input_ctrl_stmt =
   rule_seq((
+    keyword_auto,
     rule_lc_id,
     rule_dot,
     rule_lc_id,
-    par_rule(opt_comma_sep_seq(rule_expr)),
-    optional_rule_seq((keyword_if, rule_expr)),
+    rule_equals,
+    rule_expr,
+    rule_semicolon
+  ));
+
+ParsingRule rule_clear_input_ctrl_stmt =
+  rule_seq((
+    keyword_auto,
+    keyword_clear,
+    rule_lc_id,
+    rule_dot,
+    rule_lc_id,
+    rule_semicolon
+  ));
+
+ParsingRule rule_apply_ctrl_stmt =
+  rule_seq((
+    keyword_auto,
+    keyword_apply,
+    rule_lc_id,
+    optional_rule_seq((keyword_after, rule_expr)),
+    rule_semicolon
+  ));
+
+ParsingRule rule_send_msg_ctrl_stmt =
+  rule_seq((
+    keyword_auto,
+    rule_lc_id,
+    rule_equals,
+    rule_lc_id,
+    rule_left_arrow,
+    rule_expr,
     rule_semicolon
   ));
 
@@ -642,7 +704,7 @@ ParsingRule rule_expr_0 =
 
     (:if_else,            rule_if_expr),
     (:match_expr,         rule_match_expr),
-    (:proc,               brace_rule(rep_rule(rule_ref_stmt(:fn), true))),
+    (:proc,               brace_rule(rep_rule(rule_ref_stmt(:pure), true))),
 
     (:method_call,        rule_seq((rule_id, rule_dot, rule_id, par_rule(opt_comma_sep_seq(rule_ref_expr))))),
     (:fn_call,            rule_fn_call_expr),
@@ -844,21 +906,52 @@ ParsingRule rule_data_expr =
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
+ParsingRule rule_db_def =
+  rule_seq((
+    keyword_schema,
+    rule_mc_id,
+    brace_rule(rep_rule(rule_db_decl))
+  ));
+
+ParsingRule rule_db_decl =
+  rule_choice((
+    (:var,        rule_seq((rule_lc_id, rule_colon, rule_type, rule_equals, rule_expr, rule_semicolon))),
+    (:nested_db,  rule_seq((rule_id, rule_colon, rule_mc_id, rule_semicolon)))
+  ));
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
 ParsingRule rule_auto_def =
   rule_seq((
-    keyword_auto,
+    keyword_cell,
     optional_rule(rule_type),
     rule_lc_id,
     optional_rule(par_rule(comma_sep_seq(rule_lc_id))),
     optional_rule_seq((rule_colon, rule_lc_id)),
-    brace_rule(rep_rule(rule_auto_decl))
+    brace_rule(
+      rule_seq((
+        optional_rule(rule_input_decl),
+        optional_rule(rule_output_decl),
+        optional_rule(rule_state_decl),
+        optional_rule(rule_static_decl),
+        optional_rule(rule_rules_decl)
+      ))
+    )
   ));
 
-ParsingRule rule_auto_decl =
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+ParsingRule rule_rules_decl =
+  rule_seq((
+    rule_anon_choice((keyword_dynamic, keyword_rules)),
+    rule_colon,
+    rep_rule_nonempty(rule_rule_decl)
+  ));
+
+ParsingRule rule_rule_decl =
   rule_choice((
-    (:input,              rule_input_decl),
-    (:output,             rule_output_decl),
-    (:state,              rule_state_decl),
     (:plain_rule,         rule_plain_rule),
     (:cond_rule,          rule_cond_rule),
     (:foreach_rule,       rule_foreach_rule),
@@ -866,37 +959,58 @@ ParsingRule rule_auto_decl =
     (:time_varying_rule,  rule_time_varying_rule),
     (:since_rule,         rule_time_varying_since_rule),
     (:nested_auto,        rule_nested_auto),
-    (:method_call,        rule_method_call)
+    (:msg_send,           rule_msg_send)
   ));
 
 ParsingRule rule_input_decl =
   rule_seq((
-    optional_rule(keyword_discrete),
     keyword_input,
-    comma_sep_seq(rule_seq((rule_type, rule_lc_id))),
-    rule_semicolon
+    rule_colon,
+    rep_rule_nonempty(rule_in_out_item_decl)
   ));
 
 ParsingRule rule_output_decl =
   rule_seq((
-    optional_rule(keyword_discrete),
     keyword_output,
-    comma_sep_seq(rule_seq((rule_type, rule_lc_id))),
+    rule_colon,
+    rep_rule_nonempty(rule_in_out_item_decl)
+  ));
+
+ParsingRule rule_in_out_item_decl =
+  rule_seq((
+    rule_lc_id,
+    rule_colon,
+    rule_type,
+    optional_rule(rule_question_mark),
     rule_semicolon
   ));
 
 ParsingRule rule_state_decl =
   rule_seq((
     keyword_state,
-    comma_sep_seq(
+    rule_colon,
+    rep_rule_nonempty(rule_state_item_decl)
+  ));
+
+ParsingRule rule_state_item_decl =
+  rule_choice((
+    (:var,        rule_seq((rule_lc_id, rule_colon, rule_type, rule_equals, rule_expr, rule_semicolon))),
+    (:nested_db,  rule_seq((rule_id, rule_colon, rule_mc_id, rule_semicolon)))
+  ));
+
+ParsingRule rule_static_decl =
+  rule_seq((
+    keyword_static,
+    rule_colon,
+    rep_rule_nonempty(
       rule_seq((
-        rule_type,
         rule_lc_id,
+        optional_rule_seq((rule_colon, rule_type)),
         rule_equals,
-        rule_expr
+        rule_expr,
+        rule_semicolon
       ))
-    ),
-    rule_semicolon
+    )
   ));
 
 ParsingRule rule_plain_rule =
@@ -980,30 +1094,40 @@ ParsingRule rule_nested_auto =
     rule_semicolon
   ));
 
-ParsingRule rule_method_call =
+ParsingRule rule_msg_send =
   rule_seq((
     rule_lc_id,
-    rule_dot,
-    rule_lc_id,
-    par_rule(rule_expr),
+    rule_left_arrow,
+    rule_expr,
     optional_rule_seq((keyword_if, rule_expr)),
     optional_rule_seq((rule_colon, comma_sep_seq(rule_lc_id))),
     rule_semicolon
   ));
 
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+ParsingRule rule_msg_handler_def =
+  rule_seq((
+    rule_mc_id,
+    rule_left_arrow,
+    rule_type,
+    brace_rule(rep_rule(rule_stmt(:update)))
+  ));
+
 ParsingRule rule_update_method_def =
   rule_seq((
-    rule_lc_id,
+    rule_mc_id,
     rule_dot,
     rule_lc_id,
     par_rule(opt_comma_sep_seq(rule_seq((rule_type, rule_lc_id)))),
-    brace_rule(rep_rule(rule_stmt(:meth)))
+    brace_rule(rep_rule(rule_stmt(:update)))
   ));
 
-ParsingRule rule_std_read_only_method_def =
+ParsingRule rule_std_method_def =
   rule_seq((
     rule_type,
-    rule_id,
+    rule_choice(((:auto, rule_id), (:db, rule_mc_id))),
     rule_dot,
     rule_id,
     par_rule(opt_comma_sep_seq(rule_seq((rule_type, rule_id)))),
@@ -1012,24 +1136,34 @@ ParsingRule rule_std_read_only_method_def =
     rule_semicolon
   ));
 
-ParsingRule rule_proc_read_only_method_def =
+ParsingRule rule_switch_method_def =
   rule_seq((
     rule_type,
-    rule_id,
-    rule_dot,
-    rule_id,
-    par_rule(opt_comma_sep_seq(rule_seq((rule_type, rule_id)))),
-    brace_rule(rep_rule(rule_stmt(:fn), true))
-  ));
-
-ParsingRule rule_switch_read_only_method_def =
-  rule_seq((
-    rule_type,
-    rule_id,
+    rule_choice(((:auto, rule_id), (:db, rule_mc_id))),
     rule_dot,
     rule_id,
     par_rule(comma_sep_seq(rule_seq((rule_type, rule_id)))),
     rule_colon,
     comma_sep_seq(rule_switch_case),
     rule_semicolon
+  ));
+
+ParsingRule rule_proc_auto_method_def =
+  rule_seq((
+    rule_type,
+    rule_id,
+    rule_dot,
+    rule_id,
+    par_rule(opt_comma_sep_seq(rule_seq((rule_type, rule_id)))),
+    brace_rule(rep_rule(rule_stmt(:auto_method), true))
+  ));
+
+ParsingRule rule_proc_db_method_def =
+  rule_seq((
+    rule_type,
+    rule_mc_id,
+    rule_dot,
+    rule_id,
+    par_rule(opt_comma_sep_seq(rule_seq((rule_type, rule_id)))),
+    brace_rule(rep_rule(rule_stmt(:db_method), true))
   ));

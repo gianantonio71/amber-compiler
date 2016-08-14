@@ -13,7 +13,7 @@
     return intersection([syn_new_vars(ss) : ss <- bodies, syn_may_fall_through(ss)]);
   },
   let_stmt()        = syn_new_vars(stmt.body),
-  proc_call()       = [stmt.res_var if stmt.res_var?],
+  proc_call_stmt()  = [stmt.res_var if stmt.res_var?],
   _                 = [];
 
 
@@ -119,26 +119,29 @@ PseudoType syn_pseudotype(SynType type, [TypeName -> Type] typedefs) = pseudotyp
 
 
 [+StmtOutcome] syn_outcomes(SynStmt stmt):
-  return_stmt           = [:returns],
-  return_stmt()         = [:fails, :returns],
-  if_stmt()             = nonempty(
-                            [:fails] & syn_outcomes(stmt.else) & seq_union((syn_outcomes(b.body) : b <- stmt.branches))
-                          ),
-  loop_stmt(body?)      = loop_stmt_syn_outcomes(stmt.skip_first, stmt.body),
-  inf_loop_stmt(ss?)    = inf_loop_stmt_syn_outcomes(ss),
-  for_stmt()            = [:fails, :falls_through, :returns if in(:returns, syn_outcomes(stmt.body))],
-  let_stmt()            = nonempty([:fails] & syn_outcomes(stmt.body)),
-  break_stmt            = [:breaks],
-  fail_stmt             = [:fails],
-  assignment_stmt()     |
-  assert_stmt()         |
-  print_stmt()          |
-  imp_update_stmt()     |
-  set_memb_var_stmt()   |
-  method_call_stmt()    |
-  proc_call()           |
-  auto_set_input_stmt() |
-  auto_update_stmt()    = [:falls_through, :fails];
+  return_stmt             = [:returns],
+  return_stmt()           = [:fails, :returns],
+  if_stmt()               = nonempty(
+                              [:fails] & syn_outcomes(stmt.else) & seq_union((syn_outcomes(b.body) : b <- stmt.branches))
+                            ),
+  loop_stmt(body?)        = loop_stmt_syn_outcomes(stmt.skip_first, stmt.body),
+  inf_loop_stmt(ss?)      = inf_loop_stmt_syn_outcomes(ss),
+  for_stmt()              = [:fails, :falls_through, :returns if in(:returns, syn_outcomes(stmt.body))],
+  let_stmt()              = nonempty([:fails] & syn_outcomes(stmt.body)),
+  break_stmt              = [:breaks],
+  fail_stmt               = [:fails],
+  assignment_stmt()       |
+  assert_stmt()           |
+  print_stmt()            |
+  imp_update_stmt()       |
+  proc_call_stmt()        |
+  send_msg_stmt()         |
+  try_update_stmt()       |
+  set_memb_var_stmt()     |
+  set_input_ctrl_stmt()   |
+  clear_input_ctrl_stmt() |
+  apply_ctrl_stmt()       |
+  send_msg_ctrl_stmt()    = [:falls_through, :fails];
 
 
 [+StmtOutcome] loop_stmt_syn_outcomes(Bool skip_first, SynStmt+ body)
@@ -190,29 +193,9 @@ FnSymbol named_arg_to_fn_symb(NamedArg p):
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-Bool may_override(AutoDecl):
-  syn_input()                       |
-  syn_output()                      |
-  syn_state()                       = false,
-  syn_plain_rule()                  |
-  syn_cond_rule()                   |
-  syn_foreach_rule()                |
-  syn_time_varying_boolean_rule()   |
-  syn_time_varying_unchanged_rule() |
-  syn_time_varying_inactive_rule()  |
-  syn_nested_auto()                 |
-  syn_method_call()                 = true;
+Atom rule_id(ConstDecl decl)  = decl.name;
 
-
-Bool may_be_overriden(AutoDecl decl):
-  syn_input()   = true,
-  _             = may_override(decl);
-
-
-Atom auto_decl_id(AutoDecl decl):
-  syn_input()                       |
-  syn_output()                      |
-  syn_state()                       |
+Atom rule_id(RuleDecl decl):
   syn_plain_rule()                  |
   syn_cond_rule()                   |
   syn_foreach_rule()                |
@@ -220,9 +203,10 @@ Atom auto_decl_id(AutoDecl decl):
   syn_time_varying_unchanged_rule() |
   syn_time_varying_inactive_rule()  |
   syn_nested_auto()                 = decl.name,
-  syn_method_call()                 = decl.target;
+  syn_msg_send()                    = decl.target;
 
 
+//## THIS IS CALLED TWICE IN THE SYNTAX REMOVAL STAGE. CONSIDER USING AN IMPLICIT PARAMETER
 [SynAutoDef] resolve_inheritance([SynAutoDef] automata)
 {
   autos_by_id = [a.name -> a : a <- automata];
@@ -244,16 +228,34 @@ Atom auto_decl_id(AutoDecl decl):
     return child if not child.parent?;
     parent = resolved_autos_by_id[auto_symbol(child.parent)];
 
-    child_decls = set(child.decls);
+    overriding_ids = [rule_id(d) : d <- set(child.rules & child.consts)];
 
-    overriding_ids = [auto_decl_id(d) : d <- set(child.decls), may_override(d)];
-    inherited_decls = (d : d <- parent.decls, not may_be_overriden(d) or not in(auto_decl_id(d), overriding_ids));
+    inherited_inputs = (i : i <- parent.inputs, not in(i.name, overriding_ids));
+    inherited_consts = (c : c <- parent.consts, not in(c.name, overriding_ids));
+    inherited_rules  = (r : r <- parent.rules,  not in(rule_id(r), overriding_ids));
 
     return syn_auto_def(
       name:       child.name,
       pos_inputs: child.pos_inputs,
       res_type:   child.res_type if child.res_type?,
-      decls:      child.decls & inherited_decls
+      inputs:     inherited_inputs & child.inputs,
+      outputs:    parent.outputs & child.outputs,
+      state_vars: parent.state_vars & child.state_vars,
+      nested_dbs: parent.nested_dbs & child.nested_dbs,
+      consts:     inherited_consts & child.consts,
+      rules:      inherited_rules & child.rules
     );
   }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+//## NOT SURE THIS IS THE RIGHT PLACE FOR THIS STUFF
+
+type AccessorChain = accessor(expr: <ConstOrVar, AccessorChain>, field: Atom);
+
+Atom+ destructure_accessor_chain(AccessorChain expr) =
+  match (expr.expr)
+    const_or_var(a?)  = (a, expr.field),
+    accessor()        = (destructure_accessor_chain(expr.expr) | expr.field);

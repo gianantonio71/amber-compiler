@@ -2,37 +2,27 @@ type CondInfo     = [ cond:         Expr,
                       parent:       Maybe[[id: CondNodeId, trigger: Bool]],
                       nested_conds: [[id: CondNodeId, trigger: Bool]],
                       updates:      [[state_id: Atom, new_value: Expr, trigger: Bool]],
-                      calls:        [[auto_var: MembAutoVar, method: UpdateMethodSymb, message: Expr, trigger: Bool]]
+                      msg_sends:    [[db_var: MembDBVar, message: Expr, trigger: Bool]]
                     ];
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type NestedAutoOutputId = nested_auto_output_id(auto: Atom, output: Atom);
-type AutoNodeDependency = BlockNodeId, NestedAutoOutputId;
-
-NestedAutoOutputId nested_auto_output_id(Atom a, Atom o) = nested_auto_output_id(auto: a, output: o);
-
-BlockNodeId dependency_to_node_id(BlockNodeId id)         = id;
-BlockNodeId dependency_to_node_id(NestedAutoOutputId id)  = std_block_node_id(id.auto);
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
-[StdBlockNodeId] nested_auto_deps(Expr expr):
-  method_call_expr()  = [std_block_node_id(name(expr.var)) if expr.var?],
-  _                   = retrieve_from_nested_exprs(expr, nested_auto_deps);
+type AutoNodeDependency = BlockNodeId, QualMembVar; // QualMembVar IS TOO LOOSE, AUTO/DB LOCAL VARIABLES SHOULD BE RULED OUT.
 
 
-[NestedAutoOutputId] nested_auto_output_deps(Expr expr):
-  get_output()        = [nested_auto_output_id(name(expr.var), expr.output)],
-  output_is_set()     = [nested_auto_output_id(name(expr.var), expr.output)],
-  // This one should never appear outside the body of a procedure
-  output_is_def()     = {fail;},
-  // This one has an upstream dependency on the entire automaton, not just one
-  // (or more) of its outputs. That dependency has to be accounted for through
-  // a separate mechanism (see the above nested_auto_deps(...) function)
-  // method_call_expr()  = {fail;},
-  _                   = retrieve_from_nested_exprs(expr, nested_auto_output_deps);
+BlockNodeId dependency_to_node_id(BlockNodeId id)   = id;
+
+StdBlockNodeId dependency_to_node_id(QualAutoMembVar var)  = auto_or_db_var_to_node_id(var.auto_var);
+StdBlockNodeId dependency_to_node_id(QualDBMembVar var)    = auto_or_db_var_to_node_id(var.db_var);
+
+StdBlockNodeId auto_or_db_var_to_node_id(AnyAutoVar):
+  loc_auto_var()      = {fail;},
+  memb_auto_var(a?)   = std_block_node_id(a);
+
+StdBlockNodeId auto_or_db_var_to_node_id(AnyDBVar var):
+  loc_db_var()      = {fail;},
+  memb_db_var(a?)   = std_block_node_id(a),
+  nested_db_var()   = auto_or_db_var_to_node_id(var.outer);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -82,6 +72,11 @@ using Program program, Automaton automaton
 
   [StdBlockNodeId -> Nat] multivalue_node_expr_count =
     [t.id -> length(t.exprs) : t <- set(gen_auto_nodes), state() | derived_disc() << t];
+
+
+  //## SHOULDN'T WE JUST INCLUDE THE PENDING STATE VAR IN THE LIST OF POSSIBLE
+  //## VALUES INSIDE THE NODE OBJECT?
+  // [Atom -> Nat] pending_state_var_asgnm_indexes = [get_inner_id(id) -> nat(n + 1) : n @ id <- multivalue_node_expr_count];
 
 
   [BlockNodeId -> Nat] nodes_indexes = merge(([n.id -> i] : n @ i <- gen_auto_nodes));
@@ -136,9 +131,14 @@ using Automaton automaton
     nested_auto_input_up_nodes    = [id -> expr_deps(e) : e @ id <- nested_auto_inputs];
     rules_up_nodes                = [std_block_node_id(a) -> expr_deps(e) : e @ a <- automaton.rules];
     time_rules_up_nodes           = [std_block_node_id(a) -> time_rule_deps(c) : c @ a <- automaton.time_rules];
+    nested_autos_up_nodes         = [std_block_node_id(auto_id) ->
+                                      [nested_auto_input_id(auto_id, in_id) : unused_var @ in_id <- auto.args]
+                                      : auto @ auto_id <- automaton.nested_autos
+                                    ];
 
     // Putting all dependency maps together
-    return cond_up_nodes & rep_cond_up_nodes & rules_up_nodes & time_rules_up_nodes & nested_auto_input_up_nodes;
+    return cond_up_nodes & rep_cond_up_nodes & rules_up_nodes & time_rules_up_nodes &
+           nested_auto_input_up_nodes & nested_autos_up_nodes;
   }
 
 
@@ -158,24 +158,15 @@ using Automaton automaton
     );
 
 
-  [StdBlockNodeId -> [AutoNodeDependency]] nested_autos_trigger_up_nodes
-  {
-    input_deps = [
-      std_block_node_id(auto_id) -> [nested_auto_input_id(auto_id, in_id) : unused_var @ in_id <- auto.args]
-      : auto @ auto_id <- automaton.nested_autos
-    ];
-
-    cond_deps = merge_values([
-      [std_block_node_id(name(c.auto_var)) -> id] : info @ id <- cond_nodes_by_id & repeated_cond_nodes_by_id, c <- info.calls
+  [StdBlockNodeId -> [AutoNodeDependency]] nested_dbs_trigger_up_nodes = merge_values([
+      [std_block_node_id(bare_id(c.db_var)) -> id]
+      : info @ id <- cond_nodes_by_id & repeated_cond_nodes_by_id, c <- info.msg_sends
     ]);
 
-    return merge_value_sets([input_deps, cond_deps]);
-  }
 
-
-  [StdBlockNodeId -> [AutoNodeDependency]] nested_autos_value_up_nodes
+  [StdBlockNodeId -> [AutoNodeDependency]] nested_dbs_value_up_nodes
   {
-    all_args = merge_values([[name(c.target) -> c.message] : a <- all_actions, c <- retrieve_method_calls(a)]);
+    all_args = merge_values([[bare_id(c.target) -> c.message] : a <- all_actions, c <- retrieve_msg_sends(a)]);
     return [std_block_node_id(a) -> union([expr_deps(e) : e <- es]) : es @ a <- all_args];
   }
 
@@ -183,14 +174,14 @@ using Automaton automaton
   /////// Complete upstream dependency maps, for both triggers and values //////
 
   [BlockNodeId -> [AutoNodeDependency]] trigger_up_nodes_map =
-    common_up_nodes_map & state_trigger_up_nodes & nested_autos_trigger_up_nodes;
+    common_up_nodes_map & state_trigger_up_nodes & nested_dbs_trigger_up_nodes;
 
 
   [BlockNodeId -> [AutoNodeDependency]] value_up_nodes_map
   {
     all_state_up_nodes = merge_value_sets([state_trigger_up_nodes, state_value_up_nodes]);
-    all_nested_autos_up_nodes = merge_value_sets([nested_autos_trigger_up_nodes, nested_autos_value_up_nodes]);
-    return common_up_nodes_map & all_state_up_nodes & all_nested_autos_up_nodes;
+    all_nested_dbs_up_nodes = merge_value_sets([nested_dbs_trigger_up_nodes, nested_dbs_value_up_nodes]);
+    return common_up_nodes_map & all_state_up_nodes & all_nested_dbs_up_nodes;
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -204,30 +195,42 @@ using Automaton automaton
   }
 
   //////////////////////////////////////////////////////////////////////////////
-  /////// Downstream dependency maps, again for both triggers and values ///////
+  //////////////// Downstream dependency maps, just for triggers ///////////////
 
   //## TYPECHECKING BUG TYPECHECKING BUG TYPECHECKING BUG
   // [+BlockNodeId -> [+BlockNodeId]] trigger_down_nodes_map
   [BlockNodeId -> [BlockNodeId]] trigger_down_nodes_map
   {
     // Reversing the dependency mapping: node -> all nodes that depend on it
-    fat_trigger_down_nodes_map = reverse_multi(trigger_up_nodes_map);
+    fat_map = reverse_multi(trigger_up_nodes_map);
     //## BAD BAD BAD: THIS IS SUPER SUPER UGLY
-    return [s -> ts : ts @ s <- fat_trigger_down_nodes_map, s :: BlockNodeId];
+    return [s -> ts : ts @ s <- fat_map, s :: BlockNodeId];
   }
 
 
-  //## TYPECHECKING BUG TYPECHECKING BUG TYPECHECKING BUG
-  // [+StdBlockNodeId -> [+Atom -> [BlockNodeId]]] output_trigger_down_nodes_map
-  [StdBlockNodeId -> [Atom -> [BlockNodeId]]] output_trigger_down_nodes_map
+  //## TYPECHECKING BUG SAME AS ABOVE
+  [StdBlockNodeId -> [MembVar -> [BlockNodeId]]] output_trigger_down_nodes_map
   {
-    // Reversing the dependency mapping: node -> all nodes that depend on it
-    fat_trigger_down_nodes_map = reverse_multi(trigger_up_nodes_map);
+    // Reversing the dependency mapping: node -> all nodes that depend on it: [AutoNodeDependency -> [+BlockNodeId]]
+    fat_map = reverse_multi(trigger_up_nodes_map);
     // Coalescing all the (automaton, output -> ...) into (automaton -> ...) entries
-    pre_output_trigger_down_nodes_map = merge_values(
-      [[std_block_node_id(s.auto) -> [s.output -> ts]] : ts @ s <- fat_trigger_down_nodes_map, nested_auto_output_id() << s]
+    pre_map = merge_values(
+      [[dependency_to_node_id(s) -> [one_level_down(s) -> ts]] : ts @ s <- fat_map, qual_auto_memb_var() << s]
     );
-    return [s -> merge_value_sets(ms) : ms @ s <- pre_output_trigger_down_nodes_map];
+    return [s -> merge_value_sets(ms) : ms @ s <- pre_map];
+  }
+
+
+  //## TYPECHECKING BUG SAME AS ABOVE
+  [StdBlockNodeId -> [<MembVar, QualDBMembVar> -> [BlockNodeId]]] nested_db_vars_trigger_down_nodes_map
+  {
+    // Reversing the dependency mapping: node -> all nodes that depend on it: [AutoNodeDependency -> [+BlockNodeId]]
+    fat_map = reverse_multi(trigger_up_nodes_map);
+    // Coalescing all the (automaton, output -> ...) into (automaton -> ...) entries
+    pre_map = merge_values(
+      [[dependency_to_node_id(s) -> [one_level_down(s) -> ts]] : ts @ s <- fat_map, qual_db_memb_var() << s]
+    );
+    return [s -> merge_value_sets(ms) : ms @ s <- pre_map];
   }
 }
 
@@ -240,11 +243,19 @@ using Program program, Automaton automaton
   {
     core_id = get_inner_id(node_id);
 
-    if has_key(automaton.nested_autos, core_id):
-      msg_disp = if has_key(nested_auto_calls, core_id) then just(nested_auto_calls[core_id]) else nil;
-      output_dep_nodes = lookup(output_trigger_down_nodes_map, node_id, [:]);
+    if has_key(automaton.nested_dbs, memb_db_var(core_id)):
+      msg = nested_msg_sends[core_id];
+      output_dep_nodes = lookup(nested_db_vars_trigger_down_nodes_map, node_id, [:]);
+      //## WHAT DOES THIS ASSERTION DO?
       assert not (? ns @ o <- output_dep_nodes : not disjoint(ns, [std_block_node_id(id) : id <- state_vars_ids]));
-      return nested_auto_node(node_id, msg_disp, output_dep_nodes, level);
+      return nested_db_node(node_id, msg, output_dep_nodes, level);
+    ;
+
+    if has_key(automaton.nested_autos, core_id):
+      output_dep_nodes = lookup(output_trigger_down_nodes_map, node_id, [:]);
+      //## WHAT DOES THIS ASSERTION DO?
+      assert not (? ns @ o <- output_dep_nodes : not disjoint(ns, [std_block_node_id(id) : id <- state_vars_ids]));
+      return nested_auto_node(node_id, output_dep_nodes, level);
     ;
 
     dep_nodes = lookup(trigger_down_nodes_map, node_id, []);
@@ -309,8 +320,8 @@ using Program program, Automaton automaton
       state_update_action(u.state_id, index_first(u.new_value, state_vars_and_discrete_signals_update_values[u.state_id]))
       : u <- cond_info.updates, u.trigger == trigger_value
     ] & [
-      method_call_action(bare_id)
-      : c <- cond_info.calls, c.trigger == trigger_value, bare_id = name(c.auto_var)
+      msg_send_action(bare_id)
+      : c <- cond_info.msg_sends, c.trigger == trigger_value, bare_id = bare_id(c.db_var)
     ];
   }
 
@@ -320,22 +331,20 @@ using Program program, Automaton automaton
     assert has_key(automaton.nested_autos, node_id.auto);
 
     expr = nested_auto_inputs[node_id];
-
-    disc_vars = [v : v <- extern_vars(expr), in(unsafe_name(v), discrete_signals_ids)];
-    disc_outputs = [
-      (memb_auto_var(a), o)
-      : ao <- possibly_discrete_nested_auto_output_deps_copy_2(expr),
-        a = left(ao),
-        o = right(ao),
-        output_is_discrete(automaton.nested_autos[a].type, o)
-    ];
-
     is_disc = input_is_discrete(automaton.nested_autos[node_id.auto].type, node_id.input);
-    assert is_disc == {disc_vars != [] or disc_outputs != []};
 
-    fail if not disc_vars :: [MembVar]; //## BAD BAD BAD
+    //## BY DOING THIS WE ARE ALSO INCLUDING THE VARIABLES IN THE is_set() EXPRESSIONS,
+    //## WHICH SHOULD BE FINE AS THOSE VARIABLES SHOULD NEVER APPEAR IN THE INPUT OF A
+    //## NESTED AUTOMATON.
+    //## REMEMBER TO CHECK THIS IN THE WELL-FORMEDNESS CHECKING LAYER.
+    //## WOULD BE NICE TO ADD AN ASSERT HERE, AS WELL.
+    //## WE ARE ALSO IGNORING THE output_is_def() EXPRESSION, WHICH SHOULD BE ALLOWED
+    //## ONLY INSIDE THE BODY OF A PROCEDURE
+    disc_signals = [v : v <- auto_expr_extern_vars(expr), v :: <MembVar, QualAutoMembVar>, is_discrete(v)];
 
-    return nested_auto_input_node(node_id, expr, disc_vars, disc_outputs, level);
+    assert is_disc == {disc_signals != []};
+
+    return nested_auto_input_node(node_id, expr, disc_signals, level);
   }
 }
 
@@ -347,15 +356,15 @@ using Program program, Automaton automaton
   next_id = nat(root_id + 1);
 
   updates = [];
-  calls = [];
+  msg_sends = [];
   conditions = [:];
   nested_conds = [];
 
   for a, tv <- rand_sort([(a, true) : a <- action.body] & [(a, false) : a <- action.else]):
     if a :: <AutoUpdate, AutoSetDiscrete>:
       updates = updates & [[state_id: a.target, new_value: a.value, trigger: tv]];
-    elif a :: AutoMethodCall:
-      calls = calls & [[auto_var: a.target, method: a.method, message: a.message, trigger: tv]];
+    elif a :: AutoMsgSend:
+      msg_sends = msg_sends & [[db_var: a.target, message: a.message, trigger: tv]];
     else
       fail if not a :: <AutoCondAction, AutoRepAction>; //## BAD BAD: THE TYPECHECKER SHOULD AUTOMATICALLY INFER THE TYPE OF <a> IF WE TAKE THIS BRANCH
       nested_conds = nested_conds & [[id: cond_node_id(next_id), trigger: tv]];
@@ -364,7 +373,16 @@ using Program program, Automaton automaton
     ;
   ;
 
-  return (conditions & [cond_node_id(root_id) -> [cond: action.cond, parent: parent, nested_conds: nested_conds, updates: updates, calls: calls]], next_id);
+  new_cond = [
+    cond_node_id(root_id) -> [
+      cond:         action.cond,
+      parent:       parent,
+      nested_conds: nested_conds,
+      updates:      updates,
+      msg_sends:    msg_sends
+    ]
+  ];
+  return (conditions & new_cond, next_id);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -385,26 +403,19 @@ using Program program, Automaton automaton
 
 [AutoNodeDependency] expr_deps(Expr expr)
 {
-  assert extern_vars(expr) :: [<MembVar, MembCopyVar>]; //## BAD BAD BAD
-  memb_vars_ids = [std_block_node_id(unsafe_name(v)) : v <- extern_vars(expr), memb_var() << v];
-  auto_output_ids = nested_auto_output_deps(expr);
-  auto_ids = nested_auto_deps(expr);
-  return memb_vars_ids & auto_output_ids & auto_ids;
+  vars = extern_vars(expr);
+  var_deps = [
+    match (v)
+      memb_var(a?)          = std_block_node_id(a),
+      qual_auto_memb_var()  = v,
+      qual_db_memb_var()    = v
+    : v <- vars, not v :: MembCopyVar
+  ];
+  return var_deps & nested_auto_deps(expr);
+
+
+  [StdBlockNodeId] nested_auto_deps(Expr expr):
+    auto_method_call_expr() |
+    db_method_call_expr()   = [std_block_node_id(bare_id(expr.var)) if expr.var?],
+    _                       = retrieve_from_nested_exprs(expr, nested_auto_deps);
 }
-
-////////////////////////////////////////////////////////////////////////////////
-
-//## THIS FUNCTION HAS TWO COPIES (ONE HERE AND ONE SYNTAX REMOVAL)
-//## BECAUSE IT SEEMS WAY TOO SPECIAL PURPOSE TO PUT IN A SHARED FILE.
-//## MAYBE THIS COPY COULD BE ELIMINATED IF WE MOVED SOME RESPONSABILITY
-//## INTO THE SYNTAX REMOVAL LAYER
-[(Atom, Atom)] possibly_discrete_nested_auto_output_deps_copy_2(Expr expr):
-  get_output()        = [(name(expr.var), expr.output)],
-  // This one is not relevant here because we only care about dependencies
-  // that could potentially be discrete, and this signal is always continuous
-  output_is_set()     = [],
-  // This one should never appear outside the body of a procedure
-  output_is_def()     = {fail;},
-  // Not relevant either, because this is always a "continuous" signal
-  method_call_expr()  = [],
-  _                   = retrieve_from_nested_exprs(expr, possibly_discrete_nested_auto_output_deps_copy_2);

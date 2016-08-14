@@ -1,0 +1,311 @@
+using SynPrg syn_prg, SynAutoDef auto_def
+{
+  Automaton desugar_automaton
+  {
+    // Desugaring state variables
+    state_vars = [
+      v.name -> [
+        type:       syn_type_to_type(v.type, nil),
+        init_value: desugar_auto_expr(v.init_value, [])
+      ] : v <- set(auto_def.state_vars)
+    ];
+
+    // Desugaring plain rules, which can have implicit repeated conditions
+    plain_rules_output = [desugar_plain_rule(r) : r <- syn_plain_rules];
+    rules = merge([value(r) : o <- plain_rules_output, r = left(o), r != nil]);
+    rep_actions_1 = [value(a) : o <- plain_rules_output, a = right(o), a != nil];
+
+    // Desugaring conditional rules, which can have additional repeated conditions
+    cond_rule_output = [desugar_cond_rule(r) : r <- syn_cond_rules];
+    actions = [value(a) : o <- cond_rule_output, a = left(o), a != nil];
+    rep_actions_2 = [value(a) : o <- cond_rule_output, a = right(o), a != nil];
+
+    // Foreach rules can only lead to repeated actions
+    rep_actions_3 = [foreach_rule_to_repeated_action(r) : r <- syn_foreach_rules];
+
+    // Pulling all repeated actions together
+    rep_actions = rep_actions_1 & rep_actions_2 & rep_actions_3;
+
+    // Desugaring time-varying rules
+    time_rules = [r.name -> syn_time_varying_rule_to_cond(r) : r <- syn_time_varying_rules];
+
+    // Desugaring nested automata
+    nested_autos = [
+      na.name -> [
+        type: auto_symbol(na.auto_name),
+        args: merge(([f -> desugar_auto_expr(e, [])] : f, e <- na.args))
+      ]
+      : na <- syn_nested_autos
+    ];
+
+    // Desugaring method calls on nested automata
+    all_msg_send_actions = [msg_send_to_action(c) : c <- syn_msg_sends];
+    cond_method_calls = [value(ca) : a <- all_msg_send_actions, ca = left(a), ca != nil];
+    actions = actions & cond_method_calls;
+    rep_method_calls = [value(ra) : a <- all_msg_send_actions, ra = right(a), ra != nil];
+    rep_actions = rep_actions & rep_method_calls;
+
+    // // Identifying and separating constant rules
+    // const_rules_ids = [];
+    // loop
+    //   const_rules_vars = [memb_var(id) : id <- const_rules_ids];
+    //   next_round = [id : e @ id <- rules, subset(extern_vars(e), const_rules_vars)];
+    //   break if next_round == const_rules_ids;
+    //   const_rules_ids = next_round;
+    // ;
+    // const_rules = select_by_key(rules, const_rules_ids);
+    // rules = remove_keys(rules, const_rules_ids);
+
+    // Desugaring constants
+    params = [
+      c.name -> [
+        type:  syn_type_to_type(c.type, nil) if c.type?,
+        value: desugar_auto_expr(c.value, [])
+      ] : c <- set(auto_def.consts)
+    ];
+
+    return automaton(
+      name:           auto_def.name,
+      params:         params,
+      inputs:         inputs(auto_def),
+      outputs:        outputs(auto_def),
+      state:          state_vars,
+      rules:          rules,
+      time_rules:     time_rules,
+      actions:        actions,
+      rep_actions:    rep_actions,
+      nested_autos:   nested_autos,
+      nested_dbs:     db_in_auto_vars_types,
+      methods:        [desugar_method(m) : m <- lookup(methods_by_target, auto_def.name, [])]
+    );
+  }
+
+
+  Bool is_fake(SynTimeVaryingRule rule):
+    syn_time_varying_boolean_rule()   |
+    syn_time_varying_unchanged_rule() = is_const(rule.time_expr),
+    syn_time_varying_inactive_rule()  = is_const(rule.time_expr) and
+                                        (initial_value(rule.time_expr) == false or rule.starts_at_time_0);
+
+
+  SynPlainRule rewrite_fake_time_rule(SynTimeVaryingRule rule)
+  {
+    assert is_fake(rule);
+
+    value = match (rule)
+      syn_time_varying_boolean_rule()   = if initial_value(rule.time_expr) == true then rule.cond else object(false),
+      syn_time_varying_unchanged_rule() = object(initial_value(rule.time_expr)),
+      syn_time_varying_inactive_rule()  = object(initial_value(rule.time_expr));
+
+    return syn_plain_rule(rule.name, value, false);
+  }
+
+
+  (Maybe[AutoCondAction], Maybe[AutoRepAction]) msg_send_to_action(SynMsgSend syn_msg_send)
+  {
+    target  = memb_db_var(syn_msg_send.target);
+    message = desugar_auto_expr(syn_msg_send.message, []);
+    msg_send = msg_send(target, message);
+
+    maybe_syn_cond = syn_msg_send.cond;
+    maybe_cond = if maybe_syn_cond != nil
+                   then just(desugar_auto_expr(value(maybe_syn_cond), []))
+                   else nil;
+
+    // If the list of discrete signals is not given explicitly, we search
+    // the parameter list and the condition for discrete signals
+    if syn_msg_send.signals != ():
+      signals = (memb_var(a) : a <- syn_msg_send.signals);
+    else
+      all_signals = union([auto_expr_extern_vars(e) : e <- [message, value(maybe_cond) if maybe_cond != nil]]);
+      signals = rand_sort([s : s <- all_signals, s :: <MembVar, QualAutoMembVar>, signal_is_discrete(s)]);
+    ;
+    signals_set_conds = (is_set(s) : s <- signals);
+
+    if maybe_cond != nil:
+      cond = value(maybe_cond);
+      // If no discrete signals are involved, this is a (non-repeated) conditional action
+      return (just(cond_action(cond, [msg_send], [])), nil) if signals_set_conds == ();
+      cond = and_expr((signals_set_conds | cond));
+    else
+      cond = and_expr(nonempty(signals_set_conds));
+    ;
+
+    return (nil, just(rep_action(cond, [msg_send], [])));
+  }
+
+
+  Method desugar_method(SynMethodDef syn_method)
+  {
+    args = ((syn_type_to_type(t, nil), v) : t, v <- syn_method.args);
+    ret_type = syn_type_to_type(syn_method.ret_type, nil);
+    expr = desugar_auto_expr(syn_method.expr, set((v : unused_var, v <- syn_method.args)));
+    return method(syn_method.name, args, ret_type, expr);
+  }
+
+
+  (Maybe[[Atom -> Expr]], Maybe[AutoRepAction]) desugar_plain_rule(SynPlainRule rule)
+  {
+    expr = desugar_auto_expr(rule.expr, []);
+
+    //## BY DOING THIS WE ARE ALSO INCLUDING THE VARIABLES IN THE is_set() EXPRESSIONS,
+    //## WHICH SHOULD BE FINE AS THOSE VARIABLES SHOULD NEVER APPEAR IN A PLAIN RULE.
+    //## REMEMBER TO CHECK THIS IN THE WELL-FORMEDNESS CHECKING LAYER.
+    //## WOULD BE NICE TO ADD AN ASSERT HERE, AS WELL.
+    //## WE ARE ALSO IGNORING THE output_is_def() EXPRESSION, WHICH SHOULD BE ALLOWED
+    //## ONLY INSIDE THE BODY OF A PROCEDURE
+    discrete_signals = [v : v <- auto_expr_extern_vars(expr), v :: <MembVar, QualAutoMembVar>, signal_is_discrete(v)];
+
+    // If a plain rule does not contain any discrete signals,
+    // then it defines a continuous intermediate signal
+    assert not rule.discrete or discrete_signals != [];
+    return (just([rule.name -> expr]), nil) if discrete_signals == [];
+
+    // Now it's either a discrete signals definition or a state variable update
+    cond = and_expr((is_set(v) : v <- rand_sort(discrete_signals)));
+    action = if rule.discrete then discrete_signal_def(rule.name, expr) else state_update(rule.name, expr);
+    return (nil, just(rep_action(cond, [action], [])));
+  }
+
+
+  (Maybe[AutoCondAction], Maybe[AutoRepAction]) desugar_cond_rule(SynCondRule rule)
+  {
+    target = rule.name;
+    branches = rule.branches;
+
+    if length(branches) == 1:
+      branch = branches[0];
+      cond = desugar_auto_expr(branch.cond, []);
+      expr = desugar_auto_expr(branch.expr, []);
+      ss = auto_expr_extern_vars(cond) & auto_expr_extern_vars(expr);
+      dss = (s : s <- rand_sort(ss), s :: <MembVar, QualAutoMembVar> and signal_is_discrete(s));
+
+      if dss != ():
+        if rule.discrete:
+          action = discrete_signal_def(target, expr);
+        else
+          action = state_update(target, expr);
+        ;
+        outer_cond = or_expr((is_set(s) : s <- dss));
+        if length(dss) > 1:
+          inner_cond = and_expr((is_set(s) : s <- dss));
+          cond = and_expr(inner_cond, cond);
+        ;
+        return (nil, just(rep_action(outer_cond, [rep_action(cond, [action], [])], [])));
+      ;
+    ;
+
+    return (just(cond_rule_to_action(target, branches, rule.discrete)), nil);
+  }
+
+
+  AutoCondAction cond_rule_to_action(Atom name, [expr: SynExpr, cond: SynExpr]+ branches, Bool discrete)
+  {
+    outer_branch = head(branches);
+    inner_branches = tail(branches);
+
+    else_actions = [cond_rule_to_action(name, inner_branches, discrete) if inner_branches != ()];
+
+    cond = desugar_auto_expr(outer_branch.cond, []);
+    expr = desugar_auto_expr(outer_branch.expr, []);
+    if discrete:
+      action = discrete_signal_def(name, expr);
+    else
+      action = state_update(name, expr);
+    ;
+
+    return cond_action(cond, [action], else_actions);
+  }
+
+
+  AutoRepAction foreach_rule_to_repeated_action(SynForeachRule rule)
+  {
+    value = desugar_auto_expr(rule.value, []);
+    if rule.discrete:
+      action = discrete_signal_def(rule.name, value);
+    else
+      action = state_update(rule.name, value);
+    ;
+    action = rep_action(desugar_auto_expr(rule.cond, []), [action], []) if rule.cond?;
+
+    signals = (memb_var(a) : a <- rule.signals);
+    change_cond = or_expr((
+      if signal_is_discrete(s)
+        then is_set(s)
+        else not_expr(eq(s, memb_copy_var(bare_id(s))))
+     : s <- signals
+    ));
+
+    return rep_action(change_cond, [action], []);
+  }
+
+
+  TimeVaryingCond syn_time_varying_rule_to_cond(SynTimeVaryingRule rule):
+    syn_time_varying_boolean_rule()   = time_varying_boolean_cond(desugar_auto_expr(rule.cond, []), rule.time_expr),
+    syn_time_varying_unchanged_rule() = time_varying_unchanged_cond(desugar_auto_expr(rule.cond, []), rule.time_expr),
+    syn_time_varying_inactive_rule()  = time_varying_since_cond([memb_var(s) : s <- set(rule.signals)], rule.time_expr, rule.starts_at_time_0);
+
+
+  Expr desugar_auto_expr(SynExpr expr, [StdVar] def_vars) =
+    desugar_expr(
+      expr,
+      def_vars,
+      syn_artifact = auto_def,
+      closures = [],
+      named_args = [],
+      named_args_arities = [:],
+      memb_vars = auto_memb_vars,
+      auto_vars_types = syn_auto_vars_types,
+      db_vars_types = db_in_auto_vars_types,
+      local_fns = [:],
+      curr_outer_fn = nil
+    );
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  SynNestedAuto rewrite_disguised_auto(SynPlainRule rule)
+  {
+    expr = rule.expr;
+    fail if not expr :: SynFnCall;
+    fn_name = expr.name;
+    fail if not fn_name :: <fn_symbol(Atom)>;
+    id = bare_id(fn_name);
+    auto_name = auto_symbol(id);
+
+    auto_interface = auto_interfaces[auto_name];
+    assert expr.args == () or length(auto_interface.pos_inputs) == length(expr.args);
+    pos_inputs = if expr.args != () then zip(auto_interface.pos_inputs, expr.args) else ();
+    named_inputs = ((bare_id(a), e) : a, unused_var, e <- expr.named_args);
+    return syn_nested_auto(rule.name, id, pos_inputs & named_inputs);
+  }
+
+
+  Bool is_disguised_auto(SynPlainRule rule)
+  {
+    expr = rule.expr;
+    return false if not expr :: SynFnCall;
+    fn_name = expr.name;
+    return false if not fn_name :: <fn_symbol(Atom)>;
+    id = bare_id(fn_name);
+    arity = length(expr.args);
+    auto_name = auto_symbol(id);
+
+    return false if not has_key(auto_interfaces, auto_name);
+    return true if not has_key(fn_arg_arities, fn_name);
+
+    // Here we have a conflict...
+
+    auto_interface = auto_interfaces[auto_name];
+    auto_arity = length(auto_interface.pos_inputs);
+    fn_arities = fn_arg_arities[fn_name];
+
+    auto_arity_ok = arity == auto_arity or arity == 0;
+    fn_arity_ok = has_key(fn_arities, arity);
+
+    return true if auto_arity_ok and not fn_arity_ok;
+    return false if not auto_arity_ok and fn_arity_ok;
+
+    fail;
+  }
+}

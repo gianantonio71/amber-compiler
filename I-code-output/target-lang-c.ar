@@ -51,6 +51,7 @@ CCodeOutput compile_to_c(CompiledPrg prg)
     rand_sort(prg.bool_procs),
     sorted_cls_defs,
     rand_sort(prg.blocks),
+    rand_sort(prg.trans_blocks),
     prg.int_seqs,
     typesymb2name(ts)               = typesymb2str(ts, ptss),
     cls2id(cls)                     = index_first(cls, sorted_cls_defs),
@@ -233,14 +234,123 @@ using
   [(NamedArg, Nat) -> [+FnSymbol]]  cached_semi_consts_by_named_arg;
 
 
+  CCodeOutput compile_trans_block_to_c(TransBlock block)
+  {
+    state_vars_decls = ["OBJ " & to_c_var_decl_name(v) & ";" : v <- block.state_vars];
+    nested_blocks_decls = [to_c_name(t) & " " & to_c_var_decl_name(v) & ";" : t @ v <- block.nested_blocks];
+
+    memb_decls = rand_sort(state_vars_decls) & rand_sort(nested_blocks_decls);
+    struct_decl = ("struct " & to_c_name(block.name), "{") & indent_lines(memb_decls) & ("};");
+
+    aux_vars_decls = ["OBJ " & to_c_var_decl_name(pending_state_var(bare_id(v))) & ";" : v <- block.state_vars];
+    nested_aux_blocks_decls = [aux_struct_c_name(t) & " " & to_c_var_decl_name(v) & ";" : t @ v <- block.nested_blocks];
+    aux_memb_decls = rand_sort(aux_vars_decls) & rand_sort(nested_aux_blocks_decls);
+    aux_struct_decl = ("struct " & aux_struct_c_name(block.name), "{") & indent_lines(aux_memb_decls) & ("};");
+
+    init_decl, init_impl = compile_init_code_to_c(block.name, block.init_code);
+    cleanup_decl, cleanup_impl = compile_cleanup_code_to_c(block.name, block.cleanup_code);
+    entry_point_decl, entry_point_impl = update_entry_point(block.name, block.state_vars, block.nested_blocks);
+
+    methods_decls, methods_impls = unzip(rand_sort([gen_user_def_method(block.name, id, b) : b @ id <- block.methods_code]));
+    methods_impls = join(intermix(methods_impls, ("", "")));
+
+    updates_decls, updates_impls = unzip(rand_sort([gen_update(block.name, id, b) : b @ id <- block.updates_code]));
+    updates_impls = join(intermix(updates_impls, ("", "")));
+
+    all_decls = (struct_decl, aux_struct_decl, (init_decl), (cleanup_decl), (entry_point_decl), methods_decls, updates_decls);
+    all_impls = (init_impl, cleanup_impl, entry_point_impl, methods_impls, updates_impls);
+
+    header = join(intermix(all_decls, ("", "")));
+    body   = join(intermix(all_impls, ("", "")));
+
+    return [body: body, header: header];
+
+
+    (String, String*) compile_init_code_to_c(DBSymbol name, Instr* init_code)
+    {
+      init_vars_decl = gen_vars_decls(init_code);
+      init_vars_decl = init_vars_decl & ("") if init_vars_decl != ();
+      init_body = init_vars_decl & compile_to_c(init_code, nil);
+      init_sgn = "void " & init_method_name(name) & "(" & to_c_name(name) & " *self, ENV &env)";
+      init_decl = init_sgn & ";";
+      init_proc = (init_sgn, "{") & indent_lines(init_body) & ("}");
+      return (init_decl, init_proc);
+    }
+
+
+    (String, String*) compile_cleanup_code_to_c(DBSymbol name, Instr* cleanup_code)
+    {
+      cleanup_body = compile_to_c(cleanup_code, nil);
+      cleanup_sgn = "void " & cleanup_method_name(name) & "(" & to_c_name(name) & " *self)";
+      cleanup_decl = cleanup_sgn & ";";
+      cleanup_proc = (cleanup_sgn, "{") & indent_lines(cleanup_body) & ("}");
+      return (cleanup_decl, cleanup_proc);
+    }
+
+
+    (String, String*) update_entry_point(DBSymbol block_name, [MembVar] state_vars, [MembDBVar -> DBSymbol] nested_blocks)
+    {
+      sgn = "OBJ " & update_entry_point_name(block_name) & "(" & to_c_name(block_name) & " *self, OBJ p0, bool, ENV &env)";
+      aux_var_decl = aux_struct_c_name(block_name) & " self_aux;";
+      handler_call = mk_gen_call(update_name(block_name, main_handler), ("self", "self_aux"), (fn_par(0)), ("env"));
+      ret_str = compile_to_c(ret_val(obj_true), nil);
+
+      var_ids = (bare_id(v) : v <- rand_sort(state_vars));
+      init_vars_code = (to_c_var_ref_name(pending_state_var(id)) & " = make_blank_obj();" : id <- var_ids);
+      vars_copy_code = join((var_copy_code(id) : id <- var_ids));
+
+      body = (aux_var_decl) & init_vars_code & (handler_call) & vars_copy_code & ret_str;
+      return (sgn & ";", (sgn, "{") & indent_lines(body) & ("}"));
+    }
+
+
+    String* var_copy_code(Atom var_id)
+    {
+      psv_str = to_c_var_ref_name(pending_state_var(var_id));
+      mv_str = to_c_var_ref_name(memb_var(var_id));
+      return (
+        "if (!is_blank_obj(" & psv_str & "))",
+        "{",
+        "  release(" & mv_str & ");",
+        "  " & mv_str & " = " & psv_str & ";",
+        "}"
+      );
+    }
+
+
+    (String, String*) gen_user_def_method(DBSymbol block_name, MethodId method_id, Instr* body)
+    {
+      args_str = append((to_c_name(block_name) & " *self") & ("OBJ p" & printed(i) : i < method_id.arity), ", ");
+      sgn = "OBJ " & user_def_method_name(block_name, method_id) & "(" & args_str & ", ENV &env)";
+      vars_decls = gen_vars_decls(body);
+      body_text = vars_decls & ("" if vars_decls != ()) & compile_to_c(body, nil);
+      return (sgn & ";", (sgn, "{") & indent_lines(body_text) & ("}"));
+    }
+
+
+    (String, String*) gen_update(DBSymbol block_name, UpdateId update_id, Instr* body)
+    {
+      impl_args_strs = (to_c_name(block_name) & " *self", aux_struct_c_name(block_name) & " &self_aux");
+      expl_args_strs = ("OBJ p" & printed(i) : i < arity(update_id));
+      args_str = append(impl_args_strs & expl_args_strs, ", ");
+      sgn = "OBJ " & update_name(block_name, update_id) & "(" & args_str & ", ENV &env)";
+      vars_decls = gen_vars_decls(body);
+      body_text = vars_decls & ("" if vars_decls != ()) & compile_to_c(body, nil);
+      return (sgn & ";", (sgn, "{") & indent_lines(body_text) & ("}"));
+    }
+  }
+
+
   CCodeOutput compile_block_to_c(Block block)
   {
     has_time_rules = block.time_rules_count != 0;
 
     name_str = to_c_name(block.name);
 
-    vars_decl = (var_c_type(v) & " " & to_c_var_decl_name(v) & ";" : v <- rand_sort(block.memb_vars)) &
-                (to_c_name(t) & " " & to_c_var_decl_name(v) & ";" : v, t <- rand_sort_pairs(block.nested_auto_vars));
+    memb_vars_decl = (var_c_type(v) & " " & to_c_var_decl_name(v) & ";" : v <- rand_sort(block.memb_vars));
+    auto_vars_decl = (to_c_name(t) & " " & to_c_var_decl_name(v) & ";" : v, t <- rand_sort_pairs(block.nested_auto_vars));
+    db_vars_decl = (to_c_name(t) & " " & to_c_var_decl_name(v) & ";" : v, t <- rand_sort_pairs(block.nested_trans_blocks));
+    vars_decl = memb_vars_decl & auto_vars_decl & db_vars_decl;
 
     if block.time_rules_count != 0:
       size_str = printed(block.time_rules_count);
@@ -309,18 +419,15 @@ using
     input_decls, input_impls = unzip((gen_input_setter(block.name, id, i, queue_input_updates) : id @ i <- block.inputs));
     input_impls = join(intermix(input_impls, ("", "")));
 
-    output_decls, output_impls = unzip((gen_output_getter(block.name, o) : o <- rand_sort(block.outputs)));
-    output_impls = join(intermix(output_impls, ("", "")));
-
-    method_decls, method_impls = unzip(rand_sort([gen_method(block.name, id, b) : b @ id <- block.methods_code]));
+    method_decls, method_impls = unzip(rand_sort([gen_user_def_method(block.name, id, b) : b @ id <- block.methods_code]));
     method_impls = join(intermix(method_impls, ("", "")));
 
     const_data = rand_sort([gen_const_data(block.name, c) : c <- block.const_data]);
 
     header = join(
                intermix(
-                 ( decl, aux_decls, const_data, pre_init_decl, cleanup_decl, apply_decl, update_node_decls, input_decls,
-                   output_decls, queue_methods_decls, method_decls,
+                 ( decl, aux_decls, const_data, pre_init_decl, cleanup_decl, apply_decl, update_node_decls,
+                   input_decls, queue_methods_decls, method_decls,
                    (insert_timer_method_decl, clear_timer_method_decl) if has_time_rules
                  ),
                  ("", "")
@@ -329,7 +436,7 @@ using
 
     body = join(
              intermix(
-               ( pre_init_proc, cleanup_proc, apply_proc, update_node_procs, input_impls, output_impls,
+               ( pre_init_proc, cleanup_proc, apply_proc, update_node_procs, input_impls,
                  queue_methods_impls, method_impls,
                  insert_timer_method_impl if has_time_rules,
                  clear_timer_method_impl  if has_time_rules
@@ -346,13 +453,10 @@ using
       append((printed(l) & "LL" : l <- const.lengths), ", ") & "};";
 
 
-    (String, String*) gen_method(AutoSymbol block_name, ExMethodSymb name, Instr* body)
+    (String, String*) gen_user_def_method(AutoSymbol block_name, MethodId name, Instr* body)
     {
-      args_str = append((to_c_name(block_name) & " *self", "int64 elapsed_time") & ("OBJ p" & printed(i) : i < name.arity), ", ");
-      ret_type_str = match (name.symbol)
-        read_only_method_symb()   = "OBJ",
-        update_method_symb()      = "void";
-      sgn = ret_type_str & " " & user_def_method_name(block_name, name) & "(" & args_str & ", ENV &env)";
+      args_str = append((to_c_name(block_name) & " *self") & ("OBJ p" & printed(i) : i < name.arity), ", ");
+      sgn = "OBJ " & user_def_method_name(block_name, name) & "(" & args_str & ", ENV &env)";
       vars_decls = gen_vars_decls(body);
       body_text = vars_decls & ("" if vars_decls != ()) & compile_to_c(body, nil);
       return (sgn & ";", (sgn, "{") & indent_lines(body_text) & ("}"));
@@ -363,11 +467,11 @@ using
     {
       sgn = "void " & input_set_method_name(block_name, input_name) & "(" & to_c_name(block_name) & " *self, OBJ new_val)";
       pending_input_var_str = to_c_var_ref_name(pending_input_var(input_name));
-      marked_for_update_var = to_c_var_ref_name(marked_for_update_var(std_block_node_id(input_name)));
+      up_to_date_var = to_c_var_ref_name(up_to_date_var(std_block_node_id(input_name)));
       body = (
         sgn,
         "{",
-        "  if (" & marked_for_update_var & ")",
+        "  if (!" & up_to_date_var & ")",
         "  {",
         "    release(" & pending_input_var_str & ");",
         "    " & pending_input_var_str & " = new_val;",
@@ -378,23 +482,8 @@ using
         "    int64 idx = self->update_count_0;" if queue_node,
         "    self->nodes_to_update_0[idx] = " & printed(node_idx) & ";" if queue_node,
         "    self->update_count_0 = idx + 1;" if queue_node,
-        "    " & marked_for_update_var & " = true;",
+        "    " & up_to_date_var & " = false;",
         "  }",
-        "}"
-      );
-      return (sgn & ";", body);
-    }
-
-
-    (String, String*) gen_output_getter(AutoSymbol block_name, Atom output_name)
-    {
-      sgn = "OBJ " & output_get_method_name(block_name, output_name) & "(" & to_c_name(block_name) & " *self)";
-      body = (
-        sgn,
-        "{",
-        "  OBJ value = " & to_c_var_ref_name(memb_var(output_name)) & ";",
-        "  add_ref(value);",
-        "  return value;",
         "}"
       );
       return (sgn & ";", body);
@@ -495,7 +584,7 @@ using
   }
 
 
-  CCodeOutput compile_to_c(ObjProcDef* obj_proc_defs, BoolProcDef* bool_proc_defs, ClsDef* cls_defs, Block* blocks, Int+* int_seqs)
+  CCodeOutput compile_to_c(ObjProcDef* obj_proc_defs, BoolProcDef* bool_proc_defs, ClsDef* cls_defs, Block* blocks, TransBlock* trans_blocks, Int+* int_seqs)
   {
     type_checking_fn_decls = (gen_c_decl(pd) : pd <- bool_proc_defs) & 4 * ("");
     // print "Type checking function declarations generated";
@@ -515,13 +604,30 @@ using
     functions = join((compile_to_c(d) & ("", "") : d <- obj_proc_defs));
     // print "Functions generated";
 
+    trans_blocks_code = (compile_trans_block_to_c(b) : b <- trans_blocks);
+    trans_blocks_decls = join((b.header & ("", "") : b <- trans_blocks_code));
+    trans_blocks_bodies = join(intermix((b.body : b <- trans_blocks_code), ("", "")));
+
     blocks_code = (compile_block_to_c(b) : b <- blocks);
     blocks_decls = join((b.header & ("", "") : b <- blocks_code));
     blocks_bodies = join(intermix((b.body : b <- blocks_code), ("", "")));
 
-    body = join((type_checking_fn_decls, closure_decls, fn_decls, blocks_decls, type_checking_fns, closures, functions, blocks_bodies));
+    header = join(intermix((fn_decls, trans_blocks_decls, blocks_decls), ("", "")));
 
-    return [body: body, header: fn_decls & ("", "") & blocks_decls];
+    body = join((
+      type_checking_fn_decls,
+      closure_decls,
+      fn_decls,
+      trans_blocks_decls,
+      blocks_decls,
+      type_checking_fns,
+      closures,
+      functions,
+      blocks_bodies,
+      trans_blocks_bodies
+    ));
+
+    return [body: body, header: header];
   }
 
 
@@ -561,17 +667,22 @@ using
     signature = ret_type_str(pd) & fn_name & suffix & "(" & par_list_str & ")";
 
     body = pd.body;
-    auto_vars_types = auto_vars_to_decl_and_init(body);
+    auto_vars_types = if pd.loc_auto_vars? then pd.loc_auto_vars else [:];
+    db_vars_types = if pd.loc_db_vars? then pd.loc_db_vars else [:];
 
     var_decls = gen_vars_decls(body);
 
     auto_vars = rand_sort(keys(auto_vars_types));
     auto_var_decls = (to_c_name(auto_vars_types[v]) & " " & to_c_var_decl_name(v) & ";" : v <- auto_vars);
 
+    db_vars = rand_sort(keys(db_vars_types));
+    db_vars_decls = (to_c_name(db_vars_types[v]) & " " & to_c_var_decl_name(v) & ";" : v <- db_vars);
+
     comp_body = compile_to_c(body, nil);
 
+    has_var_decls = var_decls != () or auto_var_decls != () or db_vars_decls != ();
     code = (signature, "{") & indent_lines(var_decls) & indent_lines(auto_var_decls) &
-           ("" if var_decls != () or auto_var_decls != ()) & indent_lines(comp_body) & ("}");
+           indent_lines(db_vars_decls) & ("" if has_var_decls) & indent_lines(comp_body) & ("}");
 
     if cached:
       is_real_const = pd.cached? and pd.named_args == [:];
@@ -765,17 +876,58 @@ using
 
     auto_cleanup()        = (cleanup_method_name(instr.type) & "(&" & to_c_var_ref_name(instr.var) & ");"),
 
-    set_input()           = { maybe_value = instr.value;
-                              value_str = if maybe_value != nil then to_c_expr(value(maybe_value)) else "make_null_obj()";
+    set_input()           = { value_str = to_c_expr(instr.value);
                               method_name = input_set_method_name(instr.type, instr.input);
                               return (method_name & "(&" & to_c_var_ref_name(instr.var) & ", " & value_str & ");");
+                            },
+
+    clear_input()         = { method_name = input_set_method_name(instr.type, instr.input);
+                              return (method_name & "(&" & to_c_var_ref_name(instr.var) & ", make_null_obj());");
                             },
 
     auto_update_node()    = compile_auto_update_node_to_c(instr.type, instr.node, if instr.time_var? then just(instr.time_var) else nil),
 
     auto_apply()          = compile_auto_apply_to_c(if instr.var? then just(instr.var) else nil, instr.type, instr.elapsed_time),
-    call_method()         = compile_call_method_to_c(if instr.res_var? then just(instr.res_var) else nil, if instr.auto_var? then just(instr.auto_var) else nil, instr.type, instr.name, instr.args);
 
+    init_db()             = (compile_init_db_to_c(instr.db_var, instr.type)),
+    cleanup_db()          = (compile_cleanup_db_to_c(instr.db_var, instr.type)),
+    send_msg()            = (compile_send_msg_to_c(instr.db_var, instr.type, instr.msg, instr.is_root, if instr.res_var? then just(instr.res_var) else nil)),
+    try_update()          = (compile_try_update_to_c(instr.type, instr.update_id, instr.args)),
+
+    invoke_auto_method()  = (compile_invoke_method_to_c(instr.res_var, if instr.auto_var? then just(instr.auto_var) else nil, instr.type, instr.method_id, instr.args)),
+    invoke_db_method()    = (compile_invoke_method_to_c(instr.res_var, if instr.db_var? then just(instr.db_var) else nil, instr.type, instr.method_id, instr.args));
+
+
+  String compile_init_db_to_c(AnyDBVar db_var, DBSymbol type) =
+    mk_gen_call(init_method_name(type), ("&" & to_c_var_ref_name(db_var), "env"));
+
+
+  String compile_cleanup_db_to_c(AnyDBVar db_var, DBSymbol type) =
+    mk_gen_call(cleanup_method_name(type), ("&" & to_c_var_ref_name(db_var)));
+
+
+  String compile_send_msg_to_c(AnyDBVar db_var, DBSymbol type, AtomicExpr msg, Bool is_root, Maybe[StdVar] maybe_res_var)
+  {
+    name_str = update_entry_point_name(type);
+    db_var_str = "&" & to_c_var_ref_name(db_var);
+    right_args = (printed(is_root), "env");
+    return if maybe_res_var == nil
+      then mk_gen_call(name_str, (db_var_str), (msg), right_args)
+      else mk_gen_call(value(maybe_res_var), name_str, (db_var_str), (msg), right_args);
+  }
+
+
+  String compile_try_update_to_c(DBSymbol type, UpdateId id, AtomicExpr* args) =
+    mk_gen_call(update_name(type, id), ("self, self_aux"), args, ("env"));
+
+
+  String compile_invoke_method_to_c(WriteObjVar res_var, Maybe[<AnyAutoVar, AnyDBVar>] maybe_target_var,
+    <AutoSymbol, DBSymbol> type, MethodId id, AtomicExpr* args)
+  {
+    name_str = user_def_method_name(type, id);
+    target_var_str = if maybe_target_var != nil then "&" & to_c_var_ref_name(value(maybe_target_var)) else "self";
+    return mk_gen_call(res_var, name_str, (target_var_str), args, ("env"));
+  }
 
 
   String* gen_cache_clearing_code(NamedArg narg, Nat arity)
@@ -843,20 +995,6 @@ using
   }
 
 
-  String* compile_call_method_to_c(Maybe[WriteObjVar] res_var, Maybe[AnyAutoVar] auto_var, AutoSymbol type, ExMethodSymb name, AtomicExpr* args)
-  {
-    auto_var_str = if auto_var != nil then "&" & to_c_var_ref_name(value(auto_var)) else "self";
-    name_str = user_def_method_name(type, name);
-    // time_str = to_c_expr(elapsed_time);
-    time_str = to_c_expr(0);
-    return (
-      if res_var == nil
-        then mk_gen_call(name_str, (auto_var_str, time_str), args, ("env"))
-        else mk_gen_call(value(res_var), name_str, (auto_var_str, time_str), args, ("env"))
-    );
-  }
-
-
   String* compile_to_c(FloatExpr expr, ObjVar var):
     mk_float()            = (mk_gen_call(var, "make_float", (printed(expr.mantissa) & "e" & printed(expr.dec_exp)), (), ())),
     neg_float()           = mk_call(var, "neg_float",     (expr.value)),
@@ -892,7 +1030,6 @@ using
     internal_sort()       = mk_call(var, "internal_sort",       (expr.set)),
     symb_to_str(e?)       = mk_call(var, "to_str",              (e)),
     read_pending_var(v?)  = (to_c_var_ref_name(var) & " = " & to_c_var_ref_name(v) & ";"),
-    read_output()         = (mk_gen_call(var, output_get_method_name(expr.type, expr.output), ("&" & to_c_var_ref_name(expr.var)))),
     add_attachment()      = mk_call(var, "add_attachment",      (expr.target, expr.data)),
     fetch_attachments(e?) = mk_call(var, "fetch_attachments",   (e));
 
@@ -1034,7 +1171,7 @@ using
       "{",
       "  print_assertion_failed_msg(" & printed(file) & ", " & printed(line) & ", " & text_arg & ");"
     );
-    vars_content = ("  dump_var(" & printed(_str_(name(v))) & ", " & to_c_var_ref_name(v) & ");" : v <- vars);
+    vars_content = ("  dump_var(" & printed(_str_(bare_id(v))) & ", " & to_c_var_ref_name(v) & ");" : v <- vars);
     footer = (
       "  hard_fail(0);",
       "}"
@@ -1052,6 +1189,8 @@ using
     to_c_var_ref_name(var) & " = " & mk_gen_call(fn_name, leading_params, params, trailing_params);
 
   String mk_gen_call(AnyVar var, String fn_name, String* params) = mk_gen_call(var, fn_name, params, (), ());
+
+  String mk_gen_call(String fn_name, String* params) = mk_gen_call(fn_name, params, (), ());
 
   String* mk_call(String fn_name, FnCallParam* params)             = (mk_gen_call(fn_name, (), params, ()));
   String* mk_call(AnyVar var, String fn_name, FnCallParam* params) = (mk_gen_call(var, fn_name, (), params, ()));

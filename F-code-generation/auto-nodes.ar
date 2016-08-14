@@ -1,7 +1,7 @@
 type AutoNode     = AutoInputNode, AutoDerivedNode, AutoStateNode,
                     AutoDiscDerivedNode, AutoCondNode, AutoRepCondNode,
                     AutoTimeVaryingNode, AutoDiscTimeVaryingNode,
-                    AutoNestedAutoInputNode, AutoNestedAutoNode;
+                    AutoNestedAutoInputNode, AutoNestedAutoNode, AutoNestedDBNode;
 
 
 type AutoInputNode        = input(id: StdBlockNodeId, discrete: Bool, downstream_nodes: [BlockNodeId], level: Nat);
@@ -37,7 +37,7 @@ type AutoRepCondNode      = rep_cond_node(
                             );
 
 type AutoNodeAction       = state_update_action(target_var: Atom, expr_idx: Nat), //## BAD NAME, IT IS ALSO FOR SETTING DISCRETE SIGNALS
-                            method_call_action(target_auto: Atom);
+                            msg_send_action(target_db: Atom);
 
 type AutoTimeVaryingNode  = time_varying_node(
                               id:               StdBlockNodeId,
@@ -58,19 +58,24 @@ type AutoDiscTimeVaryingNode = discrete_time_varying_node(
                               );
 
 type AutoNestedAutoInputNode  = nested_auto_input_node(
-                                  id:                       NestedAutoInputNodeId,
-                                  value:                    Expr,
-                                  disc_vars:                [MembVar],
-                                  disc_nested_auto_outputs: [(MembAutoVar, Atom)],
-                                  level:                    Nat
+                                  id:               NestedAutoInputNodeId,
+                                  value:            Expr,
+                                  discrete_signals: [<MembVar, QualAutoMembVar>],
+                                  level:            Nat
                                 );
 
 type AutoNestedAutoNode   = nested_auto_node(
                               id:                         StdBlockNodeId,
-                              message:                    Maybe[(UpdateMethodSymb, Expr)],
-                              downstream_nodes_by_output: [Atom -> [BlockNodeId]],
+                              downstream_nodes_by_output: [MembVar -> [BlockNodeId]],
                               level:                      Nat
                             );
+
+type AutoNestedDBNode   = nested_db_node(
+                            id:                             StdBlockNodeId,
+                            message:                        Expr,
+                            downstream_nodes_by_state_var:  [<MembVar, QualDBMembVar> -> [BlockNodeId]],
+                            level:                          Nat
+                          );
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -100,15 +105,17 @@ AutoNode time_varying_node(StdBlockNodeId id, Expr c, TimeExpr te, <unchanged, b
 AutoDiscTimeVaryingNode discrete_time_varying_node(StdBlockNodeId id, [+MembVar] ss, TimeExpr te, Bool at0, [BlockNodeId] dns, Nat l) =
   discrete_time_varying_node(id: id, signals: ss, time_expr: te, starts_at_time_0: at0, downstream_nodes: dns, level: l);
 
-AutoNode nested_auto_input_node(NestedAutoInputNodeId id, Expr v, [MembVar] dvs, [(MembAutoVar, Atom)] dos, Nat l) =
-  nested_auto_input_node(id: id, value: v, disc_vars: dvs, disc_nested_auto_outputs: dos, level: l);
+AutoNode nested_auto_input_node(NestedAutoInputNodeId id, Expr v, [<MembVar, QualAutoMembVar>] ds, Nat l) =
+  nested_auto_input_node(id: id, value: v, discrete_signals: ds, level: l);
 
-AutoNode nested_auto_node(StdBlockNodeId id, Maybe[(UpdateMethodSymb, Expr)] m, [Atom -> [BlockNodeId]] ns, Nat l) =
-  nested_auto_node(id: id, message: m, downstream_nodes_by_output: ns, level: l);
+AutoNode nested_auto_node(StdBlockNodeId id, [MembVar -> [BlockNodeId]] ns, Nat l) =
+  nested_auto_node(id: id, downstream_nodes_by_output: ns, level: l);
 
+AutoNode nested_db_node(StdBlockNodeId id, Expr m, [<MembVar, QualDBMembVar> -> [BlockNodeId]] ns, Nat l) =
+  nested_db_node(id: id, message: m, downstream_nodes_by_state_var: ns, level: l);
 
 AutoNodeAction state_update_action(Atom t, Nat i) = state_update_action(target_var: t, expr_idx: i);
-AutoNodeAction method_call_action(Atom t)         = method_call_action(target_auto: t);
+AutoNodeAction msg_send_action(Atom t)            = msg_send_action(target_db: t);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -122,7 +129,13 @@ Bool needs_initial_update(AutoNode node):
   time_varying_node()           = true,
   discrete_time_varying_node()  = true,
   nested_auto_input_node()      = true, //## NOT SURE
-  nested_auto_node()            = true; //## AGAIN NOT SURE
+  nested_auto_node()            = true, //## AGAIN NOT SURE
+  nested_db_node()              = false;
+
+
+Bool must_always_be_recalculated(AutoNode node):
+  rep_cond_node()   = node.subconds != ([], []),
+  _                 = false;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -142,12 +155,13 @@ Bool needs_initial_update(AutoNode node):
                                     return [downstream_node_id(a) : a <- tas & eas] & tscs & escs;
                                   },
   nested_auto_input_node()      = [std_block_node_id(node.id.auto)],
-  nested_auto_node()            = union(values(node.downstream_nodes_by_output));
+  nested_auto_node()            = union(values(node.downstream_nodes_by_output)),
+  nested_db_node()              = union(values(node.downstream_nodes_by_state_var));
 
 
 BlockNodeId downstream_node_id(AutoNodeAction action):
-  state_update_action()   = std_block_node_id(action.target_var),
-  method_call_action()    = std_block_node_id(action.target_auto);
+  state_update_action() = std_block_node_id(action.target_var),
+  msg_send_action()     = std_block_node_id(action.target_db);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -162,14 +176,9 @@ BlockNodeId downstream_node_id(AutoNodeAction action):
     time_varying_node() = [(watched_signal_up_to_date_var(get_inner_id(node.id)),  false)],
     _                   = [];
 
-  pend_msg_vars = match (node)
-    nested_auto_node()  = [(has_pending_message_var(get_inner_id(node.id)), false)],
-    _                   = [];
+  up_to_date_var = (up_to_date_var(node.id), not needs_initial_update(node));
 
-  marked_for_update_var_init_value = needs_initial_update(node);
-  marked_for_update_var = (marked_for_update_var(node.id), marked_for_update_var_init_value);
-
-  return [marked_for_update_var] & cond_vars & expr_cond_vars & pend_msg_vars;
+  return [up_to_date_var] & cond_vars & expr_cond_vars;
 
 
   [(MembBoolVar, Bool)] cond_vars(Nat bare_id) = [
@@ -215,12 +224,9 @@ BlockNodeId downstream_node_id(AutoNodeAction action):
                                       (pending_input_var(bare_id),  if node.discrete then :blank else :undefined)
                                     ];
                                   },
-  derived()                     = [(memb_var(get_inner_id(node.id)),            :blank)],
-  state()                       = [(memb_var(get_inner_id(node.id)),            :blank),
-                                    //## THIS IS USELESS IF THE VARIABLE IS NEVER ASSIGNED WITHIN A METHOD
-                                   (pending_state_var(get_inner_id(node.id)),   :blank)
-                                  ],
-  derived_disc()                = [(memb_var(get_inner_id(node.id)),            :blank)],
+  derived()                     = [(memb_var(get_inner_id(node.id)), :blank)],
+  state()                       = [(memb_var(get_inner_id(node.id)), :blank)],
+  derived_disc()                = [(memb_var(get_inner_id(node.id)), :blank)],
   cond_node()                   = [],
   rep_cond_node()               = [],
   time_varying_node()           = { bare_id = get_inner_id(node.id);
@@ -231,4 +237,5 @@ BlockNodeId downstream_node_id(AutoNodeAction action):
                                   },
   discrete_time_varying_node()  = [(memb_var(get_inner_id(node.id)), :blank)],
   nested_auto_input_node()      = [],
-  nested_auto_node()            = [(pending_state_var(get_inner_id(node.id)),   :blank) if node.message != nil];
+  nested_auto_node()            = [],
+  nested_db_node()              = [];

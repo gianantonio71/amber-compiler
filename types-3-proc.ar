@@ -2,13 +2,18 @@ type LocVar           = lvar(Nat), never_used_lvar;  //## FIND BETTER NAME.
 type ElemVar          = evar(id: Nat, idx: <Nat, IntVar, add(val1: IntVar, val2: Nat)>);
 type PendingInputVar  = pending_input_var(Atom);
 
-type ObjVar         = Var, MembObjVar, LocVar, ElemVar;
-
 type ReadOnlyObjVar = FnPar, CaptVar;
 type WriteObjVar    = RWObjVar, ElemVar;
-type RWObjVar       = StdVar, LocVar, MembVar, MembObjVar, MembCopyVar, PendingStateVar;
+type RWObjVar       = StdVar, LocVar, MembVar, QualMembVar, MembObjVar, MembCopyVar, PendingStateVar;
 
 type StdObjVar      = RWObjVar, NamedArg, ReadOnlyObjVar;
+
+type NullableVar    = StdVar, MembVar, QualAutoMembVar, MembCopyVar, PendingStateVar, LocVar, MembObjVar;
+type NonNullableVar = FnPar, NamedArg, CaptVar, QualDBMembVar, ElemVar;
+
+type ObjVar         = NonNullableVar, NullableVar;
+
+type AnyNullableVar = NullableVar, PendingInputVar;
 
 type VecVar         = vvar(id: Nat, size: NzNat);
 
@@ -18,8 +23,7 @@ type MembBoolVar    = cond_value_var(Nat),
                       cond_expr_is_def_var(Nat),
                       cond_expr_up_to_date_var(Nat),
                       watched_signal_up_to_date_var(Atom),
-                      has_pending_message_var(Atom),
-                      marked_for_update_var(BlockNodeId),
+                      up_to_date_var(BlockNodeId),
                       is_new;
 
 type MembIntVar     = update_source_var(Atom),
@@ -91,8 +95,8 @@ type NatBoolOp      = is_symb(ObjExpr),
                       is_le(expr1: IntExpr, expr2: IntExpr),
                       inline_is_eq(expr: ObjExpr, value: InlineObj),
                       is_out_of_range(ItVar),
-                      is_blank(<MembVar, LocVar>),
-                      is_null(<MembVar, MembObjVar, PendingInputVar, MembCopyVar, LocVar>);
+                      is_blank(<MembVar, QualAutoMembVar, LocVar>),
+                      is_null(AnyNullableVar);
 
 type NatIntOp       = get_int_val(ObjExpr),
                       get_set_size(ObjExpr),
@@ -173,7 +177,6 @@ type RefObjExpr     = mk_set_from_stream(stream: StreamVar),
                       // Can be used only once per pending variable, and does not automatically clear it,
                       // it has to be manually cleared with init_memb_var(...)
                       read_pending_var(<PendingStateVar, PendingInputVar>),
-                      read_output(var: AnyAutoVar, type: AutoSymbol, output: Atom),
                       add_attachment(target: AtomicExpr, data: AtomicExpr), // Impure
                       fetch_attachments(AtomicExpr);                        // Impure
 
@@ -204,7 +207,7 @@ type BasicInstr     = init_stream(StreamVar),
                       set_rc_var(var: WriteObjVar, value: <FloatExpr, RefObjExpr>),
 
                       init_memb_var(var: <MembVar, MembCopyVar, MembObjVar, PendingInputVar, PendingStateVar>, new_state: <blank, undefined>),
-                      reset_memb_var(var: <MembVar, MembCopyVar>, new_state: <blank, undefined>),
+                      reset_memb_var(var: <MembVar, MembCopyVar, PendingStateVar>, new_state: <blank, undefined>),
                       clear_loc_var(LocVar), //## BAD: I DON'T LIKE THE ABILITY TO CLEAR A NON-MEMBER VARIABLE
 
                       add_ref(ObjVar),
@@ -232,14 +235,34 @@ type BasicInstr     = init_stream(StreamVar),
                       auto_pre_init(var: AnyAutoVar, type: AutoSymbol),
                       auto_cleanup(var: AnyAutoVar, type: AutoSymbol),
 
-                      set_input(var: AnyAutoVar, type: AutoSymbol, input: Atom, value: Maybe[AtomicExpr]),
+                      set_input(var: AnyAutoVar, type: AutoSymbol, input: Atom, value: AtomicExpr),
+                      clear_input(var: AnyAutoVar, type: AutoSymbol, input: Atom),
 
                       auto_init(var: AnyAutoVar?, type: AutoSymbol),
                       auto_update(var: AnyAutoVar?, type: AutoSymbol),
                       auto_update_node(type: AutoSymbol, node: BlockNodeId, time_var: IntVar?),
                       auto_apply(var: AnyAutoVar?, type: AutoSymbol, elapsed_time: IntExpr),
 
-                      call_method(res_var: WriteObjVar?, auto_var: AnyAutoVar?, type: AutoSymbol, name: ExMethodSymb, args: AtomicExpr*);
+                      init_db(db_var: AnyDBVar, type: DBSymbol),
+                      cleanup_db(db_var: AnyDBVar, type: DBSymbol),
+                      send_msg(db_var: AnyDBVar, type: DBSymbol, msg: AtomicExpr, is_root: Bool, res_var: StdVar?),
+                      try_update(type: DBSymbol, update_id: UpdateId, args: AtomicExpr*),
+
+                      invoke_auto_method(
+                        res_var:    WriteObjVar,
+                        auto_var:   AnyAutoVar?,
+                        type:       AutoSymbol,
+                        method_id:  MethodId,
+                        args:       AtomicExpr*
+                      ),
+
+                      invoke_db_method(
+                        res_var:    WriteObjVar,
+                        db_var:     AnyDBVar?,
+                        type:       DBSymbol,
+                        method_id:  MethodId,
+                        args:       AtomicExpr*
+                      );
 
 type JumpInstr      = break_loop,
                       exit_block,
@@ -264,11 +287,13 @@ type BoundCls       = ClsVar, bound_cls(cls: ClsDef, env: Var*); //## WHY IS THE
 type ObjProcPar     = obj, cls(name: ClsVar?, arity: NzNat);
 
 type ObjProcDef     = obj_proc_def(
-                        name:         ObjFnName,
-                        params:       ObjProcPar*,
-                        named_args:   [NamedArg -> Nat], //## SHOULD IT BE <named_var(name: Atom, arity: Nat)>* INSTEAD?
-                        body:         Instr+,
-                        cached:       Bool
+                        name:           ObjFnName,
+                        params:         ObjProcPar*,
+                        named_args:     [NamedArg -> Nat], //## SHOULD IT BE <named_var(name: Atom, arity: Nat)>* INSTEAD?
+                        loc_auto_vars:  [LocAutoVar -> AutoSymbol],
+                        loc_db_vars:    [LocDBVar -> DBSymbol],
+                        body:           Instr+,
+                        cached:         Bool
                       );
 
 type BoolProcDef    = bool_proc_def(
@@ -287,28 +312,41 @@ type NestedAutoInputNodeId  = nested_auto_input_id(auto: Atom, input: Atom);
 
 type BlockNodeId    = StdBlockNodeId, CondNodeId, NestedAutoInputNodeId;
 
-//## PUT IT SOMEWHERE ELSE MAYBE?
-type ExMethodSymb = ex_method_symb(symbol: <ReadOnlyMethodSymb, UpdateMethodSymb>, id: Nat?, arity: Nat);
+//## PUT THEM SOMEWHERE ELSE MAYBE?
+type MethodId   = method_id(symbol: MethodSymbol, arity: Nat, id: Nat?);
+type UpdateId   = main_handler, handler_id(Nat), update_id(symbol: UpdateSymbol, arity: Nat, id: Nat?);
 
-type Block          = block(
-                        name:               AutoSymbol,
-                        inputs:             Atom*,
-                        outputs:            [Atom],
-                        memb_vars:          [<MembVar, MembObjVar, PendingInputVar, PendingStateVar, MembIntVar, MembIntVectVar, MembBoolVar>],
-                        nested_auto_vars:   [MembAutoVar -> AutoSymbol],
-                        pre_init_code:      Instr*,
-                        cleanup_code:       Instr*,
-                        apply_code:         Instr*,
-                        nodes_update_code:  [BlockNodeId -> Instr*],
-                        queue_update_code:  [BlockNodeId -> [body: Instr*, two_level_update: Bool]],
-                        methods_code:       [ExMethodSymb -> Instr*],
-                        const_data:         [ConstBlockData],
-                        time_rules_count:   Nat
-                      );
+type Block  = block(
+                name:                 AutoSymbol,
+                inputs:               Atom*,
+                outputs:              [Atom],
+                memb_vars:            [<MembVar, MembObjVar, PendingInputVar, PendingStateVar, MembIntVar, MembIntVectVar, MembBoolVar>],
+                nested_auto_vars:     [MembAutoVar -> AutoSymbol],
+                nested_trans_blocks:  [MembDBVar -> DBSymbol],
+                pre_init_code:        Instr*,
+                cleanup_code:         Instr*,
+                apply_code:           Instr*,
+                nodes_update_code:    [BlockNodeId -> Instr*],
+                queue_update_code:    [BlockNodeId -> [body: Instr*, two_level_update: Bool]],
+                methods_code:         [MethodId -> Instr*],
+                const_data:           [ConstBlockData],
+                time_rules_count:     Nat
+              );
 
-type CompiledPrg    = compiled_prg(
-                        bool_procs: [BoolProcDef],
-                        procs:      [ObjProcDef],
-                        blocks:     [Block],
-                        int_seqs:   Int+*
-                      );
+type TransBlock = trans_block(
+                    name:           DBSymbol,
+                    state_vars:     [MembVar],
+                    nested_blocks:  [MembDBVar -> DBSymbol],
+                    init_code:      Instr*,
+                    cleanup_code:   Instr*,
+                    methods_code:   [MethodId -> Instr*],
+                    updates_code:   [UpdateId -> Instr*]
+                  );
+
+type CompiledPrg  = compiled_prg(
+                      bool_procs:   [BoolProcDef],
+                      procs:        [ObjProcDef],
+                      blocks:       [Block],
+                      trans_blocks: [TransBlock],
+                      int_seqs:     Int+*
+                    );

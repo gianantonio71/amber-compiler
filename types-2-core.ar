@@ -63,10 +63,6 @@ type BuiltInType  = builtin_type(param_types: Type+, ret_type: Type);
 
 ///////////////////////////////////////////////////////////////////////////////
 
-type SubtypeDecl  = subtype_decl(subtype: Type, supertype: Type);
-
-///////////////////////////////////////////////////////////////////////////////
-
 type Operator = plus, minus, star, slash, exp, amp, lower, greater, lower_eq, greater_eq, brackets;
 
 type BuiltIn  = neg, add, sub, mult, div, mod, lt, le, gt, ge, str, symb, at, len, slice, cat,
@@ -81,10 +77,11 @@ type FnSymbol = fn_symbol(Atom),
                 nested_fn_symbol(outer: FnSymbol, inner: FnSymbol),
                 unique_fn_symbol(symbol: FnSymbol, id: Nat); //## THE symbol: FIELD SHOULD ONLY CONTAIN EITHER fn_symbol() OR op_symbol()
 
-type ReadOnlyMethodSymb = read_only_method_symb(Atom);
-type UpdateMethodSymb   = msg_handler, update_method_symb(Atom);
+type MethodSymbol   = method_symbol(Atom);
+type UpdateSymbol   = msg_handler, update_symbol(Atom);
 
-type AutoSymbol   = auto_symbol(Atom);
+type AutoSymbol = auto_symbol(Atom);
+type DBSymbol   = db_symbol(Atom);
 
 type StdVar           = var(Atom);
 type FnPar            = fn_par(Nat);
@@ -94,11 +91,24 @@ type MembVar          = memb_var(Atom);
 type MembCopyVar      = memb_copy_var(Atom);      //## FIND BETTER NAME...
 type PendingStateVar  = pending_state_var(Atom);  //## FIND BETTER NAME...
 
+// type QualDBMembVar    = db_memb_var(db_var: AnyDBVar, memb_var: <MembVar, QualDBMembVar>);
+// type QualAutoMembVar  = auto_memb_var(auto_var: AnyAutoVar, memb_var: <MembVar, QualDBMembVar, QualAutoMembVar>);
+type QualDBMembVar    = qual_db_memb_var(db_var: AnyDBVar, memb_var: MembVar);
+type QualAutoMembVar  = qual_auto_memb_var(auto_var: AnyAutoVar, memb_var: MembVar);
+type QualMembVar      = QualDBMembVar, QualAutoMembVar;
+
+type AnyMembVar   = MembVar, QualMembVar;
+
 type LocAutoVar   = loc_auto_var(Atom);
 type MembAutoVar  = memb_auto_var(Atom);
 type AnyAutoVar   = LocAutoVar, MembAutoVar;
 
-type Var      = StdVar, FnPar, NamedArg, CaptVar, MembVar, MembCopyVar, PendingStateVar;
+type LocDBVar     = loc_db_var(Atom);
+type MembDBVar    = memb_db_var(Atom);
+type NestedDBVar  = nested_db_var(outer: AnyDBVar, inner: MembDBVar);
+type AnyDBVar     = LocDBVar, MembDBVar, NestedDBVar;
+
+type Var      = StdVar, FnPar, NamedArg, CaptVar, MembVar, QualMembVar, MembCopyVar, PendingStateVar;
 
 type ClsVar   = cls_var(<Atom, Nat>); //## BAD: THERE SHOULD BE A NAMED VERSION OF ClsVar
 
@@ -111,12 +121,12 @@ type FloatLit = float_lit(mantissa: Int, dec_exp: Int);
 type Expr     = LeafObj, FloatLit, Var,
                 SetExpr, SeqExpr, TupleExpr, SeqTailExpr, MapExpr, TagObjExpr,
                 FnCallExpr, ClsCall, BuiltinCall,
-                InclTestOrLookupExpr, MapSearchExpr, KeySearchExpr, OnlyElemExpr,
+                UnaryPseudoCallExpr, MapSearchExpr, KeySearchExpr, OnlyElemExpr,
                 AndExpr, OrExpr, NotExpr,
                 EqExpr,
                 MembExpr, CastExpr,
                 AccExpr, AccTestExpr,
-                GetOutputExpr, OutputIsSetExpr, OutputIsDefExpr, MethodCallExpr,
+                OutputIsDefExpr, AutoMethodCallExpr, DBMethodCallExpr,
                 IfExpr, MatchExpr, DoExpr,
                 ExQualExpr, SetCompExpr, MapCompExpr,
                 SeqCompExpr, RangeCompExpr,
@@ -136,7 +146,7 @@ type FnCallExpr     = fn_call(name: FnSymbol, params: AnyExpr*, named_args: [Nam
 type ClsCall        = cls_call(name: <ClsVar, NamedArg>, params: Expr+);  //## BAD: THERE SHOULD BE A NAMED VERSION OF ClsVar
 type BuiltinCall    = builtin_call(name: BuiltIn, params: Expr+); //## CAN A BUILTIN HAVE NO ARGUMENTS?
 
-type InclTestOrLookupExpr = incl_test_or_lookup(collection: Expr, value: Expr);
+type UnaryPseudoCallExpr  = unary_pseudo_call(collection: Expr, value: Expr);
 type MapSearchExpr  = map_search(map: Expr, key: Expr, value: Expr);
 type KeySearchExpr  = key_search(map: Expr, key: Expr);
 type OnlyElemExpr   = singl_only_elem(set: Expr);
@@ -153,11 +163,10 @@ type CastExpr       = cast_expr(expr: Expr, type: NeType);
 type AccExpr        = accessor(expr: Expr, field: SymbObj);      //## SHOULD <field> BE AN OBJECT OR JUST A PLAIN SYMBOL?
 type AccTestExpr    = accessor_test(expr: Expr, field: SymbObj); //## DITTO
 
-type GetOutputExpr    = get_output(var: AnyAutoVar, output: Atom);
-type OutputIsSetExpr  = output_is_set(var: AnyAutoVar, output: Atom); //## WHY NOT JUST USE is_set(get_output())?
 type OutputIsDefExpr  = output_is_def(var: LocAutoVar, output: Atom);
 
-type MethodCallExpr   = method_call_expr(var: AnyAutoVar?, name: ReadOnlyMethodSymb, args: Expr*);
+type AutoMethodCallExpr = auto_method_call_expr(var: AnyAutoVar?, name: MethodSymbol, args: Expr*);
+type DBMethodCallExpr   = db_method_call_expr(var: AnyDBVar?, name: MethodSymbol, args: Expr*);
 
 type IfExpr         = if_expr(cond: Expr, then: Expr, else: Expr);
 type MatchExpr      = match_expr(exprs: Expr+, cases: [ptrns: Pattern+, expr: Expr]+);
@@ -170,7 +179,7 @@ type MapCompExpr    = map_comp(key_expr: Expr, value_expr: Expr, source: Clause)
 type SeqCompExpr    = seq_comp(expr: Expr, vars: StdVar+, idx_var: StdVar?, src_expr: Expr, sel_expr: Expr?);
 type RangeCompExpr  = range_comp(expr: Expr, var: StdVar, bound_expr: Expr, inclusive: Bool, sel_expr: Expr?);
 
-type IsSetExpr      = is_set(MembVar);
+type IsSetExpr      = is_set(<MembVar, QualAutoMembVar>);
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -219,29 +228,33 @@ type Clause   = set_elem_clause(var: StdVar, src: Expr),
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type Statement  = assignment_stmt(vars: StdVar+, value: Expr),
-                  return_stmt(Expr),
-                  if_stmt(cond: Expr, body: Statement+, else: Statement*),
-                  loop_stmt(Statement+),
-                  foreach_stmt(vars: StdVar+, idx_var: StdVar?, values: Expr, body: Statement+),
-                  for_stmt(var: StdVar?, start_val: Expr, end_val: Expr, end_val_incl: Bool, body: Statement+),
-                  let_stmt(asgnms: [NamedArg -> Expr], body: Statement+), //## BAD
-                  break_stmt,
-                  fail_stmt,
-                  assert_stmt(cond: Expr, env: [<StdVar, NamedArg>], file: String, line: NzNat, text: Maybe[String]),
-                  print_stmt(Expr),
-                  imp_update_stmt(obj: StdVar, idx: Expr, value: Expr),
-                  //## BAD: MIXING PURE AND IMPURE STATEMENTS
-                  return_stmt,
-                  proc_call(res_var: StdVar?, proc_name: ProcSymbol, params: Expr*),
-                  auto_set_input_stmt(var: LocAutoVar, input: Atom, value: Maybe[Expr]),
-                  SetMembVarStmt, MethodCallStmt,
-                  AutoUpdateStmt;
+type AtomicFnStmt   = assignment_stmt(vars: StdVar+, value: Expr),
+                      return_stmt(Expr),
+                      break_stmt,
+                      fail_stmt,
+                      assert_stmt(cond: Expr, env: [<StdVar, NamedArg>], file: String, line: NzNat, text: Maybe[String]),
+                      print_stmt(Expr),
+                      imp_update_stmt(obj: StdVar, idx: Expr, value: Expr); //## NOT SURE IT BELONGS HERE...
 
-type SetMembVarStmt   = set_memb_var_stmt(var: PendingStateVar, value: Expr);
-type MethodCallStmt   = method_call_stmt(var: AnyAutoVar?, name: UpdateMethodSymb, args: Expr*);
+type AtomicMethStmt = send_msg_stmt(target: MembDBVar, msg: Expr),
+                      try_update_stmt(name: UpdateSymbol, args: Expr*),
+                      set_memb_var_stmt(var: PendingStateVar, value: Expr);
 
-type AutoUpdateStmt = auto_update_stmt(var: LocAutoVar, elapsed_time: Expr?);
+type AtomicProcStmt = return_stmt,
+                      proc_call_stmt(res_var: StdVar?, proc_name: ProcSymbol, params: Expr*);
+
+type AutoOrDBCtrlStmt = set_input_ctrl_stmt(var: LocAutoVar, input: Atom, value: Expr),
+                        clear_input_ctrl_stmt(var: LocAutoVar, input: Atom),
+                        apply_ctrl_stmt(var: LocAutoVar, elapsed_time: Expr?),
+                        send_msg_ctrl_stmt(res_var: StdVar, db_var: LocDBVar, msg: Expr);
+
+type CompositeStmt[T] = if_stmt(cond: Expr, body: T+, else: T*),
+                        loop_stmt(T+),
+                        foreach_stmt(vars: StdVar+, idx_var: StdVar?, values: Expr, body: T+),
+                        for_stmt(var: StdVar?, start_val: Expr, end_val: Expr, end_val_incl: Bool, body: T+),
+                        let_stmt(asgnms: [NamedArg -> Expr], body: T+);
+
+type Statement      = AtomicFnStmt, AtomicMethStmt, AtomicProcStmt, AutoOrDBCtrlStmt, CompositeStmt[Statement];
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -262,11 +275,12 @@ type ProcSymbol = proc_symbol(Atom);
 
 //## SERIOUSLY, FIND BETTER NAME...
 type ProcDef2   = proc_def(
-                    name:             ProcSymbol,
-                    params:           [var: StdVar, type: Type]*,
-                    res_type:         Maybe[Type],
-                    auto_vars_types:  [LocAutoVar -> AutoSymbol],
-                    body:             Statement*
+                    name:       ProcSymbol,
+                    args:       [var: StdVar, type: NeType]*,
+                    res_type:   Maybe[NeType],
+                    auto_vars:  [LocAutoVar -> AutoSymbol],
+                    db_vars:    [LocDBVar -> DBSymbol],
+                    body:       Statement*
                   );
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -280,11 +294,11 @@ type CyclicTimeExpr = every(expr: BasicTimeExpr, nanosecs: NzNat);
 
 type TimeExpr       = BasicTimeExpr, CyclicTimeExpr;
 
-type AutoUpdate         = update(target: Atom, value: Expr);
-type AutoSetDiscrete    = set_discrete(target: Atom, value: Expr);
-type AutoMethodCall     = method_call(target: MembAutoVar, method: UpdateMethodSymb, message: Expr);
+type AutoUpdate         = state_update(target: Atom, value: Expr);
+type AutoSetDiscrete    = discrete_signal_def(target: Atom, value: Expr);
+type AutoMsgSend        = msg_send(target: MembDBVar, message: Expr);
 
-type AutoAtomicAction   = AutoUpdate, AutoSetDiscrete, AutoMethodCall;
+type AutoAtomicAction   = AutoUpdate, AutoSetDiscrete, AutoMsgSend;
 
 type AutoCondAction     = cond_action(cond: Expr, body: [AutoAnyCondAction], else: [AutoAnyCondAction]);
 type AutoAnyCondAction  = AutoAtomicAction, AutoCondAction;
@@ -292,34 +306,44 @@ type AutoAnyCondAction  = AutoAtomicAction, AutoCondAction;
 type AutoRepAction      = rep_action(cond: Expr, body: [AutoAnyRepAction], else: [AutoAnyRepAction]);
 type AutoAnyRepAction   = AutoAtomicAction, AutoRepAction;
 
-type ReadOnlyMethod     = read_only_method(name: ReadOnlyMethodSymb, args: (Type, StdVar)*, ret_type: Type, expr: Expr);
-type UpdateMethod       = update_method(name: UpdateMethodSymb, args: (Type, StdVar)*, body: Statement*);
+type Method   = method(name: MethodSymbol, args: (NeType, StdVar)*, ret_type: NeType, expr: Expr);
+type Update   = update(name: UpdateSymbol, args: (NeType, StdVar)*, body: Statement*);
+type Handler  = handler(type: NeType, body: Statement*);
 
 type TimeVaryingCond    = time_varying_boolean_cond(expr: Expr, time_expr: TimeExpr),
                           time_varying_unchanged_cond(expr: Expr, time_expr: TimeExpr),
                           time_varying_since_cond(signals: [+MembVar], time_expr: TimeExpr, starts_at_time_0: Bool);
 
 type Automaton  = automaton(
-                    name:               AutoSymbol,
-                    inputs:             [Atom -> [type: NeType, discrete: Bool]],
-                    outputs:            [Atom -> [type: NeType, discrete: Bool]],
-                    state:              [Atom -> [type: NeType, init_value: Expr]],
-                    params:             [Atom -> Expr],
-                    rules:              [Atom -> Expr],
-                    time_rules:         [Atom -> TimeVaryingCond],
-                    actions:            [AutoCondAction],
-                    rep_actions:        [AutoRepAction],
-                    nested_autos:       [Atom -> [type: AutoSymbol, args: [Atom -> Expr]]],
-                    read_only_methods:  [ReadOnlyMethod],
-                    update_methods:     [UpdateMethod]
+                    name:           AutoSymbol,
+                    inputs:         [Atom -> [type: NeType,  discrete: Bool]],
+                    outputs:        [Atom -> [type: NeType,  discrete: Bool]],
+                    state:          [Atom -> [type: NeType,  init_value: Expr]],
+                    params:         [Atom -> [type: NeType?, value: Expr]],
+                    rules:          [Atom -> Expr],
+                    time_rules:     [Atom -> TimeVaryingCond],
+                    actions:        [AutoCondAction],
+                    rep_actions:    [AutoRepAction],
+                    nested_autos:   [Atom -> [type: AutoSymbol, args: [Atom -> Expr]]],
+                    nested_dbs:     [MembDBVar -> DBSymbol],
+                    methods:        [Method]
+                  );
+
+type DataBase   = data_base(
+                    name:       DBSymbol,
+                    state_vars: [MembVar -> [type: NeType, init_value: Expr]],
+                    nested_dbs: [MembDBVar -> DBSymbol],
+                    methods:    [Method],
+                    updates:    [Update],
+                    handlers:   [Handler]
                   );
 
 ///////////////////////////////////////////////////////////////////////////////
 
 type Program    = program(
-                    typedefs:       [TypeName -> Type],
-                    subtype_decls:  [SubtypeDecl],
-                    fndefs:         [FnDef],
-                    proc_defs:      [ProcDef2],
-                    auto_defs:      [Automaton]
+                    typedefs:     [TypeName -> Type],
+                    fndefs:       [FnDef],
+                    proc_defs:    [ProcDef2],
+                    auto_defs:    [Automaton],
+                    data_bases:   [DataBase]
                   );

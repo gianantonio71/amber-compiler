@@ -166,12 +166,12 @@ FnSymbol op_symbol(Operator op)                   = :op_symbol(op);
 FnSymbol nested_fn_symbol(FnSymbol o, FnSymbol i) = nested_fn_symbol(outer: o, inner: i);
 FnSymbol unique_fn_symbol(FnSymbol s, Nat id)     = unique_fn_symbol(symbol: s, id: id);
 
-ReadOnlyMethodSymb read_only_method_symb(Atom n)  = :read_only_method_symb(n);
+MethodSymbol method_symbol(Atom n)  = :method_symbol(n);
+UpdateSymbol update_symbol(Atom n)  = :update_symbol(n);
+<msg_handler> msg_handler            = :msg_handler;
 
-UpdateMethodSymb msg_handler                      = :msg_handler;
-UpdateMethodSymb update_method_symb(Atom n)       = :update_method_symb(n);
-
-AutoSymbol auto_symbol(Atom a)      = :auto_symbol(a);
+AutoSymbol auto_symbol(Atom a)  = :auto_symbol(a);
+DBSymbol   db_symbol(Atom a)    = :db_symbol(a);
 
 StdVar          var(Atom a)                 = :var(a);
 FnPar           fn_par(Nat n)               = :fn_par(n);
@@ -181,8 +181,16 @@ MembVar         memb_var(Atom a)            = :memb_var(a);
 MembCopyVar     memb_copy_var(Atom a)       = :memb_copy_var(a);
 PendingStateVar pending_state_var(Atom a)   = :pending_state_var(a);
 
+QualDBMembVar   qual_db_memb_var(AnyDBVar dbv, MembVar mv)    = qual_db_memb_var(db_var: dbv, memb_var: mv);
+QualAutoMembVar qual_auto_memb_var(AnyAutoVar av, MembVar mv) = qual_auto_memb_var(auto_var: av, memb_var: mv);
+
 LocAutoVar  loc_auto_var(Atom a)  = :loc_auto_var(a);
 MembAutoVar memb_auto_var(Atom a) = :memb_auto_var(a);
+
+LocDBVar    loc_db_var(Atom a)  = :loc_db_var(a);
+MembDBVar   memb_db_var(Atom a) = :memb_db_var(a);
+
+NestedDBVar nested_db_var(AnyDBVar ov, MembDBVar iv) = nested_db_var(outer: ov, inner: iv);
 
 ClsVar cls_var(<Atom, Nat> a)     = :cls_var(a);
 
@@ -212,7 +220,7 @@ Expr fn_call(FnSymbol name, AnyExpr* params, [NamedArg -> AnyExpr] named_args) =
 Expr builtin_call(BuiltIn n, Expr+ ps) = builtin_call(name: n, params: ps);
 Expr cls_call(<ClsVar, NamedArg> n, Expr+ ps) = cls_call(name: n, params: ps);
 
-Expr incl_test_or_lookup(Expr c, Expr v)  = incl_test_or_lookup(collection: c, value: v);
+Expr unary_pseudo_call(Expr c, Expr v)    = unary_pseudo_call(collection: c, value: v);
 Expr map_search(Expr m, Expr k, Expr v)   = map_search(map: m, key: k, value: v);
 Expr key_search(Expr m, Expr k)           = key_search(map: m, key: k);
 Expr singl_only_elem(Expr s)              = singl_only_elem(set: s);
@@ -244,12 +252,13 @@ Expr eq(Expr l, Expr r) = eq(left: l, right: r);
 Expr accessor(Expr e, SymbObj f) = accessor(expr: e, field: f);
 Expr accessor_test(Expr e, SymbObj f) = accessor_test(expr: e, field: f);
 
-GetOutputExpr   get_output(AnyAutoVar v, Atom o)     = get_output(var: v, output: o);
-OutputIsSetExpr output_is_set(AnyAutoVar v, Atom o)  = output_is_set(var: v, output: o);
 OutputIsDefExpr output_is_def(LocAutoVar v, Atom o)  = output_is_def(var: v, output: o);
 
-MethodCallExpr method_call_expr(AnyAutoVar v, ReadOnlyMethodSymb m, Expr* as) = method_call_expr(var: v, name: m, args: as);
-MethodCallExpr method_call_expr(ReadOnlyMethodSymb m, Expr* as) = method_call_expr(name: m, args: as);
+AutoMethodCallExpr auto_method_call_expr(AnyAutoVar v, MethodSymbol m, Expr* as)  = auto_method_call_expr(var: v, name: m, args: as);
+AutoMethodCallExpr auto_method_call_expr(MethodSymbol m, Expr* as)                = auto_method_call_expr(name: m, args: as);
+
+DBMethodCallExpr db_method_call_expr(AnyDBVar v, MethodSymbol m, Expr* as)  = db_method_call_expr(var: v, name: m, args: as);
+DBMethodCallExpr db_method_call_expr(MethodSymbol m, Expr* as)              = db_method_call_expr(name: m, args: as);
 
 Expr cast_expr(Expr, <empty_type>)  = {fail;}; //## TRY TO REMOVE...
 Expr membership(Expr, <empty_type>) = {fail;}; //## TRY TO REMOVE...
@@ -267,7 +276,7 @@ ExQualExpr  ex_qual(Clause s, Expr c)             = ex_qual(source: s, cond: c);
 SetCompExpr set_comp(Expr e, Clause c)            = set_comp(expr: e, source: c);
 MapCompExpr map_comp(Expr ke, Expr ve, Clause c)  = map_comp(key_expr: ke, value_expr: ve, source: c);
 
-IsSetExpr is_set(MembVar v) = :is_set(v);
+IsSetExpr is_set(<MembVar, QualAutoMembVar> v)  = :is_set(v);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -293,42 +302,35 @@ Clause filter_clause(Expr e)                          = :filter_clause(e);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Statement assignment_stmt(StdVar+ vs, Expr v)             = assignment_stmt(vars: vs, value: v);
-Statement return_stmt(Expr e)                             = :return_stmt(e);
-Statement if_stmt(Expr c, Statement+ b, Statement* e)     = if_stmt(cond: c, body: b, else: e);
-Statement loop_stmt(Statement+ ss)                        = :loop_stmt(ss);
-Statement let_stmt([NamedArg -> Expr] as, Statement+ b)   = let_stmt(asgnms: as, body: b);
-Statement print_stmt(Expr e)                              = :print_stmt(e);
-Statement assert_stmt(Expr c, [<StdVar, NamedArg>] vs, String f, NzNat l, Maybe[String] t) = assert_stmt(cond: c, env: vs, file: f, line: l, text: t);
+AtomicFnStmt assignment_stmt(StdVar+ vs, Expr v)        = assignment_stmt(vars: vs, value: v);
+AtomicFnStmt return_stmt(Expr e)                        = :return_stmt(e);
+AtomicFnStmt print_stmt(Expr e)                         = :print_stmt(e);
+AtomicFnStmt imp_update_stmt(StdVar o, Expr i, Expr v)  = imp_update_stmt(obj: o, idx: i, value: v);
+AtomicFnStmt assert_stmt(Expr c, [<StdVar, NamedArg>] vs, String f, NzNat l, Maybe[String] t) = assert_stmt(cond: c, env: vs, file: f, line: l, text: t);
+<break_stmt> break_stmt                                 = :break_stmt;
+<fail_stmt>  fail_stmt                                  = :fail_stmt;
+
+AtomicMethStmt send_msg_stmt(MembDBVar v, Expr m)           = send_msg_stmt(target: v, msg: m);
+AtomicMethStmt try_update_stmt(UpdateSymbol n, Expr* as)    = try_update_stmt(name: n, args: as);
+AtomicMethStmt set_memb_var_stmt(PendingStateVar v, Expr e) = set_memb_var_stmt(var: v, value: e);
 
 <return_stmt> return_stmt = :return_stmt;
-<break_stmt>  break_stmt  = :break_stmt;
-<fail_stmt>   fail_stmt   = :fail_stmt;
 
-Statement imp_update_stmt(StdVar o, Expr i, Expr v)  = imp_update_stmt(obj: o, idx: i, value: v);
+AutoOrDBCtrlStmt set_input_ctrl_stmt(LocAutoVar v, Atom i, Expr e)    = set_input_ctrl_stmt(var: v, input: i, value: e);
+AutoOrDBCtrlStmt clear_input_ctrl_stmt(LocAutoVar v, Atom i)          = clear_input_ctrl_stmt(var: v, input: i);
+AutoOrDBCtrlStmt apply_ctrl_stmt(LocAutoVar v)                        = apply_ctrl_stmt(var: v);
+AutoOrDBCtrlStmt apply_ctrl_stmt(LocAutoVar v, Expr t)                = apply_ctrl_stmt(var: v, elapsed_time: t);
+AutoOrDBCtrlStmt send_msg_ctrl_stmt(StdVar rv, LocDBVar dbv, Expr m)  = send_msg_ctrl_stmt(res_var: rv, db_var: dbv, msg: m);
 
-Statement foreach_stmt(StdVar+ vs, Maybe[StdVar] iv, Expr svs, Statement+ b) =
-  foreach_stmt(
-    vars:     vs,
-    idx_var:  value(iv) if iv != nil,
-    values:   svs,
-    body:     b
-  );
+CompositeStmt[T] if_stmt(Expr c, T+ b, T* e)            = if_stmt(cond: c, body: b, else: e);
+CompositeStmt[T] loop_stmt(T+ ss)                       = :loop_stmt(ss);
+CompositeStmt[T] let_stmt([NamedArg -> Expr] as, T+ b)  = let_stmt(asgnms: as, body: b);
 
-Statement for_stmt(Maybe[StdVar] v, Expr sv, Expr ev, Bool evi, Statement+ b) =
-  for_stmt(
-    var:          value(v) if v != nil,
-    start_val:    sv,
-    end_val:      ev,
-    end_val_incl: evi,
-    body:         b
-  );
+CompositeStmt[T] foreach_stmt(StdVar+ vs, Maybe[StdVar] iv, Expr svs, T+ b) =
+  foreach_stmt(vars: vs, idx_var: value(iv) if iv != nil, values: svs, body: b);
 
-SetMembVarStmt set_memb_var_stmt(PendingStateVar v, Expr e) = set_memb_var_stmt(var: v, value: e);
-
-Statement auto_set_input_stmt(LocAutoVar v, Atom i, Maybe[Expr] e) = auto_set_input_stmt(var: v, input: i, value: e);
-
-AutoUpdateStmt auto_update_stmt(LocAutoVar v) = auto_update_stmt(var: v);
+CompositeStmt[T] for_stmt(Maybe[StdVar] v, Expr sv, Expr ev, Bool evi, T+ b) =
+  for_stmt(var: value(v) if v != nil, start_val: sv, end_val: ev, end_val_incl: evi, body: b);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -339,14 +341,11 @@ ProcSymbol proc_symbol(Atom a) = :proc_symbol(a);
 FnDef fn_def(FnSymbol n, FnFrmPar* ps, [NamedArg -> AnyType] nps, Maybe[Type] mrt, Expr e) =
   fn_def(name: n, params: ps, named_args: nps, res_type: value(mrt) if mrt != nil, expr: e);
 
-ProcDef2 proc_def(ProcSymbol n, [var: StdVar, type: Type]* ps, Maybe[Type] rt, [LocAutoVar -> AutoSymbol] avs, Statement* b) =
-  proc_def(name: n, params: ps, res_type: rt, auto_vars_types: avs, body: b);
-
 ////////////////////////////////////////////////////////////////////////////////
 
-AutoUpdate      update(Atom a, Expr e)                              = update(target: a, value: e);
-AutoSetDiscrete set_discrete(Atom a, Expr e)                        = set_discrete(target: a, value: e);
-AutoMethodCall  method_call(MembAutoVar t, UpdateMethodSymb s, Expr m)  = method_call(target: t, method: s, message: m);
+AutoUpdate      state_update(Atom a, Expr e)          = state_update(target: a, value: e);
+AutoSetDiscrete discrete_signal_def(Atom a, Expr e)   = discrete_signal_def(target: a, value: e);
+AutoMsgSend     msg_send(MembDBVar t, Expr m)         = msg_send(target: t, message: m);
 
 AutoCondAction cond_action(Expr c, [AutoAnyCondAction] b, [AutoAnyCondAction] e)
 {
@@ -360,9 +359,11 @@ AutoRepAction rep_action(Expr c, [AutoAnyRepAction] b, [AutoAnyRepAction] e)
   return rep_action(cond: c, body: b, else: e);
 }
 
-ReadOnlyMethod read_only_method(ReadOnlyMethodSymb n, (Type, StdVar)* as, Type t, Expr e) = read_only_method(name: n, args: as, ret_type: t, expr: e);
+Method method(MethodSymbol n, (NeType, StdVar)* as, NeType t, Expr e) = method(name: n, args: as, ret_type: t, expr: e);
 
-UpdateMethod update_method(UpdateMethodSymb n, (Type, StdVar)* as, Statement* ss) = update_method(name: n, args: as, body: ss);
+Update update(UpdateSymbol n, (NeType, StdVar)* as, Statement* ss)    = update(name: n, args: as, body: ss);
+
+Handler handler(NeType t, Statement* ss)  = handler(type: t, body: ss);
 
 ////////////////////////////////////////////////////////////////////////////////
 

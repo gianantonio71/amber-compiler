@@ -1,14 +1,16 @@
 using
 {
-  [ClsVar]                        closures,
-  [NamedArg]                      named_args,
-  [NamedArg -> Nat]               named_args_arities,
-  [MembVar]                       memb_vars,
-  [(FnSymbol, NzNat) -> Nat+]     local_fns,
-  Maybe[FnSymbol]                 curr_outer_fn, //## BUG: THIS IS NOT ENOUGH TO IDENTIFY THE OUTER FUNCTION...
-  [TypeName -> Type]              typedefs,
-  [FnSymbol -> [Nat -> Nat*]]     fn_arg_arities,
-  [AnyAutoVar -> [[name: Atom, discrete: Bool, default: Bool]]] auto_vars_outputs;
+  SynPrg                        syn_prg,
+  SynArtifact                   syn_artifact,
+
+  [ClsVar]                      closures,
+  [NamedArg]                    named_args, //## THIS IS REDUNDANT. SEE ALSO THE BUG IN desugar_let_stmt()
+  [NamedArg -> Nat]             named_args_arities,
+  [MembVar]                     memb_vars, //## THIS COULD BE INCLUDED IN def_vars, TOGETHER MAYBE WITH named_args
+  [AnyAutoVar -> AutoSymbol]    auto_vars_types,
+  [AnyDBVar -> DBSymbol]        db_vars_types,
+  [(FnSymbol, NzNat) -> Nat+]   local_fns,
+  Maybe[FnSymbol]               curr_outer_fn; //## BUG: THIS IS NOT ENOUGH TO IDENTIFY THE OUTER FUNCTION...
 
 
   Expr desugar_expr(SynExpr syn_expr, [Var] def_vars) =
@@ -29,7 +31,7 @@ using
     const_or_var(a?)    = desugar_const_or_var_expr(a, def_vars),
     fn_call()           = desugar_fn_call_expr(expr.name, expr.args, expr.named_args, def_vars),
     builtin_call()      = builtin_call(expr.name, (desugar_expr(e, def_vars) : e <- expr.args)),
-    unary_pseudo_call() = incl_test_or_lookup(desugar_expr(expr.target, def_vars), desugar_expr(expr.param, def_vars)),
+    unary_pseudo_call() = unary_pseudo_call(desugar_expr(expr.target, def_vars), desugar_expr(expr.param, def_vars)),
     map_search()        = map_search(desugar_expr(expr.map, def_vars), desugar_expr(expr.key, def_vars), desugar_expr(expr.value, def_vars)),
     key_search()        = key_search(desugar_expr(expr.map, def_vars), desugar_expr(expr.key, def_vars)),
     singl_only_elem()   = singl_only_elem(desugar_expr(expr.set, def_vars)),
@@ -40,7 +42,7 @@ using
     neq()               = not_expr(eq(desugar_expr(expr.left, def_vars), desugar_expr(expr.right, def_vars))),
     membership()        = membership(desugar_expr(expr.obj, def_vars), syn_type_to_type(expr.type, nil)),
     cast_expr()         = cast_expr(desugar_expr(expr.expr, def_vars), syn_type_to_type(expr.type, nil)),
-    accessor()          = desugar_accessor(expr.expr, expr.field, def_vars),
+    accessor()          = desugar_accessor(expr, def_vars),
     accessor_test()     = desugar_accessor_test(expr.expr, expr.field, def_vars),
     ex_qual()           = desugar_ex_qual_expr(expr.source, expr.cond, def_vars),
     set_comp()          = desugar_set_comp_expr(expr.expr, expr.source, def_vars),
@@ -63,15 +65,37 @@ using
   }
 
 
-  Expr desugar_method_call_expr(Atom var_id, ReadOnlyMethodSymb name, SynExpr* syn_args, [Var] def_vars)
+  Expr desugar_method_call_expr(Atom var_id, MethodSymbol name, SynExpr* syn_args, [Var] def_vars)
   {
     args = (desugar_expr(e, def_vars) : e <- syn_args);
-    return method_call_expr(name, args) if var_id == :self;
-    loc_var = loc_auto_var(var_id);
-    memb_var = memb_auto_var(var_id);
-    assert has_key(auto_vars_outputs, loc_var) != has_key(auto_vars_outputs, memb_var);
-    auto_var = if has_key(auto_vars_outputs, loc_var) then loc_var else memb_var;
-    return method_call_expr(auto_var, name, args);
+    return if var_id == :self
+      then self_method_call_expr(self_type, name, args)
+      else method_call_expr(resolve_target(var_id), name, args);
+
+    Expr self_method_call_expr(AutoSymbol, MethodSymbol name, Expr* args) = auto_method_call_expr(name, args);
+
+    Expr self_method_call_expr(DBSymbol, MethodSymbol name, Expr* args) = db_method_call_expr(name, args);
+
+    Expr method_call_expr(<AnyAutoVar, AnyDBVar> var, MethodSymbol name, Expr* args):
+      AnyAutoVar  = auto_method_call_expr(var, name, args),
+      AnyDBVar    = db_method_call_expr(var, name, args);
+
+    <AnyAutoVar, AnyDBVar> resolve_target(Atom var_id)
+    {
+      var = loc_auto_var(var_id);
+      return var if has_key(auto_vars_types, var);
+
+      var = memb_auto_var(var_id);
+      return var if has_key(auto_vars_types, var);
+
+      var = loc_db_var(var_id);
+      return var if has_key(db_vars_types, var);
+
+      var = memb_db_var(var_id);
+      return var if has_key(db_vars_types, var);
+
+      fail;
+    }
   }
 
 
@@ -92,34 +116,14 @@ using
     return named_arg(var_symb)  if in(named_arg(var_symb), named_args);
     return memb_var(var_symb)   if in(memb_var(var_symb), memb_vars);
 
-    loc_auto_var = loc_auto_var(var_symb);
-    memb_auto_var = memb_auto_var(var_symb);
-
-    is_loc_auto_var = has_key(auto_vars_outputs, loc_auto_var);
-    is_memb_auto_var = has_key(auto_vars_outputs, memb_auto_var);
-    assert not is_loc_auto_var or not is_memb_auto_var;
-
-    if is_loc_auto_var or is_memb_auto_var:
-      auto_var = if is_loc_auto_var then loc_auto_var else memb_auto_var;
-      outputs = auto_vars_outputs[auto_var];
-      assert outputs != [];
-      assert size(outputs) == 1 or not (? o <- outputs : o.default);
-
-      if size(outputs) == 1:
-        only_output = only_element(outputs);
-        return get_output(auto_var, only_output.name) if only_output.default;
+    for v <- (loc_auto_var(var_symb), memb_auto_var(var_symb)):
+      if has_key(auto_vars_types, v):
+        interface = auto_interfaces[auto_vars_types[v]];
+        if interface.default_output:
+          default_output = only_element(keys(interface.outputs));
+          return qual_auto_memb_var(v, memb_var(default_output));
+        ;
       ;
-    ;
-
-    if is_loc_auto_var:
-      entries = [[
-        key:    object(output.name),
-        value:  get_output(loc_auto_var, output.name),
-        cond:   if output.discrete
-                  then and_expr(output_is_def(loc_auto_var, output.name), output_is_set(loc_auto_var, output.name))
-                  else output_is_def(loc_auto_var, output.name)
-      ] : output <- auto_vars_outputs[loc_auto_var]];
-      return map_expr(entries);
     ;
 
     return fn_call(fn_symbol(var_symb), (), [:]);
@@ -144,7 +148,7 @@ using
         coll_var = if target_is_local_var then var(bare_name) else named_arg(bare_name);
         if arity == 1:
           par = desugar_expr(only_item(args), def_vars);
-          res = incl_test_or_lookup(coll_var, par);
+          res = unary_pseudo_call(coll_var, par);
         else
           assert arity == 2;
           key = desugar_expr(args[0], def_vars);
@@ -224,33 +228,70 @@ using
   }
 
 
-  Expr desugar_accessor(SynExpr expr, SymbObj field, [Var] def_vars):
-    const_or_var(n?)  = { for v <- (loc_auto_var(n), memb_auto_var(n)):
-                            if has_key(auto_vars_outputs, v):
-                              outputs = auto_vars_outputs[v];
-                              if size(outputs) != 1 or not only_element(outputs).default:
-                                return get_output(v, bare_obj(field));
-                              ;
-                            ;
-                          ;
-                          return accessor(desugar_expr(expr, def_vars), field);
-                        },
-    _                 = accessor(desugar_expr(expr, def_vars), field);
+  Expr desugar_accessor(SynAccExpr syn_expr, [Var] def_vars)
+  {
+    if syn_expr :: AccessorChain:
+      symbols = destructure_accessor_chain(syn_expr);
+      target = head(symbols);
+      fields = nonempty(tail(symbols));
+
+      for v <- (loc_auto_var(target), memb_auto_var(target)):
+        if has_key(auto_vars_types, v):
+          interface = auto_interfaces[auto_vars_types[v]];
+          if not interface.default_output:
+            field = head(fields);
+            rem_fields = tail(fields);
+            expr = qual_auto_memb_var(v, memb_var(head(fields)));
+            for f <- tail(fields):
+              expr = accessor(expr, object(f));
+            ;
+            return expr;
+          ;
+        ;
+      ;
+
+      for v <- (loc_db_var(target), memb_db_var(target)):
+        if has_key(db_vars_types, v):
+          db_var = v;
+          db_type = db_vars_types[v];
+          rem_fields = fields;
+          loop
+            interface = db_interfaces[db_type];
+            field = head(rem_fields);
+            break if in(field, interface.memb_vars);
+            db_var = nested_db_var(db_var, memb_db_var(field));
+            db_type = db_symbol(interface.nested_dbs[field]);
+            rem_fields = tail(rem_fields);
+            fail if rem_fields == ();
+          ;
+          expr = qual_db_memb_var(db_var, memb_var(head(rem_fields)));
+          for f <- tail(rem_fields):
+            expr = accessor(expr, object(f));
+          ;
+          return expr;
+        ;
+      ;
+    ;
+
+    return accessor(desugar_expr(syn_expr.expr, def_vars), object(syn_expr.field));
+  }
 
 
-  Expr desugar_accessor_test(SynExpr expr, SymbObj field, [Var] def_vars):
-    const_or_var(n?)  = { //## BAD: THIS CODE IS ALMOST THE SAME AS IN THE METHOD ABOVE
-                          for v <- (loc_auto_var(n), memb_auto_var(n)):
-                            if has_key(auto_vars_outputs, v):
-                              outputs = auto_vars_outputs[v];
-                              if size(outputs) != 1 or not only_element(outputs).default:
-                                return output_is_set(v, bare_obj(field));
-                              ;
-                            ;
-                          ;
-                          return accessor_test(desugar_expr(expr, def_vars), field);
-                        },
-    _                 = accessor_test(desugar_expr(expr, def_vars), field);
+  Expr desugar_accessor_test(SynExpr expr, Atom field, [Var] def_vars):
+    const_or_var(n?)  = desugar_accessor_test(n, field, def_vars),
+    _                 = accessor_test(desugar_expr(expr, def_vars), object(field));
+
+
+  Expr desugar_accessor_test(Atom target, Atom field, [Var] def_vars)
+  {
+    for v <- (loc_auto_var(target), memb_auto_var(target)):
+      if has_key(auto_vars_types, v):
+        interface = auto_interfaces[auto_vars_types[v]];
+        return is_set(qual_auto_memb_var(v, memb_var(field))) if not interface.default_output;
+      ;
+    ;
+    return accessor_test(desugar_const_or_var_expr(target, def_vars), object(field));
+  }
 
 
   Expr desugar_ex_qual_expr(SynClause+ source, SynExpr cond, [Var] def_vars)
@@ -331,7 +372,7 @@ using
       desugar_expr(cexpr.cond, def_vars)
     );
 
-  
+
   Expr mk_and_expr(Expr+ exprs)  // REMOVE DUPLICATES?
   {
     rev_exprs = reverse(exprs);
@@ -339,7 +380,7 @@ using
     for i = 1..length(exprs):
       expr = and_expr(rev_exprs[i], expr);
     ;
-    return expr;  
+    return expr;
   }
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -416,40 +457,25 @@ using
     loop_stmt()               = desugar_loop_stmt(stmt, def_vars),
     for_stmt()                = desugar_for_stmt(stmt.loops, stmt.body, def_vars),
     return_stmt               = return_stmt,
-    set_memb_var_stmt()       = set_memb_var_stmt(stmt.var, desugar_expr(stmt.value, def_vars)),
-    method_call_stmt()        = desugar_method_call_stmt(stmt, def_vars),
-    proc_call()               = proc_call(
+    proc_call_stmt()          = proc_call_stmt(
                                   res_var:    stmt.res_var if stmt.res_var?,
                                   proc_name:  stmt.proc_name,
                                   params:     (desugar_expr(p, def_vars) : p <- stmt.args)
                                 ),
-    auto_set_input_stmt()     = auto_set_input_stmt(
-                                  stmt.var,
-                                  stmt.input,
-                                  match (stmt.value)
-                                    nil       = nil,
-                                    just(e?)  = just(desugar_expr(e, def_vars))
-                                ),
-    auto_update_stmt()        = auto_update_stmt(
-                                  var:          stmt.var,
-                                  elapsed_time: desugar_expr(stmt.elapsed_time, def_vars) if stmt.elapsed_time?
-                                );
+
+    send_msg_stmt()           = send_msg_stmt(memb_db_var(stmt.var), desugar_expr(stmt.msg, def_vars)),
+    try_update_stmt()         = try_update_stmt(update_symbol(stmt.name), (desugar_expr(e, def_vars) : e <- stmt.args)),
+    set_memb_var_stmt()       = set_memb_var_stmt(pending_state_var(stmt.var), desugar_expr(stmt.value, def_vars)),
+
+    set_input_ctrl_stmt()     = set_input_ctrl_stmt(loc_auto_var(stmt.var), stmt.input, desugar_expr(stmt.value, def_vars)),
+    clear_input_ctrl_stmt()   = clear_input_ctrl_stmt(loc_auto_var(stmt.var), stmt.input),
+    apply_ctrl_stmt()         = if stmt.elapsed_time?
+                                  then apply_ctrl_stmt(loc_auto_var(stmt.var), desugar_expr(stmt.elapsed_time, def_vars))
+                                  else apply_ctrl_stmt(loc_auto_var(stmt.var)),
+    send_msg_ctrl_stmt()      = send_msg_ctrl_stmt(var(stmt.res_var), loc_db_var(stmt.db_var), desugar_expr(stmt.msg, def_vars));
 
 
-  MethodCallStmt desugar_method_call_stmt(SynMethodCallStmt stmt, [Var] def_vars) =
-    method_call_stmt(
-      var:      { var_id = stmt.var;
-                  loc_var = loc_auto_var(var_id);
-                  memb_var = memb_auto_var(var_id);
-                  assert has_key(auto_vars_outputs, loc_var) != has_key(auto_vars_outputs, memb_var);
-                  return if has_key(auto_vars_outputs, loc_var) then loc_var else memb_var;
-                } if stmt.var?,
-      name:     update_method_symb(stmt.name),
-      args:     (desugar_expr(a, def_vars) : a <- stmt.args)
-    );
-
-
-  Statement desugar_if_stmt(SynIfStmt stmt, [Var] def_vars)
+  Statement desugar_if_stmt(SynIfStmt[SynStmt] stmt, [Var] def_vars)
   {
     else_stmts = stmt.else; //## THIS IS HERE JUST TO SHUT UP THE TYPECHECKER
     res = if else_stmts != () then desugar_stmts(else_stmts, def_vars) else ();
@@ -457,21 +483,23 @@ using
       cond = desugar_expr(b.cond, def_vars);
       body = desugar_stmts(b.body, def_vars);
       res  = (if_stmt(cond, body, res));
+      fail if not res :: (Statement); //## BAD BAD BAD: LOOP DOESN'T TYPECHECK ON ITS OWN
     ;
     assert res :: Seq and length(res) == 1;
     return res[0]; //## BAD BAD BAD
   }
 
 
-  Statement desugar_let_stmt(SynLetStmt stmt, [Var] def_vars)
+  Statement desugar_let_stmt(SynLetStmt[SynStmt] stmt, [Var] def_vars)
   {
     asgnms = merge(([var -> desugar_expr(val, def_vars)] : var, val <- stmt.asgnms));
+    //## BUG BUG BUG: WHAT ABOUT named_args_arities? THAT'S NOT SET!
     body   = desugar_stmts(stmt.body, def_vars, named_args = named_args & keys(asgnms));
     return let_stmt(asgnms, body);
   }
 
 
-  Statement desugar_loop_stmt(SynLoopStmt stmt, [Var] def_vars)
+  Statement desugar_loop_stmt(SynLoopStmt[SynStmt] stmt, [Var] def_vars)
   {
     cond      = desugar_expr(stmt.cond, def_vars);
     exit_stmt = if_stmt(not_expr(cond), (break_stmt), ());
@@ -511,6 +539,7 @@ using
       else
         fail; // We should never get here
       ;
+      fail if not res :: (Statement); //## BAD BAD BAD: LOOP DOESN'T TYPECHECK ON ITS OWN
     ;
     assert res :: Seq and length(res) == 1;
     return res[0]; //## BAD BAD BAD
