@@ -1,16 +1,16 @@
-using
+implicit
 {
-  Program             program,
-  Artifact            artifact,
-  CompilationOptions  options,
-  Nat                 next_obj_var_id,
-  Nat                 next_int_var_id,
-  Nat                 next_bool_var_id,
-  Nat                 next_set_it_var_id,
-  Nat                 next_seq_it_var_id,
-  Nat                 next_map_it_var_id,
-  Nat                 next_vector_var_id,
-  Nat                 next_stream_var_id;
+  program            : Program,
+  artifact           : Artifact,
+  options            : CompilationOptions,
+  next_obj_var_id    : Nat,
+  next_int_var_id    : Nat,
+  next_bool_var_id   : Nat,
+  next_set_it_var_id : Nat,
+  next_seq_it_var_id : Nat,
+  next_map_it_var_id : Nat,
+  next_vector_var_id : Nat,
+  next_stream_var_id : Nat;
 
 
   Instr+ gen_eval_code(Expr expr, EvalDestVar res_var):
@@ -29,7 +29,7 @@ using
     cls_call()          = gen_eval_code_for_cls_call(expr.name, expr.params, res_var),
     builtin_call()      = gen_eval_code_for_builtin_call(expr.name, expr.params, res_var),
 
-    unary_pseudo_call() = gen_eval_code_for_unary_pseudo_call_expr(expr.collection, expr.value, res_var),
+    unary_pseudo_call() = gen_eval_code_for_unary_pseudo_call_expr(expr.target, expr.arg, res_var),
     map_search()        = gen_eval_code_for_map_search_expr(expr.map, expr.key, expr.value, res_var),
     key_search()        = gen_eval_code_for_key_search_expr(expr.map, expr.key, res_var),
     singl_only_elem()   = gen_eval_code_for_singl_only_elem(expr.set, res_var),
@@ -67,7 +67,7 @@ using
   Instr+ gen_eval_code_for_set_expr([SubExpr] subexprs, EvalDestVar res_var)
   {
     return (set_var(res_var, empty_set)) if subexprs == [];
-    non_cond_exprs = [e : e <- subexprs, e :: Expr];
+    non_cond_exprs = [e | e <- subexprs, e :: Expr];
     cond_exprs = subexprs - non_cond_exprs;
     sorted_subexprs = rand_sort(non_cond_exprs) & rand_sort(cond_exprs);
     info = gen_vector_eval_info(nonempty(sorted_subexprs));
@@ -103,7 +103,7 @@ using
   Instr+ gen_eval_code_for_tuple_expr(Expr+ exprs, EvalDestVar res_var)
   {
     if exprs :: IntObj+:
-      int_seq = (match (e) object(n?) = n : e <- exprs);
+      int_seq = (match (e) object(n?) = n | e <- exprs);
       seq_id = int_seqs_ids[int_seq];
       return (build_const_int_seq(res_var, seq_id));
     ;
@@ -112,7 +112,7 @@ using
   }
 
 
-  Instr+ gen_eval_code_for_map_expr([[key: Expr, value: Expr, cond: Expr?]] entries, EvalDestVar res_var)
+  Instr+ gen_eval_code_for_map_expr([(key: Expr, value: Expr, cond: Expr?)] entries, EvalDestVar res_var)
   {
     return (set_var(res_var, empty_map)) if entries == [];
 
@@ -158,7 +158,7 @@ using
       //## BUG BUG BUG. THE ASSIGNMENTS ARE DONE IN RANDOM ORDER. FIX THIS
       var = an_elem(nonempty(keys(named_args)));
       expr = named_args[var];
-      rem_named_args = [v -> e : e @ v <- named_args, v != var];
+      rem_named_args = [v -> e | v : e <- named_args, v != var];
 
       if expr :: Expr:
         backup_var = lvar(next_obj_var_id);
@@ -177,14 +177,14 @@ using
       ;
 
     else
-      pars_are_first_order = (is_expr(p) : p <- params);
+      pars_are_first_order = (is_expr(p) | p <- params);
       par_packed_idxs = packed_indexes(pars_are_first_order);
-      pars_info = gen_eval_info((cast_as_expr(p) : p @ i <- params, pars_are_first_order[i]));
+      pars_info = gen_eval_info((cast_as_expr(p) | p @ i <- params, pars_are_first_order[i]));
       all_params = (
         if pars_are_first_order[i]
           then pars_info.exprs[value(par_packed_idxs[i])]
           else gen_non_scalar_par_code(cast_as_cls_expr(p))
-      : p @ i <- params);
+      | p @ i <- params);
       core_call_code = (call_proc(res_var, name, all_params));
       return nonempty(pars_info.eval_code & core_call_code);
     ;
@@ -274,12 +274,17 @@ using
   }
 
 
-  Instr+ gen_eval_code_for_unary_pseudo_call_expr(Expr collection, Expr value, EvalDestVar res_var)
+  Instr+ gen_eval_code_for_unary_pseudo_call_expr(Expr target, Expr arg, EvalDestVar res_var)
   {
-    info = gen_eval_info((collection, value));
-    coll_expr = info.exprs[0];
-    value_expr = info.exprs[1];
-    return (info.eval_code | set_var(res_var, search_or_lookup(coll_expr, value_expr)));
+    info = gen_eval_info((target, arg));
+    target_expr = info.exprs[0];
+    arg_expr = info.exprs[1];
+    pseudo_call_instr = branch(
+      is_symb(target_expr),
+      (mk_tagged_obj(res_var, target_expr, arg_expr)),
+      (set_var(res_var, search_or_lookup(target_expr, arg_expr)))
+    );
+    return (info.eval_code || pseudo_call_instr);
   }
 
 
@@ -294,7 +299,7 @@ using
     return (set_var(res_var, obj_false)) if map_expr == empty_map;
     fail if not map_expr :: StdObjVar;
     return (
-      info.eval_code |
+      info.eval_code ||
       lookup(found_var, tmp_var, map_expr, key_expr),
       branch(
         found_var,
@@ -314,14 +319,14 @@ using
     unused_var = lvar(info.next_var_id);
     return (set_var(res_var, obj_false)) if map_expr == empty_map;
     fail if not map_expr :: StdObjVar;
-    return (info.eval_code | lookup(found_var, unused_var, map_expr, key_expr), set_var(res_var, bool_obj(found_var)));
+    return (info.eval_code || lookup(found_var, unused_var, map_expr, key_expr), set_var(res_var, bool_obj(found_var)));
   }
 
 
   Instr+ gen_eval_code_for_singl_only_elem(Expr set, EvalDestVar res_var)
   {
     info = gen_eval_info(set);
-    return (info.eval_code | check(is_eq(get_set_size(info.expr), 1)), set_var(res_var, rand_elem(info.expr)));
+    return (info.eval_code || check(is_eq(get_set_size(info.expr), 1)), set_var(res_var, rand_elem(info.expr)));
   }
 
 
@@ -333,7 +338,7 @@ using
       if_code = gen_eval_code(right_expr, res_var);
       else_code = (set_var(res_var, obj_false) if left_info.expr != res_var);
     ;
-    return (left_info.eval_code | branch(is_true(left_info.expr), if_code, else_code));
+    return (left_info.eval_code || branch(is_true(left_info.expr), if_code, else_code));
   }
 
 
@@ -345,7 +350,7 @@ using
       if_code = (set_var(res_var, obj_true) if left_info.expr != res_var);
       else_code = gen_eval_code(right_expr, res_var);
     ;
-    return (left_info.eval_code | branch(is_true(left_info.expr), if_code, else_code));
+    return (left_info.eval_code || branch(is_true(left_info.expr), if_code, else_code));
   }
 
 
@@ -417,7 +422,7 @@ using
       method_id:  method_id(expr.name, length(expr.args)),
       args:       args_eval_info.exprs
     );
-    return (args_eval_info.eval_code | invoke_method_instr);
+    return (args_eval_info.eval_code || invoke_method_instr);
   }
 
 
@@ -431,7 +436,7 @@ using
       method_id:  method_id(expr.name, length(expr.args)),
       args:       args_eval_info.exprs
     );
-    return (args_eval_info.eval_code | invoke_method_instr);
+    return (args_eval_info.eval_code || invoke_method_instr);
   }
 
 
@@ -439,15 +444,15 @@ using
   {
     info = gen_eval_info(cond);
     branch_instr = branch(is_true(info.expr), gen_eval_code(then_expr, res_var), gen_eval_code(else_expr, res_var));
-    return nonempty((info.eval_code | branch_instr));
+    return nonempty((info.eval_code || branch_instr));
   }
 
 
-  Instr+ gen_eval_code_for_match_expr(Expr+ exprs, [ptrns: Pattern+, expr: Expr]+ cases, EvalDestVar res_var)
+  Instr+ gen_eval_code_for_match_expr(Expr+ exprs, (ptrns: Pattern+, expr: Expr)+ cases, EvalDestVar res_var)
   {
     info = gen_eval_info(exprs);
     let next_obj_var_id = info.next_var_id:
-      semicomp_cases = ([ptrns: c.ptrns, code: (gen_eval_code(c.expr, res_var) | exit_block)] : c <- cases);
+      semicomp_cases = ((ptrns: c.ptrns, code: (gen_eval_code(c.expr, res_var) || exit_block)) | c <- cases);
       switch_code = gen_switch_code(nonempty(info.exprs), semicomp_cases);
     ;
     return nonempty(info.eval_code & switch_code);
@@ -486,7 +491,7 @@ using
   }
 
 
-  Instr+ gen_eval_code_for_seq_comp_expr([expr: Expr, vars: StdVar+, idx_var: StdVar?, src_expr: Expr, sel_expr: Expr?] expr, EvalDestVar res_var)
+  Instr+ gen_eval_code_for_seq_comp_expr((expr: Expr, vars: StdVar+, idx_var: StdVar?, src_expr: Expr, sel_expr: Expr?) expr, EvalDestVar res_var)
   {
     src_var   = lvar(next_obj_var_id);
     item_var  = lvar(nat(next_obj_var_id + 1));
@@ -525,7 +530,7 @@ using
       var_set_code = (set_var(expr.vars[0], get_curr_obj(it_var)));
     else
       var_set_code = (set_var(tmp_var, get_curr_obj(it_var)));
-      var_set_code = var_set_code & (set_var(v, at(tmp_var, i)) : v @ i <- expr.vars);
+      var_set_code = var_set_code & (set_var(v, at(tmp_var, i)) | v @ i <- expr.vars);
     ;
     var_set_code = var_set_code & (set_var(expr.idx_var, to_obj(idx_var))) if expr.idx_var?;
 
@@ -550,7 +555,7 @@ using
   }
 
 
-  Instr+ gen_eval_code_for_range_comp_expr([expr: Expr, var: StdVar, bound_expr: Expr, inclusive: Bool, sel_expr: Expr?] expr, EvalDestVar res_var)
+  Instr+ gen_eval_code_for_range_comp_expr((expr: Expr, var: StdVar, bound_expr: Expr, inclusive: Bool, sel_expr: Expr?) expr, EvalDestVar res_var)
   {
     src_var   = lvar(next_obj_var_id);
     item_var  = lvar(nat(next_obj_var_id + 1));

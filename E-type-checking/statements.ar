@@ -1,11 +1,11 @@
-using
+implicit
 {
-  [TypeName -> Type]              typedefs,
-  [(FnSymbol, Nat) -> SgnSet]     signatures,
-  [Var -> Type]                   environment,
-  [<ClsVar, NamedArg> -> ClsType] closures,
-  [[Var]]                         var_aliases,
-  Bool                            verbose;
+  typedefs    : [TypeName -> Type],
+  signatures  : [(FnSymbol, Nat) -> SgnSet],
+  environment : [Var -> Type],
+  closures    : [<ClsVar, NamedArg> -> ClsType],
+  var_aliases : [[Var]],
+  verbose     : Bool;
 
 
   [TypeCheckingError] typecheck(Statement* stmts, Type exp_type)
@@ -23,7 +23,7 @@ using
   [TypeCheckingError] typecheck(Statement stmt, Type exp_type)
   {
     errs = typecheck_without_annotations(stmt, exp_type);
-    return [add_anchor_if_needed(e, stmt) : e <- errs];
+    return [add_anchor_if_needed(e, stmt) | e <- errs];
 
 
     [TypeCheckingError] typecheck_without_annotations(Statement stmt, Type exp_type):
@@ -93,7 +93,7 @@ using
       loop_vars = [vars[0] -> elem_type];
     else
       field_types = tuple_field_supertypes(elem_type, num_vars);
-      loop_vars = merge(([v -> t] : v, t <- zip(vars, field_types)));
+      loop_vars = merge(([v -> t] | v, t <- zip(vars, field_types)));
     ;
     loop_vars = loop_vars & [value(maybe_idx_var) -> type_nat] if maybe_idx_var != nil;
     env = update(environment, loop_vars);
@@ -129,9 +129,9 @@ using
 
   [TypeCheckingError] typecheck_let_stmt([NamedArg -> Expr] asgnms, Statement+ body, Type exp_type)
   {
-    errs = union([typecheck(e, type_any) : e @ v <- asgnms]);
+    errs = union([typecheck(e, type_any) | v : e <- asgnms]);
     return errs if errs != [];
-    env_delta = [v -> expr_type(e) : e @ v <- asgnms];
+    env_delta = [v -> expr_type(e) | v : e <- asgnms];
     new_env = update(environment, env_delta);
     return typecheck(body, exp_type, environment=new_env); //## BUG BUG BUG (WHY?)
   }

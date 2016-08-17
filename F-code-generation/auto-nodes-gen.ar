@@ -1,9 +1,9 @@
-type CondInfo     = [ cond:         Expr,
-                      parent:       Maybe[[id: CondNodeId, trigger: Bool]],
-                      nested_conds: [[id: CondNodeId, trigger: Bool]],
-                      updates:      [[state_id: Atom, new_value: Expr, trigger: Bool]],
-                      msg_sends:    [[db_var: MembDBVar, message: Expr, trigger: Bool]]
-                    ];
+type CondInfo     = ( cond:         Expr,
+                      parent:       Maybe[(id: CondNodeId, trigger: Bool)],
+                      nested_conds: [(id: CondNodeId, trigger: Bool)],
+                      updates:      [(state_id: Atom, new_value: Expr, trigger: Bool)],
+                      msg_sends:    [(db_var: MembDBVar, message: Expr, trigger: Bool)]
+                    );
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -27,7 +27,7 @@ StdBlockNodeId auto_or_db_var_to_node_id(AnyDBVar var):
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-using Program program, Automaton automaton
+implicit program : Program, automaton : Automaton
 {
   AutoNode* gen_auto_nodes
   {
@@ -38,16 +38,16 @@ using Program program, Automaton automaton
         lookup(trigger_down_nodes_map, std_block_node_id(i), []),
         0
       )
-      : i <- rand_sort(keys(automaton.inputs))
+      | i <- rand_sort(keys(automaton.inputs))
     );
 
-    other_nodes = join(((create_auto_node(n, nat(i+1)) : n <- rand_sort(l)) : l @ i <- nodes_by_level));
+    other_nodes = join(((create_auto_node(n, nat(i+1)) | n <- rand_sort(l)) | l @ i <- nodes_by_level));
 
     return input_nodes & other_nodes;
   }
 
 
-  [BlockNodeId -> AutoNode] nodes_by_id = merge(set(([n.id -> n] : n <- gen_auto_nodes)));
+  [BlockNodeId -> AutoNode] nodes_by_id = merge(set(([n.id -> n] | n <- gen_auto_nodes)));
 
 
   [BlockNodeId]* nodes_ids_by_level
@@ -59,19 +59,19 @@ using Program program, Automaton automaton
     for n @ i <- nodes:
       if n.level != curr_level:
         assert n.level == curr_level + 1;
-        res = (res | curr_level_ids);
+        res = (res || curr_level_ids);
         curr_level = curr_level + 1;
         curr_level_ids = ();
       ;
-      curr_level_ids = (curr_level_ids | n.id);
+      curr_level_ids = (curr_level_ids || n.id);
     ;
-    res = (res | curr_level_ids) if nodes != ();
-    return (set(l) : l <- res);
+    res = (res || curr_level_ids) if nodes != ();
+    return (set(l) | l <- res);
   }
 
 
   [StdBlockNodeId -> Nat] multivalue_node_expr_count =
-    [t.id -> length(t.exprs) : t <- set(gen_auto_nodes), state() | derived_disc() << t];
+    [t.id -> length(t.exprs) | t <- set(gen_auto_nodes), state() | derived_disc() <~ t];
 
 
   //## SHOULDN'T WE JUST INCLUDE THE PENDING STATE VAR IN THE LIST OF POSSIBLE
@@ -79,10 +79,10 @@ using Program program, Automaton automaton
   // [Atom -> Nat] pending_state_var_asgnm_indexes = [get_inner_id(id) -> nat(n + 1) : n @ id <- multivalue_node_expr_count];
 
 
-  [BlockNodeId -> Nat] nodes_indexes = merge(([n.id -> i] : n @ i <- gen_auto_nodes));
+  [BlockNodeId -> Nat] nodes_indexes = merge(([n.id -> i] | n @ i <- gen_auto_nodes));
 
 
-  Nat* levels_sizes = count_vector((n.level : n <- gen_auto_nodes));
+  Nat* levels_sizes = count_vector((n.level | n <- gen_auto_nodes));
 
 
   Nat* levels_offsets = (0) & partial_sums(levels_sizes);
@@ -91,7 +91,7 @@ using Program program, Automaton automaton
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-using Automaton automaton
+implicit automaton : Automaton
 {
   //////////////////////////////////////////////////////////////////////////////
   /////////////////// Continuous and discrete condition nodes //////////////////
@@ -110,7 +110,7 @@ using Automaton automaton
 
   [CondNodeId -> CondInfo] repeated_cond_nodes_by_id
   {
-    already_used_ids = [get_inner_id(id) : unused_var @ id <- cond_nodes_by_id];
+    already_used_ids = [get_inner_id(id) | id : unused_var <- cond_nodes_by_id];
     next_id = if already_used_ids != [] then nat(max(already_used_ids) + 1) else 0;
     rep_cond_nodes = [:];
     for a @ i <- rand_sort(automaton.rep_actions):
@@ -126,14 +126,14 @@ using Automaton automaton
   [BlockNodeId -> [AutoNodeDependency]] common_up_nodes_map
   {
     // Creating node -> all nodes it depends on mapping
-    cond_up_nodes                 = [id -> cond_deps(c) : c @ id <- cond_nodes_by_id];
-    rep_cond_up_nodes             = [id -> cond_deps(c) : c @ id <- repeated_cond_nodes_by_id];
-    nested_auto_input_up_nodes    = [id -> expr_deps(e) : e @ id <- nested_auto_inputs];
-    rules_up_nodes                = [std_block_node_id(a) -> expr_deps(e) : e @ a <- automaton.rules];
-    time_rules_up_nodes           = [std_block_node_id(a) -> time_rule_deps(c) : c @ a <- automaton.time_rules];
+    cond_up_nodes                 = [id -> cond_deps(c) | id : c <- cond_nodes_by_id];
+    rep_cond_up_nodes             = [id -> cond_deps(c) | id : c <- repeated_cond_nodes_by_id];
+    nested_auto_input_up_nodes    = [id -> expr_deps(e) | id : e <- nested_auto_inputs];
+    rules_up_nodes                = [std_block_node_id(a) -> expr_deps(e) | a : e <- automaton.rules];
+    time_rules_up_nodes           = [std_block_node_id(a) -> time_rule_deps(c) | a : c <- automaton.time_rules];
     nested_autos_up_nodes         = [std_block_node_id(auto_id) ->
-                                      [nested_auto_input_id(auto_id, in_id) : unused_var @ in_id <- auto.args]
-                                      : auto @ auto_id <- automaton.nested_autos
+                                      [nested_auto_input_id(auto_id, in_id) | in_id : unused_var <- auto.args]
+                                      | auto_id : auto <- automaton.nested_autos
                                     ];
 
     // Putting all dependency maps together
@@ -145,29 +145,29 @@ using Automaton automaton
   [StdBlockNodeId -> [BlockNodeId]] state_trigger_up_nodes =
     merge_values(
       //## WHY ARE THE TWO DIFFERENT? A SET COMPREHENSION FOR THE FIRST, AND A MAP COMPREHENSION FOR THE SECOND?
-      [[std_block_node_id(u.state_id) -> id] : c @ id <- cond_nodes_by_id, u <- c.updates] &
-      [[std_block_node_id(u.state_id) -> id : c @ id <- repeated_cond_nodes_by_id, u <- c.updates]]
+      [[std_block_node_id(u.state_id) -> id] | id : c <- cond_nodes_by_id, u <- c.updates] &
+      [[std_block_node_id(u.state_id) -> id | id : c <- repeated_cond_nodes_by_id, u <- c.updates]]
     );
 
 
   [StdBlockNodeId -> [AutoNodeDependency]] state_value_up_nodes =
     merge_value_sets(
-      [[std_block_node_id(u.state_id) -> expr_deps(u.new_value)] : c @ unused_var <- cond_nodes_by_id, u <- c.updates] &
-      [[std_block_node_id(u.state_id) -> expr_deps(u.new_value)] : c @ unused_var <- repeated_cond_nodes_by_id, u <- c.updates] &
-      [[std_block_node_id(id) -> expr_deps(v.init_value)] : v @ id <- automaton.state]
+      [[std_block_node_id(u.state_id) -> expr_deps(u.new_value)] | unused_var : c <- cond_nodes_by_id, u <- c.updates] &
+      [[std_block_node_id(u.state_id) -> expr_deps(u.new_value)] | unused_var : c <- repeated_cond_nodes_by_id, u <- c.updates] &
+      [[std_block_node_id(id) -> expr_deps(v.init_value)] | id : v <- automaton.state]
     );
 
 
   [StdBlockNodeId -> [AutoNodeDependency]] nested_dbs_trigger_up_nodes = merge_values([
       [std_block_node_id(bare_id(c.db_var)) -> id]
-      : info @ id <- cond_nodes_by_id & repeated_cond_nodes_by_id, c <- info.msg_sends
+      | id : info <- cond_nodes_by_id & repeated_cond_nodes_by_id, c <- info.msg_sends
     ]);
 
 
   [StdBlockNodeId -> [AutoNodeDependency]] nested_dbs_value_up_nodes
   {
-    all_args = merge_values([[bare_id(c.target) -> c.message] : a <- all_actions, c <- retrieve_msg_sends(a)]);
-    return [std_block_node_id(a) -> union([expr_deps(e) : e <- es]) : es @ a <- all_args];
+    all_args = merge_values([[bare_id(c.target) -> c.message] | a <- all_actions, c <- retrieve_msg_sends(a)]);
+    return [std_block_node_id(a) -> union([expr_deps(e) | e <- es]) | a : es <- all_args];
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -189,9 +189,9 @@ using Automaton automaton
 
   [+BlockNodeId]* nodes_by_level
   {
-    level_0 = [std_block_node_id(a) : a <- keys(automaton.params) & keys(automaton.inputs)];
-    coalesced_value_down_nodes_map = [s -> [dependency_to_node_id(t) : t <- ts] : ts @ s <- value_up_nodes_map];
-    return topological_sort([s -> new_ts : ts @ s <- coalesced_value_down_nodes_map, new_ts = ts - level_0 - [s]]);
+    level_0 = [std_block_node_id(a) | a <- keys(automaton.params) & keys(automaton.inputs)];
+    coalesced_value_down_nodes_map = [s -> [dependency_to_node_id(t) | t <- ts] | s : ts <- value_up_nodes_map];
+    return topological_sort([s -> new_ts | s : ts <- coalesced_value_down_nodes_map, new_ts = ts - level_0 - [s]]);
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -204,7 +204,7 @@ using Automaton automaton
     // Reversing the dependency mapping: node -> all nodes that depend on it
     fat_map = reverse_multi(trigger_up_nodes_map);
     //## BAD BAD BAD: THIS IS SUPER SUPER UGLY
-    return [s -> ts : ts @ s <- fat_map, s :: BlockNodeId];
+    return [s -> ts | s : ts <- fat_map, s :: BlockNodeId];
   }
 
 
@@ -215,9 +215,9 @@ using Automaton automaton
     fat_map = reverse_multi(trigger_up_nodes_map);
     // Coalescing all the (automaton, output -> ...) into (automaton -> ...) entries
     pre_map = merge_values(
-      [[dependency_to_node_id(s) -> [one_level_down(s) -> ts]] : ts @ s <- fat_map, qual_auto_memb_var() << s]
+      [[dependency_to_node_id(s) -> [one_level_down(s) -> ts]] | s : ts <- fat_map, qual_auto_memb_var() <~ s]
     );
-    return [s -> merge_value_sets(ms) : ms @ s <- pre_map];
+    return [s -> merge_value_sets(ms) | s : ms <- pre_map];
   }
 
 
@@ -228,16 +228,16 @@ using Automaton automaton
     fat_map = reverse_multi(trigger_up_nodes_map);
     // Coalescing all the (automaton, output -> ...) into (automaton -> ...) entries
     pre_map = merge_values(
-      [[dependency_to_node_id(s) -> [one_level_down(s) -> ts]] : ts @ s <- fat_map, qual_db_memb_var() << s]
+      [[dependency_to_node_id(s) -> [one_level_down(s) -> ts]] | s : ts <- fat_map, qual_db_memb_var() <~ s]
     );
-    return [s -> merge_value_sets(ms) : ms @ s <- pre_map];
+    return [s -> merge_value_sets(ms) | s : ms <- pre_map];
   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-using Program program, Automaton automaton
+implicit program : Program, automaton : Automaton
 {
   AutoNode create_auto_node(StdBlockNodeId node_id, Nat level)
   {
@@ -247,19 +247,19 @@ using Program program, Automaton automaton
       msg = nested_msg_sends[core_id];
       output_dep_nodes = lookup(nested_db_vars_trigger_down_nodes_map, node_id, [:]);
       //## WHAT DOES THIS ASSERTION DO?
-      assert not (? ns @ o <- output_dep_nodes : not disjoint(ns, [std_block_node_id(id) : id <- state_vars_ids]));
+      assert not (o : ns <- output_dep_nodes | not disjoint(ns, [std_block_node_id(id) | id <- state_vars_ids]));
       return nested_db_node(node_id, msg, output_dep_nodes, level);
     ;
 
     if has_key(automaton.nested_autos, core_id):
       output_dep_nodes = lookup(output_trigger_down_nodes_map, node_id, [:]);
       //## WHAT DOES THIS ASSERTION DO?
-      assert not (? ns @ o <- output_dep_nodes : not disjoint(ns, [std_block_node_id(id) : id <- state_vars_ids]));
+      assert not (o : ns <- output_dep_nodes | not disjoint(ns, [std_block_node_id(id) | id <- state_vars_ids]));
       return nested_auto_node(node_id, output_dep_nodes, level);
     ;
 
     dep_nodes = lookup(trigger_down_nodes_map, node_id, []);
-    assert disjoint(dep_nodes, [std_block_node_id(id) : id <- state_vars_ids]);
+    assert disjoint(dep_nodes, [std_block_node_id(id) | id <- state_vars_ids]);
 
     if has_key(automaton.rules, core_id):
       return derived(node_id, automaton.rules[core_id], dep_nodes, level);
@@ -301,8 +301,8 @@ using Program program, Automaton automaton
     then_actions = actions(cond_info, true);
     else_actions = actions(cond_info, false);
 
-    then_nested_conds = [c.id : c <- cond_info.nested_conds, c.trigger == true];
-    else_nested_conds = [c.id : c <- cond_info.nested_conds, c.trigger == false];
+    then_nested_conds = [c.id | c <- cond_info.nested_conds, c.trigger == true];
+    else_nested_conds = [c.id | c <- cond_info.nested_conds, c.trigger == false];
 
     //## UGLY UGLY UGLY: THE TWO CALLS ARE BASICALLY THE SAME
     if is_rep:
@@ -318,10 +318,10 @@ using Program program, Automaton automaton
 
     [AutoNodeAction] actions(CondInfo cond_info, Bool trigger_value) = [
       state_update_action(u.state_id, index_first(u.new_value, state_vars_and_discrete_signals_update_values[u.state_id]))
-      : u <- cond_info.updates, u.trigger == trigger_value
+      | u <- cond_info.updates, u.trigger == trigger_value
     ] & [
       msg_send_action(bare_id)
-      : c <- cond_info.msg_sends, c.trigger == trigger_value, bare_id = bare_id(c.db_var)
+      | c <- cond_info.msg_sends, c.trigger == trigger_value, bare_id = bare_id(c.db_var)
     ];
   }
 
@@ -340,7 +340,7 @@ using Program program, Automaton automaton
     //## WOULD BE NICE TO ADD AN ASSERT HERE, AS WELL.
     //## WE ARE ALSO IGNORING THE output_is_def() EXPRESSION, WHICH SHOULD BE ALLOWED
     //## ONLY INSIDE THE BODY OF A PROCEDURE
-    disc_signals = [v : v <- auto_expr_extern_vars(expr), v :: <MembVar, QualAutoMembVar>, is_discrete(v)];
+    disc_signals = [v | v <- auto_expr_extern_vars(expr), v :: <MembVar, QualAutoMembVar>, is_discrete(v)];
 
     assert is_disc == {disc_signals != []};
 
@@ -351,7 +351,7 @@ using Program program, Automaton automaton
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-([CondNodeId -> CondInfo], Nat) gen_action_nodes(<AutoCondAction, AutoRepAction> action, Nat root_id, Maybe[[id: CondNodeId, trigger: Bool]] parent)
+([CondNodeId -> CondInfo], Nat) gen_action_nodes(<AutoCondAction, AutoRepAction> action, Nat root_id, Maybe[(id: CondNodeId, trigger: Bool)] parent)
 {
   next_id = nat(root_id + 1);
 
@@ -360,27 +360,27 @@ using Program program, Automaton automaton
   conditions = [:];
   nested_conds = [];
 
-  for a, tv <- rand_sort([(a, true) : a <- action.body] & [(a, false) : a <- action.else]):
+  for a, tv <- rand_sort([(a, true) | a <- action.body] & [(a, false) | a <- action.else]):
     if a :: <AutoUpdate, AutoSetDiscrete>:
-      updates = updates & [[state_id: a.target, new_value: a.value, trigger: tv]];
+      updates = updates & [(state_id: a.target, new_value: a.value, trigger: tv)];
     elif a :: AutoMsgSend:
-      msg_sends = msg_sends & [[db_var: a.target, message: a.message, trigger: tv]];
+      msg_sends = msg_sends & [(db_var: a.target, message: a.message, trigger: tv)];
     else
       fail if not a :: <AutoCondAction, AutoRepAction>; //## BAD BAD: THE TYPECHECKER SHOULD AUTOMATICALLY INFER THE TYPE OF <a> IF WE TAKE THIS BRANCH
-      nested_conds = nested_conds & [[id: cond_node_id(next_id), trigger: tv]];
+      nested_conds = nested_conds & [(id: cond_node_id(next_id), trigger: tv)];
       subconds, next_id = gen_action_nodes(a, next_id, just(id: cond_node_id(root_id), trigger: tv));
       conditions = conditions & subconds;
     ;
   ;
 
   new_cond = [
-    cond_node_id(root_id) -> [
+    cond_node_id(root_id) -> (
       cond:         action.cond,
       parent:       parent,
       nested_conds: nested_conds,
       updates:      updates,
       msg_sends:    msg_sends
-    ]
+    )
   ];
   return (conditions & new_cond, next_id);
 }
@@ -391,7 +391,7 @@ using Program program, Automaton automaton
 [AutoNodeDependency] time_rule_deps(TimeVaryingCond cond):
   time_varying_boolean_cond()   |
   time_varying_unchanged_cond() = expr_deps(cond.expr),
-  time_varying_since_cond()     = union([expr_deps(s) : s <- cond.signals]);
+  time_varying_since_cond()     = union([expr_deps(s) | s <- cond.signals]);
 
 
 [AutoNodeDependency] cond_deps(CondInfo cond)
@@ -409,7 +409,7 @@ using Program program, Automaton automaton
       memb_var(a?)          = std_block_node_id(a),
       qual_auto_memb_var()  = v,
       qual_db_memb_var()    = v
-    : v <- vars, not v :: MembCopyVar
+    | v <- vars, not v :: MembCopyVar
   ];
   return var_deps & nested_auto_deps(expr);
 

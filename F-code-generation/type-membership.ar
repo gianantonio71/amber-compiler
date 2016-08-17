@@ -16,13 +16,13 @@ BoolProcDef mk_named_type_memb_test_fn(TypeSymbol type_symb, [TypeName -> Type] 
   return bool_proc_def(memb_test(type_symb), 1, nonempty(code & (ret_val(res_var))));
 }
 
-using
+implicit
 {
-  Nat next_set_it_var_id,
-  Nat next_seq_it_var_id,
-  Nat next_map_it_var_id,
-  Nat next_obj_var_id,
-  Nat next_int_var_id;
+  next_set_it_var_id : Nat,
+  next_seq_it_var_id : Nat,
+  next_map_it_var_id : Nat,
+  next_obj_var_id    : Nat,
+  next_int_var_id    : Nat;
 
 
   Instr+ gen_type_checking_code(Type type, AtomicExpr obj, BoolVar res_var):
@@ -139,14 +139,14 @@ using
   }
 
 
-  Instr+ gen_ne_record_type_checking_code([+SymbObj -> [type: Type, optional: Bool]] fs, AtomicExpr obj, BoolVar res_var)
+  Instr+ gen_ne_record_type_checking_code([+SymbObj -> (type: Type, optional: Bool)] fs, AtomicExpr obj, BoolVar res_var)
   {
     size_var = ivar(next_int_var_id);
     obj_var  = lvar(next_obj_var_id);
     it_var   = map_it_var(next_map_it_var_id);
 
     max_fields = size(fs);
-    min_fields = size([f : f @ l <- fs, not f.optional]);
+    min_fields = size([f | l : f <- fs, not f.optional]);
 
     code = (
       // maybe_op(block_success_if(is_empty_map(obj), res_var), min_fields == 0),
@@ -157,7 +157,7 @@ using
     );
 
     //## BAD: THIS IS PROBABLY NOT IDEAL, IT IS LIKE THIS IN ORDER TO MINIMIZE THE AMOUNT OF CODE THAT HAD TO BE CHANGED WHEN I CHANGED THE TUPLE TYPE
-    sorted_fields = sort_set([[label: l, type: f.type, optional: f.optional] : f @ l <- fs], $a.label < $b.label);
+    sorted_fields = sort_set([(label: l, type: f.type, optional: f.optional) | l : f <- fs], $a.label < $b.label);
 
     for b <- sorted_fields:
       inner_code = (set_var(obj_var, get_curr_value(it_var))) &

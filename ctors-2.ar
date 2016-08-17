@@ -50,17 +50,17 @@ NeType ne_map_type(NeType kt, NeType vt)              = ne_map_type(key_type: kt
 RecordType ne_record_type(RecordTypeFields fs) = :ne_record_type(fs);
 
 //## BAD: IF THE LANGUAGE HAD SUBSIGNATURES, THIS FUNCTION WOULD NOT BE NEEDED
-NeType record_type_nonempty([SymbObj -> [type: NeType, optional: Bool]] fs)
+NeType record_type_nonempty([SymbObj -> (type: NeType, optional: Bool)] fs)
 {
   return empty_map_type if fs == [:];
-  nonempty = (? f @ l <- fs : not f.optional);
+  nonempty = (l : f <- fs | not f.optional);
   return union_type_nonempty([:ne_record_type(fs), empty_map_type if not nonempty]);
 }
 
-Type record_type([SymbObj -> [type: Type, optional: Bool]] fs)
+Type record_type([SymbObj -> (type: Type, optional: Bool)] fs)
 {
-  return empty_type if (? f @ unused_var <- fs : f.type == empty_type and not f.optional);
-  rfs = [l -> [type: t, optional: f.optional] : f @ l <- fs, t = f.type, t != empty_type];
+  return empty_type if (unused_var : f <- fs | f.type == empty_type and not f.optional);
+  rfs = [l -> (type: t, optional: f.optional) | l : f <- fs, t = f.type, t != empty_type];
   return record_type_nonempty(rfs);
 }
 
@@ -72,7 +72,7 @@ Type tuple_type(Type+ ts)
   ne_ts = ();
   for t <- ts:
     return empty_type if t == empty_type;
-    ne_ts = (ne_ts | t);
+    ne_ts = (ne_ts || t);
   ;
   return :tuple_type(nonempty(ne_ts));
 }
@@ -83,23 +83,23 @@ TagObjType   tag_obj_type(TagType tt, NeType ot) = tag_obj_type(tag_type: tt, ob
 //## BAD: IF THE LANGUAGE HAD SUBSIGNATURES, THIS FUNCTION WOULD NOT BE NEEDED
 NeType union_type_nonempty([+NeType] ts)
 {
-  nu_ts = union([nu_types(t) : t <- ts]);
+  nu_ts = union([nu_types(t) | t <- ts]);
   return if size(nu_ts) == 1 then only_element(nu_ts) else :union_type(nonempty(nu_ts));
 
   [+NeType] nu_types(NeType type):
-    union_type(ts?)  = nonempty(union([nu_types(t) : t <- ts])),
+    union_type(ts?)  = nonempty(union([nu_types(t) | t <- ts])),
     _                = [type];
 }
 
 Type union_type([Type] ts)
 {
-  nu_ts = union([nu_types(t) : t <- ts, t != empty_type]);
-  return if nu_ts == []       then empty_type,
-            size(nu_ts) == 1  then only_element(nu_ts)
-                              else :union_type(nu_ts);
+  nu_ts = union([nu_types(t) | t <- ts, t != empty_type]);
+  return if   nu_ts == []       then empty_type
+         elif size(nu_ts) == 1  then only_element(nu_ts)
+                                else :union_type(nu_ts);
 
   [+NeType] nu_types(NeType type):
-    union_type(ts?)  = nonempty(union([nu_types(t) : t <- ts])),
+    union_type(ts?)  = nonempty(union([nu_types(t) | t <- ts])),
     _                = [type];
 }
 
@@ -145,13 +145,13 @@ Pattern ptrn_union([+Pattern] ps)
 {
   return only_element(ps) if size(ps) == 1;
   return ptrn_any if in(ptrn_any, ps);
-  norm_ps = union([patterns(p) : p <- ps]);
+  norm_ps = union([patterns(p) | p <- ps]);
   //## HERE I SHOULD LOOK OUT FOR THE CASE WHEN THE SET OF PATTERNS COLLECTIVELY FORM A PATTERN "ANY"
   //## I COULD ALSO ELIMINATE PATTERNS THAT ARE SUBSETS OF OTHER PATTERNS IN THE SET
   return :ptrn_union(ps);
 
   [Pattern] patterns(Pattern ptrn):
-    ptrn_union(ps?)   = union([patterns(p) : p <- ps]),
+    ptrn_union(ps?)   = union([patterns(p) | p <- ps]),
     _                 = [ptrn];
 }
 
@@ -210,7 +210,7 @@ Expr tuple_expr(Expr+ es) = :tuple_expr(es);
 
 Expr set_expr([SubExpr] ses) = :set_expr(ses);
 
-Expr map_expr([[key: Expr, value: Expr, cond: Expr?]] es) = :map_expr(es);
+Expr map_expr([(key: Expr, value: Expr, cond: Expr?)] es) = :map_expr(es);
 
 Expr tag_obj_expr(Expr t, Expr o)   = tag_obj_expr(tag: t, obj: o);
 
@@ -220,7 +220,7 @@ Expr fn_call(FnSymbol name, AnyExpr* params, [NamedArg -> AnyExpr] named_args) =
 Expr builtin_call(BuiltIn n, Expr+ ps) = builtin_call(name: n, params: ps);
 Expr cls_call(<ClsVar, NamedArg> n, Expr+ ps) = cls_call(name: n, params: ps);
 
-Expr unary_pseudo_call(Expr c, Expr v)    = unary_pseudo_call(collection: c, value: v);
+Expr unary_pseudo_call(Expr c, Expr v)    = unary_pseudo_call(target: c, arg: v);
 Expr map_search(Expr m, Expr k, Expr v)   = map_search(map: m, key: k, value: v);
 Expr key_search(Expr m, Expr k)           = key_search(map: m, key: k);
 Expr singl_only_elem(Expr s)              = singl_only_elem(set: s);
@@ -268,7 +268,7 @@ Expr membership(Expr obj, NeType type) = membership(obj: obj, type: type);
 
 Expr if_expr(Expr cond, Expr true_expr, Expr false_expr) = if_expr(cond: cond, then: true_expr, else: false_expr);
 
-Expr match_expr(Expr+ es, [ptrns: Pattern+, expr: Expr]+ cs) = match_expr(exprs: es, cases: cs);
+Expr match_expr(Expr+ es, (ptrns: Pattern+, expr: Expr)+ cs) = match_expr(exprs: es, cases: cs);
 
 Expr do_expr(Statement+ ss) = :do_expr(ss);
 

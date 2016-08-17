@@ -1,11 +1,11 @@
-using
+implicit
 {
-  [TypeName -> Type]              typedefs,
-  [(FnSymbol, Nat) -> SgnSet]     signatures,
-  [Var -> Type]                   environment,
-  [<ClsVar, NamedArg> -> ClsType] closures,
-  [[Var]]                         var_aliases,
-  Bool                            verbose;
+  typedefs    : [TypeName -> Type],
+  signatures  : [(FnSymbol, Nat) -> SgnSet],
+  environment : [Var -> Type],
+  closures    : [<ClsVar, NamedArg> -> ClsType],
+  var_aliases : [[Var]],
+  verbose     : Bool;
 
 
   [TypeCheckingError] generate_typechecking_error_messages(Expr expr, Type actual_type, Type exp_type):
@@ -18,7 +18,7 @@ using
     tag_obj_expr()        = generate_tag_obj_expr_typecheck_error_messages(expr.tag, expr.obj, actual_type, exp_type),
     Var                   = [invalid_var_type(expr, actual_type, exp_type)],
     fn_call()             = generate_fn_call_typechecking_error_messages(expr.name, expr.params, expr.named_args, actual_type, exp_type),
-    unary_pseudo_call()   = generate_unary_pseudo_call_typechecking_error_messages(expr.collection, expr.value, exp_type),
+    unary_pseudo_call()   = generate_unary_pseudo_call_typechecking_error_messages(expr.target, expr.arg, exp_type),
     map_search()          = generate_map_search_typechecking_error_messages(expr.map, expr.key, expr.value, exp_type),
     key_search()          = generate_key_search_typechecking_error_messages(expr.map, expr.key, exp_type),
     set_comp()            = generate_set_comp_typechecking_error_messages(expr.expr, expr.source, actual_type, exp_type),
@@ -30,10 +30,10 @@ using
 
   [TypeCheckingError] generate_seq_expr_typechecking_error_messages(SubExpr* subexprs, Type actual_type, Type exp_type)
   {
-    nonempty = at_least_one((is_cond_expr(se) : se <- subexprs));
+    nonempty = at_least_one((is_cond_expr(se) | se <- subexprs));
     exp_elem_supertype = seq_elem_supertype(exp_type);
     return [exp_type_not_a_seq_type(exp_type)] if exp_elem_supertype == empty_type;
-    errs = seq_union((typecheck(se, exp_elem_supertype) : se <- subexprs));
+    errs = seq_union((typecheck(se, exp_elem_supertype) | se <- subexprs));
     errs = errs & [obj_does_not_belong_to_type((), exp_type)] if not (nonempty or type_contains_obj(exp_type, ()));
     return errs;
   }
@@ -42,7 +42,7 @@ using
   [TypeCheckingError] generate_tuple_expr_typechecking_error_messages(Expr+ exprs, Type actual_type, Type exp_type)
   {
     exp_elem_supertypes = tuple_field_supertypes(exp_type, length(exprs));
-    return seq_union((typecheck(e, t) : e, t <- zip(exprs, exp_elem_supertypes), t != empty_type));
+    return seq_union((typecheck(e, t) | e, t <- zip(exprs, exp_elem_supertypes), t != empty_type));
   }
 
 
@@ -50,23 +50,23 @@ using
   {
     exp_elem_supertype = seq_elem_supertype(exp_type);
     return if exp_elem_supertype != empty_type
-      then typecheck(seq, type_seq(exp_elem_supertype)) & seq_union((typecheck(e, exp_elem_supertype) : e <- tail))
+      then typecheck(seq, type_seq(exp_elem_supertype)) & seq_union((typecheck(e, exp_elem_supertype) | e <- tail))
       else [exp_type_not_a_seq_type(exp_type)];
   }
 
 
   [TypeCheckingError] generate_set_expr_typechecking_error_messages([SubExpr] subexprs, Type actual_type, Type exp_type)
   {
-    nonempty = (? se <- subexprs : not is_cond_expr(se));
+    nonempty = (se <- subexprs | not is_cond_expr(se));
     exp_elem_supertype = set_elem_supertype(exp_type);
     return [exp_type_does_not_contain_sets(exp_type)] if exp_elem_supertype == empty_type;
-    errs = union([typecheck(se, exp_elem_supertype) : se <- subexprs]);
+    errs = union([typecheck(se, exp_elem_supertype) | se <- subexprs]);
     errs = errs & [obj_does_not_belong_to_type([], exp_type)] if not (nonempty or type_contains_obj(exp_type, []));
     return errs;
   }
 
 
-  [TypeCheckingError] generate_map_expr_typecheck_error_messages([[key: Expr, value: Expr, cond: Expr?]] entries, Type actual_type, Type exp_type)
+  [TypeCheckingError] generate_map_expr_typecheck_error_messages([(key: Expr, value: Expr, cond: Expr?)] entries, Type actual_type, Type exp_type)
   {
     return []; //## IMPLEMENT
   }
@@ -154,20 +154,20 @@ using
   }
 
 
-  [TypeCheckingError] generate_unary_pseudo_call_typechecking_error_messages(Expr collection, Expr value, Type exp_type)
+  [TypeCheckingError] generate_unary_pseudo_call_typechecking_error_messages(Expr target, Expr arg, Type exp_type)
   {
-    errs = typecheck(collection, type_any);
+    errs = typecheck(target, type_any);
     return errs if errs != [];
 
-    coll_type = expr_type(collection);
-    return if coll_type == empty_type         then typecheck(value, type_any),
-              is_subset(coll_type, type_seq)  then pre_typecheck_seq_lookup(coll_type, value, exp_type),
-              is_subset(coll_type, type_set)  then pre_typecheck_set_memb_test(coll_type, value, exp_type),
-              is_subset(coll_type, type_map)  then pre_typecheck_map_lookup(coll_type, value, exp_type)
-                                              else [not_a_seq_set_or_map_type(coll_type)];
+    target_type = expr_type(target);
+    return if   target_type == empty_type         then typecheck(arg, type_any)
+           elif is_subset(target_type, atom_type) then typecheck(arg, type_any)
+           elif is_subset(target_type, type_seq)  then seq_lookup_err_msgs(target_type, arg, exp_type)
+           elif is_subset(target_type, type_set)  then set_memb_test_err_msgs(target_type, arg, exp_type)
+           elif is_subset(target_type, type_map)  then map_lookup_err_msg(target_type, arg, exp_type)
+                                                  else [not_a_valid_unary_pseudocall_target(target_type)];
 
-
-    [TypeCheckingError] pre_typecheck_seq_lookup(Type seq_type, Expr idx_expr, Type exp_type)
+    [TypeCheckingError] seq_lookup_err_msgs(Type seq_type, Expr idx_expr, Type exp_type)
     {
       errs = typecheck(idx_expr, integer);
       return errs if errs != [];
@@ -176,7 +176,7 @@ using
     }
 
 
-    [TypeCheckingError] pre_typecheck_set_memb_test(Type set_type, Expr value, Type exp_type)
+    [TypeCheckingError] set_memb_test_err_msgs(Type set_type, Expr value, Type exp_type)
     {
       exp_value_type = set_elem_supertype(set_type);
       errs = typecheck(value, exp_value_type);
@@ -189,7 +189,7 @@ using
     }
 
 
-    [TypeCheckingError] pre_typecheck_map_lookup(Type map_type, Expr key_expr, Type exp_type)
+    [TypeCheckingError] map_lookup_err_msg(Type map_type, Expr key_expr, Type exp_type)
     {
       exp_key_type = map_key_supertype(map_type);
       errs = typecheck(key_expr, exp_key_type);
@@ -264,7 +264,7 @@ using
 
   // [TypeCheckingError] typecheck_set_expr([SubExpr] subexprs, Type exp_type)
   // {
-  //   may_be_empty = subexprs == [] or not (? se <- subexprs : not is_cond_expr(se));
+  //   may_be_empty = subexprs == [] or not (se <- subexprs | not is_cond_expr(se));
   //   errs = [obj_does_not_belong_to_type([], exp_type) if may_be_empty and not type_contains_obj(exp_type, [])];
   //   return errs if subexprs == [];
   //   exp_elem_types = set_elem_types(exp_type);
@@ -384,10 +384,10 @@ using
 
 
   // //## TRY TO REWRITE THIS IN PROLOG-LIKE PSEUDOCODE
-  // [TypeCheckingError] typecheck_map_expr(<[[key: Expr, value: Expr, cond: Expr?]]> entries, Type exp_type)
+  // [TypeCheckingError] typecheck_map_expr(<[(key: Expr, value: Expr, cond: Expr?)]> entries, Type exp_type)
   // {
   //   // If the expression may evaluate to the empty map, we check that the empty map is included in the expected type
-  //   may_be_empty = not (? e <- entries : not e.cond?);
+  //   may_be_empty = not (e <- entries | not e.cond?);
   //   errs = [obj_does_not_belong_to_type([:], exp_type) if may_be_empty and not type_contains_obj(exp_type, [:])];
   //   return errs if entries == [];
 
@@ -457,7 +457,7 @@ using
   //   return an_elem(nonempty(values(all_rec_errs)));
 
 
-  //   [TypeCheckingError] typecheck_entry_any([+[key: Expr, value: Expr, cond: Expr?]] entries, [+(Type, Type)] exp_entry_types)
+  //   [TypeCheckingError] typecheck_entry_any([+(key: Expr, value: Expr, cond: Expr?)] entries, [+(Type, Type)] exp_entry_types)
   //   {
   //     all_errs = [:];
   //     for key_type, value_type <- rand_sort(exp_entry_types):
@@ -469,7 +469,7 @@ using
   //     return an_elem(nonempty(values(all_errs)));
   //   }
 
-  //   [TypeCheckingError] typecheck_map_entry([key: Expr, value: Expr, cond: Expr?] entry, Type exp_key_type, Type exp_value_type)
+  //   [TypeCheckingError] typecheck_map_entry((key: Expr, value: Expr, cond: Expr?) entry, Type exp_key_type, Type exp_value_type)
   //   {
   //     new_env = if entry.cond? then left(refine_environment(entry.cond)) else environment;
   //     key_errs = typecheck(entry.key, exp_key_type, environment=new_env);
@@ -477,7 +477,7 @@ using
   //     return key_errs & value_errs;
   //   }
 
-  //   [TypeCheckingError] typecheck_record_field([key: Expr, value: Expr, cond: Expr?] entry, RecordTypeFields fields)
+  //   [TypeCheckingError] typecheck_record_field((key: Expr, value: Expr, cond: Expr?) entry, RecordTypeFields fields)
   //   {
   //     new_env = if entry.cond? then left(refine_environment(entry.cond)) else environment;
   //     return typecheck(entry.value, fields[entry.key].type, environment=new_env);

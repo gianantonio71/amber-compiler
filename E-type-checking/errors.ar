@@ -39,7 +39,7 @@ type TypeCheckingError =
   exp_type_does_not_contain_maps(type: Type),
   exp_type_does_not_contain_sets(type: Type),
   accessor_test_not_permitted_error(type: Type, field: SymbObj),
-  not_a_seq_set_or_map_type(type: Type),
+  not_a_valid_unary_pseudocall_target(type: Type),
   invalid_set_memb_test_elem_type(exp_type: Type, actual_type: Type),
   invalid_map_lookup_key_type(exp_type: Type, actual_type: Type),
   invalid_map_lookup_value_type(exp_type: Type, actual_type: Type),
@@ -115,7 +115,7 @@ TypeCheckingError annotated_error(TypeCheckingError e, Any a) = annotated_error(
 TypeCheckingError missing_named_argument(FnSymbol n, NamedArg a) = missing_named_argument(fn: n, arg: a);
 TypeCheckingError invalid_named_argument(NamedArg a)  = invalid_named_argument(arg: a);
 
-TypeCheckingError not_a_seq_set_or_map_type(Type t) = not_a_seq_set_or_map_type(type: t);
+TypeCheckingError not_a_valid_unary_pseudocall_target(Type t) = not_a_valid_unary_pseudocall_target(type: t);
 
 TypeCheckingError invalid_set_memb_test_elem_type(Type et, Type at) = invalid_set_memb_test_elem_type(exp_type: et, actual_type: at);
 TypeCheckingError invalid_map_lookup_key_type(Type et, Type at)     = invalid_map_lookup_key_type(exp_type: et, actual_type: at);
@@ -128,7 +128,7 @@ TypeCheckingError expression_can_never_belong_to_type(Type at, Type t)  = expres
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-using [TypeName -> Type] typedefs
+implicit typedefs : [TypeName -> Type]
 {
   [TypeCheckingError] invalid_type_if_not_subset(Type at, Type et) = [
     unexpected_actual_type(at, et) if not is_subset(at, et)
@@ -145,7 +145,7 @@ TypeCheckingError add_anchor_if_needed(TypeCheckingError err, Any anchor):
 
 String* create_error_msgs(FnDef fndef, [+TypeCheckingError] errs)
 {
-  err_msgs = join(intermix((indent_lines(create_error_msg(e)) : e <- rand_sort(errs)), ("")));
+  err_msgs = join(intermix((indent_lines(create_error_msg(e)) | e <- rand_sort(errs)), ("")));
   fn, sl, el = source_code_location(fndef);
   loc_msg = "File " & fn & " line" & if sl == el then " " & printed(sl) else "s " & printed(sl) & "-" & printed(el);
   return (loc_msg) & err_msgs;
@@ -162,7 +162,7 @@ String source_file(FnDef fndef)
 (String, NzNat, NzNat) source_code_location(FnDef fndef) //## THERE'S AN ALMOST IDENTICAL FUNCTION IN WELL-FORMEDNESS CHECKING
 {
   data = _fetch_(fndef);
-  filtered_data = [e : e <- data, e :: (String, NzNat, NzNat)];
+  filtered_data = [e | e <- data, e :: (String, NzNat, NzNat)];
   return only_element(filtered_data) if size(filtered_data) == 1;
   err_msg = "CANNOT DETERMINE ERROR POSITION WITHIN SOURCE FILE";
   err_msg = err_msg & ": " & printed(data) if data != [];
@@ -185,8 +185,8 @@ String* create_error_msg(TypeCheckingError err):
   non_symbol_keys_with_record_type()  = ("Record expected, but map expression doesn't have only symbols for keys"),
   may_not_have_field()                = ("Object may not have field: " & user_repr(err.field)),
   accessor_test_not_permitted_error() = ("Object doesn't have field: " & user_repr(err.field)),
-  missing_rec_fields()                = ("Record fields required: " & append((user_repr(f) : f <- rand_sort(err.fields)), " ")),
-  invalid_rec_fields()                = ("Invalid record fields: " & append((user_repr(f) : f <- rand_sort(err.fields)), " ")),
+  missing_rec_fields()                = ("Record fields required: " & append((user_repr(f) | f <- rand_sort(err.fields)), " ")),
+  invalid_rec_fields()                = ("Invalid record fields: " & append((user_repr(f) | f <- rand_sort(err.fields)), " ")),
   missing_named_argument()            = ("In call to " & user_repr(err.fn) & "(..) named argument was not specified: " & user_repr(err.arg)),
   invalid_named_argument()            = ("Invalid named argument: " & user_repr(err.arg)),
   actual_tag_type_not_a_symb_type()   = ("Tag expression must yield a symbol"),
@@ -215,7 +215,7 @@ String* create_error_msg(TypeCheckingError err):
   ptrn_cannot_match_type()            = ("Pattern cannot match type: " & user_repr(err.pattern)),
   annotated_error()                   = create_annotated_error_msg(err.error, err.anchor),
 
-  not_a_seq_set_or_map_type()         = ("Not a collection type"),
+  not_a_valid_unary_pseudocall_target() = ("Not a valid target for unary pseudocall operator: " & user_repr(err.type)),
   invalid_set_memb_test_elem_type()   = ("The type of the searched element is not a subset of the type of the set elements"),
   invalid_map_lookup_key_type()       = ("The type of the search key is not a subset of the type of map keys"),
   invalid_map_lookup_value_type()     = ("The type of the searched value is not a subset of the type of map values"),
@@ -226,9 +226,9 @@ String* create_error_msg(TypeCheckingError err):
 
 String* create_no_dispatchable_function_found_error_msg(FnSymbol name, NzNat arity, [+FnType] signatures, Maybe[Type]* par_types)
 {
-  actual_types = ("  " & if t != nil then user_repr(value(t)) else "CLOSURE" : t <- par_types);
+  actual_types = ("  " & if t != nil then user_repr(value(t)) else "CLOSURE" | t <- par_types);
   return ("No suitable function found: " & user_repr(name, arity) & ". Possible function signatures:") &
-         ("  " & user_repr(s) : s <- rand_sort(signatures)) &
+         ("  " & user_repr(s) | s <- rand_sort(signatures)) &
          ("Actual types:") & actual_types;
 }
 
@@ -237,7 +237,7 @@ String* create_invalid_params_types_error_msg(FnSymbol fn_name, FnType signature
 {
   errs = ();
   for i, e, t <- rand_sort(invalid_params):
-    errs = (errs | "  Invalid parameter " & printed(i) & " type in function call: " & user_repr(fn_name) &
+    errs = (errs || "  Invalid parameter " & printed(i) & " type in function call: " & user_repr(fn_name) &
                    "(...). Expected type: " & user_repr(signature.params[i]));
   ;
   return errs;
@@ -255,12 +255,12 @@ String* create_annotated_error_msg(TypeCheckingError error, Any anchor)
     start_line = left(start_pos);
     end_line = left(end_pos);
     line_info = "Line" & if start_line == end_line then " " & printed(start_line) else "s " & printed(start_line) & "-" & printed(end_line);
-    err_msg = (if i == 0 then line_info & ": " & l else l : l @ i <- err_msg);
+    err_msg = (if i == 0 then line_info & ": " & l else l | l @ i <- err_msg);
   ;
   if size(attached_info) != 1:
     err_msg_extra_line = "CANNOT DETERMINE ERROR POSITION WITHIN SOURCE FILE";
     err_msg_extra_line = err_msg_extra_line & ": " & printed(attached_info) if attached_info != [];
-    err_msg = (err_msg | err_msg_extra_line);
+    err_msg = (err_msg || err_msg_extra_line);
   ;
   return err_msg;
 }

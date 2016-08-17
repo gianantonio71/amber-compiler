@@ -1,17 +1,17 @@
-using
+implicit
 {
-  SynPrg                        syn_prg,
+  syn_prg                  : SynPrg,
 
-  [BasicTypeSymbol -> [+Nat]]                         type_arity_map,
-  [NamedArg -> Nat]                                   curr_function_named_args,
-  [FnSymbol -> [Nat -> (Nat*, [+[NamedArg -> Nat]])]] global_functions,
-  [FnSymbol -> [Nat -> Nat*]]                         local_functions,
-  [FnSymbol -> NzNat]                                 closures,
-  [ProcSymbol -> (Nat, Bool)]                         procedures,
-  [AnyAutoVar -> AutoSymbol]                          auto_vars,
-  [AnyDBVar -> DBSymbol]                              db_vars,
-  [AutoSymbol -> SynAutoDef]                          automata,
-  Nat                                                 actual_arg_arity;
+  type_arity_map           : [BasicTypeSymbol -> [+Nat]],
+  curr_function_named_args : [NamedArg -> Nat],
+  global_functions         : [FnSymbol -> [Nat -> (Nat*, [+[NamedArg -> Nat]])]],
+  local_functions          : [FnSymbol -> [Nat -> Nat*]],
+  closures                 : [FnSymbol -> NzNat],
+  procedures               : [ProcSymbol -> (Nat, Bool)],
+  auto_vars                : [AnyAutoVar -> AutoSymbol],
+  db_vars                  : [AnyDBVar -> DBSymbol],
+  automata                 : [AutoSymbol -> SynAutoDef],
+  actual_arg_arity         : Nat;
 
 
   ExprWFError* fn_call_local_wf_errors(SynFnCall expr, [Var] def_vars)
@@ -21,7 +21,7 @@ using
     named_args = expr.named_args;
     actual_arity = length(args);
 
-    dupl_named_args = dupl_elems((pn : pn, unused_var_1, unused_var_2 <- named_args)); //## UGLY UGLY UGLY
+    dupl_named_args = dupl_elems((pn | pn, unused_var_1, unused_var_2 <- named_args)); //## UGLY UGLY UGLY
     return (duplicate_named_args(expr, dupl_named_args)) if dupl_named_args != [];
 
     // First we check if function call can actually be a lookup
@@ -32,7 +32,7 @@ using
         // Since this is not actually a function call, it does not change
         // anything about what implicit closure arguments are accepted.
         // Therefore, the arguments are checked like ordinary expressions
-        return join((expr_wf_errors(a, def_vars) : a <- args));
+        return join((expr_wf_errors(a, def_vars) | a <- args));
       ;
     ;
 
@@ -60,9 +60,9 @@ using
       return (calling_unknown_function(expr));
     ;
 
-    pos_par_errs = join((actual_arg_wf_errors(p, par_arities[i], def_vars) : p @ i <- args));
+    pos_par_errs = join((actual_arg_wf_errors(p, par_arities[i], def_vars) | p @ i <- args));
 
-    all_named_arg_errs = [named_args_wf_errors(named_args, enps, def_vars) : enps <- all_exp_named_args];
+    all_named_arg_errs = [named_args_wf_errors(named_args, enps, def_vars) | enps <- all_exp_named_args];
     named_arg_errs = if in((), all_named_arg_errs) then () else join(rand_sort(all_named_arg_errs));
 
     return pos_par_errs & named_arg_errs;
@@ -109,7 +109,7 @@ using
 
     ExprWFError* named_args_wf_errors((NamedArg, StdVar*, SynExpr)* redef_named_args, [+[NamedArg -> Nat]] all_exp_named_args, [Var] def_vars)
     {
-      errs = [named_args_wf_errors(redef_named_args, enps, def_vars) : enps <- all_exp_named_args];
+      errs = [named_args_wf_errors(redef_named_args, enps, def_vars) | enps <- all_exp_named_args];
       return () if in((), errs);
       return an_elem(errs);
     }
@@ -117,19 +117,19 @@ using
 
     ExprWFError* named_args_wf_errors((NamedArg, StdVar*, SynExpr)* redef_named_args, [NamedArg -> Nat] exp_named_args, [Var] def_vars)
     {
-      redef_named_args_arity_map = merge(set(([p -> length(vs)] : p, vs, unused_var <- redef_named_args)));
+      redef_named_args_arity_map = merge(set(([p -> length(vs)] | p, vs, unused_var <- redef_named_args)));
       errs = ();
       for p, a <- rand_sort_pairs(exp_named_args):
         if has_key(redef_named_args_arity_map, p):
           // Checking arguments explicitly passed arguments first
           actual_arity = redef_named_args_arity_map[p];
-          errs = (errs | invalid_named_arg_arity(p, a, actual_arity)) if actual_arity != a;
+          errs = (errs || invalid_named_arg_arity(p, a, actual_arity)) if actual_arity != a;
         else
           errs = errs & exp_named_arg_errors(p, a, def_vars);
         ;
       ;
       for np, vs, e <- redef_named_args:
-        errs = (errs | invalid_named_arg(np)) if not has_key(exp_named_args, np);
+        errs = (errs || invalid_named_arg(np)) if not has_key(exp_named_args, np);
         errs = errs & expr_wf_errors(e, def_vars & set(vs));
       ;
       return errs;

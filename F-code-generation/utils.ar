@@ -1,12 +1,12 @@
 [Int+] retrieve_nested_int_seqs(Expr expr):
   tuple_expr(es?)   = if es :: IntObj+
-                        then [(match (e) object(n?) = n : e <- es)]
-                        else seq_union((retrieve_nested_int_seqs(e) : e <- es)),
+                        then [(match (e) object(n?) = n | e <- es)]
+                        else seq_union((retrieve_nested_int_seqs(e) | e <- es)),
   _                 = retrieve_from_nested_exprs(expr, retrieve_nested_int_seqs($)); //## BAD BAD: THE ($) PART IS A WORKAROUND FOR A BUG IN THE TYPECHECKER
 
 
 [Int+] retrieve_nested_int_seqs(Statement* stmts) =
-  seq_union((retrieve_from_nested_exprs(s, retrieve_nested_int_seqs($)) : s <- stmts)); //## BAD BAD: THE ($) PART IS A WORKAROUND FOR A BUG IN THE TYPECHECKER
+  seq_union((retrieve_from_nested_exprs(s, retrieve_nested_int_seqs($)) | s <- stmts)); //## BAD BAD: THE ($) PART IS A WORKAROUND FOR A BUG IN THE TYPECHECKER
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -30,12 +30,12 @@
 
 [Int+] retrieve_nested_int_seqs(AutoCondAction action) =
   retrieve_nested_int_seqs(action.cond) &
-  union([retrieve_nested_int_seqs(a) : a <- action.body & action.else]);
+  union([retrieve_nested_int_seqs(a) | a <- action.body & action.else]);
 
 
 [Int+] retrieve_nested_int_seqs(AutoRepAction action) =
   retrieve_nested_int_seqs(action.cond) &
-  union([retrieve_nested_int_seqs(a) : a <- action.body & action.else]);
+  union([retrieve_nested_int_seqs(a) | a <- action.body & action.else]);
 
 
 [Int+] retrieve_nested_int_seqs(Method method) = retrieve_nested_int_seqs(method.expr);
@@ -48,36 +48,36 @@
 
 
 [Int+] retrieve_nested_int_seqs(Automaton auto) =
-  union([retrieve_nested_int_seqs(sv.init_value) : sv @ unused_var <- auto.state]) &
-  union([retrieve_nested_int_seqs(p.value) : p @ unused_var <- auto.params]) &
-  union([retrieve_nested_int_seqs(e) : e @ unused_var <- auto.rules]) &
-  union([retrieve_nested_int_seqs(c) : c @ unused_var <- auto.time_rules]) &
-  union([retrieve_nested_int_seqs(a) : a <- auto.actions]) &
-  union([retrieve_nested_int_seqs(a) : a <- auto.rep_actions]) &
-  union([retrieve_nested_int_seqs(e) : na @ unused_var_1 <- auto.nested_autos, e @ unused_var_2 <- na.args]) &
-  union([retrieve_nested_int_seqs(m) : m <- auto.methods]);
+  union([retrieve_nested_int_seqs(sv.init_value) | unused_var : sv <- auto.state]) &
+  union([retrieve_nested_int_seqs(p.value) | unused_var : p <- auto.params]) &
+  union([retrieve_nested_int_seqs(e) | unused_var : e <- auto.rules]) &
+  union([retrieve_nested_int_seqs(c) | unused_var : c <- auto.time_rules]) &
+  union([retrieve_nested_int_seqs(a) | a <- auto.actions]) &
+  union([retrieve_nested_int_seqs(a) | a <- auto.rep_actions]) &
+  union([retrieve_nested_int_seqs(e) | unused_var_1 : na <- auto.nested_autos, unused_var_2 : e <- na.args]) &
+  union([retrieve_nested_int_seqs(m) | m <- auto.methods]);
 
 
 [Int+] retrieve_nested_int_seqs(DataBase db) =
-  union([retrieve_nested_int_seqs(m) : m <- db.methods]) &
-  union([retrieve_nested_int_seqs(u) : u <- db.updates]) &
-  union([retrieve_nested_int_seqs(h) : h <- db.handlers]);
+  union([retrieve_nested_int_seqs(m) | m <- db.methods]) &
+  union([retrieve_nested_int_seqs(u) | u <- db.updates]) &
+  union([retrieve_nested_int_seqs(h) | h <- db.handlers]);
 
 
 [Int+] retrieve_nested_int_seqs(Program prg) =
-  union([retrieve_nested_int_seqs(fd) : fd <- prg.fndefs]) &
-  union([retrieve_nested_int_seqs(pd) : pd <- prg.proc_defs]) &
-  union([retrieve_nested_int_seqs(a)  : a  <- prg.auto_defs]) &
-  union([retrieve_nested_int_seqs(db) : db <- prg.data_bases]);
+  union([retrieve_nested_int_seqs(fd) | fd <- prg.fndefs]) &
+  union([retrieve_nested_int_seqs(pd) | pd <- prg.proc_defs]) &
+  union([retrieve_nested_int_seqs(a)  | a  <- prg.auto_defs]) &
+  union([retrieve_nested_int_seqs(db) | db <- prg.data_bases]);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-using Program program
+implicit program : Program
 {
   Int+* int_seqs = rand_sort(retrieve_nested_int_seqs(program));
 
-  [Int+ -> Nat] int_seqs_ids = merge(([s -> i] : s @ i <- int_seqs));
+  [Int+ -> Nat] int_seqs_ids = merge(([s -> i] | s @ i <- int_seqs));
 
   Bool input_is_discrete(AutoSymbol auto, Atom input) = auto_input_is_discrete_map[auto][input];
 
@@ -88,20 +88,20 @@ using Program program
   //////////////////////////////////////////////////////////////////////////////
 
   [AutoSymbol -> [Atom -> Bool]] auto_input_is_discrete_map =
-    [a.name -> [id -> input.discrete  : input  @ id <- a.inputs]  : a <- program.auto_defs];
+    [a.name -> [id -> input.discrete  | id : input <- a.inputs]  | a <- program.auto_defs];
 
 
   [AutoSymbol -> [Atom -> Bool]] auto_output_is_discrete_map =
-    [a.name -> [id -> output.discrete : output @ id <- a.outputs] : a <- program.auto_defs];
+    [a.name -> [id -> output.discrete | id : output <- a.outputs] | a <- program.auto_defs];
 
 
   [AutoSymbol] time_sensitive_autos
   {
     automata = program.auto_defs;
-    autos_with_time_rules = [a.name : a <- automata, a.time_rules != [:]];
-    auto_shallow_deps = [a.name -> [na.type : na @ unused_var <- a.nested_autos] : a <- automata];
+    autos_with_time_rules = [a.name | a <- automata, a.time_rules != [:]];
+    auto_shallow_deps = [a.name -> [na.type | unused_var : na <- a.nested_autos] | a <- automata];
     auto_deep_deps = transitive_closure(auto_shallow_deps);
-    autos_with_time_sensitive_nested_autos =  [a.name : a <- automata, not disjoint(auto_deep_deps[a.name], autos_with_time_rules)];
+    autos_with_time_sensitive_nested_autos =  [a.name | a <- automata, not disjoint(auto_deep_deps[a.name], autos_with_time_rules)];
     return autos_with_time_rules & autos_with_time_sensitive_nested_autos;
   }
 }
@@ -112,7 +112,7 @@ using Program program
 type Artifact = FnDef, DataBase, Automaton, ProcDef2;
 
 
-using Artifact artifact
+implicit artifact : Artifact
 {
   AutoSymbol var_type(MembAutoVar var) =
     match (artifact)

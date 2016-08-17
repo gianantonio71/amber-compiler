@@ -1,4 +1,4 @@
-using [TypeName -> Type] typedefs
+implicit typedefs : [TypeName -> Type]
 {
   //## MAYBE THIS (AND ALL THE FUNCTIONS IT DEPENDS ON) SHOULD GO IN THE SAME FILE AS is_subset(Type, Type)
   Bool is_subset(ClsType t1, ClsType t2)
@@ -31,9 +31,9 @@ using [TypeName -> Type] typedefs
 
   [TypeVar -> Type] type_var_instantiations_for_subset(Type* actual_types, Type* formal_types)
   {
-    type_vars = seq_union((retrieve_type_vars(t) : t <- formal_types));
-    conds = merge_value_sets(set((subset_conds(at, ft) : at, ft <- zip(actual_types, formal_types))));
-    return [v -> union_superset(lookup(conds, v, [])) : v <- type_vars];
+    type_vars = seq_union((retrieve_type_vars(t) | t <- formal_types));
+    conds = merge_value_sets(set((subset_conds(at, ft) | at, ft <- zip(actual_types, formal_types))));
+    return [v -> union_superset(lookup(conds, v, [])) | v <- type_vars];
   }
 
 
@@ -53,7 +53,7 @@ using [TypeName -> Type] typedefs
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-using [TypeName -> Type] typedefs
+implicit typedefs : [TypeName -> Type]
 {
   // Here I just assume that the pattern can actually match objects of the specified type
   // If it cannot, the function is free to fail or return garbage.
@@ -79,7 +79,7 @@ using [TypeName -> Type] typedefs
   [Var -> Type] ptrn_tuple_gen_env(Pattern+ ps, Type type)
   {
     field_supertypes = tuple_field_supertypes(type, length(ps));
-    return merge((generate_env(p, t) : p, t <- zip(ps, field_supertypes)));
+    return merge((generate_env(p, t) | p, t <- zip(ps, field_supertypes)));
   }
 
 
@@ -98,8 +98,8 @@ using [TypeName -> Type] typedefs
 
   [Var -> Type] ptrn_union_gen_env([+Pattern] ptrns, Type type)
   {
-    matching_ptrns = [p : p <- ptrns, may_match(p, type)];
-    return [v -> union_superset(ts) : ts @ v <- merge_values([generate_env(p, type) : p <- matching_ptrns])];
+    matching_ptrns = [p | p <- ptrns, may_match(p, type)];
+    return [v -> union_superset(ts) | v : ts <- merge_values([generate_env(p, type) | p <- matching_ptrns])];
   }
 }
 
@@ -108,7 +108,7 @@ using [TypeName -> Type] typedefs
 
 //## IS THIS THE RIGHT PLACE FOR THESE FUNCTIONS? MAYBE I SHOULD ALSO RENAME SOME OF THEM...
 
-using [TypeName -> Type] typedefs
+implicit typedefs : [TypeName -> Type]
 {
   Bool has_reached_fixpoint([TypeVar -> Type] curr_insts, [TypeVar -> Type] new_insts)
   {
@@ -125,24 +125,24 @@ using [TypeName -> Type] typedefs
 {
   curr_vars = keys(curr_insts);
   new_vars = keys(new_insts);
-  modified = [v -> union_superset(curr_insts[v], new_insts[v]) : v <- intersection(curr_vars, new_vars)];
-  unchanged = [v -> curr_insts[v] : v <- curr_vars - new_vars];
-  new = [v -> new_insts[v] : v <- new_vars - curr_vars];
+  modified = [v -> union_superset(curr_insts[v], new_insts[v]) | v <- intersection(curr_vars, new_vars)];
+  unchanged = [v -> curr_insts[v] | v <- curr_vars - new_vars];
+  new = [v -> new_insts[v] | v <- new_vars - curr_vars];
   return modified & unchanged & new;
 }
 
 
-using [Var -> Type] environment
+implicit environment : [Var -> Type]
 {
   [Var -> Type] get_updated_env(<var(Atom), nil>+ params, Expr expr, Type+ param_types)
   {
     arity = length(params);
-    env_delta = merge(([fn_par(i) -> pt, pn -> pt if pn != nil] : pn, pt @ i <- zip(params, param_types)));
+    env_delta = merge(([fn_par(i) -> pt, pn -> pt if pn != nil] | pn, pt @ i <- zip(params, param_types)));
     return update(environment, env_delta);
   }
 }
 
 
 ClsExpr rewrite_cls_expr(ClsExpr expr):
-  fn_ptr()  = cls_expr(expr.arity * (nil), fn_call(expr.name, (fn_par(i) : i < expr.arity))),
+  fn_ptr()  = cls_expr(expr.arity * (nil), fn_call(expr.name, (fn_par(i) | i < expr.arity))),
   _         = expr;

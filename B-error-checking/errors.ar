@@ -1,6 +1,6 @@
 type WFError            = dupl_typedef((SynAnyTypedef, SynAnyTypedef)),
                           typedef_errors(typedef: SynAnyTypedef, errors: TypeWFError+),
-                          dupl_using_block_param((SynSgn, SynSgn)),
+                          dupl_impl_arg((SynSgn, SynSgn)),
                           signature_errors(sgn: SynSgn, errors: TypeWFError+),
                           incomp_pos_args(fndefs: (SynFnDef, SynFnDef), arg_indexes: Nat+),
                           overlapping_pos_args_types((SynFnDef, SynFnDef)),
@@ -72,7 +72,7 @@ type ProcDefWFError     = ExprWFError, GenDefSpecWFError, ProcDefSpecWFError;
 
 WFError dupl_typedef(SynAnyTypedef td1, SynAnyTypedef td2)      = :dupl_typedef((td1, td2));
 WFError typedef_errors(SynAnyTypedef td, TypeWFError+ errs)     = typedef_errors(typedef: td, errors: errs);
-WFError dupl_using_block_param(SynSgn s1, SynSgn s2)            = :dupl_using_block_param((s1, s2));
+WFError dupl_impl_arg(SynSgn s1, SynSgn s2)                     = :dupl_impl_arg((s1, s2));
 WFError signature_errors(SynSgn s, TypeWFError+ es)             = signature_errors(sgn: s, errors: es);
 WFError incomp_pos_args(SynFnDef fd1, SynFnDef fd2, Nat+ is)    = incomp_pos_args(fndefs: (fd1, fd2), arg_indexes: is);
 WFError overlapping_pos_args_types(SynFnDef fd1, SynFnDef fd2)  = :overlapping_pos_args_types((fd1, fd2));
@@ -257,7 +257,7 @@ String plural([+Any] objs)    = if size(objs)   > 1 then "s" else "";
 String* create_error_msg(WFError err):
   dupl_typedef(tds?)                  = create_dupl_typedef_error_msg(left(tds), right(tds)),
   typedef_errors()                    = create_typedef_error_msg(err.typedef, err.errors),
-  dupl_using_block_param(ss?)         = create_dupl_using_block_param_err_msg(left(ss), right(ss)),
+  dupl_impl_arg(ss?)                  = create_dupl_impl_arg_err_msg(left(ss), right(ss)),
   signature_errors()                  = create_signature_errors_err_msg(err.sgn, err.errors),
   incomp_pos_args()                   = create_incomp_pos_pars_err_msg(left(err.fndefs), right(err.fndefs), err.arg_indexes),
   overlapping_pos_args_types(fds?)    = create_overlapping_pos_pars_types_err_msg(left(fds), right(fds)),
@@ -276,19 +276,19 @@ String* create_dupl_typedef_error_msg(SynAnyTypedef td1, SynAnyTypedef td2) = (
 
 String* create_typedef_error_msg(SynAnyTypedef tdef, TypeWFError+ errs) =
   ("Type definition errors: " & user_name(tdef), source_code_loc_str(tdef)) &
-  ("    " & l : l <- join((create_error_msg(e) : e <- errs)));
+  ("    " & l | l <- join((create_error_msg(e) | e <- errs)));
 
 
-String* create_dupl_using_block_param_err_msg(SynSgn sgn1, SynSgn sgn2) =
-  ("Duplicate using block parameter: " & user_name(sgn1), source_code_loc_str(sgn1, sgn2));
+String* create_dupl_impl_arg_err_msg(SynSgn sgn1, SynSgn sgn2) =
+  ("Duplicated implicit argument: " & user_name(sgn1), source_code_loc_str(sgn1, sgn2));
 
 
 String* create_signature_errors_err_msg(SynSgn sgn, TypeWFError+ errs) =
-  (join((create_error_msg(e) : e <- errs)) | "    " & source_code_loc_str(sgn));
+  (join((create_error_msg(e) | e <- errs)) || "    " & source_code_loc_str(sgn));
 
 
 String* create_incomp_pos_pars_err_msg(SynFnDef fd1, SynFnDef fd2, Nat+ par_idxs) = (
-    "Incompatible argument types in polymorphic function: " & user_name(fd1) & ", arguments: " & append((printed(i) : i <- par_idxs)),
+    "Incompatible argument types in polymorphic function: " & user_name(fd1) & ", arguments: " & append((printed(i) | i <- par_idxs)),
     "    " & source_code_loc_str(fd1),
     "    " & source_code_loc_str(fd2)
   );
@@ -301,7 +301,7 @@ String* create_incomp_named_args_err_msg(SynFnDef fd1, SynFnDef fd2, [Atom] narg
     "The following two " & user_repr(fd1.name, arity(fd1)) & " polymorphic functions:",
     "    " & source_code_loc_str(fd1),
     "    " & source_code_loc_str(fd2),
-    "have different named arguments: " & append((_str_(a) : a <- diff_args), ", ")
+    "have different named arguments: " & append((_str_(a) | a <- diff_args), ", ")
   );
 }
 
@@ -315,17 +315,17 @@ String* create_overlapping_pos_pars_types_err_msg(SynFnDef fd1, SynFnDef fd2) = 
 
 String* create_fndef_errs_msg(SynFnDef fndef, FnDefWFError+ errs) =
   ("Error" & plural(errs) & " in function definition: " & user_name(fndef), source_code_loc_str(fndef)) &
-  ("    " & l : l <- join((create_error_msg(e) : e <- errs)));
+  ("    " & l | l <- join((create_error_msg(e) | e <- errs)));
 
 
 String* create_proc_def_errs_msg(SynProcDef proc_def, ProcDefWFError+ errs) =
   ("Error" & plural(errs) & " in procedure definition: " & user_name(proc_def), source_code_loc_str(proc_def)) &
-  ("    " & l : l <- join((create_error_msg(e) : e <- errs)));
+  ("    " & l | l <- join((create_error_msg(e) | e <- errs)));
 
 
 String* create_same_name_proc_defs_err_msg(SynProcDef+ proc_defs) =
   ("Multiple definitions of the same procedure: " & user_name(head(proc_defs))) &
-  ("    " & source_code_loc_str(pd) : pd <- proc_defs);
+  ("    " & source_code_loc_str(pd) | pd <- proc_defs);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -335,7 +335,7 @@ String* create_error_msg(ExprWFError err)
   loc = source_code_location(err);
   if loc != nil:
     start_line = left(left(value(loc)));
-    msg = (l & " (line " & printed(start_line) & ")" : l <- msg);
+    msg = (l & " (line " & printed(start_line) & ")" | l <- msg);
   ;
   return msg;
 }
@@ -347,13 +347,13 @@ String* basic_err_msg(TypeWFError err):
   invalid_tag_type(t?)      = ("Invalid tag type"),
   undef_type(ts?)           = ("Undefined type: " & user_repr(ts)),
   undef_type_arity()        = { suffix = if size(err.actual_arities) > 1 then "y" else "ies";
-                                arity_str = append((printed(a) : a <- rand_sort(err.actual_arities)));
+                                arity_str = append((printed(a) | a <- rand_sort(err.actual_arities)));
                                 type_name = user_repr(err.type_symb);
                                 return ("Wrong parametric type arity: " & type_name & ", actual arit" & suffix & ": " & arity_str);
                               },
   dupl_record_field(rs?)    = ("Duplicated record field: " & user_repr(left(rs).label)),
   type_var_in_union(v?)     = ("Type variables not allowed in union types: " & user_repr(v)),
-  type_vars_not_allowed()   = ("Type variables not allowed here: " & append((user_repr(v) : v <- rand_sort(err.vars)), ", "));
+  type_vars_not_allowed()   = ("Type variables not allowed here: " & append((user_repr(v) | v <- rand_sort(err.vars)), ", "));
 
 
 String* basic_err_msg(ExprSpecWFError err):
@@ -374,22 +374,22 @@ String* basic_err_msg(ExprSpecWFError err):
                                   return (msg_prefix & msg_content);
                                 },
   undef_impl_cls_arg(p?)      = ("Invalid implicit closure argument: " & user_repr(p)),
-  duplicate_named_args()      = ("Duplicated named parameter" & plural(err.bad_args) & ": " & user_repr(np) : np <- rand_sort(err.bad_args)),
+  duplicate_named_args()      = ("Duplicated named parameter" & plural(err.bad_args) & ": " & user_repr(np) | np <- rand_sort(err.bad_args)),
   wrong_fn_arity()            = ("Wrong number of arguments: " & user_repr(err.expr.name) &
-                                ", actual arity: " & append((printed(a) : a <- rand_sort(err.actual_arities)), ", ")),
+                                ", actual arity: " & append((printed(a) | a <- rand_sort(err.actual_arities)), ", ")),
   calling_unknown_function(c?)  = ("Unknown function: " & user_repr(c.name)),
   wrong_cls_arg_arity()       = ("Closure has wrong arity: " & user_repr(err.expr) &
                                 ", expected arity: " & printed(err.exp_arity) &
-                                ", actual arity: " & append((printed(a) : a <- rand_sort(err.arities)), ", ")),
+                                ", actual arity: " & append((printed(a) | a <- rand_sort(err.arities)), ", ")),
   wrong_cls_call_arity()      = ("Wrong number of arguments: " & user_repr(err.expr.name) & ", actual arity: " & printed(err.exp_arity)),
   named_args_not_allowed()    = ("Closures cannot have named parameters: " & user_repr(err.expr.name)),
-  not_a_scalar_var()          = ("Invalid use of non-object variable: " & append((_str_(n) : n <- err.names), ".")),
+  not_a_scalar_var()          = ("Invalid use of non-object variable: " & append((_str_(n) | n <- err.names), ".")),
   dupl_var_mult_asgnm(v?)     = ("Duplicated variable in multiple assignment: " & user_repr(v)),
   diff_var_sets_in_ptrn_union(ps?)  = ("Individual patterns in a union must define the same set of variables"),
 
-  ro_vars_asgnm()             = ("Invalid assignment to read-only variable: " & user_repr(v) : v <- rand_sort(err.vars)),
+  ro_vars_asgnm()             = ("Invalid assignment to read-only variable: " & user_repr(v) | v <- rand_sort(err.vars)),
   wrong_return(s?)            = (if s == return_stmt then "Return value required" else "Cannot return a value"),
-  vars_redef()                = ("Variable is already defined: " & user_repr(v) : v <- rand_sort(err.vars)),
+  vars_redef()                = ("Variable is already defined: " & user_repr(v) | v <- rand_sort(err.vars)),
   undef_update_var()          = ("Variable is not defined: " & user_repr(err.var)),
   wrong_proc_arity()          = ("Wrong number of arguments: " & user_repr(err.stmt.proc_name) & ", expected arity: " & printed(err.exp_arity)),
   uncaught_ret_val(p?)        = ("Return value cannot be ignored: " & user_repr(p.proc_name)),
@@ -409,14 +409,14 @@ String* basic_err_msg(ExprSpecWFError err):
 
 
 String* create_error_msg(GenDefSpecWFError err) =
-  ("Duplicated parameter name: " & _str_(a) : a <- rand_sort(err.dupl_pos_pars)) &
-  ("Implicit and standard arguments cannot have the same name: " & _str_(a) : a <- rand_sort(err.dupl_named_args));
+  ("Duplicated parameter name: " & _str_(a) | a <- rand_sort(err.dupl_pos_pars)) &
+  ("Implicit and standard arguments cannot have the same name: " & _str_(a) | a <- rand_sort(err.dupl_named_args));
 
 
 String* create_error_msg(FnDefSpecWFError err):
-  invalid_cls_type_vars()       = ("Invalid type variable: " & user_repr(v)  & " in argument type: " & _str_(err.var_name) : v <- rand_sort(err.type_vars)),
-  invalid_res_type_vars()       = ("Invalid type variable in function result: " & user_repr(v) : v <- rand_sort(err.type_vars)),
-  nested_functions_errors(es?)  = ("Errors in nested functions") & ("    " & l : l <- join((create_error_msg(e) : e <- es)));
+  invalid_cls_type_vars()       = ("Invalid type variable: " & user_repr(v)  & " in argument type: " & _str_(err.var_name) | v <- rand_sort(err.type_vars)),
+  invalid_res_type_vars()       = ("Invalid type variable in function result: " & user_repr(v) | v <- rand_sort(err.type_vars)),
+  nested_functions_errors(es?)  = ("Errors in nested functions") & ("    " & l | l <- join((create_error_msg(e) | e <- es)));
 
 
 String* create_error_msg(ProcDefSpecWFError err):

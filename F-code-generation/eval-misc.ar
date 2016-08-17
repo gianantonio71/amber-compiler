@@ -18,25 +18,25 @@ type EvalDestVar    = StdVar, LocVar, ElemVar, MembVar;
 
 type ExprEvalRes    = StdObjVar, LeafObj;
 
-type EvalInfo       = [eval_code: Instr*, expr: ExprEvalRes, var_used: Bool];
-type ExEvalInfo     = [eval_code: Instr*, expr: ExprEvalRes, var_used: Bool, next_var_id: Nat];
-type MultEvalInfo   = [eval_code: Instr*, exprs: ExprEvalRes*, next_var_id: Nat];
-type VectorEvalInfo = [code: Instr*, vect_var: VecVar, count_expr: IntExpr];
+type EvalInfo       = (eval_code: Instr*, expr: ExprEvalRes, var_used: Bool);
+type ExEvalInfo     = (eval_code: Instr*, expr: ExprEvalRes, var_used: Bool, next_var_id: Nat);
+type MultEvalInfo   = (eval_code: Instr*, exprs: ExprEvalRes*, next_var_id: Nat);
+type VectorEvalInfo = (code: Instr*, vect_var: VecVar, count_expr: IntExpr);
 
 
-using
+implicit
 {
-  Program             program,
-  Artifact            artifact,
-  CompilationOptions  options,
-  Nat                 next_obj_var_id,
-  Nat                 next_int_var_id,
-  Nat                 next_bool_var_id,
-  Nat                 next_set_it_var_id,
-  Nat                 next_seq_it_var_id,
-  Nat                 next_map_it_var_id,
-  Nat                 next_vector_var_id,
-  Nat                 next_stream_var_id;
+  program            : Program,
+  artifact           : Artifact,
+  options            : CompilationOptions,
+  next_obj_var_id    : Nat,
+  next_int_var_id    : Nat,
+  next_bool_var_id   : Nat,
+  next_set_it_var_id : Nat,
+  next_seq_it_var_id : Nat,
+  next_map_it_var_id : Nat,
+  next_vector_var_id : Nat,
+  next_stream_var_id : Nat;
 
 
   (EvalVar, Nat) pick_temp_var(EvalDestVar res_var) =
@@ -52,9 +52,9 @@ using
 
 
   EvalInfo gen_eval_info(Expr expr, EvalVar var):
-    LeafObj         = [eval_code: (),                       expr: expr,                             var_used: false],
-    Var             = [eval_code: (),                       expr: expr,                             var_used: false],
-    _               = [eval_code: gen_eval_code(expr, var), expr: var,                              var_used: true];
+    LeafObj         = (eval_code: (),                       expr: expr,   var_used: false),
+    Var             = (eval_code: (),                       expr: expr,   var_used: false),
+    _               = (eval_code: gen_eval_code(expr, var), expr: var,    var_used: true);
 
 
   ExEvalInfo gen_eval_info(Expr expr)
@@ -64,7 +64,7 @@ using
     next_var_id   = nat(next_obj_var_id + if info.var_used then 1 else 0);
     //## BAD BAD BAD: SHOULD BE SOMETHING LIKE:
     //## return (info | next_var_id: next_obj_var_id + if info.var_used then 1 else 0)
-    return [eval_code: info.eval_code, expr: info.expr, var_used: info.var_used, next_var_id: next_var_id];
+    return (eval_code: info.eval_code, expr: info.expr, var_used: info.var_used, next_var_id: next_var_id);
   }
 
 
@@ -81,7 +81,7 @@ using
       next_var_id       = info.next_var_id;
     ;
 
-    return [eval_code: eval_code, exprs: res_exprs, next_var_id: next_var_id];
+    return (eval_code: eval_code, exprs: res_exprs, next_var_id: next_var_id);
   }
 
 
@@ -99,7 +99,7 @@ using
       next_int_var_id    = nat(next_int_var_id + 1)
     );
 
-    return [code: code, vect_var: elems_var, count_expr: count_expr];
+    return (code: code, vect_var: elems_var, count_expr: count_expr);
 
 
     (Instr*, IntExpr) gen_vector_eval_code(SubExpr* exprs, VecVar elems_var, IntVar count_var)
@@ -107,7 +107,7 @@ using
       var_id   = elems_var.id;
       cond_var = lvar(next_obj_var_id);
 
-      has_cond_exprs = at_least_one((e :: CondExpr : e <- exprs));
+      has_cond_exprs = at_least_one((e :: CondExpr | e <- exprs));
 
       code = (set_ivar(count_var, 0) if has_cond_exprs);
 
@@ -126,7 +126,7 @@ using
           // No need to change next_obj_var_id, as cond_var is not used anymore when running this code
           expr_eval_code = gen_eval_code(e.expr, target_var);
           cond_instr = do_if(is_true(cond_eval_info.expr), expr_eval_code & (increment(count_var)));
-          new_code = (cond_eval_info.eval_code | cond_instr);
+          new_code = (cond_eval_info.eval_code || cond_instr);
           no_cond_expr_yet = false;
         else
           fail;
@@ -151,7 +151,7 @@ using
     ClsVar      = expr,
     fn_ptr()    = {
       var = lvar(0);
-      ps = (fn_par(i) : i < expr.arity);
+      ps = (fn_par(i) | i < expr.arity);
       body = (call_proc(var, expr.name, ps), ret_val(var));
       cls = cls_def(expr.arity, body);
       return bound_cls(cls, ());
@@ -160,13 +160,13 @@ using
       //###################################################################################
       //## BUG BUG BUG: WHAT HAPPENS HERE IF THE CLOSURE ITSELF USES A CLOSURE VARIABLE? ##
       //###################################################################################
-      loc_vs = seq_union(([v if v != nil, fn_par(i)] : v @ i <- expr.params));
+      loc_vs = seq_union(([v if v != nil, fn_par(i)] | v @ i <- expr.params));
       ext_vs = rand_sort(extern_vars(expr.expr) - loc_vs);
 
-      subst_map = merge(([v -> cls_ext_par(i)] : v @ i <- ext_vs));
+      subst_map = merge(([v -> cls_ext_par(i)] | v @ i <- ext_vs));
       new_expr = replace_external_vars(expr.expr, subst_map);
 
-      cls_body = (set_var(v, fn_par(i)) : v @ i <- expr.params, v != nil) & gen_fn_body(new_expr);
+      cls_body = (set_var(v, fn_par(i)) | v @ i <- expr.params, v != nil) & gen_fn_body(new_expr);
 
       return bound_cls(cls_def(nz_nat(length(expr.params)), nonempty(cls_body)), ext_vs);
     };

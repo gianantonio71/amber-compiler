@@ -1,10 +1,10 @@
-using
+implicit
 {
-  [TypeName -> Type]              typedefs,
-  [(FnSymbol, Nat) -> SgnSet]     signatures,
-  [Var -> Type]                   environment,
-  [<ClsVar, NamedArg> -> ClsType] closures,
-  [[Var]]                         var_aliases;
+  typedefs    : [TypeName -> Type],
+  signatures  : [(FnSymbol, Nat) -> SgnSet],
+  environment : [Var -> Type],
+  closures    : [<ClsVar, NamedArg> -> ClsType],
+  var_aliases : [[Var]];
 
 
   Type expr_type(CondExpr expr) = expr_type(expr.expr, environment=left(refine_environment(expr.cond)));
@@ -16,7 +16,7 @@ using
     object(* n?)          = int_range(min: n, size: 1),
     float_lit()           = float_type,
     seq_expr(ses?)        = seq_expr_type(set(ses)),
-    tuple_expr(es?)       = tuple_type((expr_type(e) : e <- es)),
+    tuple_expr(es?)       = tuple_type((expr_type(e) | e <- es)),
     seq_tail_expr()       = seq_tail_expr_type(expr.seq, expr.tail),
     set_expr(ses?)        = set_expr_type(ses),
     map_expr(es?)         = map_expr_type(es),
@@ -25,7 +25,7 @@ using
     fn_call()             = fn_call_expr_type(expr.name, expr.params, expr.named_args),
     cls_call()            = closures[expr.name].out_type,
     builtin_call()        = builtin_call_expr_type(expr.name, expr.params),
-    unary_pseudo_call()   = unary_pseudo_call_expr_type(expr.collection, expr.value),
+    unary_pseudo_call()   = unary_pseudo_call_expr_type(expr.target, expr.arg),
     map_search()          = type_bool,
     key_search()          = type_bool,
     singl_only_elem()     = set_elem_supertype(expr_type(expr.set)),
@@ -49,16 +49,16 @@ using
 
   Type set_expr_type([SubExpr] subexprs)
   {
-    actual_elem_type = union_superset([expr_type(se) : se <- subexprs]);
-    nonempty = (? se <- subexprs : not is_cond_expr(se));
+    actual_elem_type = union_superset([expr_type(se) | se <- subexprs]);
+    nonempty = (se <- subexprs | not is_cond_expr(se));
     return type_set(actual_elem_type, nonempty);
   }
 
 
   Type seq_expr_type([SubExpr] subexprs)
   {
-    actual_elem_type = union_superset([expr_type(se) : se <- subexprs]);
-    nonempty = (? se <- subexprs : not is_cond_expr(se));
+    actual_elem_type = union_superset([expr_type(se) | se <- subexprs]);
+    nonempty = (se <- subexprs | not is_cond_expr(se));
     return type_seq(actual_elem_type, nonempty);
   }
 
@@ -66,36 +66,36 @@ using
   Type seq_tail_expr_type(Expr seq, Expr+ tail)
   {
     head_elem_type = seq_elem_supertype(expr_type(seq));
-    tail_elem_types = (expr_type(e) : e <- tail);
+    tail_elem_types = (expr_type(e) | e <- tail);
     final_elem_type = union_superset([head_elem_type] & set(tail_elem_types));
     return ne_seq_type(final_elem_type);
   }
 
 
-  Type map_expr_type([[key: Expr, value: Expr, cond: Expr?]] raw_entries)
+  Type map_expr_type([(key: Expr, value: Expr, cond: Expr?)] raw_entries)
   {
-    entries = [entry_info(e) : e <- raw_entries];
-    is_record = not (? e <- entries : not is_symb_singl_type(e.key_type));
+    entries = [entry_info(e) | e <- raw_entries];
+    is_record = not (e <- entries | not is_symb_singl_type(e.key_type));
 
     if is_record:
-      fields = [only_symb(e.key_type) -> [type: e.value_type, optional: e.optional] : e <- entries];
+      fields = [only_symb(e.key_type) -> (type: e.value_type, optional: e.optional) | e <- entries];
       return record_type(fields);
     else
-      actual_key_type = union_superset([e.key_type : e <- entries]);
-      actual_value_type = union_superset([e.value_type : e <- entries]);
-      nonempty = (? e <- entries : not e.optional);
+      actual_key_type = union_superset([e.key_type | e <- entries]);
+      actual_value_type = union_superset([e.value_type | e <- entries]);
+      nonempty = (e <- entries | not e.optional);
       return type_map(actual_key_type, actual_value_type, nonempty);
     ;
 
 
-    [key_type: Type, value_type: Type, optional: Bool] entry_info([key: Expr, value: Expr, cond: Expr?] entry)
+    (key_type: Type, value_type: Type, optional: Bool) entry_info((key: Expr, value: Expr, cond: Expr?) entry)
     {
       new_env = if entry.cond? then left(refine_environment(entry.cond)) else environment;
-      return [
+      return (
         key_type:   expr_type(entry.key, environment=new_env),
         value_type: expr_type(entry.value, environment=new_env),
         optional:   entry.cond?
-      ];
+      );
     }
   }
 
@@ -104,7 +104,7 @@ using
   {
     tag_types = disassemble_tag_type(expr_type(tag_expr));
     obj_type = expr_type(obj_expr);
-    return union_type([tag_obj_type(t, obj_type) : t <- tag_types]);
+    return union_type([tag_obj_type(t, obj_type) | t <- tag_types]);
   }
 
 
@@ -114,20 +114,28 @@ using
     _     = fn_call_type(builtin_to_fn_type(builtin_signature(name)), params, [:]);
 
 
-  Type unary_pseudo_call_expr_type(Expr collection, Expr value)
+  Type unary_pseudo_call_expr_type(Expr target, Expr arg)
   {
-    coll_type = expr_type(collection);
+    target_type = expr_type(target);
 
-    return empty_type if coll_type == empty_type;
-    return type_bool  if is_subset(coll_type, type_set);
+    return empty_type if target_type == empty_type;
+    return type_bool  if is_subset(target_type, type_set);
 
-    value_type = expr_type(value);
+    arg_type = expr_type(arg);
 
-    if is_subset(coll_type, type_seq):
-      return restricted_seq_elem_supertype(coll_type, value_type);
+    if is_subset(target_type, atom_type):
+      if is_eq(target_type, atom_type):
+        return tag_obj_type(atom_type, arg_type);
+      else
+        return union_type([tag_obj_type(symb_type(s), arg_type) | s <- finite_symb_set_enum(target_type)]);
+      ;
+
+    elif is_subset(target_type, type_seq):
+      return restricted_seq_elem_supertype(target_type, arg_type);
+
     else
-      assert is_subset(coll_type, type_map);
-      return restricted_map_value_supertype(coll_type, value_type);
+      assert is_subset(target_type, type_map);
+      return restricted_map_value_supertype(target_type, arg_type);
     ;
   }
 
@@ -146,9 +154,9 @@ using
   }
 
 
-  Type match_expr_type(Expr+ exprs, [ptrns: Pattern+, expr: Expr]+ cases)
+  Type match_expr_type(Expr+ exprs, (ptrns: Pattern+, expr: Expr)+ cases)
   {
-    types = (case_expr_type(exprs, c.ptrns, c.expr) : c <- cases);
+    types = (case_expr_type(exprs, c.ptrns, c.expr) | c <- cases);
     return union_superset(set(types));
 
 
@@ -287,7 +295,7 @@ using
 
   Type let_stmt_return_type([NamedArg -> Expr] asgnms, Statement+ body)
   {
-    env_delta = [v -> expr_type(e) : e @ v <- asgnms];
+    env_delta = [v -> expr_type(e) | v : e <- asgnms];
     new_env = update(environment, env_delta);
     return return_type(body, environment=new_env);
   }
@@ -306,7 +314,7 @@ using
   }
 
 
-  [Var -> <empty_type>] empty_env = [v -> empty_type : unused_var @ v <- environment];
+  [Var -> <empty_type>] empty_env = [v -> empty_type | v : unused_var <- environment];
 
 
   // Returns the empty map when the statement cannot fall through
@@ -370,7 +378,7 @@ using
       non_idx_typed_loop_vars = [vars[0] -> elem_type];
     else
       field_types = tuple_field_supertypes(elem_type, nvars);
-      non_idx_typed_loop_vars = merge(([v -> t] : v, t <- zip(vars, field_types)));
+      non_idx_typed_loop_vars = merge(([v -> t] | v, t <- zip(vars, field_types)));
     ;
     env_0 = environment & non_idx_typed_loop_vars & [value(maybe_idx_var) -> type_nat if maybe_idx_var != nil];
     env_1 = update_environment(body, environment=env_0);
@@ -391,7 +399,7 @@ using
   [Var -> Type] let_stmt_update_environment([NamedArg -> Expr] asgnms, Statement+ body)
   {
     return empty_env if not may_fall_through(body); //## SEE COMMENT FOR loop_stmt() ABOVE
-    env_delta = [v -> expr_type(e) : e @ v <- asgnms];
+    env_delta = [v -> expr_type(e) | v : e <- asgnms];
     new_env = update(environment, env_delta);
     return update_environment(body, environment=new_env);
   }
@@ -484,7 +492,7 @@ using
       ne_map_type()           = (type, type),
       ne_record_type(fs?)     =
         if has_key(fs, field)
-          then (record_type([l -> [type: f.type, optional: l != field and f.optional] : f @ l <- fs]), type)
+          then (record_type([l -> (type: f.type, optional: l != field and f.optional) | l : f <- fs]), type)
           else (empty_type, type),
       tuple_type()            = (empty_type, type),
       tag_obj_type()          = {
@@ -496,9 +504,9 @@ using
         ;
       },
       union_type(ts?)         = {
-        rts = [accessor_test_refine(t, field, look_inside) : t <- ts];
-        rts_if_true = [rtt : rt <- rts, rtt = left(rt), rtt != empty_type];
-        rts_if_false = [rtf : rt <- rts, rtf = right(rt), rtf != empty_type];
+        rts = [accessor_test_refine(t, field, look_inside) | t <- ts];
+        rts_if_true = [rtt | rt <- rts, rtt = left(rt), rtt != empty_type];
+        rts_if_false = [rtf | rt <- rts, rtf = right(rt), rtf != empty_type];
         return (
           if rts_if_true  == [] then empty_type else union_type(rts_if_true),
           if rts_if_false == [] then empty_type else union_type(rts_if_false)
@@ -539,7 +547,7 @@ using
       return [vars[0] -> value_type];
     else
       types = tuple_field_supertypes(value_type, nvars);
-      return merge(([v -> t] : v, t <- zip(vars, types)));
+      return merge(([v -> t] | v, t <- zip(vars, types)));
     ;
   }
 
@@ -547,7 +555,7 @@ using
   [Var -> Type] merge_envs([Var -> Type] env1, [Var -> Type] env2)
   {
     ks = intersection(keys(env1), keys(env2));
-    return [k -> union_superset([env1[k], env2[k]]) : k <- ks];
+    return [k -> union_superset([env1[k], env2[k]]) | k <- ks];
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -566,20 +574,20 @@ using
     formal_types = ();
     for p, t <- zip(params, param_types):
       if p :: Expr and t :: Type:
-        actual_types = (actual_types | expr_type(p));
-        formal_types = (formal_types | t);
+        actual_types = (actual_types || expr_type(p));
+        formal_types = (formal_types || t);
       ;
     ;
     type_var_insts = type_var_instantiations_for_subset(actual_types, formal_types);
 
-    cls_pars = ((p, t) : p, t <- zip(params, param_types), p :: ClsExpr and t :: ClsType);
+    cls_pars = ((p, t) | p, t <- zip(params, param_types), p :: ClsExpr and t :: ClsType);
     loop
       new_type_pairs = ();
       for p, t <- cls_pars:
         rp = rewrite_cls_expr(p);
         actual_ret_type = get_return_type(rp, t, type_var_insts);
         assert is_subset(actual_ret_type, replace_type_vars_with_type_any(t.out_type));
-        new_type_pairs = (new_type_pairs | (actual_ret_type, t.out_type));
+        new_type_pairs = (new_type_pairs || (actual_ret_type, t.out_type));
       ;
       new_actual_types, new_formal_types = unzip(new_type_pairs);
       new_type_var_insts = type_var_instantiations_for_subset(new_actual_types, new_formal_types);
@@ -592,7 +600,7 @@ using
   Type get_return_type(ClsExpr expr, ClsType type, [TypeVar -> Type] type_var_insts):
     ClsVar      = closures[expr].out_type,
     fn_ptr()    = {fail;},
-    cls_expr()  = { inst_formal_par_types = (replace_type_vars(t, type_var_insts) : t <- type.in_types);
+    cls_expr()  = { inst_formal_par_types = (replace_type_vars(t, type_var_insts) | t <- type.in_types);
                     new_env = get_updated_env(expr.params, expr.expr, inst_formal_par_types);
                     return expr_type(expr.expr, environment=new_env);
                   };
@@ -626,8 +634,8 @@ using
       low_ints()        = nil,
       high_ints()       = just(type.min),
       int_range()       = just(type.min),
-      union_type(ts?)   = { lbs = [lower_bound(t) : t <- ts];
-                            return if in(nil, lbs) then nil else just(min([value(lb) : lb <- lbs]));
+      union_type(ts?)   = { lbs = [lower_bound(t) | t <- ts];
+                            return if in(nil, lbs) then nil else just(min([value(lb) | lb <- lbs]));
                           },
       type_ref(ts?)     = lower_bound(expand_type_ref(ts, typedefs));
 
@@ -637,8 +645,8 @@ using
       low_ints()        = just(type.max),
       high_ints()       = nil,
       int_range()       = just(max(type)),
-      union_type(ts?)   = { ubs = [upper_bound(t) : t <- ts];
-                            return if in(nil, ubs) then nil else just(max([value(ub) : ub <- ubs]));
+      union_type(ts?)   = { ubs = [upper_bound(t) | t <- ts];
+                            return if in(nil, ubs) then nil else just(max([value(ub) | ub <- ubs]));
                           },
       type_ref(ts?)     = upper_bound(expand_type_ref(ts, typedefs));
   }
@@ -664,21 +672,21 @@ using
     type = expr_type(expr);
     //## THE EMPTY TYPE SHOULD NOT BE TREATED AS A SPECIAL CASE HERE.
     //## AM I SURE generate_env(Pattern, Type) CANNOT ACCEPT THE EMPTY TYPE?
-    return new_env & [v -> empty_type : v <- pattern_vars(ptrn)] if type == empty_type;
+    return new_env & [v -> empty_type | v <- pattern_vars(ptrn)] if type == empty_type;
 
     if expr :: Var:
       refined_type = type_pattern_intersection_superset(type, ptrn);
       assert refined_type != empty_type; //## WHAT IS THIS ASSERTION FOR? WHY CAN'T THE ORIGINAL TYPE ITSELF BE EMPTY?
-      var_group = only_element_or_def_if_empty([as : as <- var_aliases, in(expr, as)], [expr]);
-      new_env = update(new_env, [v -> refined_type : v <- var_group]);
+      var_group = only_element_or_def_if_empty([as | as <- var_aliases, in(expr, as)], [expr]);
+      new_env = update(new_env, [v -> refined_type | v <- var_group]);
 
     elif expr :: <accessor(expr: Var, field: SymbObj)>:
       var_type = expr_type(expr.expr);
       refined_field_type = type_pattern_intersection_superset(type, ptrn);
       fail if var_type == empty_type or refined_field_type == empty_type;
       refined_type = update_mandatory_field_type(var_type, expr.field, refined_field_type);
-      var_group = only_element_or_def_if_empty([as : as <- var_aliases, in(expr.expr, as)], [expr.expr]);
-      new_env = update(new_env, [v -> refined_type : v <- var_group]);
+      var_group = only_element_or_def_if_empty([as | as <- var_aliases, in(expr.expr, as)], [expr.expr]);
+      new_env = update(new_env, [v -> refined_type | v <- var_group]);
     ;
 
     return new_env & generate_env(ptrn, type);

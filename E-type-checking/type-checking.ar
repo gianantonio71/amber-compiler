@@ -6,31 +6,31 @@
 [FnDef -> [+TypeCheckingError]] typecheck(Program prg, Bool verbose)
 {
   typedefs = prg.typedefs & builtin_typedefs;
-  signatures = merge_values([[(fd.name, arity(fd)) -> signature(fd)] : fd <- prg.fndefs]);
-  sgn_sets = [n -> preprocess_signatures(ss, typedefs) : ss @ n <- signatures];
+  signatures = merge_values([[(fd.name, arity(fd)) -> signature(fd)] | fd <- prg.fndefs]);
+  sgn_sets = [n -> preprocess_signatures(ss, typedefs) | n : ss <- signatures];
   let verbose = verbose:
-    errors = [fd -> typecheck(fd, typedefs, sgn_sets) : fd <- prg.fndefs];
+    errors = [fd -> typecheck(fd, typedefs, sgn_sets) | fd <- prg.fndefs];
   ;
-  return [fd -> es : es @ fd <- errors, es != []];
+  return [fd -> es | fd : es <- errors, es != []];
 }
 
 
-using Bool verbose
+implicit verbose : Bool
 {
   [TypeCheckingError] typecheck(FnDef fn_def, [TypeName -> Type] typedefs, [(FnSymbol, Nat) -> SgnSet] signatures)
   {
     //## REMOVE THIS STUFF
-    errs = set((missing_param_type(p, i) : p @ i <- fn_def.params, not p.type?)) & [missing_res_type if not fn_def.res_type?];
+    errs = set((missing_param_type(p, i) | p @ i <- fn_def.params, not p.type?)) & [missing_res_type if not fn_def.res_type?];
     return errs if errs != [];
 
-    var_aliases = set(([fn_par(i), p.var] : p @ i <- fn_def.params, p :: ScalarFrmParam and p.var?));
+    var_aliases = set(([fn_par(i), p.var] | p @ i <- fn_def.params, p :: ScalarFrmParam and p.var?));
     let typedefs=typedefs, signatures=signatures, var_aliases=var_aliases:
-      scalar_vars = [scalar_var(p) -> scalar_param_type(p) : p <- set(fn_def.params), is_scalar_par(p), p.var?] &
-                    [fn_par(i) -> scalar_param_type(p) : i <- index_set(fn_def.params), p = fn_def.params[i], is_scalar_par(p)] &
-                    [v -> t : t @ v <- fn_def.named_args, t :: Type];
+      scalar_vars = [scalar_var(p) -> scalar_param_type(p) | p <- set(fn_def.params), is_scalar_par(p), p.var?] &
+                    [fn_par(i) -> scalar_param_type(p) | i <- index_set(fn_def.params), p = fn_def.params[i], is_scalar_par(p)] &
+                    [v -> t | v : t <- fn_def.named_args, t :: Type];
 
-      cls_vars = [cls_var(p) -> cls_param_type(p) : p <- set(fn_def.params), not is_scalar_par(p), p.var?] &
-                 [v -> t : t @ v <- fn_def.named_args, t :: ClsType];
+      cls_vars = [cls_var(p) -> cls_param_type(p) | p <- set(fn_def.params), not is_scalar_par(p), p.var?] &
+                 [v -> t | v : t <- fn_def.named_args, t :: ClsType];
 
       errs = typecheck(fn_def.expr, return_type(fn_def), environment=scalar_vars, closures=cls_vars);
     ;
@@ -41,14 +41,14 @@ using Bool verbose
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-using
+implicit
 {
-  [TypeName -> Type]              typedefs,
-  [(FnSymbol, Nat) -> SgnSet]     signatures,
-  [Var -> Type]                   environment,
-  [<ClsVar, NamedArg> -> ClsType] closures,
-  [[Var]]                         var_aliases,
-  Bool                            verbose;
+  typedefs    : [TypeName -> Type],
+  signatures  : [(FnSymbol, Nat) -> SgnSet],
+  environment : [Var -> Type],
+  closures    : [<ClsVar, NamedArg> -> ClsType],
+  var_aliases : [[Var]],
+  verbose     : Bool;
 
 
   [TypeCheckingError] typecheck(CondExpr expr, Type exp_type)
@@ -72,24 +72,24 @@ using
       assert size(sgns) == 1;
       sgn = only_element(sgns);
       assert sgn.named_args == [:]; //## BUG BUG BUG: THIS IS NOT CHECKED IN THE WELL-FORMEDNESS CHECKING LAYER
-      assert not (? p <- set(sgn.params) : not p :: Type);
+      assert not (p <- set(sgn.params) | not p :: Type);
       sgn_cls = cls_type(cast_as_type_ne_seq(sgn.params), sgn.ret_type);
       return [invalid_cls_param_type(sgn_cls, exp_type) if not is_subset(sgn_cls, exp_type)];
     },
     cls_expr() = {
-      delta_env = merge(([fn_par(i) -> t, v -> t if v != nil] : v, t @ i <- zip(expr.params, exp_type.in_types)));
+      delta_env = merge(([fn_par(i) -> t, v -> t if v != nil] | v, t @ i <- zip(expr.params, exp_type.in_types)));
       new_env = update(environment, delta_env);
       return typecheck(expr.expr, exp_type.out_type, environment=new_env); //## BAD: HERE I SHOULD PROVIDE MORE INFORMATION
     };
 
-  Type+ cast_as_type_ne_seq(AnyType* ts) = (cast_as_type(t) : t <- nonempty(ts));
+  Type+ cast_as_type_ne_seq(AnyType* ts) = (cast_as_type(t) | t <- nonempty(ts));
 
   //////////////////////////////////////////////////////////////////////////////
 
   [TypeCheckingError] typecheck(Clause cls)
   {
     errs = typecheck_without_annotations(cls);
-    return [add_anchor_if_needed(e, cls) : e <- errs];
+    return [add_anchor_if_needed(e, cls) | e <- errs];
 
 
     [TypeCheckingError] typecheck_without_annotations(Clause cls):

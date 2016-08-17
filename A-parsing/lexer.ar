@@ -60,13 +60,13 @@ Bool looks_like_a_memb_copy_var(Nat* bytes, Nat offset)          = is_char(bytes
 
 LexerResult lex_src_file(Nat* chars)
 {
-  lines = (remove_line_comment(l) : l <- split_lines(chars));
+  lines = (remove_line_comment(l) | l <- split_lines(chars));
   tokens = ();
   for l @ i <- lines:
     res = split_line_into_tokens(l);
     if is_success(res):
       start_idx = length(tokens);
-      tokens = tokens & (annotated_token(ti, nz_nat(i+1), nz_nat(start_idx+j+1)) : ti @ j <- get_result(res));
+      tokens = tokens & (annotated_token(ti, nz_nat(i+1), nz_nat(start_idx+j+1)) | ti @ j <- get_result(res));
     else
       return failure(lexer_error(nz_nat(i+1), nz_nat(get_error(res)+1)));
     ;
@@ -90,16 +90,16 @@ ParseLineResult split_line_into_tokens(Nat* bytes)
       idx = nz_nat(idx + 1);
     ;
     break if idx >= len;
-    res = if looks_like_a_lowercase_id(bytes, idx)           then read_lowercase_id(bytes, idx),
-             looks_like_a_mixed_or_upper_case_id(bytes, idx) then read_mixed_or_upper_case_id(bytes, idx),
-             looks_like_a_qualified_symbol(bytes, idx)       then read_qualified_symbol(bytes, idx),
-             looks_like_an_integer_float_or_time(bytes, idx) then read_integer_float_or_time(bytes, idx),
-             looks_like_a_string(bytes, idx)                 then read_string(bytes, idx),
-             //looks_like_a_char(bytes, idx)                   then read_char(bytes, idx),
-             looks_like_a_builtin(bytes, idx)                then read_builtin(bytes, idx),
-             looks_like_a_cls_par(bytes, idx)                then read_cls_par(bytes, idx),
-             looks_like_a_memb_copy_var(bytes, idx)          then read_memb_copy_var(bytes, idx)
-                                                             else read_symbolic_token(bytes, idx);
+    res = if   looks_like_a_lowercase_id(bytes, idx)           then read_lowercase_id(bytes, idx)
+          elif looks_like_a_mixed_or_upper_case_id(bytes, idx) then read_mixed_or_upper_case_id(bytes, idx)
+          elif looks_like_a_qualified_symbol(bytes, idx)       then read_qualified_symbol(bytes, idx)
+          elif looks_like_an_integer_float_or_time(bytes, idx) then read_integer_float_or_time(bytes, idx)
+          elif looks_like_a_string(bytes, idx)                 then read_string(bytes, idx)
+          // elif ooks_like_a_char(bytes, idx)                   then read_char(bytes, idx)
+          elif looks_like_a_builtin(bytes, idx)                then read_builtin(bytes, idx)
+          elif looks_like_a_cls_par(bytes, idx)                then read_cls_par(bytes, idx)
+          elif looks_like_a_memb_copy_var(bytes, idx)          then read_memb_copy_var(bytes, idx)
+                                                               else read_symbolic_token(bytes, idx);
     return failure(get_error(res)) if not is_success(res); //## IT'S failure(get_error(res)) INSTEAD OF JUST res JUST TO SHUT UP THE TYPECHECKER
     info = get_result(res);
     tokens = tokens & (info);
@@ -137,7 +137,7 @@ ParseTokenResult read_mixedcase_id(Nat* bytes, Nat offset)
   len = alphanum_length(bytes, offset);
   fail if len == 0; //## SHUTTING UP THE TYPECHECKER. AN ASSERT WOULD BE NICER
   return failure(nat(offset+len)) if is_char(bytes, nat(offset+len), ascii_underscore);
-  return failure(offset) if none((is_lower(bytes, nat(offset+i)) : i < len));
+  return failure(offset) if none((is_lower(bytes, nat(offset+i)) | i < len));
   symbol = symb(to_lower_with_underscores(nonempty(subseq(bytes, offset, len))));
   return success(token_line_info(mixedcase_id(symbol), offset, len));
 }
@@ -150,7 +150,7 @@ ParseTokenResult read_uppercase_id(Nat* bytes, Nat offset)
   next_idx = offset + len;
   next_ch = at(bytes, next_idx, 0);
   return failure(nat(next_idx)) if is_lower(next_ch) or next_ch == ascii_underscore;
-  symbol = symb((lower(ch) : ch <- subseq(bytes, offset, len)));
+  symbol = symb((lower(ch) | ch <- subseq(bytes, offset, len)));
   return success(token_line_info(uppercase_id(symbol), offset, len));
 }
 
@@ -165,7 +165,7 @@ ParseTokenResult read_qualified_symbol(Nat* bytes, Nat offset)
   return success(token_line_info(qualified_symbol(symbol), offset, nz_nat(len+1)));
 }
 
-[Atom -> Nat] time_unit_scales = [ns: 1, us: 1000, ms: 1000000, s: 1000000000];
+[Atom -> Nat] time_unit_scales = (ns: 1, us: 1000, ms: 1000000, s: 1000000000);
 
 ParseTokenResult read_integer_float_or_time(Nat* bytes, Nat offset)
 {
@@ -311,7 +311,7 @@ Nat identifier_length(Nat* bytes, Nat offset, <upper, lower> case)
 //## REENABLE THE COMMENTED OUT IMPLEMENTATION AS SOON AS POSSIBLE
 // [Nat^] to_lower_with_underscores([Nat^] bytes) = join([[ascii_underscore if i > 0 and is_upper(b), lower(b)] : b @ i <- bytes]);
 Nat+ to_lower_with_underscores(Nat+ bytes) =
-  nonempty(join((if i > 0 and is_upper(b) then (ascii_underscore, lower(b)) else (lower(b)) : b @ i <- bytes)));
+  nonempty(join((if i > 0 and is_upper(b) then (ascii_underscore, lower(b)) else (lower(b)) | b @ i <- bytes)));
 
 //## THINK OF A BETTER WAY TO WRITE ALL THESE FUNCTIONS. THERE MUST BE ONE
 
@@ -338,7 +338,7 @@ Nat digit_length(Nat* bytes, Nat offset)
 
 Trie[Nat, PlainToken] string_to_symbol_trie
 {
-  raw_str_to_symb = [nonempty(raw_str(str)) -> symb : symb @ str <- string_to_symbol];
+  raw_str_to_symb = [nonempty(raw_str(str)) -> symb | str : symb <- string_to_symbol];
   return trie(raw_str_to_symb);
 }
 
@@ -382,15 +382,17 @@ Trie[Nat, PlainToken] string_to_symbol_trie
   ">="    ->  greater_eq,
 
   ":="    ->  assign,
-  "::"    ->  double_colon,
   "->"    ->  right_arrow,
   "=>"    ->  double_right_arrow,
   "<-"    ->  left_arrow,
+  "<~"    ->  wavy_left_arrow,
   //"<="    =>  double_left_arrow,
   "\\/"   ->  logical_or_operator,
 
   "..."   ->  triple_dot,
 
+  "::"    ->  double_colon,
+  "||"    ->  double_pipe,
   "<<"    ->  double_lower,
   ">>"    ->  double_greater,
 

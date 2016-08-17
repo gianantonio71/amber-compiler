@@ -1,16 +1,16 @@
-using
+implicit
 {
-  Program             program,
-  Artifact            artifact,
-  CompilationOptions  options,
-  Nat                 next_obj_var_id,
-  Nat                 next_int_var_id,
-  Nat                 next_bool_var_id,
-  Nat                 next_set_it_var_id,
-  Nat                 next_seq_it_var_id,
-  Nat                 next_map_it_var_id,
-  Nat                 next_vector_var_id,
-  Nat                 next_stream_var_id;
+  program            : Program,
+  artifact           : Artifact,
+  options            : CompilationOptions,
+  next_obj_var_id    : Nat,
+  next_int_var_id    : Nat,
+  next_bool_var_id   : Nat,
+  next_set_it_var_id : Nat,
+  next_seq_it_var_id : Nat,
+  next_map_it_var_id : Nat,
+  next_vector_var_id : Nat,
+  next_stream_var_id : Nat;
 
 
   () gen_code((), EvalDestVar) = ();  //## BAD BAD: SHOULD BE A SUBSIGNATURE
@@ -54,7 +54,7 @@ using
   Instr+ gen_code_for_send_msg_stmt(MembDBVar target, Expr msg)
   {
     eval_info = gen_eval_info(msg);
-    return (eval_info.eval_code | send_msg(target, var_type(target), eval_info.expr, false));
+    return (eval_info.eval_code || send_msg(target, var_type(target), eval_info.expr, false));
   }
 
 
@@ -62,14 +62,14 @@ using
   {
     eval_info = gen_eval_info(args);
     call_instr = try_update(this_db_symbol, update_id(name, length(args)), eval_info.exprs);
-    return (eval_info.eval_code | call_instr);
+    return (eval_info.eval_code || call_instr);
   }
 
 
   Instr+ gen_code_for_set_memb_var_stmt(PendingStateVar var, Expr value)
   {
     eval_info = gen_eval_info(value);
-    return (eval_info.eval_code | set_var(var, eval_info.expr));
+    return (eval_info.eval_code || set_var(var, eval_info.expr));
   }
 
 
@@ -99,7 +99,7 @@ using
       code = ();
       time = 0;
     ;
-    return (code | auto_apply(var, type, time));
+    return (code || auto_apply(var, type, time));
   }
 
 
@@ -108,7 +108,7 @@ using
     eval_info = gen_eval_info(msg);
     type = var_type(db_var);
     send_msg_instr = send_msg(db_var, type, eval_info.expr, true, res_var);
-    return (eval_info.eval_code | send_msg_instr);
+    return (eval_info.eval_code || send_msg_instr);
   }
 
 
@@ -118,8 +118,8 @@ using
     info = gen_eval_info(cond);
     // vs = [v : v <- extern_vars(cond), v :: <StdVar, NamedArg>]; //## BUG BUG BUG: WHAT HAPPENS IF THE ASSERTION CONTAINS A NAMED ARGUMENT THAT IS ALSO A CLOSURE?
     expr_vars = extern_vars(cond);
-    vars = rand_sort([v : v <- env, in(v, expr_vars)]) & rand_sort([v : v <- env, not in(v, expr_vars)]);
-    return (info.eval_code | runtime_check(info.expr, file, line, text, vars));
+    vars = rand_sort([v | v <- env, in(v, expr_vars)]) & rand_sort([v | v <- env, not in(v, expr_vars)]);
+    return (info.eval_code || runtime_check(info.expr, file, line, text, vars));
   }
 
 
@@ -133,7 +133,7 @@ using
       //## BUG BUG BUG. THE ASSIGNMENTS ARE DONE IN RANDOM ORDER. FIX THIS
       var = an_elem(nonempty(keys(asgnms)));
       expr = asgnms[var];
-      rem_asgnms = [v -> e : e @ v <- asgnms, v != var];
+      rem_asgnms = [v -> e | v : e <- asgnms, v != var];
 
       backup_var = lvar(next_obj_var_id);
 
@@ -165,7 +165,7 @@ using
     else
       tmp_var = lvar(next_obj_var_id);
       code = gen_eval_code(value, tmp_var, next_obj_var_id = nat(next_obj_var_id + 1));
-      code = code & join(((set_var(v, at(tmp_var, i))) : v @ i <- vars));
+      code = code & join(((set_var(v, at(tmp_var, i))) | v @ i <- vars));
     ;
     return nonempty(code);
   }
@@ -256,7 +256,7 @@ using
       var_set_code = (set_var(vars[0], get_curr_obj(it_var)));
     else
       var_set_code = (set_var(tmp_var, get_curr_obj(it_var)));
-      var_set_code = var_set_code & (set_var(v, at(tmp_var, i)) : v @ i <- vars);
+      var_set_code = var_set_code & (set_var(v, at(tmp_var, i)) | v @ i <- vars);
     ;
     var_set_code = var_set_code & (set_var(value(maybe_idx_var), to_obj(idx_var))) if has_idx_var;
 

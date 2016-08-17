@@ -1,4 +1,4 @@
-using Automaton automaton
+implicit automaton : Automaton
 {
   [Atom] state_vars_ids = keys(automaton.state);
 
@@ -6,64 +6,64 @@ using Automaton automaton
   [<AutoCondAction, AutoRepAction>] all_actions = automaton.actions & automaton.rep_actions;
 
 
-  [Atom] discrete_inputs_ids = [id : input @ id <- automaton.inputs, input.discrete];
+  [Atom] discrete_inputs_ids = [id | id : input <- automaton.inputs, input.discrete];
 
 
-  [Atom] discrete_signals_ids = discrete_inputs_ids & union([set_discrete_signals_ids(a) : a <- all_actions]);
+  [Atom] discrete_signals_ids = discrete_inputs_ids & union([set_discrete_signals_ids(a) | a <- all_actions]);
 
 
   [NestedAutoInputNodeId -> Expr] nested_auto_inputs = [
     nested_auto_input_id(auto_id, in_id) -> expr
-    : auto @ auto_id <- automaton.nested_autos, expr @ in_id <- auto.args
+    | auto_id : auto <- automaton.nested_autos, in_id : expr <- auto.args
   ];
 
 
-  [Atom -> Expr] nested_msg_sends = [bare_id(c.target) -> c.message : a <- all_actions, c <- retrieve_msg_sends(a)];
+  [Atom -> Expr] nested_msg_sends = [bare_id(c.target) -> c.message | a <- all_actions, c <- retrieve_msg_sends(a)];
 
 
-  [MembAutoVar -> AutoSymbol] auto_vars_types = [memb_auto_var(id) -> na.type : na @ id <- automaton.nested_autos];
+  [MembAutoVar -> AutoSymbol] auto_vars_types = [memb_auto_var(id) -> na.type | id : na <- automaton.nested_autos];
 
 
   [Atom -> Expr*] state_vars_and_discrete_signals_update_values
   {
     pre_res = merge_value_sets(
-      [retrieve_update_values(a)            : a <- all_actions] &
-      [retrieve_discrete_signals_values(a)  : a <- all_actions] &
-      [[id -> [v.init_value]]               : v @ id <- automaton.state]
+      [retrieve_update_values(a)            | a <- all_actions] &
+      [retrieve_discrete_signals_values(a)  | a <- all_actions] &
+      [[id -> [v.init_value]]               | id : v <- automaton.state]
     );
-    return [id -> rand_sort(es) : es @ id <- pre_res];
+    return [id -> rand_sort(es) | id : es <- pre_res];
   }
 
 
   [MembCopyVar] memb_copy_vars
   {
-    assert not (? s <- values(automaton.state)  : memb_copy_vars_in_expr(s.init_value) != []);
-    assert not (? p <- values(automaton.params) : memb_copy_vars_in_expr(p.value) != []);
+    assert not (s <- values(automaton.state)  | memb_copy_vars_in_expr(s.init_value) != []);
+    assert not (p <- values(automaton.params) | memb_copy_vars_in_expr(p.value) != []);
 
     return union(
-      [memb_copy_vars_in_expr(r) : r <- values(automaton.rules)] &
-      [memb_copy_vars(a) : a <- all_actions]
+      [memb_copy_vars_in_expr(r) | r <- values(automaton.rules)] &
+      [memb_copy_vars(a) | a <- all_actions]
     );
   }
 
 
-  [Atom] memb_copy_vars_ids = [bare_id(v) : v <- memb_copy_vars];
+  [Atom] memb_copy_vars_ids = [bare_id(v) | v <- memb_copy_vars];
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-using Program program, Automaton automaton
+implicit program : Program, automaton : Automaton
 {
   StdBlockNodeId* sorted_time_varying_nodes
   {
     time_rule_ids = keys(automaton.time_rules);
-    time_sensitive_nested_autos_ids = [id : na @ id <- automaton.nested_autos, is_time_sensitive(na.type)];
+    time_sensitive_nested_autos_ids = [id | id : na <- automaton.nested_autos, is_time_sensitive(na.type)];
     time_sensitive_nodes_ids = time_rule_ids & time_sensitive_nested_autos_ids;
-    return (std_block_node_id(id) : id <- rand_sort(time_sensitive_nodes_ids));
+    return (std_block_node_id(id) | id <- rand_sort(time_sensitive_nodes_ids));
   }
 
-  [StdBlockNodeId -> Nat] time_varying_nodes_indexes = merge(([n -> i] : n @ i <- sorted_time_varying_nodes));
+  [StdBlockNodeId -> Nat] time_varying_nodes_indexes = merge(([n -> i] | n @ i <- sorted_time_varying_nodes));
 
 
   Bool is_discrete(MembVar v) = in(bare_id(v), discrete_signals_ids);

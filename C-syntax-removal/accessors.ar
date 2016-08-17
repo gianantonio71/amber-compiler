@@ -1,101 +1,101 @@
-using SynPrg syn_prg
+implicit syn_prg : SynPrg
 {
   [PrgDecl] all_syn_decls = match (syn_prg) prg(ds?)  = set(ds);
 
 
-  [SynFnDef]      syn_fn_defs       = [d : d <- all_syn_decls, syn_fn_def()       << d];
-  [SynProcDef]    syn_proc_defs     = [d : d <- all_syn_decls, syn_proc_def()     << d];
-  [SynImplBlock]  syn_impl_blocks   = [d : d <- all_syn_decls, implicit_block()   << d];
-  [SynAutoDef]    syn_auto_defs     = [d : d <- all_syn_decls, syn_auto_def()     << d];
-  [SynDBDef]      syn_db_defs       = [d : d <- all_syn_decls, syn_db_def()       << d];
-  [SynMethodDef]  syn_methods       = [d : d <- all_syn_decls, syn_method_def()   << d];
-  [HandlerDef]    handler_defs      = [d : d <- all_syn_decls, handler_def()      << d];
-  [SynUpdateDef]  syn_updates       = [d : d <- all_syn_decls, syn_update_def()   << d];
+  [SynFnDef]      syn_fn_defs       = [d | d <- all_syn_decls, syn_fn_def()       <~ d];
+  [SynProcDef]    syn_proc_defs     = [d | d <- all_syn_decls, syn_proc_def()     <~ d];
+  [SynImplBlock]  syn_impl_blocks   = [d | d <- all_syn_decls, implicit_block()   <~ d];
+  [SynAutoDef]    syn_auto_defs     = [d | d <- all_syn_decls, syn_auto_def()     <~ d];
+  [SynDBDef]      syn_db_defs       = [d | d <- all_syn_decls, syn_db_def()       <~ d];
+  [SynMethodDef]  syn_methods       = [d | d <- all_syn_decls, syn_method_def()   <~ d];
+  [HandlerDef]    handler_defs      = [d | d <- all_syn_decls, handler_def()      <~ d];
+  [SynUpdateDef]  syn_updates       = [d | d <- all_syn_decls, syn_update_def()   <~ d];
 
 
   [TypeName -> Type] typedefs
   {
-    tdefs     = [d : d <- all_syn_decls, typedef()     << d];
-    par_tdefs = [d : d <- all_syn_decls, par_typedef() << d];
+    tdefs     = [d | d <- all_syn_decls, typedef()     <~ d];
+    par_tdefs = [d | d <- all_syn_decls, par_typedef() <~ d];
     return create_type_map(tdefs, par_tdefs);
   }
 
 
   [<AutoSymbol, DBSymbol> -> [+SynMethodDef]] methods_by_target =
-    merge_values([[m.target -> m] : m <- syn_methods]);
+    merge_values([[m.target -> m] | m <- syn_methods]);
 
 
   [DBSymbol -> [HandlerDef]] handlers_by_target =
-    merge_values([[h.target -> h] : h <- handler_defs]);
+    merge_values([[h.target -> h] | h <- handler_defs]);
 
 
   [DBSymbol -> [+SynUpdateDef]] updates_by_target =
-    merge_values([[u.target -> u] : u <- syn_updates]);
+    merge_values([[u.target -> u] | u <- syn_updates]);
 
 
-  [(SynFnDef, [SynSgn])] ext_syn_fn_defs  = [(fd, []) : fd <- syn_fn_defs] &
-                                          [(fd, set(b.signatures)) : b <- syn_impl_blocks, fd <- set(b.fn_defs)];
+  [(SynFnDef, [SynSgn])] ext_syn_fn_defs  = [(fd, []) | fd <- syn_fn_defs] &
+                                          [(fd, set(b.signatures)) | b <- syn_impl_blocks, fd <- set(b.fn_defs)];
 
 
   [FnSymbol -> [Nat -> Nat*]] fn_arg_arities
   {
-    arities = merge_values([get_fn_arg_arities(efd(0)) : efd <- ext_syn_fn_defs]);
-    return [sgn -> merge(pas) : pas @ sgn <- arities];
+    arities = merge_values([get_fn_arg_arities(efd(0)) | efd <- ext_syn_fn_defs]);
+    return [sgn -> merge(pas) | sgn : pas <- arities];
 
-    [FnSymbol -> [Nat -> Nat*]] get_fn_arg_arities(SynFnDef fd) = [fd.name -> [arity(fd) -> (arity(p) : p <- fd.args)]];
+    [FnSymbol -> [Nat -> Nat*]] get_fn_arg_arities(SynFnDef fd) = [fd.name -> [arity(fd) -> (arity(p) | p <- fd.args)]];
   }
 
 
-  [AutoSymbol -> AutoInterface] auto_interfaces = [a.name -> interface_info(a) : a <- resolve_inheritance(syn_auto_defs)];
+  [AutoSymbol -> AutoInterface] auto_interfaces = [a.name -> interface_info(a) | a <- resolve_inheritance(syn_auto_defs)];
 
 
-  [DBSymbol -> DBInterface] db_interfaces = [db_symbol(db.name) -> interface_info(db) : db <- syn_db_defs];
+  [DBSymbol -> DBInterface] db_interfaces = [db_symbol(db.name) -> interface_info(db) | db <- syn_db_defs];
 
 
-  [DBSymbol -> SynDBDef] db_defs_by_id = [db_symbol(db.name) -> db : db <- syn_db_defs];
+  [DBSymbol -> SynDBDef] db_defs_by_id = [db_symbol(db.name) -> db | db <- syn_db_defs];
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-using SynPrg syn_prg, SynDBDef db_def
+implicit syn_prg : SynPrg, db_def : SynDBDef
 {
   [DataBaseDecl] all_db_decls = set(db_def.decls);
 
-  [StateVarDecl] db_state_vars = [d : d <- all_db_decls, state_var_decl() << d];
-  [NestedDBDecl] db_nested_dbs = [d : d <- all_db_decls, nested_db_decl() << d];
+  [StateVarDecl] db_state_vars = [d | d <- all_db_decls, state_var_decl() <~ d];
+  [NestedDBDecl] db_nested_dbs = [d | d <- all_db_decls, nested_db_decl() <~ d];
 
-  [MembVar] db_memb_vars = [memb_var(d.name) : d <- db_state_vars];
+  [MembVar] db_memb_vars = [memb_var(d.name) | d <- db_state_vars];
 
-  [MembDBVar -> DBSymbol] db_vars_types = [memb_db_var(d.name) -> db_symbol(d.type) : d <- db_nested_dbs];
+  [MembDBVar -> DBSymbol] db_vars_types = [memb_db_var(d.name) -> db_symbol(d.type) | d <- db_nested_dbs];
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-using SynPrg syn_prg, SynAutoDef auto_def
+implicit syn_prg : SynPrg, auto_def : SynAutoDef
 {
   [RuleDecl] rule_decls = set(auto_def.rules);
 
-  [SynPlainRule]        syn_plain_rules_lookalikes  = [d : d <- rule_decls, syn_plain_rule()                  << d];
-  [SynCondRule]         syn_cond_rules              = [d : d <- rule_decls, syn_cond_rule()                   << d];
-  [SynForeachRule]      syn_foreach_rules           = [d : d <- rule_decls, syn_foreach_rule()                << d];
-  [SynTimeVaryingRule]  syn_time_varying_rule_defs  = [d : d <- rule_decls, syn_time_varying_boolean_rule()   << d] &
-                                                      [d : d <- rule_decls, syn_time_varying_unchanged_rule() << d] &
-                                                      [d : d <- rule_decls, syn_time_varying_inactive_rule()  << d];
-  [SynNestedAuto]       syn_nested_no_input_autos   = [d : d <- rule_decls, syn_nested_auto()                 << d];
-  [SynMsgSend]          syn_msg_sends               = [d : d <- rule_decls, syn_msg_send()                    << d];
+  [SynPlainRule]        syn_plain_rules_lookalikes  = [d | d <- rule_decls, syn_plain_rule()                  <~ d];
+  [SynCondRule]         syn_cond_rules              = [d | d <- rule_decls, syn_cond_rule()                   <~ d];
+  [SynForeachRule]      syn_foreach_rules           = [d | d <- rule_decls, syn_foreach_rule()                <~ d];
+  [SynTimeVaryingRule]  syn_time_varying_rule_defs  = [d | d <- rule_decls, syn_time_varying_boolean_rule()   <~ d] &
+                                                      [d | d <- rule_decls, syn_time_varying_unchanged_rule() <~ d] &
+                                                      [d | d <- rule_decls, syn_time_varying_inactive_rule()  <~ d];
+  [SynNestedAuto]       syn_nested_no_input_autos   = [d | d <- rule_decls, syn_nested_auto()                 <~ d];
+  [SynMsgSend]          syn_msg_sends               = [d | d <- rule_decls, syn_msg_send()                    <~ d];
 
 
-  [SynPlainRule] syn_plain_rules  = [r : r <- syn_plain_rules_lookalikes, not is_disguised_auto(r)] &
-                                    [rewrite_fake_time_rule(r) : r <- syn_time_varying_rule_defs, is_fake(r)];
+  [SynPlainRule] syn_plain_rules  = [r | r <- syn_plain_rules_lookalikes, not is_disguised_auto(r)] &
+                                    [rewrite_fake_time_rule(r) | r <- syn_time_varying_rule_defs, is_fake(r)];
 
 
   [SynNestedAuto] syn_nested_autos  = syn_nested_no_input_autos &
-                  [rewrite_disguised_auto(r) : r <- syn_plain_rules_lookalikes, is_disguised_auto(r)];
+                  [rewrite_disguised_auto(r) | r <- syn_plain_rules_lookalikes, is_disguised_auto(r)];
 
 
-  [SynTimeVaryingRule] syn_time_varying_rules = [r : r <- syn_time_varying_rule_defs, not is_fake(r)];
+  [SynTimeVaryingRule] syn_time_varying_rules = [r | r <- syn_time_varying_rule_defs, not is_fake(r)];
 
 
   [MembVar] auto_memb_vars
@@ -110,22 +110,25 @@ using SynPrg syn_prg, SynAutoDef auto_def
       syn_foreach_rules,
       syn_time_varying_rules
     ];
-    return union([[memb_var(d.name) : d <- decls] : decls <- memb_var_def_decls]);
+    return union([[memb_var(d.name) | d <- decls] | decls <- memb_var_def_decls]);
   }
 
 
-  Bool signal_is_discrete(MembVar signal) = in(bare_id(signal), auto_disc_signals_6c05b13f_10f8_47a8_9c36_ef272ec2b713);
-
-  [Atom] auto_disc_signals_6c05b13f_10f8_47a8_9c36_ef272ec2b713
+  Bool signal_is_discrete(MembVar signal)
   {
-    disc_signal_def_decls = [
-      set(auto_def.inputs),
-      set(auto_def.outputs),
-      syn_plain_rules,
-      syn_cond_rules,
-      syn_foreach_rules
-    ];
-    return union([[d.name : d <- decls, d.discrete] : decls <- disc_signal_def_decls]);
+    return in(bare_id(signal), discrete_signals);
+
+    [Atom] discrete_signals
+    {
+      disc_signal_def_decls = [
+        set(auto_def.inputs),
+        set(auto_def.outputs),
+        syn_plain_rules,
+        syn_cond_rules,
+        syn_foreach_rules
+      ];
+      return union([[d.name | d <- decls, d.discrete] | decls <- disc_signal_def_decls]);
+    }
   }
 
 
@@ -140,11 +143,11 @@ using SynPrg syn_prg, SynAutoDef auto_def
 
 
   [MembAutoVar -> AutoSymbol] syn_auto_vars_types =
-    [memb_auto_var(a.name) -> auto_symbol(a.auto_name) : a <- syn_nested_autos];
+    [memb_auto_var(a.name) -> auto_symbol(a.auto_name) | a <- syn_nested_autos];
 
 
   [MembDBVar -> DBSymbol] db_in_auto_vars_types =
-    [memb_db_var(d.name) -> db_symbol(d.type) : d <- set(auto_def.nested_dbs)];
+    [memb_db_var(d.name) -> db_symbol(d.type) | d <- set(auto_def.nested_dbs)];
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -152,15 +155,15 @@ using SynPrg syn_prg, SynAutoDef auto_def
 
 type SynArtifact = SynFnDef, SynProcDef, SynAutoDef, SynDBDef;
 
-using SynPrg syn_prg, SynArtifact syn_artifact
+implicit syn_prg : SynPrg, syn_artifact : SynArtifact
 {
   [LocAutoVar] loc_auto_vars =
     match (syn_artifact)
-      syn_proc_def()  = set((loc_auto_var(v.var) : v <- syn_artifact.auto_vars));
+      syn_proc_def()  = set((loc_auto_var(v.var) | v <- syn_artifact.auto_vars));
 
   [LocDBVar] loc_db_var =
     match (syn_artifact)
-      syn_proc_def()  = set((loc_db_var(v.var) : v <- syn_artifact.db_vars));
+      syn_proc_def()  = set((loc_db_var(v.var) | v <- syn_artifact.db_vars));
 
 
   <AutoSymbol, DBSymbol> self_type =

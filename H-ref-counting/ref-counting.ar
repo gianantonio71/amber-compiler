@@ -29,10 +29,10 @@ Block add_ref_counting(Block block) =
     nested_trans_blocks:  block.nested_trans_blocks,
     pre_init_code:        safe_add_ref_counting(block.pre_init_code),
     cleanup_code:         block.cleanup_code,
-    nodes_update_code:    [id -> safe_add_ref_counting(c) : c @ id <- block.nodes_update_code],
+    nodes_update_code:    [id -> safe_add_ref_counting(c) | id : c <- block.nodes_update_code],
     apply_code:           safe_add_ref_counting(block.apply_code),
     queue_update_code:    block.queue_update_code,
-    methods_code:         [n -> safe_add_ref_counting(is) : is @ n <- block.methods_code],
+    methods_code:         [n -> safe_add_ref_counting(is) | n : is <- block.methods_code],
     const_data:           block.const_data,
     time_rules_count:     block.time_rules_count
   );
@@ -45,8 +45,8 @@ TransBlock add_ref_counting(TransBlock block) =
     nested_blocks:  block.nested_blocks,
     init_code:      safe_add_ref_counting(block.init_code),
     cleanup_code:   safe_add_ref_counting(block.cleanup_code),
-    methods_code:   [id -> safe_add_ref_counting(c) : c @ id <- block.methods_code],
-    updates_code:   [id -> safe_add_ref_counting(c) : c @ id <- block.updates_code]
+    methods_code:   [id -> safe_add_ref_counting(c) | id : c <- block.methods_code],
+    updates_code:   [id -> safe_add_ref_counting(c) | id : c <- block.updates_code]
   );
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -59,15 +59,15 @@ Instr+ add_ref_counting(Instr+ instrs)
 {
   leaf_nodes, code_tree = build_root_code_graph(instrs);
   flow_map = build_flow_map(code_tree, leaf_nodes);
-  no_end_node_flow_map = ((n : n <- ns, n != end_node) : ns <- flow_map);
+  no_end_node_flow_map = ((n | n <- ns, n != end_node) | ns <- flow_map);
   rev_flow_map = reverse_flow_map(no_end_node_flow_map);
   live_vars_before_map, live_vars_after_map = build_live_vars_maps(leaf_nodes, no_end_node_flow_map);
   // ref_live_vars_before_map, ref_live_vars_after_map = ref_build_live_vars_maps(leaf_nodes, flow_map);
   entry_vars_states = entry_vars_states(leaf_nodes, no_end_node_flow_map, live_vars_after_map);
   // ref_entry_vars_states = ref_entry_vars_states(leaf_nodes, flow_map, live_vars_after_map);
-  assert none(([v : v <- lvs, not is_initialized(vs, v)] != [] : lvs, vs <- zip(live_vars_before_map, entry_vars_states)));
+  assert none(([v | v <- lvs, not is_initialized(vs, v)] != [] | lvs, vs <- zip(live_vars_before_map, entry_vars_states)));
   let flow_map=flow_map, live_vars_after_map=live_vars_after_map, entry_vars_states=entry_vars_states:
-    rc_nodes = (add_ref_counting(n, i) : n @ i <- leaf_nodes);
+    rc_nodes = (add_ref_counting(n, i) | n @ i <- leaf_nodes);
   ;
   return ref_count_closures(nonempty(reconstruct(code_tree, rc_nodes)));
 }
@@ -100,16 +100,16 @@ VarsState* entry_vars_states(NodeInfo* leaf_nodes, Nat** flow_map, [TrkVar]* liv
   len = length(leaf_nodes);
 
   rev_flow_map = reverse_flow_map(flow_map);
-  fwd_nodes_map = ([n : n <- ns, n < i] : ns @ i <- rev_flow_map);
+  fwd_nodes_map = ([n | n <- ns, n < i] | ns @ i <- rev_flow_map);
 
   entry_states = (blank_vars_state);
   for i = 1..len:
     fwd_nodes = fwd_nodes_map[i];
-    fwd_states = [exit_vars_state_only(leaf_nodes[n], entry_states[n], live_vars_after_map[n]) : n <- fwd_nodes];
-    entry_states = (entry_states | reconcile(fwd_states));
+    fwd_states = [exit_vars_state_only(leaf_nodes[n], entry_states[n], live_vars_after_map[n]) | n <- fwd_nodes];
+    entry_states = (entry_states || reconcile(fwd_states));
   ;
 
-  exit_states = (exit_vars_state_only(leaf_nodes[i], entry_state, live_vars_after_map[i]) : entry_state @ i <- entry_states);
+  exit_states = (exit_vars_state_only(leaf_nodes[i], entry_state, live_vars_after_map[i]) | entry_state @ i <- entry_states);
 
   updated_map = len * (true);
   while at_least_one(updated_map):
@@ -118,8 +118,8 @@ VarsState* entry_vars_states(NodeInfo* leaf_nodes, Nat** flow_map, [TrkVar]* liv
     new_updated_map = (false);
     for i = 1..len:
       nodes = rev_flow_map[i];
-      if (? n <- nodes : if n < i then new_updated_map[n] else updated_map[n]):
-        states = [if n < i then new_exit_states[n] else exit_states[n] : n <- nodes];
+      if (n <- nodes | if n < i then new_updated_map[n] else updated_map[n]):
+        states = [if n < i then new_exit_states[n] else exit_states[n] | n <- nodes];
         new_entry_state = reconcile(states);
         new_exit_state = exit_vars_state_only(leaf_nodes[i], new_entry_state, live_vars_after_map[i]);
         updated = new_entry_state != entry_states[i];
@@ -128,9 +128,9 @@ VarsState* entry_vars_states(NodeInfo* leaf_nodes, Nat** flow_map, [TrkVar]* liv
         new_exit_state = exit_states[i];
         updated = false;
       ;
-      new_entry_states = (new_entry_states | new_entry_state);
-      new_exit_states = (new_exit_states | new_exit_state);
-      new_updated_map = (new_updated_map | updated);
+      new_entry_states = (new_entry_states || new_entry_state);
+      new_exit_states = (new_exit_states || new_exit_state);
+      new_updated_map = (new_updated_map || updated);
     ;
     entry_states = new_entry_states;
     exit_states = new_exit_states;
@@ -172,7 +172,7 @@ VarsState* entry_vars_states(NodeInfo* leaf_nodes, Nat** flow_map, [TrkVar]* liv
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-using NodeId** flow_map, [TrkVar]* live_vars_after_map, VarsState* entry_vars_states
+implicit flow_map : NodeId**, live_vars_after_map : [TrkVar]*, entry_vars_states : VarsState*
 {
   RCNodeInfo add_ref_counting(NodeInfo info, Nat idx)
   {
@@ -217,7 +217,7 @@ using NodeId** flow_map, [TrkVar]* live_vars_after_map, VarsState* entry_vars_st
   {
     next_node_entry_state = entry_vars_state(next_node);
     state_switch_code = gen_state_switch_code(exit_state, next_node_entry_state);
-    return std_node((state_switch_code | instr));
+    return std_node((state_switch_code || instr));
   }
 
 
@@ -241,14 +241,14 @@ using NodeId** flow_map, [TrkVar]* live_vars_after_map, VarsState* entry_vars_st
 
   RCNodeInfo rc_nat_switch_node(IntExpr idx, NodeId+ next_nodes, VarsState exit_state)
   {
-    case_post_instrs = (gen_state_switch_code(exit_state, entry_vars_state(n)) : n <- next_nodes);
+    case_post_instrs = (gen_state_switch_code(exit_state, entry_vars_state(n)) | n <- next_nodes);
     return rc_nat_switch_node(idx, case_post_instrs);
   }
 
 
   RCNodeInfo rc_symb_switch_node(ObjExpr expr, [+Atom]+ cases, NodeId+ next_nodes, VarsState exit_state)
   {
-    all_post_instrs = (gen_state_switch_code(exit_state, entry_vars_state(n)) : n <- next_nodes);
+    all_post_instrs = (gen_state_switch_code(exit_state, entry_vars_state(n)) | n <- next_nodes);
     cases_post_instrs = subseq(all_post_instrs, 0, nil, 1);
     else_post_instrs = last(all_post_instrs);
     return rc_symb_switch_node(expr, cases, nonempty(cases_post_instrs), else_post_instrs);
@@ -264,7 +264,7 @@ using NodeId** flow_map, [TrkVar]* live_vars_after_map, VarsState* entry_vars_st
 }
 
 
-using VarsState* entry_vars_states
+implicit entry_vars_states : VarsState*
 {
   VarsState entry_vars_state(NodeId next_node) =
     if next_node == end_node
@@ -276,11 +276,11 @@ using VarsState* entry_vars_states
 ////////////////////////////////////////////////////////////////////////////////
 
 ()     ref_count_closures(())             = ();
-Instr+ ref_count_closures(Instr+ instrs)  = (ref_count_closures_single_instruction(i) : i <- instrs);
+Instr+ ref_count_closures(Instr+ instrs)  = (ref_count_closures_single_instruction(i) | i <- instrs);
 
 
 Instr ref_count_closures_single_instruction(Instr instr):
-  call_proc()         = call_proc(var: instr.var if instr.var?, name: instr.name, params: (ref_count_closure(p) : p <- instr.params)),
+  call_proc()         = call_proc(var: instr.var if instr.var?, name: instr.name, params: (ref_count_closure(p) | p <- instr.params)),
   branch()            = branch(
                           instr.cond,
                           ref_count_closures(instr.when_true),

@@ -81,7 +81,7 @@ Bool matches(TokenMatchingRule rule, PlainToken token):
 ParserResult parse_all(ParsingRule rule, AnnotatedToken+ tokens, [Atom -> ParsingRule] rec_rules)
 {
   // Let's first try to run the quick and dirty parser, which does not keep track of errors
-  matching_atomic_rules = (matching_atomic_rule(t.token) : t <- tokens);
+  matching_atomic_rules = (matching_atomic_rule(t.token) | t <- tokens);
   fast_res = fast_parse(rule, 0, tokens=tokens, rec_rules=rec_rules, tokens_count=length(tokens), matching_atomic_rules=matching_atomic_rules);
   if fast_res != nil:
     rule_match, nodes_consumed = fast_res;
@@ -282,7 +282,7 @@ TokenMatchingRule matching_atomic_rule(PlainToken token):
   nanoseconds()       = time_span;
 
 
-using AnnotatedToken+ tokens, [Atom -> ParsingRule] rec_rules, Nat tokens_count, TokenMatchingRule+ matching_atomic_rules
+implicit tokens : AnnotatedToken+, rec_rules : [Atom -> ParsingRule], tokens_count : Nat, matching_atomic_rules : TokenMatchingRule+
 {
   FastParserRes fast_parse(ParsingRule rule, Nat offset):
     empty_rule        = (null_match, 0),
@@ -321,7 +321,7 @@ using AnnotatedToken+ tokens, [Atom -> ParsingRule] rec_rules, Nat tokens_count,
       res = fast_parse(r, nat(offset+delta));
       return nil if res == nil;
       rule_match, nodes_consumed = res;
-      matches = (matches | rule_match);
+      matches = (matches || rule_match);
       delta = nat(delta + nodes_consumed);
     ;
     return (rule_seq_match(nonempty(matches)), delta);
@@ -340,14 +340,14 @@ using AnnotatedToken+ tokens, [Atom -> ParsingRule] rec_rules, Nat tokens_count,
         res = fast_parse(separator, nat(offset+delta));
         break if res == nil;
         rule_match, nodes_consumed = res;
-        matches = (matches | rule_match) if save_sep;
+        matches = (matches || rule_match) if save_sep;
         sep_nodes = nodes_consumed;
       ;
       // Matching the main rule
       res = fast_parse(rep_rule, nat(offset+delta+sep_nodes));
       break if res == nil;
       rule_match, nodes_consumed = res;
-      matches = (matches | rule_match);
+      matches = (matches || rule_match);
       num_of_matches = num_of_matches + 1;
       delta = nat(delta + sep_nodes + nodes_consumed);
     ;

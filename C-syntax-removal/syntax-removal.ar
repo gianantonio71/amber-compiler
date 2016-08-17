@@ -1,11 +1,11 @@
-using SynPrg syn_prg
+implicit syn_prg : SynPrg
 {
   Program desugared_prg = program(
     typedefs:     typedefs,
-    fndefs:       union([syn_fndef_to_fndefs(fd, ias) : efd <- ext_syn_fn_defs, (fd?, ias?) << efd]),
-    proc_defs:    [syn_proc_def_to_proc_def(pd) : pd <- syn_proc_defs],
-    auto_defs:    [desugar_automaton(auto_def=a) : a <- resolve_inheritance(syn_auto_defs)],
-    data_bases:   [desugar_data_base(db_def=db) : db <- syn_db_defs]
+    fndefs:       union([syn_fndef_to_fndefs(fd, ias) | efd <- ext_syn_fn_defs, (fd?, ias?) <~ efd]),
+    proc_defs:    [syn_proc_def_to_proc_def(pd) | pd <- syn_proc_defs],
+    auto_defs:    [desugar_automaton(auto_def=a) | a <- resolve_inheritance(syn_auto_defs)],
+    data_bases:   [desugar_data_base(db_def=db) | db <- syn_db_defs]
   );
 
   //////////////////////////////////////////////////////////////////////////////
@@ -13,29 +13,29 @@ using SynPrg syn_prg
 
   [FnDef] syn_fndef_to_fndefs(SynFnDef fndef, [SynSgn] named_args)
   {
-    lfns = [(lfd.name, nz_nat(arity(lfd))) -> nonempty((arity(p) : p <- lfd.args)) : lfd <- set(fndef.local_fns)];
+    lfns = [(lfd.name, arity(lfd)) -> (arity(p) | p <- lfd.args) | lfd <- set(fndef.local_fns)];
     main_fn = mk_fndef(fndef, fndef.name, fndef.name, named_args, lfns);
     loc_fns = ();
     for fd <- fndef.local_fns:
       fn_symb = nested_fn_symbol(fndef.name, fd.name);
-      loc_fns = (loc_fns | mk_fndef(fd, fn_symb, fndef.name, named_args, lfns));
+      loc_fns = (loc_fns || mk_fndef(fd, fn_symb, fndef.name, named_args, lfns));
     ;
     return [main_fn] & set(loc_fns);
 
 
     //## BAD BAD BAD TOO MANY PARAMETERS
-    FnDef mk_fndef(SynFnDef fndef, FnSymbol fn_name, FnSymbol outer_fn, [SynSgn] named_args, [(FnSymbol, NzNat) -> Nat+] lfns)
+    FnDef mk_fndef(SynFnDef fndef, FnSymbol fn_name, FnSymbol outer_fn, [SynSgn] named_args, [(FnSymbol, Nat) -> Nat*] lfns)
     {
-      pars = (desugar_fn_par(p) : p <- fndef.args);
-      npars = [np.name -> syn_sgn_to_any_expr(np) : np <- named_args];
+      pars = (desugar_fn_par(p) | p <- fndef.args);
+      npars = [np.name -> syn_sgn_to_any_expr(np) | np <- named_args];
       maybe_res_type = if fndef.res_type? then just(syn_type_to_type(fndef.res_type, nil)) else nil;
       expr = desugar_expr(
         fndef.expr,
-        [var(p.var_name) : p <- set(fndef.args), p.var_name? and (not p.type? or p.type :: SynType)],
+        [var(p.var_name) | p <- set(fndef.args), p.var_name? and (not p.type? or p.type :: SynType)],
         syn_artifact        = fndef,
-        closures            = [cls_var(p.var_name) : p <- set(fndef.args), p.var_name?, p.type?, p.type :: SynClsType],
-        named_args          = [a.name : a <- named_args], //## BAD BAD BAD
-        named_args_arities  = [a.name -> arity(a) : a <- named_args], //## BAD BAD BAD
+        closures            = [cls_var(p.var_name) | p <- set(fndef.args), p.var_name?, p.type?, p.type :: SynClsType],
+        named_args          = [a.name | a <- named_args], //## BAD BAD BAD
+        named_args_arities  = [a.name -> arity(a) | a <- named_args], //## BAD BAD BAD
         memb_vars           = [],
         auto_vars_types     = [:],
         db_vars_types       = [:],
@@ -66,7 +66,7 @@ using SynPrg syn_prg
 
     AnyType syn_sgn_to_any_expr(SynSgn signature)
     {
-      arg_types = (syn_type_to_type(p, nil) : p <- signature.args);
+      arg_types = (syn_type_to_type(p, nil) | p <- signature.args);
       ret_type = syn_type_to_type(signature.res_type, nil);
       return if arg_types == () then ret_type else cls_type(arg_types, ret_type);
     }
@@ -77,14 +77,14 @@ using SynPrg syn_prg
 
   ProcDef2 syn_proc_def_to_proc_def(SynProcDef pd)
   {
-    args = ([var: p.var, type: syn_type_to_type(p.type, nil)] : p <- pd.args);
+    args = ((var: p.var, type: syn_type_to_type(p.type, nil)) | p <- pd.args);
     maybe_ret_type = if pd.res_type != nil then just(syn_type_to_type(value(pd.res_type), nil)) else nil;
-    auto_vars = [loc_auto_var(v.var) -> auto_symbol(v.type) : v <- set(pd.auto_vars)];
-    db_vars = [loc_db_var(v.var) -> db_symbol(v.type) : v <- set(pd.db_vars)];
+    auto_vars = [loc_auto_var(v.var) -> auto_symbol(v.type) | v <- set(pd.auto_vars)];
+    db_vars = [loc_db_var(v.var) -> db_symbol(v.type) | v <- set(pd.db_vars)];
 
     body = desugar_stmts(
       pd.body,
-      set((p.var : p <- pd.args)),
+      set((p.var | p <- pd.args)),
       syn_artifact        = pd,
       closures            = [],
       named_args          = [],

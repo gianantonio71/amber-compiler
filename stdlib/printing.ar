@@ -22,7 +22,7 @@ String printed(Any obj)
 String printed(Any obj, Nat line_len)
 {
   pt = print_tree(obj);
-  return string((walk_print_tree(pt, (), 0, line_len) | ascii_newline));
+  return string((walk_print_tree(pt, (), 0, line_len) || ascii_newline));
 
 
   Nat* walk_print_tree(String str, Nat* buff, Nat depth, Nat line_len) = buff & raw_str(str);
@@ -34,7 +34,7 @@ String printed(Any obj, Nat line_len)
 
     // An object needs splitting if it's too long unless it contains a single nested node
     // (in addition to non-nested ones) and this nested node has an early cut
-    nested_nodes = (n : n <- subnodes, not is_leaf(n));
+    nested_nodes = (n | n <- subnodes, not is_leaf(n));
     only_subnode_has_early_cut = length(nested_nodes) == 1 and has_early_cut(only_item(nested_nodes));
     needs_splitting = size(node) > line_len and not only_subnode_has_early_cut;
 
@@ -58,9 +58,9 @@ String printed(Any obj, Nat line_len)
 
   Nat* insert_new_line(Nat* buff, Nat depth)
   {
-    new_buff = (buff | ascii_newline);
+    new_buff = (buff || ascii_newline);
     for depth:
-      new_buff = (new_buff | ascii_space, ascii_space);
+      new_buff = (new_buff || ascii_space, ascii_space);
     ;
     return new_buff;
   }
@@ -72,7 +72,7 @@ String printed(Any obj, Nat line_len)
 type PrintTree          = print_tree_node(subnodes: <PrintTree, String>+, size: Nat);
 
 
-PrintTree print_tree_node(<PrintTree, String>+ ns) = print_tree_node(subnodes: ns, size: nat(sum((size(n) : n <- ns))));
+PrintTree print_tree_node(<PrintTree, String>+ ns) = print_tree_node(subnodes: ns, size: nat(sum((size(n) | n <- ns))));
 
 
 Nat size(String str)    = length(str);
@@ -92,7 +92,7 @@ String* printed_print_tree(PrintTree print_tree)
 
   String* printed_print_tree(PrintTree node, Nat depth) =
     join(
-      (printed_print_tree(n, nat(depth + bit(not is_leaf(n)))) : n <- node.subnodes)
+      (printed_print_tree(n, nat(depth + bit(not is_leaf(n)))) | n <- node.subnodes)
     );
 }
 
@@ -111,7 +111,7 @@ PrintTree print_tree(Any obj)
     (..)          = seq_print_tree(obj),
     [..]          = set_print_tree(obj),
     [->]          = map_print_tree(obj),
-    tag @ iobj    = tag_obj_print_tree(tag, iobj);
+    tag?(iobj?)   = tag_obj_print_tree(tag, iobj);
 
 
   String printed_int(Int n)
@@ -120,10 +120,10 @@ PrintTree print_tree(Any obj)
     m = if n >= 0 then n else -n;
     rev_chs = ();
     while m > 0:
-      rev_chs = (rev_chs | nat(ascii_0 + mod(m, 10)));
+      rev_chs = (rev_chs || nat(ascii_0 + mod(m, 10)));
       m = m / 10;
     ;
-    rev_chs = (rev_chs | ascii_minus) if n < 0;
+    rev_chs = (rev_chs || ascii_minus) if n < 0;
     return string(reverse(rev_chs));
   }
 
@@ -162,7 +162,7 @@ PrintTree print_tree(Any obj)
 
   PrintTree seq_print_tree(Seq seq)
   {
-    subnodes = intermix((print_tree(x) : x <- seq), ", ");
+    subnodes = intermix((print_tree(x) | x <- seq), ", ");
     subnodes = ("(") & subnodes & (")");
     return print_tree_node(nonempty(subnodes));
   }
@@ -170,7 +170,7 @@ PrintTree print_tree(Any obj)
 
   PrintTree set_print_tree(Set set)
   {
-    subnodes = intermix((print_tree(x) : x <- rand_sort(set)), ", ");
+    subnodes = intermix((print_tree(x) | x <- rand_sort(set)), ", ");
     subnodes = ("[") & subnodes & ("]");
     return print_tree_node(nonempty(subnodes));
   }
@@ -183,11 +183,12 @@ PrintTree print_tree(Any obj)
     // separator = if map :: Record then ": " else " -> ";
     // entry_nodes = (print_tree_node((print_tree(k), separator, print_tree(v))) : k, v <- entries);
     if map :: Record:
-      entry_nodes = [print_tree_node((_str_(k) & ": ", print_tree(v))) : v @ k <- map];
+      entry_nodes = [print_tree_node((_str_(k) & ": ", print_tree(v))) | k : v <- map];
+      nodes = ("(") & intermix(rand_sort(entry_nodes), ", ") & (")");
     else
-      entry_nodes = [print_tree_node((print_tree(k), " -> ", print_tree(v))) : v @ k <- map];
+      entry_nodes = [print_tree_node((print_tree(k), " -> ", print_tree(v))) | k : v <- map];
+      nodes = ("[") & intermix(rand_sort(entry_nodes), ", ") & ("]");
     ;
-    nodes = ("[") & intermix(rand_sort(entry_nodes), ", ") & ("]");
     return print_tree_node(nonempty(nodes));
   }
 

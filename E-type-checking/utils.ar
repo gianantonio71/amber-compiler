@@ -41,7 +41,7 @@ ClsType replace_type_vars_with_type_any(ClsType type) = replace_type_vars_comput
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-using [TypeName -> Type] typedefs
+implicit typedefs : [TypeName -> Type]
 {
   [TypeVar] retrieve_type_vars(Type type):
     TypeVar   = [type],
@@ -58,7 +58,7 @@ using [TypeName -> Type] typedefs
 
     _,                  ptrn_any          = type,
     _,                  ptrn_var()        = type_pattern_intersection_superset(type, ptrn.ptrn),
-    _,                  ptrn_union(ps?)   = union_type([type_pattern_intersection_superset(type, p) : p <- ps]),
+    _,                  ptrn_union(ps?)   = union_type([type_pattern_intersection_superset(type, p) | p <- ps]),
 
     type_var(),         _                 = type_pattern_intersection_superset(type_any, ptrn),
 
@@ -82,12 +82,12 @@ using [TypeName -> Type] typedefs
     empty_map_type,     _                 = if ptrn == ptrn_empty_map then empty_map_type else empty_type,
 
     ne_seq_type(),      ptrn_ne_seq       = type,
-    ne_seq_type(),      ptrn_tuple(ps?)   = tuple_type((type_pattern_intersection_superset(type.elem_type, p) : p <- ps)),
+    ne_seq_type(),      ptrn_tuple(ps?)   = tuple_type((type_pattern_intersection_superset(type.elem_type, p) | p <- ps)),
     ne_seq_type(),      _                 = empty_type,
 
     tuple_type(ts?),    ptrn_ne_seq       = type,
     tuple_type(ts?),    ptrn_tuple(ps?)   = if length(ts) == length(ps)
-                                            then tuple_type((type_pattern_intersection_superset(t, p) : t, p <- nonempty(zip(ts, ps))))
+                                            then tuple_type((type_pattern_intersection_superset(t, p) | t, p <- nonempty(zip(ts, ps))))
                                             else empty_type,
     tuple_type(ts?),    _                 = empty_type,
 
@@ -109,7 +109,7 @@ using [TypeName -> Type] typedefs
 
     tag_obj_type(),     _                 = empty_type,
 
-    union_type(ts?),    _                 = { int_types = [it : t <- ts, it = type_pattern_intersection_superset(t, ptrn), it != empty_type];
+    union_type(ts?),    _                 = { int_types = [it | t <- ts, it = type_pattern_intersection_superset(t, ptrn), it != empty_type];
                                               return empty_type if int_types == [];
                                               // return only_element(int_types) if size(int_types) == 1;
                                               // The types here are all union-compatible, since they are all
@@ -153,26 +153,26 @@ using [TypeName -> Type] typedefs
     empty_set_type,       _       = obj == [],
     empty_map_type,       _       = obj == [:],
 
-    ne_seq_type(),        (..)    = obj != () and all((type_contains_obj(type.elem_type, e) : e <- obj)),
+    ne_seq_type(),        (..)    = obj != () and all((type_contains_obj(type.elem_type, e) | e <- obj)),
     ne_seq_type(),        _       = false,
 
-    ne_set_type(),        [..]    = obj != [] and not (? e <- obj : not type_contains_obj(type.elem_type, e)),
+    ne_set_type(),        [..]    = obj != [] and not (e <- obj | not type_contains_obj(type.elem_type, e)),
     ne_set_type(),        _       = false,
 
-    ne_map_type(),        [->]    = obj != [:] and not (? v @ k <- obj : not type_contains_obj(type.key_type, k) or not type_contains_obj(type.value_type, v)),
+    ne_map_type(),        [->]    = obj != [:] and not (k : v <- obj | not type_contains_obj(type.key_type, k) or not type_contains_obj(type.value_type, v)),
     ne_map_type(),        _       = false,
 
-    ne_record_type(fs?),  [->]    = obj != [:] and subset([l : f @ l <- fs, not f.optional], keys(obj)) and
-                                    not (? v @ k <- obj : not has_key(fs, k) or not type_contains_obj(fs[k].type, v)),
+    ne_record_type(fs?),  [->]    = obj != [:] and subset([l | l : f <- fs, not f.optional], keys(obj)) and
+                                    not (k : v <- obj | not has_key(fs, k) or not type_contains_obj(fs[k].type, v)),
     ne_record_type(fs?),  _       = false,
 
-    tuple_type(ts?),      (..)    = length(ts) == length(obj) and all((type_contains_obj(t, e) : t, e <- zip(ts, obj))),
+    tuple_type(ts?),      (..)    = length(ts) == length(obj) and all((type_contains_obj(t, e) | t, e <- zip(ts, obj))),
     tuple_type(ts?),      _       = false,
 
-    tag_obj_type(),       t @ o   = type_contains_obj(type.tag_type, t) and type_contains_obj(type.obj_type, o),
+    tag_obj_type(),       t?(o?)  = type_contains_obj(type.tag_type, t) and type_contains_obj(type.obj_type, o),
     tag_obj_type(),       _       = false,
 
-    union_type(ts?),      _       = (? t <- ts : type_contains_obj(t, obj));
+    union_type(ts?),      _       = (t <- ts | type_contains_obj(t, obj));
 
   ////////////////////////////////////////////////////////////////////////////////
   ////////////////////////////////////////////////////////////////////////////////
@@ -199,7 +199,7 @@ using [TypeName -> Type] typedefs
     empty_set_type          = if obj == [] then empty_type else type,
     empty_map_type          = if obj == [:] then empty_type else type,
 
-    union_type(ts?)         = { nts = [nt : t <- ts, nt = subtract_obj_from_type(t, obj), nt != empty_type];
+    union_type(ts?)         = { nts = [nt | t <- ts, nt = subtract_obj_from_type(t, obj), nt != empty_type];
                                 return if nts == [] then empty_type else union_type(nts);
                               },
 
@@ -211,7 +211,7 @@ using [TypeName -> Type] typedefs
 
 FnType signature(FnDef fn_def) =
   fn_type(
-    params:       (if p.type? then p.type else {fail;} : p <- fn_def.params), //## BAD BAD BAD
+    params:       (if p.type? then p.type else {fail;} | p <- fn_def.params), //## BAD BAD BAD
     named_args:   fn_def.named_args,
     ret_type:     if fn_def.res_type? then fn_def.res_type else {fail;} //## BAD BAD BAD
   );
@@ -299,7 +299,7 @@ Type type_seq = type_seq(type_any);
 Type type_set = type_set(type_any);
 Type type_map = type_map(type_any, type_any);
 
-Type type_collection = union_type([type_seq, type_set, type_map]);
+Type type_unary_pseudocall_target = union_type([atom_type, type_seq, type_set, type_map]);
 
 Type type_ne_seq = ne_seq_type(type_any);
 Type type_ne_set = ne_set_type(type_any);

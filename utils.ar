@@ -51,7 +51,7 @@ Bool (_<_) (SymbObj s1, SymbObj s2)
 
 ////////////////////////////////////////////////////////////////////////////////
 
-String* indent_lines(String* strs) = (indent_line(s) : s <- strs);
+String* indent_lines(String* strs) = (indent_line(s) | s <- strs);
 
 String indent_line(String str) = "  " & str;
 
@@ -60,7 +60,7 @@ String indent_line(String str) = "  " & str;
 Nat uppercase(Nat ch) = if ch >= ascii_lower_a and ch <= ascii_lower_z then nat(ch - ascii_lower_a + ascii_upper_a) else ch;
 
 
-String uppercase(Atom a) = string((uppercase(ch) : ch <- raw_str(_str_(a))));
+String uppercase(Atom a) = string((uppercase(ch) | ch <- raw_str(_str_(a))));
 
 
 String upper_camel_case(Atom a) = capitalize(_str_(a), false);
@@ -107,14 +107,14 @@ String user_repr(Type type, Bool inside_type_union, Bool incl_empty_seq, Bool in
   ne_set_type()             = "[" & {if incl_empty_set then "" else "+"} & user_repr(type.elem_type) & "]",
   ne_map_type()             = "[" & {if incl_empty_set then "" else "+"} & user_repr(type.key_type) & " -> " & user_repr(type.value_type) & "]",
   ne_record_type(fs?)       = ne_record_type_user_repr(fs),
-  tuple_type(ts?)           = "(" & append((user_repr(t) : t <- ts), ", ") & ")",
+  tuple_type(ts?)           = "(" & append((user_repr(t) | t <- ts), ", ") & ")",
   tag_obj_type()            = tag_obj_type_user_repr(type.tag_type, type.obj_type),
   union_type(ts?)           = union_type_user_repr(ts);
 
 
 String ne_record_type_user_repr(RecordTypeFields fields)
 {
-  field_reprs = [record_field_user_repr(l, f.type, f.optional) : f @ l <- fields];
+  field_reprs = [record_field_user_repr(l, f.type, f.optional) | l : f <- fields];
   return "[" & append(rand_sort(field_reprs), ", ") & "]";
 
   String record_field_user_repr(SymbObj label, NeType type, Bool optional) =
@@ -129,14 +129,14 @@ String union_type_user_repr([+NeType] types)
   incl_empty_map = in(empty_map_type, types);
 
   types_to_exclude = [
-    empty_seq_type if (? t <- types : match (t) ne_seq_type() = true, _ = false),
-    empty_set_type if (? t <- types : match (t) ne_set_type() = true, _ = false),
-    empty_map_type if (? t <- types : match (t) ne_map_type() = true, _ = false)
+    empty_seq_type if (t <- types | match (t) ne_seq_type() = true, _ = false),
+    empty_set_type if (t <- types | match (t) ne_set_type() = true, _ = false),
+    empty_map_type if (t <- types | match (t) ne_map_type() = true, _ = false)
   ];
 
   types_left_sorted = rand_sort(types - types_to_exclude);
   is_still_union = length(types_left_sorted) > 1;
-  types_reprs = (user_repr(t, is_still_union, incl_empty_seq, incl_empty_set, incl_empty_map) : t <- types_left_sorted);
+  types_reprs = (user_repr(t, is_still_union, incl_empty_seq, incl_empty_set, incl_empty_map) | t <- types_left_sorted);
   repr_str = append(types_reprs, ", ");
   repr_str = "<" & repr_str & ">" if is_still_union;
   return repr_str;
@@ -151,7 +151,7 @@ String tag_obj_type_user_repr(TagType tag_type, NeType obj_type):
 String user_repr(TypeSymbol type_symb):
   type_symbol(a?)           = upper_camel_case(a),
   builtin_type_symbol(a?)   = "#" & upper_camel_case(a),
-  par_type_symbol()         = user_repr(type_symb.symbol) & "[" & append((user_repr(p) : p <- type_symb.params), ", ") & "]";
+  par_type_symbol()         = user_repr(type_symb.symbol) & "[" & append((user_repr(p) | p <- type_symb.params), ", ") & "]";
 
 
 String user_repr(SymbObj):
@@ -200,16 +200,16 @@ String user_repr(ClsVar v):
   cls_var(Atom a?)    = _str_(a);
 
 
-String user_repr(ClsType type) = "(" & append((user_repr(t) : t <- type.in_types), ", ") & " -> " & user_repr(type.out_type) & ")";
+String user_repr(ClsType type) = "(" & append((user_repr(t) | t <- type.in_types), ", ") & " -> " & user_repr(type.out_type) & ")";
 
 
-String user_repr(FnType type) = append((user_repr(t) : t <- type.params), ", ") & " -> " & user_repr(type.ret_type);
+String user_repr(FnType type) = append((user_repr(t) | t <- type.params), ", ") & " -> " & user_repr(type.ret_type);
 
 
 String user_repr(PseudoType pseudotype)
 {
   bpts = match (pseudotype) pseudotype(pts?) = pts;
-  return append((user_repr(pt) : pt <- rand_sort(bpts)), ", ");
+  return append((user_repr(pt) | pt <- rand_sort(bpts)), ", ");
 
   String user_repr(BasicPseudoType psuedotype):
     symbol(a?)        = _str_(a),
@@ -241,7 +241,7 @@ String user_repr(Pattern ptrn):
   ptrn_integer(t?)    = user_repr(t),
   ptrn_tag_obj()      = ptrn_tag_obj_user_repr(ptrn.tag, ptrn.obj),
   ptrn_var()          = {if ptrn.ptrn != ptrn_any then user_repr(ptrn.ptrn) & " " else ""} & user_repr(ptrn.var) & "?",
-  ptrn_union(ps?)     = "<" & append((user_repr(p) : p <- rand_sort(ps)), ", ") & ">";
+  ptrn_union(ps?)     = "<" & append((user_repr(p) | p <- rand_sort(ps)), ", ") & ">";
 
 
 String ptrn_tag_obj_user_repr(TagPtrn tag, Pattern obj):

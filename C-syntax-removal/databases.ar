@@ -1,17 +1,17 @@
-using SynPrg syn_prg, SynDBDef db_def
+implicit syn_prg : SynPrg, db_def : SynDBDef
 {
   DataBase desugar_data_base
   {
     name = db_symbol(db_def.name);
     state_vars = [
-      memb_var(v.name) -> [
+      memb_var(v.name) -> (
         type:       syn_type_to_type(v.type, nil),
         init_value: desugar_db_expr(v.init_value, [])
-      ] : v <- db_state_vars
+      ) | v <- db_state_vars
     ];
-    methods  = [desugar_db_method(m) : m <- lookup(methods_by_target, name, [])];
-    updates  = [desugar_update(u)    : u <- lookup(updates_by_target, name, [])];
-    handlers = [desugar_handler(h)   : h <- lookup(handlers_by_target, name, [])];
+    methods  = [desugar_db_method(m) | m <- lookup(methods_by_target, name, [])];
+    updates  = [desugar_update(u)    | u <- lookup(updates_by_target, name, [])];
+    handlers = [desugar_handler(h)   | h <- lookup(handlers_by_target, name, [])];
 
     return data_base(
       name:         name,
@@ -28,17 +28,17 @@ using SynPrg syn_prg, SynDBDef db_def
 
   Method desugar_db_method(SynMethodDef syn_method)
   {
-    args = ((syn_type_to_type(t, nil), v) : t, v <- syn_method.args);
+    args = ((syn_type_to_type(t, nil), v) | t, v <- syn_method.args);
     ret_type = syn_type_to_type(syn_method.ret_type, nil);
-    expr = desugar_db_expr(syn_method.expr, set((v : unused_var, v <- syn_method.args)));
+    expr = desugar_db_expr(syn_method.expr, set((v | unused_var, v <- syn_method.args)));
     return method(syn_method.name, args, ret_type, expr);
   }
 
 
   Update desugar_update(SynUpdateDef syn_method)
   {
-    args = ((syn_type_to_type(t, nil), v) : t, v <- syn_method.args);
-    body = desugar_db_update_stmts(syn_method.body, set((v : unused_var, v <- syn_method.args)));
+    args = ((syn_type_to_type(t, nil), v) | t, v <- syn_method.args);
+    body = desugar_db_update_stmts(syn_method.body, set((v | unused_var, v <- syn_method.args)));
     return update(syn_method.name, args, body);
   }
 

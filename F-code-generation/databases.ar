@@ -1,16 +1,16 @@
-using Program program, DataBase database, CompilationOptions options
+implicit program : Program, database : DataBase, options : CompilationOptions
 {
   TransBlock compiled_database
   {
     state_vars = database.state_vars;
     nested_dbs = database.nested_dbs;
 
-    vars_pre_init_code = rand_sort([init_memb_var(v, :blank) : unused_var @ v <- state_vars]);
-    vars_init_code = join(rand_sort([gen_db_eval_code(d.init_value, v, 0) : d @ v <- state_vars]));
-    nested_dbs_init_code = rand_sort([init_db(v, t) : t @ v <- nested_dbs]);
+    vars_pre_init_code = rand_sort([init_memb_var(v, :blank) | v : unused_var <- state_vars]);
+    vars_init_code = join(rand_sort([gen_db_eval_code(d.init_value, v, 0) | v : d <- state_vars]));
+    nested_dbs_init_code = rand_sort([init_db(v, t) | v : t <- nested_dbs]);
 
-    vars_cleanup_code = rand_sort([reset_memb_var(v, :blank) : unused_var @ v <- state_vars]);
-    nested_dbs_cleanup_code = rand_sort([cleanup_db(v, t) : t @ v <- nested_dbs]);
+    vars_cleanup_code = rand_sort([reset_memb_var(v, :blank) | v : unused_var <- state_vars]);
+    nested_dbs_cleanup_code = rand_sort([cleanup_db(v, t) | v : t <- nested_dbs]);
 
     methods_code = compiled_database_methods(database.methods);
     updates_code = compiled_database_updates(database.updates);
@@ -30,7 +30,7 @@ using Program program, DataBase database, CompilationOptions options
 
   [MethodId -> Instr*]  compiled_database_methods([Method] methods)
   {
-    return merge([gen_code(ms) : ms @ unused_var <- group_by(methods, ($.name, length($.args)))]);
+    return merge([gen_code(ms) | unused_var : ms <- group_by(methods, ($.name, length($.args)))]);
 
 
     [MethodId -> Instr*] gen_code([+Method] methods)
@@ -40,7 +40,7 @@ using Program program, DataBase database, CompilationOptions options
       arity = length(a_method.args);
       return [method_id(name, arity) -> gen_code(a_method)] if size(methods) == 1;
       sorted_methods = rand_sort(methods);
-      comp_methods = merge(([method_id(m.name, arity, i) -> gen_code(m)] : m @ i <- sorted_methods));
+      comp_methods = merge(([method_id(m.name, arity, i) -> gen_code(m)] | m @ i <- sorted_methods));
       disp_method_code = gen_db_dispatch_method_body(database.name, sorted_methods, program.typedefs);
       return comp_methods & [method_id(name, arity) -> disp_method_code];
     }
@@ -49,17 +49,17 @@ using Program program, DataBase database, CompilationOptions options
     Instr* gen_code(Method method)
     {
       res_var = lvar(0);
-      code = (set_var(v, fn_par(i)) : unused_var, v @ i <- method.args) & gen_db_eval_code(method.expr, res_var, 1);
+      code = (set_var(v, fn_par(i)) | unused_var, v @ i <- method.args) & gen_db_eval_code(method.expr, res_var, 1);
       // entry_code = [push_call_info(fndef.name, fn_par(i)) : p @ i <- fndef.params])];
       // exit_code = [pop_call_info];
-      return (code | ret_val(res_var));
+      return (code || ret_val(res_var));
     }
   }
 
 
   [UpdateId -> Instr*] compiled_database_updates([Update] updates)
   {
-    return merge([gen_updates_code(ms) : ms @ unused_var <- group_by(updates, ($.name, length($.args)))]);
+    return merge([gen_updates_code(ms) | unused_var : ms <- group_by(updates, ($.name, length($.args)))]);
 
 
     [UpdateId -> Instr*] gen_updates_code([+Update] updates)
@@ -69,7 +69,7 @@ using Program program, DataBase database, CompilationOptions options
       arity = length(a_method.args);
       return [update_id(name, arity) -> gen_update_code(a_method)] if size(updates) == 1;
       sorted_updates = rand_sort(updates);
-      comp_updates = merge(([update_id(m.name, arity, i) -> gen_update_code(m)] : m @ i <- sorted_updates));
+      comp_updates = merge(([update_id(m.name, arity, i) -> gen_update_code(m)] | m @ i <- sorted_updates));
       disp_method_code = update_dispatch_code(database.name, sorted_updates, program.typedefs);
       return comp_updates & [update_id(name, arity) -> disp_method_code];
     }
@@ -81,7 +81,7 @@ using Program program, DataBase database, CompilationOptions options
       update_body = update.body;
       return () if update_body == ();
       return (
-        (set_var(v, fn_par(i)) : unused_var, v @ i <- update.args) |
+        (set_var(v, fn_par(i)) | unused_var, v @ i <- update.args) ||
         execute_block(gen_db_proc_code(update_body, never_used_lvar, 0))
       );
     }
@@ -93,7 +93,7 @@ using Program program, DataBase database, CompilationOptions options
     return [:] if handlers == [];
     return [main_handler -> gen_handler_code(only_element(handlers))] if size(handlers) == 1;
     sorted_handlers = rand_sort(handlers);
-    comp_handlers = merge(([handler_id(i) -> gen_handler_code(h)] : h @ i <- sorted_handlers));
+    comp_handlers = merge(([handler_id(i) -> gen_handler_code(h)] | h @ i <- sorted_handlers));
     disp_method_code = update_dispatch_code(database.name, sorted_handlers, program.typedefs);
     return comp_handlers & [main_handler -> disp_method_code];
 
@@ -156,8 +156,8 @@ using Program program, DataBase database, CompilationOptions options
 Instr* gen_db_dispatch_method_body(DBSymbol db_type, Method+ methods, [TypeName -> Type] typedefs)
 {
   assert length(methods) > 1;
-  assert size(set((m.name : m <- methods))) == 1;         // All methods must have the same name
-  assert size(set((length(m.args) : m <- methods))) == 1; // All methods have the same arity
+  assert size(set((m.name | m <- methods))) == 1;         // All methods must have the same name
+  assert size(set((length(m.args) | m <- methods))) == 1; // All methods have the same arity
   assert length(head(methods).args) > 0;                  // No-argument methods cannot be polymorphic
 
   l0 = lvar(0);
@@ -166,7 +166,7 @@ Instr* gen_db_dispatch_method_body(DBSymbol db_type, Method+ methods, [TypeName 
   name      = a_method.name;
   arity     = length(a_method.args);
 
-  disp_cands = dispatch_candidate_args(((t : t, unused_var <- nonempty(m.args)) : m <- methods), typedefs);
+  disp_cands = dispatch_candidate_args(((t | t, unused_var <- nonempty(m.args)) | m <- methods), typedefs);
 
   //## DO WE NEED TO IMPLEMENT THE CASE IN WHICH THERE'S NO SINGLE ARGUMENT THAT CAN BE USED FOR DISPATCH?
   fail if disp_cands == ();
@@ -175,37 +175,37 @@ Instr* gen_db_dispatch_method_body(DBSymbol db_type, Method+ methods, [TypeName 
   //## THAT CAN MAKE THE DISPATCH MORE EFFICIENT, NOT JUST THE FIRST ONE
   disp_arg = head(disp_cands);
 
-  cases = ([
+  cases = ((
       ptrns:  (type_to_pseudotype_pattern(left(m.args[disp_arg]), typedefs)),
       code:   (
           invoke_db_method(
             l0,
             db_type,
             method_id(name, arity, i),
-            (fn_par(j) : j < arity)
+            (fn_par(j) | j < arity)
           ),
           exit_block
         )
-    ] : m @ i <- methods
+    ) | m @ i <- methods
   );
   code = gen_switch_code((fn_par(disp_arg)), cases, next_obj_var_id=0);
 
-  return (code | ret_val(l0));
+  return (code || ret_val(l0));
 }
 
 
 Instr* update_dispatch_code(DBSymbol db_type, <Update+, Handler+> updates, [TypeName -> Type] typedefs)
 {
   assert length(updates) > 1;
-  assert size(set((name(u) : u <- updates))) == 1;    // All updates must have the same name
-  assert size(set((arity(u) : u <- updates))) == 1;   // All updates have the same arity
+  assert size(set((name(u) | u <- updates))) == 1;    // All updates must have the same name
+  assert size(set((arity(u) | u <- updates))) == 1;   // All updates have the same arity
   assert arity(head(updates)) > 0;                    // No-argument updates cannot be polymorphic
 
   a_method  = head(updates);
   name      = name(a_method);
   arity     = arity(a_method);
 
-  disp_cands = dispatch_candidate_args((arg_types(u) : u <- updates), typedefs);
+  disp_cands = dispatch_candidate_args((arg_types(u) | u <- updates), typedefs);
 
   //## DO WE NEED TO IMPLEMENT THE CASE IN WHICH THERE'S NO SINGLE ARGUMENT THAT CAN BE USED FOR DISPATCH?
   fail if disp_cands == ();
@@ -214,14 +214,14 @@ Instr* update_dispatch_code(DBSymbol db_type, <Update+, Handler+> updates, [Type
   //## THAT CAN MAKE THE DISPATCH MORE EFFICIENT, NOT JUST THE FIRST ONE
   disp_arg = head(disp_cands);
 
-  cases = ([
+  cases = ((
       ptrns:  (type_to_pseudotype_pattern(arg_types(u)[disp_arg], typedefs)),
-      code:   (try_update(db_type, polymorphic_update_id(u, i), (fn_par(j) : j < arity)), exit_block)
-    ] : u @ i <- updates
+      code:   (try_update(db_type, polymorphic_update_id(u, i), (fn_par(j) | j < arity)), exit_block)
+    ) | u @ i <- updates
   );
   code = gen_switch_code((fn_par(disp_arg)), cases, next_obj_var_id=0);
 
-  return (code | ret_val(object(nil)));
+  return (code || ret_val(object(nil)));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -236,7 +236,7 @@ NzNat arity(<Update, Handler>):
   handler()     = 1;
 
 NeType+ arg_types(<Update, Handler>):
-  update() u?   = (t : t, unused_var <- nonempty(u.args)),
+  update() u?   = (t | t, unused_var <- nonempty(u.args)),
   handler() h?  = (h.type);
 
 UpdateId polymorphic_update_id(<Update, Handler>, Nat idx):

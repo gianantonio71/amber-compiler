@@ -1,42 +1,42 @@
-using
+implicit
 {
-  SynPrg                        syn_prg,
+  syn_prg                  : SynPrg,
 
-  [BasicTypeSymbol -> [+Nat]]                         type_arity_map,
-  [NamedArg -> Nat]                                   curr_function_named_args,
-  [FnSymbol -> [Nat -> (Nat*, [+[NamedArg -> Nat]])]] global_functions,
-  [FnSymbol -> [Nat -> Nat*]]                         local_functions,
-  [FnSymbol -> NzNat]                                 closures,
-  [ProcSymbol -> (Nat, Bool)]                         procedures,
-  [AnyAutoVar -> AutoSymbol]                          auto_vars,
-  [AnyDBVar -> DBSymbol]                              db_vars,
-  [AutoSymbol -> SynAutoDef]                          automata,
-  Nat                                                 actual_arg_arity;
+  type_arity_map           : [BasicTypeSymbol -> [+Nat]],
+  curr_function_named_args : [NamedArg -> Nat],
+  global_functions         : [FnSymbol -> [Nat -> (Nat*, [+[NamedArg -> Nat]])]],
+  local_functions          : [FnSymbol -> [Nat -> Nat*]],
+  closures                 : [FnSymbol -> NzNat],
+  procedures               : [ProcSymbol -> (Nat, Bool)],
+  auto_vars                : [AnyAutoVar -> AutoSymbol],
+  db_vars                  : [AnyDBVar -> DBSymbol],
+  automata                 : [AutoSymbol -> SynAutoDef],
+  actual_arg_arity         : Nat;
 
 
   ExprWFError* expr_wf_errors(SynExpr expr, [Var] def_vars)
   {
     errs = expr_local_wf_errors(expr, def_vars);
     errs = expr_nested_wf_errors(expr, def_vars) if errs == ();
-    return (attach_anchor_obj_if_needed(e, expr) : e <- errs);
+    return (attach_anchor_obj_if_needed(e, expr) | e <- errs);
   }
 
 
   ExprWFError* expr_nested_wf_errors(SynExpr expr, [Var] def_vars):
     object()            = (),
     float_lit()         = (),
-    seq_expr(ses?)      = join((expr_wf_errors(se, def_vars) : se <- ses)),
-    seq_tail_expr()     = expr_wf_errors(expr.seq, def_vars) & join((expr_wf_errors(e, def_vars) : e <- expr.tail)),
-    set_expr(ses?)      = join((expr_wf_errors(se, def_vars) : se <- rand_sort(ses))),
-    map_expr(es?)       = join((map_entry_wf_errors(e, def_vars) : e <- rand_sort(es))),
+    seq_expr(ses?)      = join((expr_wf_errors(se, def_vars) | se <- ses)),
+    seq_tail_expr()     = expr_wf_errors(expr.seq, def_vars) & join((expr_wf_errors(e, def_vars) | e <- expr.tail)),
+    set_expr(ses?)      = join((expr_wf_errors(se, def_vars) | se <- rand_sort(ses))),
+    map_expr(es?)       = join((map_entry_wf_errors(e, def_vars) | e <- rand_sort(es))),
     tag_obj_expr()      = expr_wf_errors(expr.tag, def_vars) & expr_wf_errors(expr.obj, def_vars),
     FnPar               = {assert in(expr, def_vars); return ();},
     const_or_var(a?)    = (),
     cls_par(n?)         = (),
     fn_call()           = (),
-    builtin_call()      = join((expr_wf_errors(e, def_vars) : e <- expr.args)),
+    builtin_call()      = join((expr_wf_errors(e, def_vars) | e <- expr.args)),
     unary_pseudo_call() = expr_wf_errors(expr.target, def_vars) & expr_wf_errors(expr.param, def_vars),
-    map_search()        = join((expr_wf_errors(e, def_vars) : e <- (expr.map, expr.key, expr.value))),
+    map_search()        = join((expr_wf_errors(e, def_vars) | e <- (expr.map, expr.key, expr.value))),
     singl_only_elem()   = expr_wf_errors(expr.set, def_vars),
     key_search()        = expr_wf_errors(expr.map, def_vars) & expr_wf_errors(expr.key, def_vars),
     and()               = expr_wf_errors(expr.left, def_vars) & expr_wf_errors(expr.right, def_vars),
@@ -56,11 +56,11 @@ using
     range_comp()        = range_comp_expr_nested_wf_errors(expr, def_vars),
     if_expr()           = expr_wf_errors(expr.else, def_vars) &
                           join((expr_wf_errors(b.cond, def_vars) &
-                          expr_wf_errors(b.expr, def_vars) : b <- expr.branches)),
+                          expr_wf_errors(b.expr, def_vars) | b <- expr.branches)),
     match_expr()        = match_expr_nested_wf_errors(expr, def_vars),
     do_expr(ss?)        = root_stmt_block_wf_errors(ss, def_vars, true, false),
-    let_expr()          = root_stmt_block_wf_errors((expr.stmts | syn_ret_stmt(expr.expr)), def_vars, true, false), //## THIS IS WRONG
-    method_call_expr()  = join((expr_wf_errors(e, def_vars) : e <- expr.args));
+    let_expr()          = root_stmt_block_wf_errors((expr.stmts || syn_ret_stmt(expr.expr)), def_vars, true, false), //## THIS IS WRONG
+    method_call_expr()  = join((expr_wf_errors(e, def_vars) | e <- expr.args));
 
 
   ExprWFError* clauses_exprs_wf_errors(SynClause+ clauses, SynExpr* exprs, [Var] def_vars)
@@ -71,7 +71,7 @@ using
       clause_errs = clause_errs & clause_wf_errors(c, curr_vars);
       curr_vars = curr_vars & syn_new_vars(c);
     ;
-    expr_errs = join((expr_wf_errors(e, curr_vars) : e <- exprs));
+    expr_errs = join((expr_wf_errors(e, curr_vars) | e <- exprs));
     return clause_errs & expr_errs;
   }
 
@@ -98,8 +98,8 @@ using
 
   ExprWFError* match_expr_nested_wf_errors(SynTryExpr expr, [Var] def_vars)
   {
-    exprs_errs = join((expr_wf_errors(e, def_vars) : e <- expr.exprs));
-    case_exprs_errs = join((expr_wf_errors(c.expr, def_vars & seq_union((syn_new_vars(p) : p <- c.patterns))) : c <- expr.cases));
+    exprs_errs = join((expr_wf_errors(e, def_vars) | e <- expr.exprs));
+    case_exprs_errs = join((expr_wf_errors(c.expr, def_vars & seq_union((syn_new_vars(p) | p <- c.patterns))) | c <- expr.cases));
     return exprs_errs & case_exprs_errs;
   }
 
@@ -134,6 +134,11 @@ using
 
     const_fn = fn_symbol(name);
 
+    if has_key(local_functions, const_fn):
+      sgns = local_functions[const_fn];
+      return () if has_key(sgns, 0);
+    ;
+
     is_db_var = has_key(db_vars, loc_db_var(name)) or has_key(db_vars, memb_db_var(name));
     is_closure = has_key(closures, const_fn);
     return (not_a_scalar_var(name)) if is_db_var or is_closure;
@@ -143,7 +148,7 @@ using
       if has_key(arity_to_info, 0):
         unused_var, all_exp_named_args = arity_to_info[0];
         assert unused_var == ();
-        return join((exp_named_arg_errors(p, a, def_vars) : p, a <- rand_sort_pairs(only_element(all_exp_named_args))));
+        return join((exp_named_arg_errors(p, a, def_vars) | p, a <- rand_sort_pairs(only_element(all_exp_named_args))));
       ;
     ;
 
@@ -229,8 +234,8 @@ using
   {
     new_vars = expr.vars & (expr.idx_var if expr.idx_var?);
     dupl_vars = dupl_elems(new_vars);
-    return (dupl_var_mult_asgnm(v) : v <- rand_sort(dupl_vars)) &
-           (already_def_var(v) : v <- rand_sort(already_def_vars(set(new_vars), def_vars)));
+    return (dupl_var_mult_asgnm(v) | v <- rand_sort(dupl_vars)) &
+           (already_def_var(v) | v <- rand_sort(already_def_vars(set(new_vars), def_vars)));
   }
 
 

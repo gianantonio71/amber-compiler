@@ -1,7 +1,7 @@
 type CompilationOptions = compilation_options(ignore_assertions: Bool);
 
 
-using Program program, CompilationOptions options
+implicit program : Program, options : CompilationOptions
 {
   CompiledPrg gen_prg_code = gen_simpl_prg_code(program=generate_dispatch_functions(program));
 
@@ -9,10 +9,10 @@ using Program program, CompilationOptions options
   CompiledPrg gen_simpl_prg_code
   {
     memb_tests    = gen_needed_memb_test_fns(program);
-    fndefs        = [gen_fn_code(fd) : fd <- program.fndefs];
-    proc_defs     = [gen_proc_code(pd) : pd <- program.proc_defs];
-    blocks        = [gen_auto_code(automaton=a) : a <- program.auto_defs];
-    trans_blocks  = [compiled_database(database=db) : db <- program.data_bases];
+    fndefs        = [gen_fn_code(fd) | fd <- program.fndefs];
+    proc_defs     = [gen_proc_code(pd) | pd <- program.proc_defs];
+    blocks        = [gen_auto_code(automaton=a) | a <- program.auto_defs];
+    trans_blocks  = [compiled_database(database=db) | db <- program.data_bases];
 
     return compiled_prg(
       bool_procs:   memb_tests,
@@ -26,18 +26,18 @@ using Program program, CompilationOptions options
 
   [BoolProcDef] gen_needed_memb_test_fns(Program prg)
   {
-    init_types = union([retrieve_types(fd.expr) : fd <- prg.fndefs]) &
-                 union([retrieve_from_nested_exprs(pd.body, retrieve_types) : pd <- prg.proc_defs]);
+    init_types = union([retrieve_types(fd.expr) | fd <- prg.fndefs]) &
+                 union([retrieve_from_nested_exprs(pd.body, retrieve_types) | pd <- prg.proc_defs]);
 
-    type_symbs = union([retrieve_type_symbs(t) : t <- init_types]);
+    type_symbs = union([retrieve_type_symbs(t) | t <- init_types]);
     new_type_symbs = type_symbs;
     while new_type_symbs != []:
-      new_types = [expand_type_ref(ts, prg.typedefs) : ts <- new_type_symbs];
-      new_type_symbs = union([retrieve_type_symbs(t) : t <- new_types]) - type_symbs;
+      new_types = [expand_type_ref(ts, prg.typedefs) | ts <- new_type_symbs];
+      new_type_symbs = union([retrieve_type_symbs(t) | t <- new_types]) - type_symbs;
       type_symbs = type_symbs & new_type_symbs;
     ;
 
-    return [mk_named_type_memb_test_fn(ts, prg.typedefs) : ts <- type_symbs];
+    return [mk_named_type_memb_test_fn(ts, prg.typedefs) | ts <- type_symbs];
   }
 
 
@@ -46,8 +46,8 @@ using Program program, CompilationOptions options
     fn_res_var = lvar(0);
     tmp_bvar   = bvar(0);
 
-    body = rand_sort([auto_pre_init(v, t) : t @ v <- proc_def.auto_vars]);
-    body = body & rand_sort([init_db(v, t) : t @ v <- proc_def.db_vars]);
+    body = rand_sort([auto_pre_init(v, t) | v : t <- proc_def.auto_vars]);
+    body = body & rand_sort([init_db(v, t) | v : t <- proc_def.db_vars]);
 
     let artifact            = proc_def,
         next_set_it_var_id  = 0,
@@ -65,7 +65,7 @@ using Program program, CompilationOptions options
       //;
 
       // Setting named variables for parameters
-      body = body & (set_var(p.var, fn_par(i)) : p @ i <- proc_def.args);
+      body = body & (set_var(p.var, fn_par(i)) | p @ i <- proc_def.args);
 
       // Evaluating the expression
       proc_body = proc_def.body;
@@ -77,10 +77,10 @@ using Program program, CompilationOptions options
       //;
     ;
 
-    body = body & rand_sort([auto_cleanup(v, t) : t @ v <- proc_def.auto_vars]);
-    body = body & rand_sort([cleanup_db(v, t) : t @ v <- proc_def.db_vars]);
+    body = body & rand_sort([auto_cleanup(v, t) | v : t <- proc_def.auto_vars]);
+    body = body & rand_sort([cleanup_db(v, t) | v : t <- proc_def.db_vars]);
 
-    debug_code = (push_call_info(proc_def.name, (just(fn_par(i)) : p @ i <- proc_def.args)));
+    debug_code = (push_call_info(proc_def.name, (just(fn_par(i)) | p @ i <- proc_def.args)));
 
     val = if proc_def.res_type != nil then fn_res_var else object(nil); //## BAD: HERE I'M CHEATING...
     body = debug_code & body & (pop_call_info, ret_val(val));
@@ -120,7 +120,7 @@ using Program program, CompilationOptions options
       //;
 
       // Setting named variables for parameters
-      body = body & (set_var_if_need_be(p, i) : p @ i <- fndef.params);
+      body = body & (set_var_if_need_be(p, i) | p @ i <- fndef.params);
 
       // Evaluating the expression
       body = body & gen_eval_code(fndef.expr, fn_res_var);
@@ -131,14 +131,14 @@ using Program program, CompilationOptions options
       //;
     ;
 
-    body = (push_call_info(fndef.name, (maybe(fn_par(i), is_scalar_par(p)) : p @ i <- fndef.params))) & body & (pop_call_info, ret_val(fn_res_var));
+    body = (push_call_info(fndef.name, (maybe(fn_par(i), is_scalar_par(p)) | p @ i <- fndef.params))) & body & (pop_call_info, ret_val(fn_res_var));
 
     ObjProcPar low_level_param(FnFrmPar p):
       scalar_par()      = :obj,
       non_scalar_par()  = if p.var? then cls(p.var, p.arity) else cls(p.arity);
 
-    params = (low_level_param(p) : p <- fndef.params);
-    named_args = [v -> arity(t) : t @ v <- fndef.named_args];
+    params = (low_level_param(p) | p <- fndef.params);
+    named_args = [v -> arity(t) | v : t <- fndef.named_args];
 
     // cached = fndef.params == () and fndef.named_args == [:] and not is_too_simple_to_be_worth_caching(fndef.expr);
     cached = fndef.params == () and not is_too_simple_to_be_worth_caching(fndef.expr);
@@ -176,16 +176,16 @@ using Program program, CompilationOptions options
   Program generate_dispatch_functions(Program prg)
   {
     fns_by_name_and_arity = group_by(prg.fndefs, ($.name, arity($)));
-    overloaded_fns = [fns : fns @ unused_var <- fns_by_name_and_arity, size(fns) > 1];
+    overloaded_fns = [fns | unused_var : fns <- fns_by_name_and_arity, size(fns) > 1];
 
     assert {
-      mult_map = bag(((fd.name, arity(fd)) : fd <- rand_sort(prg.fndefs))); //## BAD: USING A SEQUENCE INSTEAD OF A BAG AND AGAIN A SEQUENCE INSTEAD OF A TUPLE
-      ref_overloaded_fns = [nonempty([fd : fd <- prg.fndefs, (fd.name, arity(fd)) == na]) : m @ na <- mult_map, m > 1];
+      mult_map = bag(((fd.name, arity(fd)) | fd <- rand_sort(prg.fndefs))); //## BAD: USING A SEQUENCE INSTEAD OF A BAG AND AGAIN A SEQUENCE INSTEAD OF A TUPLE
+      ref_overloaded_fns = [nonempty([fd | fd <- prg.fndefs, (fd.name, arity(fd)) == na]) | na : m <- mult_map, m > 1];
       return overloaded_fns == ref_overloaded_fns;
     };
 
 
-    dispatched_fns = union([generate_dispatch_function(fns, prg.typedefs) : fns <- overloaded_fns]);
+    dispatched_fns = union([generate_dispatch_function(fns, prg.typedefs) | fns <- overloaded_fns]);
     new_fns = dispatched_fns & {prg.fndefs - union(overloaded_fns)};
 
     return program(
@@ -201,13 +201,13 @@ using Program program, CompilationOptions options
   [+FnDef] generate_dispatch_function([+FnDef] fds, [TypeName -> Type] typedefs)
   {
     assert size(fds) > 1;
-    assert size([length(fd.params) : fd <- fds]) == 1; // All functions have the same arity
+    assert size([length(fd.params) | fd <- fds]) == 1; // All functions have the same arity
 
     //## I DON'T PARTICULARLY LIKE THIS...
     rand_fd      = an_elem(fds);
     name         = rand_fd.name;
     rand_params  = nonempty(rand_fd.params);
-    scalar_pars  = (i : p @ i <- rand_params, is_scalar_par(p));
+    scalar_pars  = (i | p @ i <- rand_params, is_scalar_par(p));
     arity        = nz_nat(arity(rand_fd));
     named_args   = rand_fd.named_args;
 
@@ -222,17 +222,17 @@ using Program program, CompilationOptions options
         // expr:         Expr
       );
 
-    unique_fds = (make_unique(fd, i) : fd @ i <- rand_sort(fds));
+    unique_fds = (make_unique(fd, i) | fd @ i <- rand_sort(fds));
 
     candidates = ();
     for i <- scalar_pars:
-      params = (fd.params[i] : fd <- rand_sort(fds));
-      ptypes = (if p.type? then pseudotype(get_scalar_param_type(p), typedefs) else pseudotype_any : p <- params);
-      good = all((all((are_disjoint(p1, p2) : p2 <- right_subseq(ptypes, j+1))) : p1 @ j <- ptypes)); //## BAD: INEFFICIENT. ALSO A BIT UGLY...
+      params = (fd.params[i] | fd <- rand_sort(fds));
+      ptypes = (if p.type? then pseudotype(get_scalar_param_type(p), typedefs) else pseudotype_any | p <- params);
+      good = all((all((are_disjoint(p1, p2) | p2 <- right_subseq(ptypes, j+1))) | p1 @ j <- ptypes)); //## BAD: INEFFICIENT. ALSO A BIT UGLY...
       candidates = candidates & (i) if good;
     ;
 
-    dispatch_call_params = (if is_scalar_par(p) then fn_par(i) else cls_var(i) : p @ i <- rand_params);
+    dispatch_call_params = (if is_scalar_par(p) then fn_par(i) else cls_var(i) | p @ i <- rand_params);
 
     if candidates != ():
       //## IF THERE'S MORE THAN ONE CANDIDATE PARAMETER, WE SHOULD CHOOSE THE ONE
@@ -244,7 +244,7 @@ using Program program, CompilationOptions options
       //## MATCHED BY THE "ANY" PATTERN.
       for fd @ i <- unique_fds:
         ptrn = if i == 0 then ptrn_any else mk_ptrn(fd.params[dispatch_param], typedefs, true); //## THAT "true" IS UGLY...
-        case  = [ptrns: (ptrn), expr: fn_call(fd.name, dispatch_call_params)];
+        case  = (ptrns: (ptrn), expr: fn_call(fd.name, dispatch_call_params));
         cases = (case) & cases;
       ;
       new_expr = match_expr((fn_par(dispatch_param)), nonempty(cases));
@@ -252,17 +252,17 @@ using Program program, CompilationOptions options
     else
       //## THIS IS ALL WRONG, THERE'S USUALLY NO NEED TO CHECK ALL THE PARAMETERS
       is_checked = bit_map(scalar_pars, arity);
-      dispatch_call_params = (if is_scalar_par(p) then fn_par(i) else cls_var(i) : p @ i <- rand_params);
+      dispatch_call_params = (if is_scalar_par(p) then fn_par(i) else cls_var(i) | p @ i <- rand_params);
       cases = ();
       for fd @ i <- unique_fds:
-        ptrns = (if i == 0 then ptrn_any else mk_ptrn(p, typedefs, is_checked[j]) : p @ j <- nonempty(fd.params));
-        case  = [ptrns: ptrns, expr: fn_call(fd.name, dispatch_call_params)];
+        ptrns = (if i == 0 then ptrn_any else mk_ptrn(p, typedefs, is_checked[j]) | p @ j <- nonempty(fd.params));
+        case  = (ptrns: ptrns, expr: fn_call(fd.name, dispatch_call_params));
         cases = (case) & cases;
       ;
-      new_expr = match_expr(nonempty((fn_par(i) : i < arity)), nonempty(cases));
+      new_expr = match_expr(nonempty((fn_par(i) | i < arity)), nonempty(cases));
     ;
 
-    params = (strip_fn_param(p) : p <- rand_params);
+    params = (strip_fn_param(p) | p <- rand_params);
 
     dispatch_fn = fn_def(
       name:          name,
