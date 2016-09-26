@@ -2,15 +2,7 @@ implicit program : Program, database : DataBase, options : CompilationOptions
 {
   TransBlock compiled_database
   {
-    state_vars = database.state_vars;
-    nested_dbs = database.nested_dbs;
-
-    vars_pre_init_code = rand_sort([init_memb_var(v, :blank) | v : unused_var <- state_vars]);
-    vars_init_code = join(rand_sort([gen_db_eval_code(d.init_value, v, 0) | v : d <- state_vars]));
-    nested_dbs_init_code = rand_sort([init_db(v, t) | v : t <- nested_dbs]);
-
-    vars_cleanup_code = rand_sort([reset_memb_var(v, :blank) | v : unused_var <- state_vars]);
-    nested_dbs_cleanup_code = rand_sort([cleanup_db(v, t) | v : t <- nested_dbs]);
+    value_stores, tables = value_stores_and_tables;
 
     methods_code = compiled_database_methods(database.methods);
     updates_code = compiled_database_updates(database.updates);
@@ -18,13 +10,52 @@ implicit program : Program, database : DataBase, options : CompilationOptions
 
     return trans_block(
       name:           database.name,
-      state_vars:     keys(state_vars),
-      nested_blocks:  nested_dbs,
-      init_code:      vars_pre_init_code & vars_init_code & nested_dbs_init_code,
-      cleanup_code:   vars_cleanup_code & nested_dbs_cleanup_code,
+      state_vars:     keys(database.state_vars),
+      value_stores:   value_stores,
+      tables:         tables,
+      nested_blocks:  database.nested_dbs,
+      init_code:      database_init_code,
+      cleanup_code:   database_cleanup_code,
       methods_code:   methods_code,
       updates_code:   handlers_code & updates_code
     );
+  }
+
+
+  Instr* database_init_code
+  {
+    state_vars = database.state_vars;
+    nested_dbs = database.nested_dbs;
+
+    vars_pre_init_code = rand_sort([init_memb_var(v, :blank) | v : unused_var <- state_vars]);
+    let artifact = database, next_var_gen = blank_var_gen:
+      vars_init_code = join(rand_sort([gen_eval_code(d.init_value, v) | v : d <- state_vars]));
+    ;
+    nested_dbs_init_code = rand_sort([init_db(v, t) | v : t <- nested_dbs]);
+
+    value_stores, tables = value_stores_and_tables;
+
+    value_stores_init_code = (init_value_store(vs) | vs <- rand_sort(value_stores));
+    tables_init_code = rand_sort([init_table(v, t) | v : t <- tables]);
+
+    return vars_pre_init_code & vars_init_code & nested_dbs_init_code & value_stores_init_code & tables_init_code;
+  }
+
+
+  Instr* database_cleanup_code
+  {
+    state_vars = database.state_vars;
+    nested_dbs = database.nested_dbs;
+
+    vars_cleanup_code = rand_sort([reset_memb_var(v, :blank) | v : unused_var <- state_vars]);
+    nested_dbs_cleanup_code = rand_sort([cleanup_db(v, t) | v : t <- nested_dbs]);
+
+    value_stores, tables = value_stores_and_tables;
+
+    value_stores_cleanup_code = (cleanup_value_store(vs) | vs <- rand_sort(value_stores));
+    tables_cleanup_code = rand_sort([cleanup_table(v, t) | v : t <- tables]);
+
+    return vars_cleanup_code & nested_dbs_cleanup_code & value_stores_cleanup_code & tables_cleanup_code;
   }
 
 
@@ -48,8 +79,9 @@ implicit program : Program, database : DataBase, options : CompilationOptions
 
     Instr* gen_code(Method method)
     {
-      res_var = lvar(0);
-      code = (set_var(v, fn_par(i)) | unused_var, v @ i <- method.args) & gen_db_eval_code(method.expr, res_var, 1);
+      res_var, var_gen = next_obj_var(blank_var_gen);
+      code = (set_var(value(v), fn_par(i)) | unused_var, v @ i <- method.args, v != nil) &
+             gen_eval_code(method.expr, res_var, artifact = database, next_var_gen = var_gen);
       // entry_code = [push_call_info(fndef.name, fn_par(i)) : p @ i <- fndef.params])];
       // exit_code = [pop_call_info];
       return (code || ret_val(res_var));
@@ -82,7 +114,7 @@ implicit program : Program, database : DataBase, options : CompilationOptions
       return () if update_body == ();
       return (
         (set_var(v, fn_par(i)) | unused_var, v @ i <- update.args) ||
-        execute_block(gen_db_proc_code(update_body, never_used_lvar, 0))
+        execute_block(gen_code(update_body, never_used_lvar, artifact = database, next_var_gen = blank_var_gen))
       );
     }
   }
@@ -91,7 +123,7 @@ implicit program : Program, database : DataBase, options : CompilationOptions
   [UpdateId -> Instr*] compiled_database_handlers([Handler] handlers)
   {
     return [:] if handlers == [];
-    return [main_handler -> gen_handler_code(only_element(handlers))] if size(handlers) == 1;
+    return [main_handler -> gen_handler_code(only(handlers))] if size(handlers) == 1;
     sorted_handlers = rand_sort(handlers);
     comp_handlers = merge(([handler_id(i) -> gen_handler_code(h)] | h @ i <- sorted_handlers));
     disp_method_code = update_dispatch_code(database.name, sorted_handlers, program.typedefs);
@@ -105,47 +137,31 @@ implicit program : Program, database : DataBase, options : CompilationOptions
       return () if handler_body == ();
       return (
         set_var(var(:it), fn_par(0)),
-        execute_block(gen_db_proc_code(handler_body, never_used_lvar, 0))
+        execute_block(gen_code(handler_body, never_used_lvar, artifact = database, next_var_gen = blank_var_gen))
       );
     }
   }
+}
 
-  //////////////////////////////////////////////////////////////////////////////
-  //////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 
-  Instr* gen_db_eval_code(Expr expr, EvalDestVar res_var, Nat next_obj_var_id)
+implicit database : DataBase
+{
+  ([ValueStoreId], [RelVar -> Table]) value_stores_and_tables
   {
-    let artifact            = database,
-        next_obj_var_id     = next_obj_var_id,
-        next_int_var_id     = 0,
-        next_bool_var_id    = 0,
-        next_set_it_var_id  = 0,
-        next_seq_it_var_id  = 0,
-        next_map_it_var_id  = 0,
-        next_vector_var_id  = 0,
-        next_stream_var_id  = 0:
+    sorted_cols = rand_sort([(v, i) | v : info <- database.rel_vars, i <- index_set(info.types)]);
+    col_to_id_map = merge(([c -> i] | c @ i <- sorted_cols));
 
-      code = gen_eval_code(expr, res_var);
-    ;
-    return code;
-  }
+    value_stores = set((value_store_id(i) | i < length(sorted_cols)));
 
+    tables = [
+      v -> table(
+        ((value_store_id(col_to_id_map((v, i))), in([i], info.unique)) | unused_var @ i <- info.types)
+      ) | v : info <- database.rel_vars
+    ];
 
-  Instr+ gen_db_proc_code(Statement+ stmts, EvalDestVar res_var, Nat next_obj_var_id)
-  {
-    let artifact            = database,
-        next_obj_var_id     = next_obj_var_id,
-        next_int_var_id     = 0,
-        next_bool_var_id    = 0,
-        next_set_it_var_id  = 0,
-        next_seq_it_var_id  = 0,
-        next_map_it_var_id  = 0,
-        next_vector_var_id  = 0,
-        next_stream_var_id  = 0:
-
-      code = gen_code(stmts, res_var);
-    ;
-    return code;
+    return (value_stores, tables);
   }
 }
 
@@ -162,34 +178,33 @@ Instr* gen_db_dispatch_method_body(DBSymbol db_type, Method+ methods, [TypeName 
 
   l0 = lvar(0);
 
+  count = length(methods);
+
   a_method  = head(methods);
   name      = a_method.name;
   arity     = length(a_method.args);
 
-  disp_cands = dispatch_candidate_args(((t | t, unused_var <- nonempty(m.args)) | m <- methods), typedefs);
+  disp_args = choose_disp_args(((t | t, unused_var <- nonempty(m.args)) | m <- methods), typedefs);
 
-  //## DO WE NEED TO IMPLEMENT THE CASE IN WHICH THERE'S NO SINGLE ARGUMENT THAT CAN BE USED FOR DISPATCH?
-  fail if disp_cands == ();
-
-  //## IF THERE'S MORE THAN ONE CANDIDATE PARAMETER, WE SHOULD CHOOSE THE ONE
-  //## THAT CAN MAKE THE DISPATCH MORE EFFICIENT, NOT JUST THE FIRST ONE
-  disp_arg = head(disp_cands);
-
-  cases = ((
-      ptrns:  (type_to_pseudotype_pattern(left(m.args[disp_arg]), typedefs)),
-      code:   (
-          invoke_db_method(
-            l0,
-            db_type,
-            method_id(name, arity, i),
-            (fn_par(j) | j < arity)
-          ),
-          exit_block
-        )
-    ) | m @ i <- methods
+  cases = ({
+      ptrns = if i < count-1
+        then (type_to_pseudotype_pattern(m.args[j](0), typedefs) | j <- disp_args)
+        else (ptrn_any | unused_var <- disp_args);
+      code = (
+        invoke_db_method(
+          l0,
+          db_type,
+          method_id(name, arity, i),
+          (fn_par(j) | j < arity)
+        ),
+        exit_block
+      );
+      return (ptrns: ptrns, code: code);
+    } | m @ i <- methods
   );
-  code = gen_switch_code((fn_par(disp_arg)), cases, next_obj_var_id=0);
 
+  // expr = match_expr((fn_par(i) | i <- disp_args), nonempty(cases));
+  code = gen_switch_code((fn_par(i) | i <- disp_args), cases, next_var_gen = blank_var_gen);
   return (code || ret_val(l0));
 }
 
@@ -201,26 +216,32 @@ Instr* update_dispatch_code(DBSymbol db_type, <Update+, Handler+> updates, [Type
   assert size(set((arity(u) | u <- updates))) == 1;   // All updates have the same arity
   assert arity(head(updates)) > 0;                    // No-argument updates cannot be polymorphic
 
-  a_method  = head(updates);
-  name      = name(a_method);
-  arity     = arity(a_method);
+  count = length(updates);
 
-  disp_cands = dispatch_candidate_args((arg_types(u) | u <- updates), typedefs);
+  an_update = head(updates);
+  name      = name(an_update);
+  arity     = arity(an_update);
 
-  //## DO WE NEED TO IMPLEMENT THE CASE IN WHICH THERE'S NO SINGLE ARGUMENT THAT CAN BE USED FOR DISPATCH?
-  fail if disp_cands == ();
-
-  //## IF THERE'S MORE THAN ONE CANDIDATE PARAMETER, WE SHOULD CHOOSE THE ONE
-  //## THAT CAN MAKE THE DISPATCH MORE EFFICIENT, NOT JUST THE FIRST ONE
-  disp_arg = head(disp_cands);
-
-  cases = ((
-      ptrns:  (type_to_pseudotype_pattern(arg_types(u)[disp_arg], typedefs)),
-      code:   (try_update(db_type, polymorphic_update_id(u, i), (fn_par(j) | j < arity)), exit_block)
-    ) | u @ i <- updates
+  arg_types = (
+    match (u)
+      update()  = (t | t, unused_var <- nonempty(u.args)),
+      handler() = (u.type)
+    | u <- updates
   );
-  code = gen_switch_code((fn_par(disp_arg)), cases, next_obj_var_id=0);
 
+  disp_args = choose_disp_args(arg_types, typedefs);
+
+  cases = ({
+      ptrns = if i < count-1
+        then (type_to_pseudotype_pattern(arg_types(i)(j), typedefs) | j <- disp_args)
+        else (ptrn_any | unused_var <- disp_args);
+      code = (try_update(db_type, polymorphic_update_id(u, i), (fn_par(j) | j < arity)), exit_block);
+      return (ptrns: ptrns, code: code);
+    } | u @ i <- updates
+  );
+
+  // expr = match_expr((fn_par(i) | i <- disp_args), nonempty(cases));
+  code = gen_switch_code((fn_par(i) | i <- disp_args), cases, next_var_gen = blank_var_gen);
   return (code || ret_val(object(nil)));
 }
 

@@ -28,8 +28,8 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
     id = get_inner_id(node.id);
 
     var = memb_var(id);
-    nv_var = lvar(0);
-    eval_code = gen_safe_eval_code(node.expr, nv_var, next_obj_var_id = 1, next_int_var_id = 0, next_bool_var_id = 0);
+    nv_var, var_gen = next_obj_var(blank_var_gen);
+    eval_code = gen_safe_eval_code(node.expr, nv_var, next_var_gen = var_gen);
     cond = neg(is_eq(var, nv_var));
     body = (set_var(var, nv_var), set_bvar(memb_has_changed(id), true) if in(id, memb_copy_vars_ids)) &
            (mark_for_update(n) | n <- rand_sort(node.downstream_nodes));
@@ -42,8 +42,8 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
     id = get_inner_id(node.id);
 
     var = memb_var(id);
-    nv_var = lvar(0);
-    let next_obj_var_id = 1, next_int_var_id = 0, next_bool_var_id = 0:
+    nv_var, var_gen = next_obj_var(blank_var_gen);
+    let next_var_gen = var_gen:
       cases = nonempty((gen_safe_eval_code(e, nv_var) | e <- node.exprs) & ((clear_loc_var(nv_var))));
       eval_instr = switch_on_nat(update_source_var(id), cases);
     ;
@@ -59,8 +59,8 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
     id = get_inner_id(node.id);
 
     var = memb_var(id);
-    nv_var = lvar(0);
-    let next_obj_var_id = 1, next_int_var_id = 0, next_bool_var_id = 0:
+    nv_var, var_gen = next_obj_var(blank_var_gen);
+    let next_var_gen = var_gen:
       cases = nonempty((gen_safe_eval_code(e, nv_var) | e <- node.exprs) & ((clear_loc_var(nv_var))));
       eval_instr = switch_on_nat(update_source_var(id), cases);
     ;
@@ -190,7 +190,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
     i2 = ivar(2);
     i3 = ivar(3);
 
-    l0 = lvar(0);
+    l0, var_gen = next_obj_var(blank_var_gen);
     cond_var = memb_var(id);
 
     watched_signal_up_to_date_var = watched_signal_up_to_date_var(id);
@@ -293,7 +293,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
         neg(is_eq(curr_time_slot_var, -1)),
         // If the current time slot is set, then we are now either in state D or E,
         // and the time slot decides the current value of the time-varying condition
-        (set_var(l0, to_obj(if init_val == true then is_even(curr_time_slot_var) else is_odd(curr_time_slot_var)))),
+        (set_var(l0, bool_obj(if init_val == true then is_even(curr_time_slot_var) else is_odd(curr_time_slot_var)))),
         // Otherwise we are either in state B or C, and the time-varying condition is undefined
         (clear_loc_var(l0))
       );
@@ -353,7 +353,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
         neg(is_eq(curr_time_slot_var, -1)),
         // If the current time slot is set, then we are now either in state D or E,
         // and the time slot decides the current value of the time-varying condition
-        (set_var(l0, to_obj(if init_val == true then is_even(curr_time_slot_var) else is_odd(curr_time_slot_var)))),
+        (set_var(l0, bool_obj(if init_val == true then is_even(curr_time_slot_var) else is_odd(curr_time_slot_var)))),
         // Otherwise we are either in state B, C or F.
         // In state F (watched_signal_value_var == false) the overall condition is false.
         // Otherwise it is undefined.
@@ -367,7 +367,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
       // the code for the four possible cases listed above
       do_if_not(
         watched_signal_up_to_date_var,
-        gen_safe_eval_code(node.cond, l0, next_obj_var_id = 1, next_int_var_id = 0, next_bool_var_id = 0) &
+        gen_safe_eval_code(node.cond, l0, next_var_gen = var_gen) &
         ( branch(
             is_null(l0),
             (do_if_not(is_null(watched_signal_value_var), watched_signal_becomes_undefined_code)),
@@ -413,7 +413,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
     curr_time_slot_var = curr_time_slot_var(id);
 
     clear_timer_instr = clear_timer(automaton.name, time_varying_node_idx);
-    update_l0_instr = set_var(l0, to_obj(if init_val == true then is_even(curr_time_slot_var) else is_odd(curr_time_slot_var)));
+    update_l0_instr = set_var(l0, bool_obj(if init_val == true then is_even(curr_time_slot_var) else is_odd(curr_time_slot_var)));
 
     // Handling the case in which all the watched signals are undefined.
     // The resulting signals is undefined too. Note that this happens
@@ -499,11 +499,11 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
 
   Instr* gen_node_update_code(AutoNestedAutoInputNode node)
   {
-    nv_var = lvar(0);
+    nv_var, var_gen = next_obj_var(blank_var_gen);
     node_id = node.id;
     auto_var = memb_auto_var(node_id.auto);
 
-    eval_code = gen_safe_eval_code(node.value, nv_var, next_obj_var_id = 1, next_int_var_id = 0, next_bool_var_id = 0);
+    eval_code = gen_safe_eval_code(node.value, nv_var, next_var_gen = var_gen);
 
     set_var_code = (
       //## SHOULD I CHECK THAT THE INPUT IS NOT NULL BEFORE SETTING IT, OR IS THIS ALREADY DONE
@@ -561,7 +561,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
     db_var = memb_db_var(inner_id);
     db_type = automaton.nested_dbs[db_var];
 
-    msg_eval_info = gen_safe_eval_info(node.message, next_obj_var_id = 0, next_int_var_id = 0, next_bool_var_id = 0);
+    msg_eval_info = gen_safe_eval_info(node.message, next_var_gen = blank_var_gen);
     atomic_msg_expr = msg_eval_info.expr;
     msg_send_instr = send_msg(db_var, db_type, atomic_msg_expr, true);
 
@@ -579,10 +579,10 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
 
   Instr* gen_cond_eval_code(Nat id, Expr cond, Maybe[(id: CondNodeId, trigger: Bool)] parent)
   {
-    l0 = lvar(0);
+    l0, var_gen = next_obj_var(blank_var_gen);
 
     // Evaluating the local condition. If there's no parent, that's all we need to do
-    loc_cond_eval_code = gen_safe_eval_code(cond, l0, next_obj_var_id = 1, next_int_var_id = 0, next_bool_var_id = 0);
+    loc_cond_eval_code = gen_safe_eval_code(cond, l0, next_var_gen = var_gen);
     return loc_cond_eval_code if parent == nil;
 
     // Local condition variables
@@ -617,7 +617,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
         // Pulling the stored, and not necessarly up-to-date, value into l0
         ( branch(
             cd_var,
-            (set_var(l0, to_obj(id_var))),
+            (set_var(l0, bool_obj(id_var))),
             (clear_loc_var(l0))
           )
         )
@@ -635,10 +635,10 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
 
   Instr* gen_rep_cond_eval_code(CondNodeId node_id, Expr cond, Maybe[(id: CondNodeId, trigger: Bool)] parent, Bool has_deps)
   {
-    l0 = lvar(0);
+    l0, var_gen = next_obj_var(blank_var_gen);
 
     // Evaluating the local condition.
-    cond_eval_code = gen_safe_eval_code(cond, l0, next_obj_var_id = 1, next_int_var_id = 0, next_bool_var_id = 0);
+    cond_eval_code = gen_safe_eval_code(cond, l0, next_var_gen = var_gen);
 
     // Anding the local condition with the 'parent == trigger' one, if a parent exists
     if parent != nil:

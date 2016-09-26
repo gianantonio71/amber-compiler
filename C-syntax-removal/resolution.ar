@@ -1,0 +1,416 @@
+type SymbObjVar     = StdVar, NamedArg, MembVar, QualAutoMembVar;
+type SymbChainAcc   = accessor(expr: SymbChainExpr, field: SymbObj);
+type SymbChainExpr  = SymbObjVar, QualDBMembVar, SymbChainAcc;
+
+
+Nat resol_priority(StdVar)                    = 0;
+Nat resol_priority(NamedArg)                  = 0;
+Nat resol_priority(MembVar)                   = 1;
+Nat resol_priority(QualAutoMembVar)           = 2;
+Nat resol_priority(QualDBMembVar)             = 2;
+Nat resol_priority(SymbChainAcc)              = 2;
+Nat resol_priority(AutoMethodCallExpr call)   = if call.var? then 2 else 3;
+Nat resol_priority(DBMethodCallExpr call)     = if call.var? then 2 else 3;
+Nat resol_priority(FnCallExpr call)           = resol_priority(call.name);
+
+Nat resol_priority(NestedFnSymb)              = 3;
+Nat resol_priority(BasicFnSymb)               = 4;
+
+Nat resol_priority(ClsVar)                    = 0;
+Nat resol_priority(RelVar)                    = 1;
+Nat resol_priority(QualRelVar)                = 2;
+Nat resol_priority(PreCall precall)           = if precall.var? then 2 else 3;
+
+Nat resol_priority(LocAutoVar)                = 0;
+Nat resol_priority(LocDBVar)                  = 0;
+Nat resol_priority(MembAutoVar)               = 1;
+Nat resol_priority(MembDBVar)                 = 1;
+
+////////////////////////////////////////////////////////////////////////////////
+
+implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> Nat]
+{
+  Bool arity_is_compatible(AtomicFnSymb fn_symb, Nat arity)
+  {
+    arities = keys(top_level_fndefs_by_name_arity[fn_symb]);
+    return arities(arity);
+  }
+
+  Bool arity_is_compatible(NestedFnFamilyId fn_symb, Nat arity)
+  {
+    arities = local_fn_defs_arities[fn_symb.inner];
+    return arities(arity);
+  }
+
+  Bool arity_is_compatible(PreAutoCall precall, Nat arity)
+  {
+    auto_type = if precall.var?
+      then auto_var_type(precall.var)
+      else self_auto_type;
+    methods = all_methods_by_automaton[auto_type];
+    method_bare_name = bare_id(precall.method);
+    arities = [length(m.args) | m <- methods, m.name == method_bare_name];
+    return arities(arity);
+  }
+
+  Bool arity_is_compatible(PreDBCall precall, Nat arity)
+  {
+    db_type = if precall.var?
+      then db_var_type(precall.var)
+      else self_db_type;
+    methods = methods_by_db[bare_id(db_type)];
+    fn_symb = fn_symbol(bare_id(precall.method));
+    arities = [length(m.args) | m <- methods, m.name == fn_symb];
+    return arities(arity);
+  }
+
+  Bool arity_is_compatible(ClsVar var, Nat arity)
+  {
+    var_arity = cls_vars_arities[var];
+    return var_arity == arity;
+  }
+
+  Bool arity_is_compatible(AnyRelVar var, Nat arity)
+  {
+    var_arity = rel_vars_arities[var];
+    return arity == var_arity or arity == var_arity - 1;
+  }
+
+  Bool arity_is_compatible(NamedArg var, Nat arity)     = arity == 1 or arity == 2 or impl_args[var] == arity;
+
+  Bool arity_is_compatible(StdVar, Nat arity)           = arity == 1 or arity == 2;
+  Bool arity_is_compatible(MembVar, Nat arity)          = arity == 1 or arity == 2;
+  Bool arity_is_compatible(QualAutoMembVar, Nat arity)  = arity == 1 or arity == 2;
+  Bool arity_is_compatible(QualDBMembVar, Nat arity)    = arity == 1 or arity == 2;
+  Bool arity_is_compatible(SymbChainAcc, Nat arity)     = arity == 1 or arity == 2;
+
+  Bool arity_is_compatible(AnyAutoVar, Nat)   = false;
+  Bool arity_is_compatible(AnyDBVar, Nat)     = false;
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  [FnFamilyId] resolve_by_priority_as_fn_name(Atom symbol, Nat arity, [Var] def_vars)
+  {
+    raw_resols = resolve_symbol(symbol, def_vars);
+    resols = [r | r <- raw_resols, r :: FnFamilyId, arity_is_compatible(r, arity)];
+    res = min_by(resols, resol_priority($));
+    assert size(res) <= 1;
+    return res;
+  }
+
+
+  [<SymbObjVar, ClsVar, RelVar, FnFamilyId, PreCall>]
+  resolve_by_priority_as_call_lookalike_target(Atom target, Nat arity, [Var] def_vars)
+  {
+    raw_resols = resolve_symbol(target, def_vars);
+    resols = [r | r <- raw_resols, arity_is_compatible(r, arity)];
+    fail if not resols :: [<StdVar, NamedArg, MembVar, QualAutoMembVar, ClsVar, RelVar, FnFamilyId, PreCall>];
+    return min_by(resols, resol_priority($)); //## BAD BAD: WORKAROUND FOR TYPECHECKING BUG
+  }
+
+
+  [<SymbChainExpr, ClsVar, AnyRelVar, FnFamilyId, PreCall>]
+  resolve_by_priority_as_call_lookalike_target(Atom+ symbols, Nat arity, [Var] def_vars)
+  {
+    raw_resols = resolve_symbol_chain(symbols, def_vars);
+    resols = [r | r <- raw_resols, arity_is_compatible(r, arity)];
+    fail if not resols :: [<SymbChainExpr, ClsVar, AnyRelVar, FnFamilyId, PreCall>];
+    return min_by(resols, resol_priority($));
+  }
+
+
+  [<AnyAutoVar, LocDBVar, MembDBVar>] resolve_by_priority_as_auto_or_db_var(Atom symbol, [Var] def_vars)
+  {
+    raw_resols = resolve_symbol(symbol, def_vars);
+    resols = [r | r <- raw_resols, r :: <AnyAutoVar, LocDBVar, MembDBVar>];
+    assert size(resols) <= 1;
+    return min_by(resols, resol_priority($)); //## BAD BAD: WORKAROUND FOR TYPECHECKING BUG
+  }
+
+
+  [<AnyRelVar, SymbChainExpr, FnCallExpr, AutoMethodCallExpr, DBMethodCallExpr>]
+  resolve_by_priority_as_memb_test_target(Atom+ symbols, [Var] def_vars)
+  {
+    pre_resols = resolve_symbol_chain(symbols, def_vars);
+    relvar_resols = [r | r <- pre_resols, r :: AnyRelVar];
+    expr_resols = [value(er) | r <- pre_resols, er = try_resolve_as_expr(r), er != nil];
+    return min_by(relvar_resols & expr_resols, resol_priority($));
+  }
+
+
+  [AnyRelVar] resolve_by_priority_as_rel_var(Atom+ symbols, [Var] def_vars)
+  {
+    pre_resols = resolve_symbol_chain(symbols, def_vars);
+    resols = [r | r <- pre_resols, r :: AnyRelVar];
+    assert size(resols) <= 1;
+    return min_by(resols, resol_priority($)); //## BAD BAD: WORKAROUND FOR TYPECHECKING BUG
+  }
+
+
+  [<SymbChainExpr, FnCallExpr, AutoMethodCallExpr, DBMethodCallExpr>]
+  resolve_by_priority_as_expr(Atom+ symbols, [Var] def_vars)
+  {
+    resols = resolve_symbol_chain(symbols, def_vars);
+    expr_resols = [value(er) | r <- resols, er = try_resolve_as_expr(r), er != nil];
+    return min_by(expr_resols, resol_priority($)); //## BAD BAD: WORKAROUND FOR TYPECHECKING BUG
+  }
+
+
+  [ClsExpr] resolve_by_priority_as_cls_expr(Atom symbol, NzNat exp_arity, [StdVar] def_vars)
+  {
+    raw_resols = resolve_symbol(symbol, def_vars);
+    resols_priorities = [r -> resol_priority(rr) | rr <- raw_resols, r <- resolve(rr, exp_arity)];
+    return min_by(keys(resols_priorities), resols_priorities($));
+
+
+    [ClsExpr] resolve(FnFamilyId fn_symb, NzNat exp_arity)
+    {
+      //## BUG BUG BUG: HERE I MUST ALSO CHECK THAT IT HAS NO NAMED ARGUMENTS...
+      has_exp_arity = function_exists(fn_symb, exp_arity) and all((a == 0 | a <- arg_arities(fn_symb, exp_arity)));
+      return [
+        fn_ptr(fn_symb, exp_arity) if has_exp_arity,
+        no_args_cls_expr(exp_arity, fn_call(fn_symb, ())) if function_exists(fn_symb, 0)
+      ];
+    }
+
+
+    [ClsVar] resolve(ClsVar var, NzNat exp_arity) = [var if cls_vars_arities[var] == exp_arity];
+
+
+    [ClsExpr] resolve(SymbObjVar var, NzNat exp_arity) = [no_args_cls_expr(exp_arity, var)];
+
+
+    [] resolve(<LocAutoVar, MembAutoVar, LocDBVar, MembDBVar, RelVar, PreCall>, NzNat) = [];
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  Just[SymbChainExpr] try_resolve_as_expr(SymbChainExpr expr) = just(expr);
+
+
+  Nil try_resolve_as_expr(<ClsVar, AnyAutoVar, AnyDBVar, AnyRelVar>) = nil;
+
+
+  Maybe[FnCallExpr] try_resolve_as_expr(FnFamilyId fn_symb) =
+    if function_exists(fn_symb, 0)
+      then just(fn_call(fn_symb, (), [:]))
+      else nil;
+
+
+  Maybe[AutoMethodCallExpr] try_resolve_as_expr(PreAutoCall precall)
+  {
+    auto_type = if precall.var? then auto_var_type(precall.var) else self_auto_type;
+    if methods_by_automaton(bare_id(auto_type), ?):
+      methods = methods_by_automaton[bare_id(auto_type)];
+      if (m <- methods | m.name == bare_id(precall.method) and m.args == ()):
+        return just(auto_method_call_expr(var: precall.var if precall.var?, name: precall.method, args: ()));
+      ;
+    ;
+    return nil;
+  }
+
+
+  Maybe[DBMethodCallExpr] try_resolve_as_expr(PreDBCall precall)
+  {
+    db_type = if precall.var? then db_var_type(precall.var) else self_db_type;
+    if methods_by_db(bare_id(db_type), ?):
+      methods = methods_by_db[bare_id(db_type)];
+      if (m <- methods | m.name == fn_symbol(bare_id(precall.method)) and m.args == ()):
+        return just(db_method_call_expr(var: precall.var if precall.var?, name: precall.method, args: ()));
+      ;
+    ;
+    return nil;
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  [<SymbChainExpr, ClsVar, AnyAutoVar, AnyDBVar, AnyRelVar, FnFamilyId, PreCall>]
+  resolve_symbol_chain(Atom+ symbols, [Var] def_vars)
+  {
+    resols = resolve_symbol(head(symbols), def_vars);
+    for s <- tail(symbols):
+      resols = [value(nr) | r <- resols, nr = try_resolve_accessor(r, s), nr != nil];
+    ;
+    return resols;
+
+
+    Nil try_resolve_accessor(<ClsVar, AnyRelVar, FnFamilyId, PreCall>, Atom) = nil;
+
+
+    Just[SymbChainExpr] try_resolve_accessor(SymbChainExpr target, Atom field) =
+      just(accessor(expr: target, field: object(field)));
+
+
+    Maybe[<QualAutoMembVar, PreCall>] try_resolve_accessor(AnyAutoVar target, Atom field)
+    {
+      auto_type = match (target)
+        loc_auto_var()  = loc_auto_vars[target],
+        memb_auto_var() = memb_auto_vars[target];
+      interface = auto_interfaces[auto_type];
+      if interface.outputs(field, ?):
+        return just(qual_auto_memb_var(target, memb_var(field)));
+      elif method_ids_by_automaton_id[bare_id(auto_type)](field):
+        return just(pre_auto_method_call(target, method_symbol(field)));
+      else
+        return nil;
+      ;
+    }
+
+
+    Maybe[<QualDBMembVar, QualRelVar, NestedDBVar, PreCall>] try_resolve_accessor(AnyDBVar target, Atom field)
+    {
+      target_type = db_var_type(target);
+      interface = db_interfaces[target_type];
+      if in(field, interface.memb_vars):
+        return just(qual_db_memb_var(target, memb_var(field)));
+      elif interface.rel_vars(field, ?):
+        return just(qual_rel_var(target, rel_var(field)));
+      elif interface.nested_dbs(field, ?):
+        return just(nested_db_var(target, memb_db_var(field)));
+      elif method_ids_by_db_id[bare_id(target_type)](field):
+        return just(pre_db_method_call(target, method_symbol(field)));
+      else
+        return nil;
+      ;
+    }
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  [<
+    SymbObjVar,
+    ClsVar,
+    LocAutoVar, MembAutoVar,
+    LocDBVar, MembDBVar,
+    RelVar,
+    FnFamilyId, PreCall
+  >]
+  resolve_symbol(Atom symbol, [Var] def_vars)
+  {
+    std_var = var(symbol);
+    named_arg = named_arg(symbol);
+    fn_symb = fn_symbol(symbol);
+    gen_resols = [
+      std_var if def_vars(std_var),
+      named_arg if impl_args(named_arg, ?),
+      fn_symb if top_level_fndefs_by_name_arity(fn_symb, ?)
+    ];
+    ctx_resols = resolve_symbol(syn_artifact, symbol);
+    return gen_resols & ctx_resols;
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit syn_prg : SynPrg
+{
+  [<LocAutoVar, LocDBVar, QualAutoMembVar>] resolve_symbol(SynProcDef artifact, Atom symbol)
+  {
+    resols = set((loc_db_var(symbol) | v <- artifact.db_vars, v.var == symbol));
+    for v <- artifact.auto_vars:
+      if v.var == symbol:
+        interface = auto_interfaces[auto_symbol(v.type)];
+        resol = loc_auto_var(symbol);
+        def_output = interface.default_output;
+        resol = qual_auto_memb_var(loc_auto_var(symbol), memb_var(value(def_output))) if def_output != nil;
+        resols = resols & [resol];
+      ;
+    ;
+    return resols;
+  }
+
+
+  [<MembVar, MembAutoVar, MembDBVar, QualAutoMembVar>] resolve_symbol(SynAutoDef artifact, Atom symbol)
+  {
+    internals = auto_internals[artifact.name];
+    resols = [
+      memb_var(symbol)      if in(symbol, internals.memb_vars),
+      memb_db_var(symbol)   if internals.nested_dbs(symbol, ?)
+    ];
+
+    if internals.nested_autos(symbol, ?):
+      auto_type = auto_symbol(internals.nested_autos[symbol]);
+      interface = auto_interfaces[auto_type];
+      resol = memb_auto_var(symbol);
+      def_output = interface.default_output;
+      resol = qual_auto_memb_var(memb_auto_var(symbol), memb_var(value(def_output))) if def_output != nil;
+      resols = resols & [resol];
+    ;
+
+    return resols;
+  }
+
+
+  [<MembVar, RelVar, MembDBVar, PreCall>] resolve_symbol(SynDBDef artifact, Atom symbol)
+  {
+    interface = db_interfaces[db_symbol(artifact.name)];
+    return [
+      memb_var(symbol)                          if in(symbol, interface.memb_vars),
+      rel_var(symbol)                           if has_key(interface.rel_vars, symbol),
+      memb_db_var(symbol)                       if has_key(interface.nested_dbs, symbol),
+      pre_db_method_call(method_symbol(symbol)) if method_ids_by_db_id[artifact.name](symbol)
+    ];
+  }
+
+
+  [<MembVar, MembAutoVar, MembDBVar, QualAutoMembVar, PreCall>] resolve_symbol(AutoMethodDef artifact, Atom symbol)
+  {
+    auto_def = auto_defs_by_id[auto_symbol(artifact.target)];
+    resols = resolve_symbol(auto_def, symbol);
+    if method_ids_by_automaton_id[artifact.target](symbol):
+      resols = resols & [pre_auto_method_call(method_symbol(symbol))];
+    ;
+    return resols;
+  }
+
+
+  [<MembVar, RelVar, MembDBVar, PreCall>] resolve_symbol(HandlerDef artifact, Atom symbol)
+  {
+    db_def = db_defs_by_id[db_symbol(artifact.target)];
+    return resolve_symbol(db_def, symbol);
+  }
+
+
+  [<ClsVar, NestedFnFamilyId>] resolve_symbol(TopLevelFnDef artifact, Atom symbol)
+  {
+    cls_var = cls_var(symbol);
+    fn_symb = fn_symbol(symbol);
+    nested_fn_symb = nested_fn_symbol(artifact.unique_name, fn_symb);
+
+    return [
+      cls_var         if (a <- set(artifact.fndef.args), cls_arg() <~ a | a.name == symbol),
+      nested_fn_symb  if at_least_one((fn.name == fn_symb | fn <- artifact.fndef.local_fns))
+    ];
+  }
+
+
+  [<ClsVar, NestedFnFamilyId>] resolve_symbol(NestedFnDef artifact, Atom symbol)
+  {
+    cls_var = cls_var(symbol);
+    fn_symb = fn_symbol(symbol);
+    nested_fn_symb = nested_fn_symbol(artifact.parent_unique_name, fn_symb);
+
+    return [
+      cls_var         if (a <- set(artifact.fndef.args), cls_arg() <~ a | a.name == symbol),
+      nested_fn_symb  if at_least_one((fn.name == fn_symb | fn <- artifact.parent_fndef.local_fns))
+    ];
+  }
+
+
+  [<MembVar, RelVar, MembDBVar, PreCall>] resolve_symbol(UsingBlockFnDef artifact, Atom symbol)
+  {
+    db_def = db_defs_by_id[db_symbol(artifact.target)];
+    return resolve_symbol(db_def, symbol);
+  }
+
+
+  [<MembVar, RelVar, MembDBVar, PreCall>] resolve_symbol(UsingBlockUpdateDef artifact, Atom symbol)
+  {
+    db_def = db_defs_by_id[db_symbol(artifact.target)];
+    return resolve_symbol(db_def, symbol);
+  }
+}

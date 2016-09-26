@@ -105,7 +105,7 @@ String user_repr(Type type, Bool inside_type_union, Bool incl_empty_seq, Bool in
   type_ref(ts?)             = user_repr(ts),
   ne_seq_type()             = user_repr(type.elem_type) & if incl_empty_seq then "*" else "+",
   ne_set_type()             = "[" & {if incl_empty_set then "" else "+"} & user_repr(type.elem_type) & "]",
-  ne_map_type()             = "[" & {if incl_empty_set then "" else "+"} & user_repr(type.key_type) & " -> " & user_repr(type.value_type) & "]",
+  ne_map_type()             = "[" & {if incl_empty_map then "" else "+"} & user_repr(type.key_type) & " -> " & user_repr(type.value_type) & "]",
   ne_record_type(fs?)       = ne_record_type_user_repr(fs),
   tuple_type(ts?)           = "(" & append((user_repr(t) | t <- ts), ", ") & ")",
   tag_obj_type()            = tag_obj_type_user_repr(type.tag_type, type.obj_type),
@@ -115,7 +115,7 @@ String user_repr(Type type, Bool inside_type_union, Bool incl_empty_seq, Bool in
 String ne_record_type_user_repr(RecordTypeFields fields)
 {
   field_reprs = [record_field_user_repr(l, f.type, f.optional) | l : f <- fields];
-  return "[" & append(rand_sort(field_reprs), ", ") & "]";
+  return "(" & append(rand_sort(field_reprs), ", ") & ")";
 
   String record_field_user_repr(SymbObj label, NeType type, Bool optional) =
     _str_(match (label) object(a?) = a) & ": " & user_repr(type) & if optional then "?" else "";
@@ -143,9 +143,21 @@ String union_type_user_repr([+NeType] types)
 }
 
 
-String tag_obj_type_user_repr(TagType tag_type, NeType obj_type):
-  atom_type               = "(<+> @ " & user_repr(obj_type) & ")",
-  symb_type(object(tag?)) = _str_(tag) & "(" & user_repr(obj_type) & ")";
+String tag_obj_type_user_repr(TagType tag_type, NeType obj_type)
+{
+  skip_pars = match (obj_type)
+    tuple_type() | ne_record_type()   = true,
+    _                                 = false;
+
+  tag_repr = match (tag_type)
+    atom_type               = "<+>",
+    symb_type(object(tag?)) = _str_(tag);
+
+  obj_repr = user_repr(obj_type);
+  obj_repr = "(" & obj_repr & ")" if not skip_pars;
+
+  return tag_repr & obj_repr;
+}
 
 
 String user_repr(TypeSymbol type_symb):
@@ -255,6 +267,9 @@ String user_repr(FnSymbol fn_symb):
   op_symbol(op?)        = user_repr(op),
   nested_fn_symbol()    = user_repr(fn_symb.outer) & ":" & user_repr(fn_symb.inner),
   unique_fn_symbol()    = {fail;};
+
+
+String user_repr(MethodSymbol symb): method_symbol(a?)  = _str_(a);
 
 
 String user_repr(AutoSymbol): auto_symbol(a?) = _str_(a);

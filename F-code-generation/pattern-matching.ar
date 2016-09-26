@@ -1,4 +1,4 @@
-implicit next_obj_var_id : Nat, loc_bound_vars : [StdVar], on_match_code : Instr+, tag_vars : [AtomicExpr -> LocVar]
+implicit next_var_gen : VarGen, loc_bound_vars : [StdVar], on_match_code : Instr+, tag_vars : [AtomicExpr -> LocVar]
 {
   Instr* gen_ptrn_matching_code(Pattern ptrn, AtomicExpr obj, PseudoType ptype):
     ptrn_var()        = gen_ptrn_var_matching_code(ptrn.var, ptrn.ptrn, obj, ptype),
@@ -21,8 +21,8 @@ implicit next_obj_var_id : Nat, loc_bound_vars : [StdVar], on_match_code : Instr
       assert offset <= length(field_ptrns);
       return on_match_code if offset == length(field_ptrns);
       code = gen_ptrn_tuple_matching_code(field_ptrns, obj, nat(offset+1));
-      tmp_var = lvar(next_obj_var_id);
-      let next_obj_var_id = nat(next_obj_var_id + 1), on_match_code = nonempty(code):
+      tmp_var, var_gen = next_obj_var(next_var_gen);
+      let next_var_gen = var_gen, on_match_code = nonempty(code):
         code = (set_var(tmp_var, at(obj, offset))) & gen_ptrn_matching_code(field_ptrns[offset], tmp_var, pseudotype_any);
       ;
       return code;
@@ -46,9 +46,9 @@ implicit next_obj_var_id : Nat, loc_bound_vars : [StdVar], on_match_code : Instr
       return (do_if(is_tagged_obj(obj), on_match_code));
     ;
 
-    var  = lvar(next_obj_var_id);
+    var, var_gen = next_obj_var(next_var_gen);
 
-    let next_obj_var_id = nat(next_obj_var_id + 1):
+    let next_var_gen = var_gen:
       obj_match_code = gen_ptrn_matching_code(obj_ptrn, var, pseudotype_any);
       on_tag_match_code = nonempty((set_var(var, get_inner_obj(obj))) & obj_match_code);
       tag_match_code = gen_ptrn_matching_code(tag_ptrn, var, pseudotype_any, on_match_code=on_tag_match_code);
@@ -73,11 +73,9 @@ implicit next_obj_var_id : Nat, loc_bound_vars : [StdVar], on_match_code : Instr
     //## BUG BUG BUG: WHAT IF THE VARIABLE HERE IS LOCALLY BOUND?
     ptrn_var()  = (set_var(obj_ptrn.var, get_inner_obj(obj))) &
                   gen_ptrn_matching_code(obj_ptrn.ptrn, obj_ptrn.var, pseudotype_any),
-    _           = { var = lvar(next_obj_var_id);
-                    let next_obj_var_id = nat(next_obj_var_id + 1):
-                      obj_ptrn_matching_code = gen_ptrn_matching_code(obj_ptrn, var, pseudotype_any);
-                    ;
-                    return (set_var(var, get_inner_obj(obj))) & obj_ptrn_matching_code;
+    _           = { var, var_gen = next_obj_var(next_var_gen);
+                    obj_code = gen_ptrn_matching_code(obj_ptrn, var, pseudotype_any, next_var_gen = var_gen);
+                    return (set_var(var, get_inner_obj(obj))) & obj_code;
                   };
 
 
@@ -114,7 +112,7 @@ implicit next_obj_var_id : Nat, loc_bound_vars : [StdVar], on_match_code : Instr
     easy_tags = [_obj_(tag) | p <- easy_tag_ptrns, tag = p.tag, tag :: <ptrn_symbol(SymbObj)>];
 
     if size(easy_tags) == 1:
-      tag = only_element(easy_tags);
+      tag = only(easy_tags);
       check_expr = if is_subset(ptype, pseudotype_tag_obj(_obj_(tag)))
         then true
         else and_then(is_tagged_obj(obj), inline_is_eq(get_tag(obj), tag));
@@ -124,7 +122,7 @@ implicit next_obj_var_id : Nat, loc_bound_vars : [StdVar], on_match_code : Instr
     code = if check_exprs != () then opt_do_if(or_else(check_exprs), on_match_code) else ();
 
     if size(easy_tags) > 1:
-      tag_var = lvar(next_obj_var_id);
+      tag_var, unused_var = next_obj_var(next_var_gen);
       tag_check_expr = or_else(nonempty((inline_is_eq(tag_var, tag) | tag <- rand_sort(easy_tags))));
       inner_code = (set_var(tag_var, get_tag(obj))) & opt_do_if(tag_check_expr, on_match_code);
       if is_subset(ptype, pseudotype_tag_objs):
@@ -143,7 +141,7 @@ implicit next_obj_var_id : Nat, loc_bound_vars : [StdVar], on_match_code : Instr
 
 ////////////////////////////////////////////////////////////////////////////////
 
-implicit next_obj_var_id : Nat
+implicit next_var_gen : VarGen
 {
   Instr+ gen_single_ptrn_switch_code(ExprEvalRes expr, (Pattern, Instr+)+ orig_cases)
   {
@@ -241,7 +239,7 @@ implicit next_obj_var_id : Nat
   Instr+ gen_switch_code(ExprEvalRes+ exprs, (ptrns: Pattern+, code: Instr+)+ cases)
   {
     if length(head(cases).ptrns) == 1:
-      return gen_single_ptrn_switch_code(only_item(exprs), ((only_item(c.ptrns), c.code) | c <- cases));
+      return gen_single_ptrn_switch_code(only(exprs), ((only(c.ptrns), c.code) | c <- cases));
     else
       code = ();
       for c <- cases:

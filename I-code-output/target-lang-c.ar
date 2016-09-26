@@ -223,7 +223,8 @@ String+ generate_push_call_info_wrapper(Nat arity)
 
 
 //## THIS SHOULD NOT GO HERE
-type FnCallParam = blank_obj, ObjExpr, ElemVar, PendingInputVar, VecVar, BoolExpr, IntExpr, ItVar, StreamVar, ClsVar;
+type FnCallParam  = blank_obj, ObjExpr, ElemVar, PendingInputVar, VecVar, BoolExpr, IntExpr,
+                    ItVar, StreamVar, ClsVar, AnyRelVar, AnyValueStoreId;
 
 
 implicit
@@ -232,356 +233,6 @@ implicit
   cls2id                          : ClsDef -> Nat,
   int_seqs_types_and_lengths      : (String, Nat)*,
   cached_semi_consts_by_named_arg : [(NamedArg, Nat) -> [+FnSymbol]];
-
-
-  CCodeOutput compile_trans_block_to_c(TransBlock block)
-  {
-    state_vars_decls = ["OBJ " & to_c_var_decl_name(v) & ";" | v <- block.state_vars];
-    nested_blocks_decls = [to_c_name(t) & " " & to_c_var_decl_name(v) & ";" | v : t <- block.nested_blocks];
-
-    memb_decls = rand_sort(state_vars_decls) & rand_sort(nested_blocks_decls);
-    struct_decl = ("struct " & to_c_name(block.name), "{") & indent_lines(memb_decls) & ("};");
-
-    aux_vars_decls = ["OBJ " & to_c_var_decl_name(pending_state_var(bare_id(v))) & ";" | v <- block.state_vars];
-    nested_aux_blocks_decls = [aux_struct_c_name(t) & " " & to_c_var_decl_name(v) & ";" | v : t <- block.nested_blocks];
-    aux_memb_decls = rand_sort(aux_vars_decls) & rand_sort(nested_aux_blocks_decls);
-    aux_struct_decl = ("struct " & aux_struct_c_name(block.name), "{") & indent_lines(aux_memb_decls) & ("};");
-
-    init_decl, init_impl = compile_init_code_to_c(block.name, block.init_code);
-    cleanup_decl, cleanup_impl = compile_cleanup_code_to_c(block.name, block.cleanup_code);
-    entry_point_decl, entry_point_impl = update_entry_point(block.name, block.state_vars, block.nested_blocks);
-
-    methods_decls, methods_impls = unzip(rand_sort([gen_user_def_method(block.name, id, b) | id : b <- block.methods_code]));
-    methods_impls = join(intermix(methods_impls, ("", "")));
-
-    updates_decls, updates_impls = unzip(rand_sort([gen_update(block.name, id, b) | id : b <- block.updates_code]));
-    updates_impls = join(intermix(updates_impls, ("", "")));
-
-    all_decls = (struct_decl, aux_struct_decl, (init_decl), (cleanup_decl), (entry_point_decl), methods_decls, updates_decls);
-    all_impls = (init_impl, cleanup_impl, entry_point_impl, methods_impls, updates_impls);
-
-    header = join(intermix(all_decls, ("", "")));
-    body   = join(intermix(all_impls, ("", "")));
-
-    return (body: body, header: header);
-
-
-    (String, String*) compile_init_code_to_c(DBSymbol name, Instr* init_code)
-    {
-      init_vars_decl = gen_vars_decls(init_code);
-      init_vars_decl = init_vars_decl & ("") if init_vars_decl != ();
-      init_body = init_vars_decl & compile_to_c(init_code, nil);
-      init_sgn = "void " & init_method_name(name) & "(" & to_c_name(name) & " *self, ENV &env)";
-      init_decl = init_sgn & ";";
-      init_proc = (init_sgn, "{") & indent_lines(init_body) & ("}");
-      return (init_decl, init_proc);
-    }
-
-
-    (String, String*) compile_cleanup_code_to_c(DBSymbol name, Instr* cleanup_code)
-    {
-      cleanup_body = compile_to_c(cleanup_code, nil);
-      cleanup_sgn = "void " & cleanup_method_name(name) & "(" & to_c_name(name) & " *self)";
-      cleanup_decl = cleanup_sgn & ";";
-      cleanup_proc = (cleanup_sgn, "{") & indent_lines(cleanup_body) & ("}");
-      return (cleanup_decl, cleanup_proc);
-    }
-
-
-    (String, String*) update_entry_point(DBSymbol block_name, [MembVar] state_vars, [MembDBVar -> DBSymbol] nested_blocks)
-    {
-      sgn = "OBJ " & update_entry_point_name(block_name) & "(" & to_c_name(block_name) & " *self, OBJ p0, bool, ENV &env)";
-      aux_var_decl = aux_struct_c_name(block_name) & " self_aux;";
-      handler_call = mk_gen_call(update_name(block_name, main_handler), ("self", "self_aux"), (fn_par(0)), ("env"));
-      ret_str = compile_to_c(ret_val(obj_true), nil);
-
-      var_ids = (bare_id(v) | v <- rand_sort(state_vars));
-      init_vars_code = (to_c_var_ref_name(pending_state_var(id)) & " = make_blank_obj();" | id <- var_ids);
-      vars_copy_code = join((var_copy_code(id) | id <- var_ids));
-
-      body = (aux_var_decl) & init_vars_code & (handler_call) & vars_copy_code & ret_str;
-      return (sgn & ";", (sgn, "{") & indent_lines(body) & ("}"));
-    }
-
-
-    String* var_copy_code(Atom var_id)
-    {
-      psv_str = to_c_var_ref_name(pending_state_var(var_id));
-      mv_str = to_c_var_ref_name(memb_var(var_id));
-      return (
-        "if (!is_blank_obj(" & psv_str & "))",
-        "{",
-        "  release(" & mv_str & ");",
-        "  " & mv_str & " = " & psv_str & ";",
-        "}"
-      );
-    }
-
-
-    (String, String*) gen_user_def_method(DBSymbol block_name, MethodId method_id, Instr* body)
-    {
-      args_str = append((to_c_name(block_name) & " *self") & ("OBJ p" & printed(i) | i < method_id.arity), ", ");
-      sgn = "OBJ " & user_def_method_name(block_name, method_id) & "(" & args_str & ", ENV &env)";
-      vars_decls = gen_vars_decls(body);
-      body_text = vars_decls & ("" if vars_decls != ()) & compile_to_c(body, nil);
-      return (sgn & ";", (sgn, "{") & indent_lines(body_text) & ("}"));
-    }
-
-
-    (String, String*) gen_update(DBSymbol block_name, UpdateId update_id, Instr* body)
-    {
-      impl_args_strs = (to_c_name(block_name) & " *self", aux_struct_c_name(block_name) & " &self_aux");
-      expl_args_strs = ("OBJ p" & printed(i) | i < arity(update_id));
-      args_str = append(impl_args_strs & expl_args_strs, ", ");
-      sgn = "OBJ " & update_name(block_name, update_id) & "(" & args_str & ", ENV &env)";
-      vars_decls = gen_vars_decls(body);
-      body_text = vars_decls & ("" if vars_decls != ()) & compile_to_c(body, nil);
-      return (sgn & ";", (sgn, "{") & indent_lines(body_text) & ("}"));
-    }
-  }
-
-
-  CCodeOutput compile_block_to_c(Block block)
-  {
-    has_time_rules = block.time_rules_count != 0;
-
-    name_str = to_c_name(block.name);
-
-    memb_vars_decl = (var_c_type(v) & " " & to_c_var_decl_name(v) & ";" | v <- rand_sort(block.memb_vars));
-    auto_vars_decl = (to_c_name(t) & " " & to_c_var_decl_name(v) & ";" | v, t <- rand_sort_pairs(block.nested_auto_vars));
-    db_vars_decl = (to_c_name(t) & " " & to_c_var_decl_name(v) & ";" | v, t <- rand_sort_pairs(block.nested_trans_blocks));
-    vars_decl = memb_vars_decl & auto_vars_decl & db_vars_decl;
-
-    if block.time_rules_count != 0:
-      size_str = printed(block.time_rules_count);
-      vars_decl = vars_decl & (
-        "int64 trigger_times_heap[" & size_str & "];",
-        "int time_varying_cond_ids_heap[" & size_str & "];"
-      );
-    ;
-
-    decl = ("struct " & name_str, "{") & indent_lines(vars_decl) & ("};");
-
-    pre_init_vars_decl = gen_vars_decls(block.pre_init_code);
-    pre_init_vars_decl = pre_init_vars_decl & ("") if pre_init_vars_decl != ();
-    pre_init_body = pre_init_vars_decl & compile_to_c(block.pre_init_code, nil);
-    pre_init_sgn = "void " & pre_init_method_name(block.name) & "(" & name_str & " *self, ENV &env)";
-    pre_init_decl = (pre_init_sgn & ";");
-    pre_init_proc = (pre_init_sgn, "{") & indent_lines(pre_init_body) & ("}");
-
-    cleanup_body = compile_to_c(block.cleanup_code, nil);
-    cleanup_sgn = "void " & cleanup_method_name(block.name) & "(" & name_str & " *self)";
-    cleanup_decl = (cleanup_sgn & ";");
-    cleanup_proc = (cleanup_sgn, "{") & indent_lines(cleanup_body) & ("}");
-
-    all_loc_vars = vars_to_declare(block.apply_code) & union([vars_to_declare(c) | id : c <- block.nodes_update_code]);
-    aux_vars = [v | v <- all_loc_vars, v :: AuxVar] & [curr_time if has_time_rules];
-    aux_name_str = aux_struct_c_name(block.name);
-    aux_decls = ("struct " & aux_name_str, "{") & indent_lines((var_decl(v) | v <- rand_sort(aux_vars))) & ("};");
-
-    apply_method_vars_decls = (gen_vars_decls(block.apply_code) || aux_name_str & " self_aux;");
-    apply_method_vars_decls = (apply_method_vars_decls || "") if apply_method_vars_decls != ();
-
-    apply_body = apply_method_vars_decls & compile_to_c(block.apply_code, nil);
-    // time_arg = if block.time_rules_count != 0 then ", int64 " & to_c_var_decl_name(elapsed_time) else "";
-    time_arg = ", int64 " & to_c_var_decl_name(elapsed_time);
-    apply_sgn = "void " & apply_method_name(block.name) & "(" & name_str & " *self" & time_arg & ", ENV &env)";
-    apply_decl = (apply_sgn & ";");
-    apply_proc = (apply_sgn, "{") & indent_lines(apply_body) & ("}");
-
-    update_node_bodies = [
-      id -> {
-        lines = gen_vars_decls(c);
-        lines = (lines || "") if lines != ();
-        return lines & compile_to_c(c, nil);
-      } | id : c <- block.nodes_update_code
-    ];
-    time_arg = if has_time_rules then ", int64 " & to_c_var_decl_name(curr_time) else "";
-    update_node_sngs = [
-      id -> "void " & node_update_method_name(block.name, id) & "(" & name_str & " *self" & time_arg & ", " & aux_name_str & " &self_aux, ENV &env)"
-      | id : unused_var <- block.nodes_update_code
-    ];
-    update_node_decls = rand_sort([s & ";" | unused_var : s <- update_node_sngs]);
-    update_node_procs_unsorted = [
-      (update_node_sngs[id], "{") & indent_lines(update_node_bodies[id]) & ("}")
-      | id : unused_var <- block.nodes_update_code
-    ];
-    update_node_procs = join(intermix(rand_sort(update_node_procs_unsorted), ("", "")));
-
-    queue_methods_decls_and_impls = [gen_queue_update_method(block.name, id, method.body, method.two_level_update) | id : method <- block.queue_update_code];
-    queue_methods_decls, queue_methods_impls = unzip(rand_sort(queue_methods_decls_and_impls));
-    queue_methods_impls = join(intermix(queue_methods_impls, ("", "")));
-
-    insert_timer_method_decl, insert_timer_method_impl = gen_insert_timer_method(block.name);
-    clear_timer_method_decl, clear_timer_method_impl = gen_clear_timer_method(block.name);
-
-    queue_input_updates = length(block.inputs) > 2; //## BAD BAD BAD: THE NUMBER 2 IS REPEATED IN THE CODE GENERATION PHASE
-    input_decls, input_impls = unzip((gen_input_setter(block.name, id, i, queue_input_updates) | id @ i <- block.inputs));
-    input_impls = join(intermix(input_impls, ("", "")));
-
-    method_decls, method_impls = unzip(rand_sort([gen_user_def_method(block.name, id, b) | id : b <- block.methods_code]));
-    method_impls = join(intermix(method_impls, ("", "")));
-
-    const_data = rand_sort([gen_const_data(block.name, c) | c <- block.const_data]);
-
-    header = join(
-               intermix(
-                 ( decl, aux_decls, const_data, pre_init_decl, cleanup_decl, apply_decl, update_node_decls,
-                   input_decls, queue_methods_decls, method_decls,
-                   (insert_timer_method_decl, clear_timer_method_decl) if has_time_rules
-                 ),
-                 ("", "")
-               )
-             );
-
-    body = join(
-             intermix(
-               ( pre_init_proc, cleanup_proc, apply_proc, update_node_procs, input_impls,
-                 queue_methods_impls, method_impls,
-                 insert_timer_method_impl if has_time_rules,
-                 clear_timer_method_impl  if has_time_rules
-               ),
-               ("", "")
-             )
-           );
-
-    return (body: body, header: header);
-
-
-    String gen_const_data(AutoSymbol block_name, ConstBlockData const) =
-      "const int64 " & to_c_time_slots_table_name(block_name, const.expr_id) & "[] = {" &
-      append((printed(l) & "LL" | l <- const.lengths), ", ") & "};";
-
-
-    (String, String*) gen_user_def_method(AutoSymbol block_name, MethodId name, Instr* body)
-    {
-      args_str = append((to_c_name(block_name) & " *self") & ("OBJ p" & printed(i) | i < name.arity), ", ");
-      sgn = "OBJ " & user_def_method_name(block_name, name) & "(" & args_str & ", ENV &env)";
-      vars_decls = gen_vars_decls(body);
-      body_text = vars_decls & ("" if vars_decls != ()) & compile_to_c(body, nil);
-      return (sgn & ";", (sgn, "{") & indent_lines(body_text) & ("}"));
-    }
-
-
-    (String, String*) gen_input_setter(AutoSymbol block_name, Atom input_name, Nat node_idx, Bool queue_node)
-    {
-      sgn = "void " & input_set_method_name(block_name, input_name) & "(" & to_c_name(block_name) & " *self, OBJ new_val)";
-      pending_input_var_str = to_c_var_ref_name(pending_input_var(input_name));
-      up_to_date_var = to_c_var_ref_name(up_to_date_var(std_block_node_id(input_name)));
-      body = (
-        sgn,
-        "{",
-        "  if (!" & up_to_date_var & ")",
-        "  {",
-        "    release(" & pending_input_var_str & ");",
-        "    " & pending_input_var_str & " = new_val;",
-        "  }",
-        "  else",
-        "  {",
-        "    " & pending_input_var_str & " = new_val;",
-        "    int64 idx = self->update_count_0;" if queue_node,
-        "    self->nodes_to_update_0[idx] = " & printed(node_idx) & ";" if queue_node,
-        "    self->update_count_0 = idx + 1;" if queue_node,
-        "    " & up_to_date_var & " = false;",
-        "  }",
-        "}"
-      );
-      return (sgn & ";", body);
-    }
-
-
-    (String, String*) gen_queue_update_method(AutoSymbol block_name, StdBlockNodeId memb_id, Instr* body, Bool two_level_update)
-    {
-      method_name = queue_update_method_name(memb_id, block_name);
-      other_arg = if two_level_update then ", bool " & to_c_var_decl_name(invalidate_cond_expr_cache) else "";
-      sgn = "void " & method_name & "(" & to_c_name(block_name) & " *self" & other_arg & ")";
-      vars_decl_text = gen_vars_decls(body);
-      vars_decl_text = (vars_decl_text || "") if vars_decl_text != ();
-      body_text = vars_decl_text & compile_to_c(body, nil);
-      return (sgn & ";", (sgn, "{") & indent_lines(body_text) & ("}"));
-    }
-
-
-    (String, String*) gen_queue_update_method(AutoSymbol block_name, CondNodeId cond_id, Instr* body, Bool two_level_update)
-    {
-      method_name = queue_update_method_name(cond_id, block_name);
-      inval_cache_var_name = to_c_var_decl_name(invalidate_cond_expr_cache);
-      sgn = "void " & method_name & "(" & to_c_name(block_name) & " *self, bool " & inval_cache_var_name & ")";
-      vars_decl_text = gen_vars_decls(body);
-      vars_decl_text = (vars_decl_text || "") if vars_decl_text != ();
-      body_text = vars_decl_text & compile_to_c(body, nil);
-      return (sgn & ";", (sgn, "{") & indent_lines(body_text) & ("}"));
-    }
-
-
-    (String, String*) gen_queue_update_method(AutoSymbol block_name, NestedAutoInputNodeId input_id, Instr* body, Bool two_level_update)
-    {
-      method_name = queue_update_method_name(input_id, block_name);
-      sgn = "void " & method_name & "(" & to_c_name(block_name) & " *self)";
-      vars_decl_text = gen_vars_decls(body);
-      vars_decl_text = (vars_decl_text || "") if vars_decl_text != ();
-      body_text = vars_decl_text & compile_to_c(body, nil);
-      return (sgn & ";", (sgn, "{") & indent_lines(body_text) & ("}"));
-    }
-
-
-    (String, String*) gen_insert_timer_method(AutoSymbol block_name)
-    {
-      method_name = insert_timer_method_name(block_name);
-      sgn = "void " & method_name & "(" & to_c_name(block_name) & " *self, int64 cond_idx, int64 time)";
-
-      body_text = (
-        "int n = self->time_triggers_count;",
-        "int64 *tt = self->trigger_times_heap;",
-        "int *ids = self->time_varying_cond_ids_heap;",
-
-        "int i = 0;",
-        "while (i < n && tt[i] < time)",
-        "  i++;",
-
-        "for (int j=n ; j > i ; j--)",
-        "{",
-        "  tt[j] = tt[j-1];",
-        "  ids[j] = ids[j-1];",
-        "}",
-
-        "tt[i] = time;",
-        "ids[i] = cond_idx;",
-
-        "self->time_triggers_count = n + 1;"
-      );
-
-      return (sgn & ";", (sgn, "{") & indent_lines(body_text) & ("}"));
-    }
-
-
-    (String, String*) gen_clear_timer_method(AutoSymbol block_name)
-    {
-      method_name = clear_timer_method_name(block_name);
-      sgn = "void " & method_name & "(" & to_c_name(block_name) & " *self, int64 cond_idx)";
-
-      body_text = (
-        "int n = self->time_triggers_count;",
-        "int64 *tt = self->trigger_times_heap;",
-        "int *ids = self->time_varying_cond_ids_heap;",
-
-        "int i = 0;",
-        "while (i < n && ids[i] != cond_idx)",
-        "  i++;",
-
-        "if (i < n)",
-        "  self->time_triggers_count = n - 1;",
-
-        "for ( ; i < n - 1 ; i++)",
-        "{",
-        "  tt[i] = tt[i+1];",
-        "  ids[i] = ids[i+1];",
-        "}"
-      );
-
-      return (sgn & ";", (sgn, "{") & indent_lines(body_text) & ("}"));
-    }
-  }
 
 
   CCodeOutput compile_to_c(ObjProcDef* obj_proc_defs, BoolProcDef* bool_proc_defs, ClsDef* cls_defs, Block* blocks, TransBlock* trans_blocks, Int+* int_seqs)
@@ -761,17 +412,6 @@ implicit
   }
 
 
-  String var_decl(AnyVar v):
-    ObjVar    = "OBJ "       & to_c_var_decl_name(v) & ";",
-    VecVar    = "OBJ "       & to_c_var_decl_name(v) & "[" & printed(v.size) & "];",
-    BoolVar   = "bool "      & to_c_var_decl_name(v) & ";",
-    IntVar    = "int64 "     & to_c_var_decl_name(v) & ";",
-    SeqItVar  = "SEQ_ITER "  & to_c_var_decl_name(v) & ";",
-    SetItVar  = "SET_ITER "  & to_c_var_decl_name(v) & ";",
-    MapItVar  = "MAP_ITER "  & to_c_var_decl_name(v) & ";",
-    StreamVar = "STREAM "    & to_c_var_decl_name(v) & ";";
-
-
   String* compile_to_c(Instr* instrs, <Nat, nil> block_id) = join((compile_to_c(instr, block_id) | instr <- instrs));
 
   String* compile_to_c(Instr instr, <Nat, nil> block_id):
@@ -800,7 +440,7 @@ implicit
     get_seq_iter()        = mk_call("get_seq_iter", (instr.var, instr.src)),
     get_map_iter()        = mk_call("get_map_iter", (instr.var, instr.src)),
 
-    move_forward(v?)      = mk_call("move_forward", (v)),
+    move_forward(v?)      = compile_move_forward_to_c(v),
 
     set_var()             = compile_set_var_to_c(instr.var, instr.value),
 
@@ -824,7 +464,7 @@ implicit
 
     no_op                 = (),
 
-    repeat(body?)         = ("for ( ; ; )", "{") & indent_lines(compile_to_c(body, block_id)) & ("}"),
+    repeat(body?)         = compile_repeat_to_c(body, block_id),
 
     break_loop            = ("break;"),
 
@@ -895,7 +535,114 @@ implicit
     try_update()          = (compile_try_update_to_c(instr.type, instr.update_id, instr.args)),
 
     invoke_auto_method()  = (compile_invoke_method_to_c(instr.res_var, if instr.auto_var? then just(instr.auto_var) else nil, instr.type, instr.method_id, instr.args)),
-    invoke_db_method()    = (compile_invoke_method_to_c(instr.res_var, if instr.db_var? then just(instr.db_var) else nil, instr.type, instr.method_id, instr.args));
+    invoke_db_method()    = (compile_invoke_method_to_c(instr.res_var, if instr.db_var? then just(instr.db_var) else nil, instr.type, instr.method_id, instr.args)),
+
+    init_value_store()    = mk_call("value_store_init", (instr.store)),
+    cleanup_value_store() = mk_call("value_store_cleanup", (instr.store)),
+    init_table()          = compile_init_table_to_c(instr.rel_var, instr.table),
+    cleanup_table()       = compile_cleanup_table_to_c(instr.rel_var, instr.table),
+
+    get_table_iter()      = compile_get_table_iter_to_c(instr.it_var, instr.table, instr.args),
+    queue_deletes()       = compile_queue_deletes_to_c(instr.rel_var, instr.args),
+    queue_insert_value()  = mk_call(instr.res_var, "insert_value", (instr.store, instr.value)),
+    queue_insert_tuple()  = compile_queue_insert_tuple_to_c(instr.rel_var, instr.tuple);
+
+
+  String* compile_init_table_to_c(RelVar rel_var, Table table)
+  {
+    fn_name = fn_names_by_arity[arity(table)];
+    return mk_call(fn_name, (rel_var));
+
+    [NzNat -> String] fn_names_by_arity = [
+      1 -> "unary_table_init",
+      2 -> "binary_table_init"
+    ];
+  }
+
+
+  String* compile_cleanup_table_to_c(RelVar rel_var, Table table)
+  {
+    fn_name = fn_names_by_arity[arity(table)];
+    return mk_call(fn_name, (rel_var));
+
+    [NzNat -> String] fn_names_by_arity = [
+      1 -> "unary_table_cleanup",
+      2 -> "binary_table_cleanup"
+    ];
+  }
+
+
+  String* compile_move_forward_to_c(<SeqItVar, SetItVar, MapItVar> it_var) = mk_call("move_forward", (it_var));
+
+
+  String* compile_move_forward_to_c(TableItVar var)
+  {
+    fn_name = fn_names_by_arity[var.arity];
+    return mk_call(fn_name, (var));
+
+    [NzNat -> String] fn_names_by_arity = [
+      1 -> "unary_table_iter_next",
+      2 -> "binary_table_iter_next"
+    ];
+  }
+
+
+  String* compile_queue_deletes_to_c(RelVar rel_var, Maybe[IntVar]+ args)
+  {
+    fn_name = fn_names_by_args[(a != nil | a <- args)];
+    table_arg_str = "&" & to_c_var_ref_name(rel_var);
+    updates_arg_str = "&" & pending_updates_var_ref_name(rel_var);
+    return (mk_gen_call(fn_name, (table_arg_str, updates_arg_str), (value(a) | a <- args, a != nil), ()));
+
+    [Bool+ -> String] fn_names_by_args = [
+      (true)          -> "unary_table_delete",
+      (false)         -> "unary_table_clear",
+      (true, true)    -> "binary_table_delete",
+      (true, false)   -> "binary_table_delete_by_col_0",
+      (false, true)   -> "binary_table_delete_by_col_1",
+      (false, false)  -> "binary_table_clear"
+    ];
+  }
+
+
+  String* compile_queue_insert_tuple_to_c(RelVar rel_var, IntVar+ tuple)
+  {
+    fn_name = fn_names_by_arity[length(tuple)];
+    return (mk_gen_call(fn_name, ("&" & pending_updates_var_ref_name(rel_var)), tuple, ()));
+
+    [NzNat -> String] fn_names_by_arity = [
+      1 -> "unary_table_insert",
+      2 -> "binary_table_insert"
+    ];
+  }
+
+
+  String* compile_get_table_iter_to_c(TableItVar it_var, AnyRelVar table, Maybe[IntVar]+ args)
+  {
+    fn_name = fn_names_by_args[(a != nil | a <- args)];
+    return mk_call(fn_name, (table, it_var) & (value(a) | a <- args, a != nil));
+
+    [Bool+ -> String] fn_names_by_args = [
+      (false)         -> "unary_table_get_iter",
+      (true, false)   -> "binary_table_get_iter_by_col_0",
+      (false, true)   -> "binary_table_get_iter_by_col_1",
+      (false, false)  -> "binary_table_get_iter"
+    ];
+  }
+
+
+  String* compile_repeat_to_c(Instr+ body, <Nat, nil> block_id)
+  {
+    head = body(0);
+    if head :: <branch(cond: BoolExpr, when_true: (<break_loop>), when_false: ())>:
+      cond_str = to_c_expr(neg(head.cond));
+      body_text = ("{") & indent_lines(compile_to_c(tail(body), block_id)) & ("}");
+      return ("while (" & cond_str & ")") & body_text;
+    else
+      body_text = ("{") & indent_lines(compile_to_c(body, block_id)) & ("}");
+      return ("for ( ; ; )") & body_text;
+    ;
+  }
 
 
   String compile_init_db_to_c(AnyDBVar db_var, DBSymbol type) =
@@ -1029,6 +776,7 @@ implicit
     seq_to_mset()         = mk_call(var, "seq_to_mset",         (expr.seq)),
     internal_sort()       = mk_call(var, "internal_sort",       (expr.set)),
     symb_to_str(e?)       = mk_call(var, "to_str",              (e)),
+    lookup_surrogate()    = mk_call(var, "lookup_surrogate",    (expr.store, expr.surrogate)),
     read_pending_var(v?)  = (to_c_var_ref_name(var) & " = " & to_c_var_ref_name(v) & ";"),
     add_attachment()      = mk_call(var, "add_attachment",      (expr.target, expr.data)),
     fetch_attachments(e?) = mk_call(var, "fetch_attachments",   (e));
@@ -1182,8 +930,14 @@ implicit
   ///////////////////////////////////////////////////////////////////////////////
   ///////////////////////////////////////////////////////////////////////////////
 
+  String to_c_arg(FnCallParam arg)
+  {
+    by_ref = arg :: <TableItVar, AnyRelVar>;
+    return {if by_ref then "&" else ""} & to_c_expr(arg);
+  }
+
   String mk_gen_call(String fn_name, String* leading_params, FnCallParam* params, String* trailing_params) =
-    fn_name & "(" & append(leading_params & (to_c_expr(p) | p <- params) & trailing_params, ", ") & ");";
+    fn_name & "(" & append(leading_params & (to_c_arg(p) | p <- params) & trailing_params, ", ") & ");";
 
   String mk_gen_call(AnyVar var, String fn_name, String* leading_params, FnCallParam* params, String* trailing_params) =
     to_c_var_ref_name(var) & " = " & mk_gen_call(fn_name, leading_params, params, trailing_params);
@@ -1261,6 +1015,9 @@ implicit typesymb2name : TypeSymbol -> String
 
     has_elem()            = "has_elem(" & to_c_expr(expr.set) & ", " & to_c_expr(expr.elem) & ")",
 
+    neg(is_eq_bool() e?)  = to_nary_op(" != ", (e.expr1, e.expr2), parentesised), //## BAD
+    neg(is_eq_int() e?)   = to_nary_op(" != ", (e.expr1, e.expr2), parentesised), //## BAD
+
     is_eq_bool()          = to_nary_op(" == ", (expr.expr1, expr.expr2), parentesised), //## BAD
     is_eq_int()           = to_nary_op(" == ", (expr.expr1, expr.expr2), parentesised), //## BAD
 
@@ -1274,10 +1031,12 @@ implicit typesymb2name : TypeSymbol -> String
 
     inline_is_eq()        = inline_is_eq_to_c_expr(expr.expr, expr.value, parentesised),
 
-    is_out_of_range(v?)   = "is_out_of_range(" & to_c_var_ref_name(v) & ")",
+    is_out_of_range(v?)   = is_out_of_range_to_c_expr(v),
 
     is_blank(v?)          = "is_blank_obj(" & to_c_var_ref_name(v) & ")",
     is_null(v?)           = "is_null_obj(" & to_c_var_ref_name(v) & ")",
+
+    contains()            = contains_to_c_expr(expr.table, expr.tuple),
 
     neg(e?)               = parentesize("!" & to_c_expr(e, true), parentesised),
 
@@ -1287,6 +1046,35 @@ implicit typesymb2name : TypeSymbol -> String
     or_else(es?)          = to_nary_op(" || ", es, parentesised),
 
     eval_bool_fn()        = to_c_fn_name(expr.name) & "(" & to_nary_op(", ", expr.params, false) & ")";
+
+
+  String is_out_of_range_to_c_expr(<SeqItVar, SetItVar, MapItVar> var) =
+    "is_out_of_range(" & to_c_var_ref_name(var) & ")";
+
+
+  String is_out_of_range_to_c_expr(TableItVar var)
+  {
+    fn_name = fn_names_by_arity[var.arity];
+    return fn_name & "(&" & to_c_var_ref_name(var) & ")";
+
+    [NzNat -> String] fn_names_by_arity = [
+      1 -> "unary_table_iter_is_out_of_range",
+      2 -> "binary_table_iter_is_out_of_range"
+    ];
+  }
+
+
+
+  String contains_to_c_expr(AnyRelVar table, IntVar+ tuple)
+  {
+    fn_name = fn_names_by_arity[length(tuple)];
+    return fn_name & "(&" & append((to_c_var_ref_name(v) | v <- (table) & tuple), ", ") & ")";
+
+    [NzNat -> String] fn_names_by_arity = [
+      1 -> "unary_table_contains",
+      2 -> "binary_table_contains"
+    ];
+  }
 
 
   String inline_is_eq_to_c_expr(ObjExpr expr, InlineObj value, Bool parentesised)
@@ -1320,16 +1108,31 @@ implicit typesymb2name : TypeSymbol -> String
     mantissa(e?)        = "mantissa(" & to_c_expr(e) & ")",
     dec_exp(e?)         = "dec_exp(" & to_c_expr(e) & ")",
     rand_nat(e?)        = "rand_nat(" & to_c_expr(e) & ")",
+    lookup_value()      = "lookup_value(" & to_c_expr(expr.store) & ", " & to_c_expr(expr.value) & ")",
+    get_tuple_field()   = get_tuple_field_to_c_expr(expr.iter, expr.field),
     unique_nat          = "unique_nat()",
     ticks               = "get_tick_count()";
 
 
-  String to_c_expr(<ElemVar, VecVar, ItVar, StreamVar> var) = to_c_var_ref_name(var);
+  String get_tuple_field_to_c_expr(TableItVar var, Nat field)
+  {
+    fn_name = fn_names_by_arity_and_field[(var.arity, field)];
+    return fn_name & "(&" & to_c_var_ref_name(var) & ")";
+
+    [(NzNat, Nat) -> String] fn_names_by_arity_and_field = [
+      (1, 0) -> "unary_table_iter_get_field",
+      (2, 0) -> "binary_table_iter_get_left_field",
+      (2, 1) -> "binary_table_iter_get_right_field"
+    ];
+  }
+
+
+  String to_c_expr(<ElemVar, VecVar, ItVar, StreamVar, ClsVar, AnyRelVar, AnyValueStoreId> var) = to_c_var_ref_name(var);
 
   String to_c_expr(<blank_obj>) = "make_blank_obj()";
   String to_c_expr(<null_obj>) = "make_null_obj()";
 
-  String to_c_expr(ClsVar v) = to_c_var_ref_name(v);
+  // String to_c_expr(ClsVar v) = to_c_var_ref_name(v);
 
   String to_nary_op(String op, AnyTypeExpr+ exprs, Bool parentesised)
   {
@@ -1337,4 +1140,18 @@ implicit typesymb2name : TypeSymbol -> String
     expr = "(" & expr & ")" if length(exprs) > 1 and parentesised;
     return expr;
   }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  String to_c_fn_name(FnSymbol fn_symb, Nat arity):
+    fn_symbol(symb?)    = upper_camel_case(symb) & "_" & printed(arity),
+    op_symbol(op?)      = _str_(op),
+    nested_fn_symbol()  = to_c_fn_name(fn_symb.outer, arity) & "__" & to_c_fn_name(fn_symb.inner, arity),
+    unique_fn_symbol()  = to_c_fn_name(fn_symb.symbol, arity) & uppercase_encoding(fn_symb.id); //## IS THIS ENOUGHT TO AVOID CONFLICTS?
+
+  String to_c_fn_name(BoolFnName n, Nat) = to_c_fn_name(n);
+  String to_c_fn_name(BoolFnName): memb_test(ts?)   = "is_" & typesymb2name(ts); //## UGLY UGLY UGLY
+
+  String to_c_fn_name(ProcSymbol s, Nat) = to_c_fn_name(s);
+  String to_c_fn_name(ProcSymbol): proc_symbol(s?)  = upper_camel_case(s) & "_P"; //## UGLY UGLY UGLY
 }

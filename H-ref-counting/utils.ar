@@ -43,8 +43,9 @@
 //   evar(id: Nat, idx: <Nat, IntVar>)
 //   vvar(id: Nat, size: NzNat)
 
+type TrkItVar   = SeqItVar, SetItVar, MapItVar;
 type TrkObjVar  = StdVar, LocVar;
-type TrkVar     = TrkObjVar, ItVar;
+type TrkVar     = TrkObjVar, TrkItVar;
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -62,7 +63,7 @@ Maybe[StdObjVar] maybe_var(AtomicExpr expr) = if expr :: StdObjVar then just(exp
   retrieve_from_nested_low_level_exprs(expr, tracked_vars_used_by_any_type_expr);
 
 [TrkVar] tracked_vars_used_by_any_type_expr(AnyTypeExpr expr):
-  is_out_of_range(iv?)  = [iv],
+  is_out_of_range(iv?)  = [iv if iv :: TrkItVar],
   get_curr_obj(iv?)     = [iv],
   get_curr_key(iv?)     = [iv],
   get_curr_value(iv?)   = [iv],
@@ -128,6 +129,15 @@ Maybe[StdObjVar] maybe_var(AtomicExpr expr) = if expr :: StdObjVar then just(exp
   try_update()            = [],
   invoke_auto_method()    |
   invoke_db_method()      = trk_vars(instr.res_var),
+
+  init_value_store()      = [],
+  cleanup_value_store()   = [],
+  init_table()            = [],
+  cleanup_table()         = [],
+  get_table_iter()        = trk_vars(instr.it_var),
+  queue_deletes()         = [],
+  queue_insert_value()    = [],
+  queue_insert_tuple()    = [],
   push_call_info()        = [],
   pop_call_info           = [],
   runtime_check()         = [];
@@ -184,6 +194,14 @@ Maybe[StdObjVar] maybe_var(AtomicExpr expr) = if expr :: StdObjVar then just(exp
   try_update()          = seq_union((tracked_vars_used(a) | a <- instr.args)),
   invoke_auto_method()  |
   invoke_db_method()    = seq_union((tracked_vars_used(a) | a <- instr.args)),
+  init_value_store()    = [],
+  cleanup_value_store() = [],
+  init_table()          = [],
+  cleanup_table()       = [],
+  get_table_iter()      = [],
+  queue_deletes()       = [],
+  queue_insert_value()  = tracked_vars_used(instr.value),
+  queue_insert_tuple()  = [],
   push_call_info()      = [],
   pop_call_info         = [],
   runtime_check()       = tracked_vars_used(instr.cond) & set((v | v <- instr.vars, v :: TrkVar));

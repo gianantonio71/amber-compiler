@@ -92,12 +92,14 @@ Bool is_param_type(FnType type) = at_least_one((is_param_type(t) | t <- type.par
   map_expr(es?)           = union([retrieve(e.key) & retrieve(e.value) & if e.cond? then retrieve(e.cond) else [] | e <- es]),
   tag_obj_expr()          = retrieve(expr.tag) & retrieve(expr.obj),
   Var                     = [],
-  fn_call()               = union([any_expr_retrieve_from_nested_exprs(p, retrieve) | p <- set(expr.params) & values(expr.named_args)]),
-  cls_call()              = seq_union((retrieve(p) | p <- expr.params)),
-  builtin_call()          = seq_union((retrieve(p) | p <- expr.params)),
+  fn_call()               = union([any_expr_retrieve_from_nested_exprs(p, retrieve) | p <- set(expr.args) & values(expr.named_args)]),
+  cls_call()              = seq_union((retrieve(p) | p <- expr.args)),
+  builtin_call()          = seq_union((retrieve(p) | p <- expr.args)),
   unary_pseudo_call()     = retrieve(expr.target) & retrieve(expr.arg),
   map_search()            = retrieve(expr.map) & retrieve(expr.key) & retrieve(expr.value),
   key_search()            = retrieve(expr.map) & retrieve(expr.key),
+  rel_memb_test_expr()    = seq_union((retrieve(value(a)) | a <- expr.args, a != nil)),
+  rel_lookup_expr()       = seq_union((retrieve(e) | e <- expr.set_args)),
   singl_only_elem()       = retrieve(expr.set),
   and_expr()              = retrieve(expr.left) & retrieve(expr.right),
   or_expr()               = retrieve(expr.left) & retrieve(expr.right),
@@ -151,6 +153,8 @@ Bool is_param_type(FnType type) = at_least_one((is_param_type(t) | t <- type.par
   send_msg_stmt()           = retrieve(stmt.msg),
   try_update_stmt()         = seq_union((retrieve(a) | a <- stmt.args)),
   set_memb_var_stmt()       = retrieve(stmt.value), //## NOT SURE ABOUT THIS ONE, IT MIGHT BE NECESSARY TO ALSO RETRIEVE THE TARGET VARIABLE IN ORDER TO MAKE extern_vars() WORK. BUT WHAT ABOUT THE ASSIGNMENT STATEMENTS THEN?
+  delete_stmt()             = seq_union((retrieve(value(a)) | a <- stmt.fields, a != nil)),
+  insert_stmt()             = seq_union((retrieve(e) | e <- stmt.fields)),
   set_input_ctrl_stmt()     = retrieve(stmt.value),
   clear_input_ctrl_stmt()   = [],
   apply_ctrl_stmt()         = if stmt.elapsed_time? then retrieve(stmt.elapsed_time) else [],
@@ -163,6 +167,7 @@ Bool is_param_type(FnType type) = at_least_one((is_param_type(t) | t <- type.par
 [T] retrieve_from_nested_exprs(Clause cls, (Expr -> [T]) retrieve):
   set_elem_clause()   = retrieve(cls.src),
   map_entry_clause()  = retrieve(cls.src),
+  rel_tuple_clause()  = seq_union((retrieve(value(a)) | a <- cls.args, a != nil)),
   seq_elem_clause()   = retrieve(cls.src),
   and_clause()        = retrieve_from_nested_exprs(cls.left, retrieve) & retrieve_from_nested_exprs(cls.right, retrieve),
   or_clause()         = retrieve_from_nested_exprs(cls.left, retrieve) & retrieve_from_nested_exprs(cls.right, retrieve),
@@ -195,6 +200,8 @@ Bool is_param_type(FnType type) = at_least_one((is_param_type(t) | t <- type.par
   send_msg_stmt()         |
   try_update_stmt()       |
   set_memb_var_stmt()     |
+  insert_stmt()           |
+  delete_stmt()           |
   set_input_ctrl_stmt()   |
   clear_input_ctrl_stmt() |
   apply_ctrl_stmt()       |
@@ -215,11 +222,11 @@ Expr replace_nested_exprs(Expr expr, (Expr -> Expr) replace):
   Var                 = expr,
   fn_call()           = fn_call(
                           expr.name,
-                          (replace_exprs_in_any_expr(p, replace) | p <- expr.params),
+                          (replace_exprs_in_any_expr(p, replace) | p <- expr.args),
                           [n -> replace_exprs_in_any_expr(e, replace) | n : e <- expr.named_args]
                         ),
-  cls_call()          = cls_call(expr.name, (replace(p) | p <- expr.params)),
-  builtin_call()      = builtin_call(expr.name, (replace(p) | p <- expr.params)),
+  cls_call()          = cls_call(expr.name, (replace(p) | p <- expr.args)),
+  builtin_call()      = builtin_call(expr.name, (replace(p) | p <- expr.args)),
   unary_pseudo_call() = unary_pseudo_call(replace(expr.target), replace(expr.arg)),
   map_search()        = map_search(replace(expr.map), replace(expr.key), replace(expr.value)),
   key_search()        = key_search(replace(expr.map), replace(expr.key)),
@@ -264,7 +271,7 @@ CondExpr replace_exprs_in_cond_expr(CondExpr expr, (Expr -> Expr) replace) = con
 ClsExpr replace_exprs_in_cls_expr(ClsExpr expr, (Expr -> Expr) replace):
   ClsVar      = expr,
   fn_ptr()    = expr,
-  cls_expr()  = cls_expr(expr.params, replace(expr.expr));
+  cls_expr()  = cls_expr(expr.args, replace(expr.expr));
 
 
 SubExpr replace_exprs_in_subexpr(SubExpr subexpr, (Expr -> Expr) replace):
@@ -356,7 +363,7 @@ Expr replace_external_vars(Expr expr, [Var -> Var] subst_map):
 Expr replace_external_vars_in_fn_call(FnCallExpr expr, [Var -> Var] subst_map) =
   fn_call(
     expr.name,
-    (replace_external_vars(p, subst_map) | p <- expr.params),
+    (replace_external_vars(p, subst_map) | p <- expr.args),
     [n -> replace_external_vars(e, subst_map) | n : e <- expr.named_args]
   );
 
@@ -448,12 +455,12 @@ Expr replace_external_vars_in_range_comp(RangeCompExpr expr, [Var -> Var] subst_
 ClsExpr replace_external_vars(ClsExpr expr, [Var -> Var] subst_map):
   ClsVar      = expr,
   fn_ptr()    = expr,
-  cls_expr()  = replace_external_vars(expr.params, expr.expr, subst_map);
+  cls_expr()  = replace_external_vars(expr.args, expr.expr, subst_map);
 
 
-ClsExpr replace_external_vars(<var(Atom), nil>+ params, Expr expr, [Var -> Var] subst_map)
+ClsExpr replace_external_vars(Maybe[StdVar]+ args, Expr expr, [Var -> Var] subst_map)
 {
-  non_anon_params = set((p | p <- params, p != nil));
+  non_anon_params = set(values(args));
 
   // We cannot replace variables inside a closure with fn_par(n),
   // because those names refer to different variables inside the closure.
@@ -462,7 +469,7 @@ ClsExpr replace_external_vars(<var(Atom), nil>+ params, Expr expr, [Var -> Var] 
   assert not (unused_var : vv <- subst_map | vv :: FnPar or in(vv, non_anon_params));
 
   new_subst_map = [kv -> vv | kv : vv <- subst_map, not in(kv, non_anon_params), not kv :: FnPar];
-  return cls_expr(params, replace_external_vars(expr, new_subst_map));
+  return cls_expr(args, replace_external_vars(expr, new_subst_map));
 }
 
 
@@ -571,6 +578,7 @@ Bool is_pattern_any(Pattern ptrn):
 [StdVar] new_vars(Clause cls):
   set_elem_clause()   = [cls.var],
   map_entry_clause()  = [cls.key_var, cls.value_var],
+  rel_tuple_clause()  = set(cls.vars),
   seq_elem_clause()   = [cls.var],
   and_clause()        = new_vars(cls.left) & new_vars(cls.right),
   or_clause()         = intersection(new_vars(cls.left), new_vars(cls.right)),
@@ -593,7 +601,7 @@ Bool is_pattern_any(Pattern ptrn):
 //## THIS FUNCTION DOES NOT RETRIEVE QUALIFIED MEMBER VARIABLES LIKE auto_var.public_var OR db_var.var
 [Var] extern_vars(Expr expr):
   Var             = [expr],
-  fn_call()       = union([any_expr_extern_vars(e) | e <- set(expr.params) & values(expr.named_args)]),
+  fn_call()       = union([any_expr_extern_vars(e) | e <- set(expr.args) & values(expr.named_args)]),
   ex_qual()       = ex_qual_extern_vars(expr),
   set_comp()      = set_comp_extern_vars(expr),
   map_comp()      = map_comp_extern_vars(expr),
@@ -666,7 +674,7 @@ Bool is_pattern_any(Pattern ptrn):
 [Var] any_expr_extern_vars(ClsExpr expr):
   ClsVar      = [],
   fn_ptr()    = [],
-  cls_expr()  = { new_vars = set((fn_par(i) | i < length(expr.params)) & (v | v <- expr.params, v != nil));
+  cls_expr()  = { new_vars = set((fn_par(i) | i < length(expr.args)) & values(expr.args));
                   ext_vars = extern_vars(expr.expr) - new_vars;
                   assert not (v <- ext_vars | v :: FnPar);
                   return ext_vars;
@@ -677,6 +685,7 @@ Bool is_pattern_any(Pattern ptrn):
 [Var] clause_extern_vars(Clause cls):
   set_elem_clause()   = extern_vars(cls.src),
   map_entry_clause()  = extern_vars(cls.src),
+  rel_tuple_clause()  = seq_union((extern_vars(value(a)) | a <- cls.args, a != nil)),
   seq_elem_clause()   = extern_vars(cls.src),
   and_clause()        = clause_extern_vars(cls.left) & {clause_extern_vars(cls.right) - new_vars(cls.left)},
   or_clause()         = clause_extern_vars(cls.left) & clause_extern_vars(cls.right),
@@ -716,7 +725,7 @@ Bool is_pattern_any(Pattern ptrn):
 [Var] cls_expr_extern_vars(ClsExpr expr):
   ClsVar      = [],
   fn_ptr()    = [],
-  cls_expr()  = extern_vars(expr.expr) - set((v | v <- expr.params, v != nil) & (fn_par(i) | i < length(expr.params)));
+  cls_expr()  = extern_vars(expr.expr) - set(values(expr.args) & (fn_par(i) | i < length(expr.args)));
 
 ////////////////////////////////////////////////////////////////////////////////
 

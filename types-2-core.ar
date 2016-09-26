@@ -63,25 +63,35 @@ type BuiltInType  = builtin_type(param_types: Type+, ret_type: Type);
 
 ///////////////////////////////////////////////////////////////////////////////
 
-type Operator = plus, minus, star, slash, exp, amp, lower, greater, lower_eq, greater_eq, brackets;
+type UnaryOperator  = unary_minus;
+type BinaryOperator = plus, minus, star, slash, exp, amp, lower, greater, lower_eq, greater_eq, brackets;
+
+type Operator = UnaryOperator, BinaryOperator;
 
 type BuiltIn  = neg, add, sub, mult, div, mod, lt, le, gt, ge, str, symb, at, len, slice, cat,
                 set, rev, mset, tag, isort, obj, in, has_key, lookup, union, merge,
                 fneg, fadd, fsub, fmult, fdiv, fsqrt, floor, ceiling, float, mantissa, dec_exp,
                 rand_nat, rand_elem, counter, attach, fetch, ticks;
 
-type FnSymbol = fn_symbol(Atom),
-                op_symbol(Operator),
-                //## BUG: AN FnSymbol IS NOT ENOUGH TO IDENTIFY WHICH WAS THE OUTER FUNCTION.
-                //## TWO FUNCTIONS WITH THE SAME NAME COULD CONTAIN INNER FUNCTIONS WITH THE SAME NAME
-                nested_fn_symbol(outer: FnSymbol, inner: FnSymbol),
-                unique_fn_symbol(symbol: FnSymbol, id: Nat); //## THE symbol: FIELD SHOULD ONLY CONTAIN EITHER fn_symbol() OR op_symbol()
+type StdFnSymb      = fn_symbol(Atom);
+type OpSymb         = op_symbol(Operator);
+type UniqueFnSymb   = unique_fn_symbol(symbol: AtomicFnSymb, id: Nat);
+type NestedFnSymb   = nested_fn_symbol(outer: BasicFnSymb, inner: BasicFnSymb);
+
+type AtomicFnSymb   = StdFnSymb, OpSymb;
+type BasicFnSymb    = AtomicFnSymb, UniqueFnSymb;
+type FnSymbol       = BasicFnSymb, NestedFnSymb;
+
+type NestedFnFamilyId = nested_fn_symbol(outer: BasicFnSymb, inner: AtomicFnSymb);
+type FnFamilyId       = AtomicFnSymb, NestedFnFamilyId;
+
+type FnClassId      = fn_class_id(name: FnFamilyId, arity: Nat);
 
 type MethodSymbol   = method_symbol(Atom);
 type UpdateSymbol   = msg_handler, update_symbol(Atom);
 
-type AutoSymbol = auto_symbol(Atom);
-type DBSymbol   = db_symbol(Atom);
+type AutoSymbol     = auto_symbol(Atom);
+type DBSymbol       = db_symbol(Atom);
 
 type StdVar           = var(Atom);
 type FnPar            = fn_par(Nat);
@@ -91,8 +101,6 @@ type MembVar          = memb_var(Atom);
 type MembCopyVar      = memb_copy_var(Atom);      //## FIND BETTER NAME...
 type PendingStateVar  = pending_state_var(Atom);  //## FIND BETTER NAME...
 
-// type QualDBMembVar    = db_memb_var(db_var: AnyDBVar, memb_var: <MembVar, QualDBMembVar>);
-// type QualAutoMembVar  = auto_memb_var(auto_var: AnyAutoVar, memb_var: <MembVar, QualDBMembVar, QualAutoMembVar>);
 type QualDBMembVar    = qual_db_memb_var(db_var: AnyDBVar, memb_var: MembVar);
 type QualAutoMembVar  = qual_auto_memb_var(auto_var: AnyAutoVar, memb_var: MembVar);
 type QualMembVar      = QualDBMembVar, QualAutoMembVar;
@@ -108,7 +116,11 @@ type MembDBVar    = memb_db_var(Atom);
 type NestedDBVar  = nested_db_var(outer: AnyDBVar, inner: MembDBVar);
 type AnyDBVar     = LocDBVar, MembDBVar, NestedDBVar;
 
-type Var      = StdVar, FnPar, NamedArg, CaptVar, MembVar, QualMembVar, MembCopyVar, PendingStateVar;
+type Var        = StdVar, FnPar, NamedArg, CaptVar, MembVar, QualMembVar, MembCopyVar, PendingStateVar;
+
+type RelVar     = rel_var(Atom);
+type QualRelVar = qual_rel_var(db_var: AnyDBVar, rel_var: RelVar);
+type AnyRelVar  = RelVar, QualRelVar;
 
 type ClsVar   = cls_var(<Atom, Nat>); //## BAD: THERE SHOULD BE A NAMED VERSION OF ClsVar
 
@@ -122,6 +134,7 @@ type Expr     = LeafObj, FloatLit, Var,
                 SetExpr, SeqExpr, TupleExpr, SeqTailExpr, MapExpr, TagObjExpr,
                 FnCallExpr, ClsCall, BuiltinCall,
                 UnaryPseudoCallExpr, MapSearchExpr, KeySearchExpr, OnlyElemExpr,
+                RelMembTestExpr, RelLookupExpr,
                 AndExpr, OrExpr, NotExpr,
                 EqExpr,
                 MembExpr, CastExpr,
@@ -139,16 +152,17 @@ type SetExpr        = set_expr([SubExpr]);
 type MapExpr        = map_expr([(key: Expr, value: Expr, cond: Expr?)]);
 type TagObjExpr     = tag_obj_expr(tag: Expr, obj: Expr);
 
-//## CAN LOCAL FUNCTIONS HAVE NAMED PARAMETERS? IT WOULDN'T MAKE MUCH SENSE,
-//## BUT THE DATA STRUCTURE AND THE SYNTAX ALLOW IT. MAKE SURE IT'S CHECHED
-//## IN THE WELL-FORMEDNESS CHECKING LAYER.
-type FnCallExpr     = fn_call(name: FnSymbol, params: AnyExpr*, named_args: [NamedArg -> AnyExpr]); //## NO POINT USING NamedArg INSTEAD OF JUST Atom HERE
-type ClsCall        = cls_call(name: <ClsVar, NamedArg>, params: Expr+);  //## BAD: THERE SHOULD BE A NAMED VERSION OF ClsVar
-type BuiltinCall    = builtin_call(name: BuiltIn, params: Expr+); //## CAN A BUILTIN HAVE NO ARGUMENTS?
+type FnCallExpr     = fn_call(name: FnFamilyId, args: AnyExpr*, named_args: [NamedArg -> AnyExpr]);
+type ClsCall        = cls_call(name: <ClsVar, NamedArg>, args: Expr+);  //## BAD: THERE SHOULD BE A NAMED VERSION OF ClsVar
+type BuiltinCall    = builtin_call(name: BuiltIn, args: Expr+);
 
 type UnaryPseudoCallExpr  = unary_pseudo_call(target: Expr, arg: Expr);
 type MapSearchExpr  = map_search(map: Expr, key: Expr, value: Expr);
 type KeySearchExpr  = key_search(map: Expr, key: Expr);
+
+type RelMembTestExpr  = rel_memb_test_expr(rel_var: AnyRelVar, args: Maybe[Expr]+);
+type RelLookupExpr  = rel_lookup_expr(rel_var: AnyRelVar, set_args: Expr+, unknown_arg_idx: Nat);
+
 type OnlyElemExpr   = singl_only_elem(set: Expr);
 
 type AndExpr        = and_expr(left: Expr, right: Expr); //## NOT SURE HERE
@@ -184,8 +198,8 @@ type IsSetExpr      = is_set(<MembVar, QualAutoMembVar>);
 ///////////////////////////////////////////////////////////////////////////////
 
 type ClsExpr  = ClsVar,
-                fn_ptr(name: FnSymbol, arity: NzNat),
-                cls_expr(params: <var(Atom), nil>+, expr: Expr); //## REPLACE params WITH arity, SINCE THERE'S NO WAY IN THE SYNTAX TO ACTUALLY NAME THE PARAMETERS OF A CLOSURE?
+                fn_ptr(name: FnFamilyId, arity: NzNat),
+                cls_expr(args: Maybe[StdVar]+, expr: Expr);
 
 type AnyExpr  = Expr, ClsExpr;
 
@@ -219,6 +233,7 @@ type TagPtrn  = ptrn_symbol, ptrn_symbol(SymbObj), ptrn_var(var: StdVar, ptrn: p
 
 type Clause   = set_elem_clause(var: StdVar, src: Expr),
                 map_entry_clause(key_var: StdVar, value_var: StdVar, src: Expr),
+                rel_tuple_clause(vars: StdVar+, rel_var: AnyRelVar, args: Maybe[Expr]+),
                 seq_elem_clause(var: StdVar, src: Expr),
                 and_clause(left: Clause, right: Clause),
                 or_clause(left: Clause, right: Clause),
@@ -236,9 +251,11 @@ type AtomicFnStmt   = assignment_stmt(vars: StdVar+, value: Expr),
                       print_stmt(Expr),
                       imp_update_stmt(obj: StdVar, idx: Expr, value: Expr); //## NOT SURE IT BELONGS HERE...
 
-type AtomicMethStmt = send_msg_stmt(target: MembDBVar, msg: Expr),
-                      try_update_stmt(name: UpdateSymbol, args: Expr*),
-                      set_memb_var_stmt(var: PendingStateVar, value: Expr);
+type AtomicUpdateStmt = send_msg_stmt(target: MembDBVar, msg: Expr),
+                        try_update_stmt(name: UpdateSymbol, args: Expr*),
+                        set_memb_var_stmt(var: PendingStateVar, value: Expr),
+                        delete_stmt(var: RelVar, fields: Maybe[Expr]+),
+                        insert_stmt(var: RelVar, fields: Expr+, force: Bool);
 
 type AtomicProcStmt = return_stmt,
                       proc_call_stmt(res_var: StdVar?, proc_name: ProcSymbol, params: Expr*);
@@ -254,27 +271,25 @@ type CompositeStmt[T] = if_stmt(cond: Expr, body: T+, else: T*),
                         for_stmt(var: StdVar?, start_val: Expr, end_val: Expr, end_val_incl: Bool, body: T+),
                         let_stmt(asgnms: [NamedArg -> Expr], body: T+);
 
-type Statement      = AtomicFnStmt, AtomicMethStmt, AtomicProcStmt, AutoOrDBCtrlStmt, CompositeStmt[Statement];
+type Statement      = AtomicFnStmt, AtomicUpdateStmt, AtomicProcStmt, AutoOrDBCtrlStmt, CompositeStmt[Statement];
 
 ///////////////////////////////////////////////////////////////////////////////
 
-type ScalarFrmParam = scalar_par(var: var(Atom)?, type: Type?);
-type ClsFrmParam    = non_scalar_par(var: ClsVar?, arity: NzNat, type: ClsType?); //## BAD: THE VAR AND TYPE FIELDS HERE ARE OPTIONAL ONLY TO ALLOW MERGING OF FUNCTIONS WITH DIFFERENT ARITIES. ALSO, ARITY IS REDUNDANT WHEN TYPE IS PRESENT. CHECK THIS IN THE WELL-FORMEDNESS CHECKING LAYER. ALSO, REALLY BAD NAME.
+type FormalObjArg = formal_obj_arg(var: StdVar?, type: Type);
+type FormalClsArg = formal_cls_arg(var: ClsVar, type: ClsType);
+type FormalArg    = FormalObjArg, FormalClsArg;
 
-type FnFrmPar   = ScalarFrmParam, ClsFrmParam;
-
-type FnDef      = fn_def(
-                    name:         FnSymbol,
-                    params:       FnFrmPar*, //## BAD BAD
-                    named_args:   [NamedArg -> AnyType], //## BAD: THE TYPE IS TOO LOOSE. INCLUDE A CHECK IN THE WELL-FORMEDNESS CHECKING LAYER
-                    res_type:     Type?,
-                    expr:         Expr
+type Function   = function(
+                    name:       FnSymbol,
+                    args:       FormalArg*,
+                    impl_args:  [NamedArg -> AnyType], // Types here should not contain type variables
+                    res_type:   Type,
+                    expr:       Expr
                   );
 
 type ProcSymbol = proc_symbol(Atom);
 
-//## SERIOUSLY, FIND BETTER NAME...
-type ProcDef2   = proc_def(
+type Procedure  = procedure(
                     name:       ProcSymbol,
                     args:       (var: StdVar, type: NeType)*,
                     res_type:   Maybe[NeType],
@@ -306,13 +321,13 @@ type AutoAnyCondAction  = AutoAtomicAction, AutoCondAction;
 type AutoRepAction      = rep_action(cond: Expr, body: [AutoAnyRepAction], else: [AutoAnyRepAction]);
 type AutoAnyRepAction   = AutoAtomicAction, AutoRepAction;
 
-type Method   = method(name: MethodSymbol, args: (NeType, StdVar)*, ret_type: NeType, expr: Expr);
+type Method   = method(name: MethodSymbol, args: (NeType, Maybe[StdVar])*, ret_type: NeType, expr: Expr);
 type Update   = update(name: UpdateSymbol, args: (NeType, StdVar)*, body: Statement*);
 type Handler  = handler(type: NeType, body: Statement*);
 
-type TimeVaryingCond    = time_varying_boolean_cond(expr: Expr, time_expr: TimeExpr),
-                          time_varying_unchanged_cond(expr: Expr, time_expr: TimeExpr),
-                          time_varying_since_cond(signals: [+MembVar], time_expr: TimeExpr, starts_at_time_0: Bool);
+type TimeVaryingCond  = time_varying_boolean_cond(expr: Expr, time_expr: TimeExpr),
+                        time_varying_unchanged_cond(expr: Expr, time_expr: TimeExpr),
+                        time_varying_since_cond(signals: [+MembVar], time_expr: TimeExpr, starts_at_time_0: Bool);
 
 type Automaton  = automaton(
                     name:           AutoSymbol,
@@ -332,6 +347,7 @@ type Automaton  = automaton(
 type DataBase   = data_base(
                     name:       DBSymbol,
                     state_vars: [MembVar -> (type: NeType, init_value: Expr)],
+                    rel_vars:   [RelVar -> (types: NeType+, unique: [[+Nat]])],
                     nested_dbs: [MembDBVar -> DBSymbol],
                     methods:    [Method],
                     updates:    [Update],
@@ -342,8 +358,8 @@ type DataBase   = data_base(
 
 type Program    = program(
                     typedefs:     [TypeName -> Type],
-                    fndefs:       [FnDef],
-                    proc_defs:    [ProcDef2],
+                    fndefs:       [Function],
+                    proc_defs:    [Procedure],
                     auto_defs:    [Automaton],
                     data_bases:   [DataBase]
                   );

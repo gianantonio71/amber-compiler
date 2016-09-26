@@ -1,23 +1,10 @@
-implicit
+implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> Nat]
 {
-  syn_prg            : SynPrg,
-  syn_artifact       : SynArtifact,
-
-  closures           : [ClsVar],
-  named_args         : [NamedArg],                  //## THIS IS REDUNDANT. SEE ALSO THE BUG IN desugar_let_stmt()
-  named_args_arities : [NamedArg -> Nat],
-  memb_vars          : [MembVar],                   //## THIS COULD BE INCLUDED IN def_vars, TOGETHER MAYBE WITH named_args
-  auto_vars_types    : [AnyAutoVar -> AutoSymbol],
-  db_vars_types      : [AnyDBVar -> DBSymbol],
-  local_fns          : [(FnSymbol, Nat) -> Nat*],
-  curr_outer_fn      : Maybe[FnSymbol];             //## BUG: THIS IS NOT ENOUGH TO IDENTIFY THE OUTER FUNCTION...
-
-
-  Expr desugar_expr(SynExpr syn_expr, [Var] def_vars) =
+  Expr desugar_expr(SynExpr syn_expr, [StdVar] def_vars) =
     transfer_attachments(desugar_expr_plain(syn_expr, def_vars), syn_expr);
 
 
-  Expr desugar_expr_plain(SynExpr expr, [Var] def_vars):
+  Expr desugar_expr_plain(SynExpr expr, [StdVar] def_vars):
     object()            = expr,
     float_lit()         = expr,
     seq_expr(ses?)      = desugar_seq_expr(ses, def_vars),
@@ -29,11 +16,15 @@ implicit
     memb_copy_var()     = expr,
     cls_par(n?)         = fn_par(n),
     const_or_var(a?)    = desugar_const_or_var_expr(a, def_vars),
-    fn_call()           = desugar_fn_call_expr(expr.name, expr.args, expr.named_args, def_vars),
+    named_args_call()   = desugar_named_args_call_expr(expr.name, expr.args, nonempty(expr.named_args), def_vars),
+    unary_op_call()     = fn_call(op_symbol(expr.op), (desugar_expr(expr.expr, def_vars))),
+    binary_op_call()    = fn_call(op_symbol(expr.op), (desugar_expr(expr.left_arg, def_vars), desugar_expr(expr.right_arg, def_vars))),
     builtin_call()      = builtin_call(expr.name, (desugar_expr(e, def_vars) | e <- expr.args)),
-    unary_pseudo_call() = unary_pseudo_call(desugar_expr(expr.target, def_vars), desugar_expr(expr.param, def_vars)),
-    map_search()        = map_search(desugar_expr(expr.map, def_vars), desugar_expr(expr.key, def_vars), desugar_expr(expr.value, def_vars)),
-    key_search()        = key_search(desugar_expr(expr.map, def_vars), desugar_expr(expr.key, def_vars)),
+
+    call_lookalike()    = desugar_call_lookalike(expr.target, expr.args, def_vars),
+    rel_memb_test()     = desugar_rel_memb_test(expr.target, expr.args, def_vars),
+    rel_lookup()        = desugar_rel_lookup(expr.target, expr.args, def_vars),
+
     singl_only_elem()   = singl_only_elem(desugar_expr(expr.set, def_vars)),
     and()               = and_expr(desugar_expr(expr.left, def_vars), desugar_expr(expr.right, def_vars)),
     or()                = or_expr(desugar_expr(expr.left, def_vars), desugar_expr(expr.right, def_vars)),
@@ -53,53 +44,128 @@ implicit
     match_expr()        = desugar_match_expr(expr.exprs, expr.cases, def_vars),
     do_expr(ss?)        = do_expr(desugar_stmts(ss, def_vars)),
     let_expr()          = do_expr(desugar_stmts(nonempty(expr.stmts & (syn_ret_stmt(expr.expr))), def_vars)),
-    is_set()            = expr,
-    output_is_def()     = expr,
-    method_call_expr()  = desugar_method_call_expr(expr.var, expr.name, expr.args, def_vars);
+    is_set(v?)          = is_set(memb_var(v)),
+    output_is_def()     = expr;
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  Expr desugar_call_lookalike(<StdVar, MembVar, QualAutoMembVar, QualDBMembVar, SymbChainAcc> var, Expr+ args)
+  {
+    arity = length(args);
+    assert arity == 1 or arity == 2;
+    return if arity == 1
+      then unary_pseudo_call(var, args(0))
+      else map_search(var, args(0), args(1));
+  }
+
+  Expr desugar_call_lookalike(NamedArg var, Expr+ args)
+  {
+    exp_arity = impl_args(var);
+    actual_arity = length(args);
+    assert (exp_arity == 0 and (actual_arity == 1 or actual_arity == 2)) or exp_arity == actual_arity;
+    if exp_arity != 0:
+      return cls_call(var, args);
+    elif actual_arity == 1:
+      return unary_pseudo_call(var, args(0));
+    else
+      return map_search(var, args(0), args(1));
+    ;
+  }
+
+  Expr desugar_call_lookalike(ClsVar var, Expr+ args) = cls_call(var, args);
+
+  Expr desugar_call_lookalike(AnyRelVar var, Expr+ args)
+  {
+    arity = length(args);
+    rel_var_arity = rel_vars_arities[var];
+    if arity == rel_var_arity:
+      return rel_memb_test_expr(var, (just(a) | a <- args));
+    else
+      assert arity == rel_var_arity - 1;
+      return rel_lookup_expr(var, args, nat(rel_var_arity-1));
+    ;
+  }
+
+  Expr desugar_call_lookalike(PreAutoCall pc, Expr+ args) =
+    auto_method_call_expr(var: pc.var if pc.var?, name: pc.method, args: args);
+
+  Expr desugar_call_lookalike(PreDBCall pc, Expr+ args) =
+    db_method_call_expr(var: pc.var if pc.var?, name: pc.method, args: args);
+
+  Expr desugar_call_lookalike(FnFamilyId fn_symb, Expr+ args) = fn_call(fn_symb, args, [:]);
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  Expr desugar_call_lookalike(SynExpr syn_target, SynExpr+ syn_args, [StdVar] def_vars)
+  {
+    arity = length(syn_args);
+    if syn_target :: IdChain:
+      symbols = destructure_id_chain(syn_target);
+      target = only(resolve_by_priority_as_call_lookalike_target(symbols, arity, def_vars));
+
+      if target :: FnFamilyId:
+        arg_arities = arg_arities(target, arity);
+        args = (desugar_fn_arg(a, ea, def_vars) | a, ea <- zip(syn_args, arg_arities));
+        return fn_call(target, args, [:]);
+      else
+        args = (desugar_expr(a, def_vars) | a <- syn_args);
+        return desugar_call_lookalike(target, args);
+      ;
+    else
+      args = (desugar_expr(e, def_vars) | e <- syn_args);
+      target = desugar_expr(syn_target, def_vars);
+      if arity == 1:
+        return unary_pseudo_call(target, only(args));
+      else
+        assert arity == 2;
+        return map_search(target, args[0], args[1]);
+      ;
+    ;
+  }
 
 
-  Expr desugar_seq_expr(SynSubExpr* entries, [Var] def_vars)
+  Expr desugar_rel_memb_test(SynExpr syn_target, Maybe[SynExpr]+ syn_args, [StdVar] def_vars)
+  {
+    assert at_least_one((a == nil | a <- syn_args));
+    assert at_least_one((a != nil | a <- syn_args));
+
+    args = (apply(a, desugar_expr($, def_vars)) | a <- syn_args);
+    if syn_target :: IdChain:
+      target = only(resolve_by_priority_as_memb_test_target(destructure_id_chain(syn_target), def_vars));
+    else
+      target = desugar_expr(syn_target, def_vars);
+    ;
+
+    return desugar(target, args);
+
+
+    Expr desugar(AnyRelVar target, Maybe[Expr]+ args) = rel_memb_test_expr(target, args);
+
+    Expr desugar(Expr target, Maybe[Expr]+ args)
+    {
+      assert length(args) == 2 and args[0] != nil and args[1] == nil;
+      return key_search(target, try_value(args[0]));
+    }
+  }
+
+
+  Expr desugar_rel_lookup(Atom+ symbols, Maybe[SynExpr]+ syn_args, [StdVar] def_vars)
+  {
+    rel_var = only(resolve_by_priority_as_rel_var(symbols, def_vars));
+    args = (desugar_expr(value(a), def_vars) | a <- syn_args, a != nil);
+    unknown_arg_idx = only((i | a @ i <- syn_args, a == nil));
+    return rel_lookup_expr(rel_var, nonempty(args), unknown_arg_idx);
+  }
+
+
+  Expr desugar_seq_expr(SynSubExpr* entries, [StdVar] def_vars)
   {
     es = (desugar_expr(e, def_vars) | e <- entries);
     return if es :: Expr+ then tuple_expr(es) else seq_expr(es);
   }
 
 
-  Expr desugar_method_call_expr(Atom var_id, MethodSymbol name, SynExpr* syn_args, [Var] def_vars)
-  {
-    args = (desugar_expr(e, def_vars) | e <- syn_args);
-    return if var_id == :self
-      then self_method_call_expr(self_type, name, args)
-      else method_call_expr(resolve_target(var_id), name, args);
-
-    Expr self_method_call_expr(AutoSymbol, MethodSymbol name, Expr* args) = auto_method_call_expr(name, args);
-
-    Expr self_method_call_expr(DBSymbol, MethodSymbol name, Expr* args) = db_method_call_expr(name, args);
-
-    Expr method_call_expr(<AnyAutoVar, AnyDBVar> var, MethodSymbol name, Expr* args):
-      AnyAutoVar  = auto_method_call_expr(var, name, args),
-      AnyDBVar    = db_method_call_expr(var, name, args);
-
-    <AnyAutoVar, AnyDBVar> resolve_target(Atom var_id)
-    {
-      var = loc_auto_var(var_id);
-      return var if has_key(auto_vars_types, var);
-
-      var = memb_auto_var(var_id);
-      return var if has_key(auto_vars_types, var);
-
-      var = loc_db_var(var_id);
-      return var if has_key(db_vars_types, var);
-
-      var = memb_db_var(var_id);
-      return var if has_key(db_vars_types, var);
-
-      fail;
-    }
-  }
-
-
-  Expr desugar_map_expr([SynMapExprEntry] entries, [Var] def_vars) =
+  Expr desugar_map_expr([SynMapExprEntry] entries, [StdVar] def_vars) =
     map_expr([(
         key:   desugar_expr(e.key, def_vars),
         value: desugar_expr(e.value, def_vars),
@@ -108,195 +174,53 @@ implicit
     ]);
 
 
-  Expr desugar_const_or_var_expr(Atom var_symb, [Var] def_vars)
+  Expr desugar_const_or_var_expr(Atom symbol, [StdVar] def_vars) =
+    only(resolve_by_priority_as_expr((symbol), def_vars));
+
+
+  Expr desugar_accessor(SynAccExpr syn_expr, [StdVar] def_vars) =
+    if syn_expr :: AccessorChain
+      then only(resolve_by_priority_as_expr(destructure_id_chain(syn_expr), def_vars))
+      else accessor(desugar_expr(syn_expr.expr, def_vars), object(syn_expr.field));
+
+
+  Expr desugar_accessor_test(SynExpr syn_expr, Atom field, [StdVar] def_vars)
   {
-    assert not in(cls_var(var_symb), closures);
-
-    return var(var_symb)        if in(var(var_symb), def_vars);
-    return named_arg(var_symb)  if in(named_arg(var_symb), named_args);
-    return memb_var(var_symb)   if in(memb_var(var_symb), memb_vars);
-
-    for v <- (loc_auto_var(var_symb), memb_auto_var(var_symb)):
-      if has_key(auto_vars_types, v):
-        interface = auto_interfaces[auto_vars_types[v]];
-        if interface.default_output:
-          default_output = only_element(keys(interface.outputs));
-          return qual_auto_memb_var(v, memb_var(default_output));
-        ;
-      ;
-    ;
-
-    fn_name = fn_symbol(var_symb);
-    fn_name = nested_fn_symbol(value(curr_outer_fn), fn_name) if has_key(local_fns, (fn_name, 0));
-    return fn_call(fn_name, (), [:]);
+    value_expr = desugar_expr(syn_accessor(syn_expr, field), def_vars);
+    return match (value_expr)
+      accessor()            = accessor_test(value_expr.expr, value_expr.field),
+      qual_auto_memb_var()  = is_set(value_expr);
   }
 
 
-  Expr desugar_fn_call_expr(FnSymbol name, SynExpr* args, (NamedArg, <var(Atom)>*, SynExpr)* expl_named_args, [Var] def_vars)
+  Expr desugar_named_args_call_expr(Atom name, SynExpr* syn_args, (NamedArg, StdVar*, SynExpr)+ syn_named_args, [StdVar] def_vars)
   {
-    //## BAD (BUG?): THIS IS NOT VALID IF THE PARAMETER IS A CLOSURE
-    //## VARIABLE OR IF IT'S THE NAME OF A FUNCTION. RIGHT NOW IT
-    //## SHOULD NOT FAIL, BUT ONLY BECAUSE THE const_or_var() DOESN'T
-    //## DO ANY CHECKING AT THE MOMENT
-    arity = length(args);
-    fn_id = (name, arity);
-    nps = merge(([n -> desugar_named_arg_expr(e, def_vars, ps)] | n, ps, e <- expl_named_args));
-
-    if name :: <fn_symbol(Atom)> and (arity == 1 or arity == 2) and expl_named_args == ():
-      bare_name = match (name) fn_symbol(a?) = a;
-      target_is_local_var = already_def(bare_name, def_vars);
-      target_is_named_par = already_def(bare_name, named_args) and named_args_arities[named_arg(bare_name)] == 0;
-      if target_is_local_var or target_is_named_par:
-        coll_var = if target_is_local_var then var(bare_name) else named_arg(bare_name);
-        if arity == 1:
-          par = desugar_expr(only_item(args), def_vars);
-          res = unary_pseudo_call(coll_var, par);
-        else
-          assert arity == 2;
-          key = desugar_expr(args[0], def_vars);
-          value = desugar_expr(args[1], def_vars);
-          res = map_search(coll_var, key, value);
-        ;
-        return res;
-      ;
-    ;
-
-    // Closures first
-    if name :: <fn_symbol(Atom)> and args != ():
-      cls_var = cls_var(_obj_(name));
-      if in(cls_var, closures):
-        assert nps == [:];
-        ps = (desugar_expr(e, def_vars) | e <- args);
-        return cls_call(cls_var, ps);
-      ;
-    ;
-
-    // Then local functions. Here we have to deal with closure parameters.
-    if has_key(local_fns, fn_id):
-      fs = nested_fn_symbol(value(curr_outer_fn), name);
-      pas = local_fns[fn_id];
-      eps = (desugar_fn_arg(p, a, def_vars) | p, a <- zip(args, pas));
-      return fn_call(fs, eps, nps);
-    ;
-
-    // Then named parameters
-    if name :: <fn_symbol(Atom)> and args != ():
-      np  = named_arg(_obj_(name));
-      if in(np, named_args):
-        assert nps == [:];
-        ps = (desugar_expr(e, def_vars) | e <- args);
-        return cls_call(np, ps);
-      ;
-    ;
-
-    // And last global functions. Here too we have to deal with closures.
-    pas = fn_arg_arities[name][arity];
-    eps = (desugar_fn_arg(p, a, def_vars) | p, a <- zip(args, pas));
-    return fn_call(name, eps, nps);
+    arity = length(syn_args);
+    res_name = only(resolve_by_priority_as_fn_name(name, arity, def_vars));
+    arg_arities = arg_arities(res_name, arity);
+    args = (desugar_fn_arg(a, ea, def_vars) | a, ea <- zip(syn_args, arg_arities));
+    named_args = merge(([n -> desugar_named_arg_expr(e, def_vars, as)] | n, as, e <- syn_named_args));
+    return fn_call(res_name, args, named_args);
 
 
-    AnyExpr desugar_named_arg_expr(SynExpr syn_expr, [Var] outside_vars, <var(Atom)>* cls_pars)
+    AnyExpr desugar_named_arg_expr(SynExpr syn_expr, [StdVar] outside_vars, StdVar* cls_pars)
     {
-      vars = outside_vars - [v | v <- outside_vars, fn_par() <~ v] & set(cls_pars) & set((fn_par(i) | i < length(cls_pars)));
-      expr = desugar_expr(syn_expr, vars);
-      return if cls_pars == () then expr else cls_expr(cls_pars, expr);
-    }
-
-
-    AnyExpr desugar_fn_arg(SynExpr syn_arg, Nat exp_arity, [Var] def_vars)
-    {
-      if exp_arity == 0 or not syn_arg :: ConstOrVar:
-        arg = desugar_expr(syn_arg, def_vars);
-        return if exp_arity == 0 then arg else cls_expr(exp_arity, arg);
-      ;
-
-      symb = _obj_(syn_arg);
-
-      is_loc_var = in(var(symb), def_vars);
-      is_named_arg = in(named_arg(symb), named_args);
-      fn_symb = fn_symbol(symb);
-      is_glob_const = has_key(fn_arg_arities, fn_symb) and has_key(fn_arg_arities[fn_symb], 0);
-
-      //## BUG? IS THIS RIGHT? SHOULDN'T GLOBAL CONSTANTS HAVE MINIMUM PRIORITY?
-      if is_loc_var or is_named_arg or is_glob_const:
-        return cls_expr(exp_arity, desugar_expr(syn_arg, def_vars));
-      else
-        cls_var = cls_var(symb);
-        return cls_var if in(cls_var, closures);
-        fn_symb = nested_fn_symbol(value(curr_outer_fn), fn_symb) if has_key(local_fns, (fn_symb, exp_arity));
-        return fn_ptr(fn_symb, exp_arity);
-      ;
+      expr = desugar_expr(syn_expr, outside_vars & set(cls_pars));
+      return if cls_pars == () then expr else named_args_cls_expr(cls_pars, expr);
     }
   }
 
 
-  Expr desugar_accessor(SynAccExpr syn_expr, [Var] def_vars)
-  {
-    if syn_expr :: AccessorChain:
-      symbols = destructure_accessor_chain(syn_expr);
-      target = head(symbols);
-      fields = nonempty(tail(symbols));
-
-      for v <- (loc_auto_var(target), memb_auto_var(target)):
-        if has_key(auto_vars_types, v):
-          interface = auto_interfaces[auto_vars_types[v]];
-          if not interface.default_output:
-            field = head(fields);
-            rem_fields = tail(fields);
-            expr = qual_auto_memb_var(v, memb_var(head(fields)));
-            for f <- tail(fields):
-              expr = accessor(expr, object(f));
-            ;
-            return expr;
-          ;
-        ;
-      ;
-
-      for v <- (loc_db_var(target), memb_db_var(target)):
-        if has_key(db_vars_types, v):
-          db_var = v;
-          db_type = db_vars_types[v];
-          rem_fields = fields;
-          loop
-            interface = db_interfaces[db_type];
-            field = head(rem_fields);
-            break if in(field, interface.memb_vars);
-            db_var = nested_db_var(db_var, memb_db_var(field));
-            db_type = db_symbol(interface.nested_dbs[field]);
-            rem_fields = tail(rem_fields);
-            fail if rem_fields == ();
-          ;
-          expr = qual_db_memb_var(db_var, memb_var(head(rem_fields)));
-          for f <- tail(rem_fields):
-            expr = accessor(expr, object(f));
-          ;
-          return expr;
-        ;
-      ;
-    ;
-
-    return accessor(desugar_expr(syn_expr.expr, def_vars), object(syn_expr.field));
-  }
+  AnyExpr desugar_fn_arg(SynExpr syn_arg, Nat exp_arity, [StdVar] def_vars) =
+    if exp_arity == 0
+      then desugar_expr(syn_arg, def_vars)
+    elif syn_arg :: ConstOrVar
+      then only(resolve_by_priority_as_cls_expr(match (syn_arg) const_or_var(a?) = a, exp_arity, def_vars))
+    else
+      no_args_cls_expr(exp_arity, desugar_expr(syn_arg, def_vars));
 
 
-  Expr desugar_accessor_test(SynExpr expr, Atom field, [Var] def_vars):
-    const_or_var(n?)  = desugar_accessor_test(n, field, def_vars),
-    _                 = accessor_test(desugar_expr(expr, def_vars), object(field));
-
-
-  Expr desugar_accessor_test(Atom target, Atom field, [Var] def_vars)
-  {
-    for v <- (loc_auto_var(target), memb_auto_var(target)):
-      if has_key(auto_vars_types, v):
-        interface = auto_interfaces[auto_vars_types[v]];
-        return is_set(qual_auto_memb_var(v, memb_var(field))) if not interface.default_output;
-      ;
-    ;
-    return accessor_test(desugar_const_or_var_expr(target, def_vars), object(field));
-  }
-
-
-  Expr desugar_ex_qual_expr(SynClause+ source, SynExpr cond, [Var] def_vars)
+  Expr desugar_ex_qual_expr(SynClause+ source, SynExpr cond, [StdVar] def_vars)
   {
     vs = def_vars & syn_new_vars(source);
     c  = desugar_expr(cond, vs);
@@ -304,21 +228,21 @@ implicit
   }
 
 
-  Expr desugar_set_comp_expr(SynExpr expr, SynClause+ source, [Var] def_vars)
+  Expr desugar_set_comp_expr(SynExpr expr, SynClause+ source, [StdVar] def_vars)
   {
     vs = def_vars & syn_new_vars(source);
     return set_comp(desugar_expr(expr, vs), mk_and_clause(source, def_vars));
   }
 
 
-  Expr desugar_map_comp_expr(SynExpr key_expr, SynExpr value_expr, SynClause+ source, [Var] def_vars)
+  Expr desugar_map_comp_expr(SynExpr key_expr, SynExpr value_expr, SynClause+ source, [StdVar] def_vars)
   {
     vs = def_vars & syn_new_vars(source);
     return map_comp(desugar_expr(key_expr, vs), desugar_expr(value_expr, vs), mk_and_clause(source, def_vars));
   }
 
 
-  Expr desugar_seq_comp_expr(SynLCExpr expr, [Var] def_vars)
+  Expr desugar_seq_comp_expr(SynLCExpr expr, [StdVar] def_vars)
   {
     vs = def_vars & set(expr.vars) & [expr.idx_var if expr.idx_var?];
     return seq_comp(
@@ -331,7 +255,7 @@ implicit
   }
 
 
-  Expr desugar_range_comp_expr(SynRCExpr expr, [Var] def_vars)
+  Expr desugar_range_comp_expr(SynRCExpr expr, [StdVar] def_vars)
   {
     vs = def_vars & [expr.var];
     return range_comp(
@@ -344,7 +268,7 @@ implicit
   }
 
 
-  Expr desugar_if_expr(SynIfExpr expr, [Var] def_vars)
+  Expr desugar_if_expr(SynIfExpr expr, [StdVar] def_vars)
   {
     res = desugar_expr(expr.else, def_vars);
     for b <- reverse(expr.branches):
@@ -354,7 +278,7 @@ implicit
   }
 
 
-  Expr desugar_match_expr(SynExpr+ exprs, SynCase+ cases, [Var] def_vars)
+  Expr desugar_match_expr(SynExpr+ exprs, SynCase+ cases, [StdVar] def_vars)
   {
     n  = length(cases[0].patterns);
     es = nonempty((desugar_expr(e, def_vars) | e <- subseq(exprs, 0, n)));
@@ -368,7 +292,7 @@ implicit
 
   ////////////////////////////////////////////////////////////////////////////////
 
-  CondExpr desugar_expr(SynCondExpr cexpr, [Var] def_vars) =
+  CondExpr desugar_expr(SynCondExpr cexpr, [StdVar] def_vars) =
     cond_expr(
       desugar_expr(cexpr.expr, def_vars),
       desugar_expr(cexpr.cond, def_vars)
@@ -387,7 +311,7 @@ implicit
 
   ////////////////////////////////////////////////////////////////////////////////
 
-  Clause mk_and_clause(SynClause+ clauses, [Var] def_vars)
+  Clause mk_and_clause(SynClause+ clauses, [StdVar] def_vars)
   {
     vs = def_vars;
     cs = ();
@@ -409,43 +333,70 @@ implicit
   //## DON'T HAVE A PATTERN ASSOCIATED WITH THAT VARIABLE
 
 
-  Clause desugar_clause(SynClause cls, [Var] def_vars)
+  Clause desugar_clause(SynClause cls, [StdVar] def_vars)
   {
     return transfer_attachments(desugar(cls, def_vars), cls);
 
-    Clause desugar(SynClause cls, [Var] def_vars):
-      set_elem_clause()   = set_elem_clause(cls.var, desugar_expr(cls.src, def_vars)),
-      map_entry_clause()  = map_entry_clause(cls.key_var, cls.value_var, desugar_expr(cls.src, def_vars)),
-      seq_elem_clause()   = seq_elem_clause(cls.var, desugar_expr(cls.src, def_vars)),
+
+    Clause desugar(SynClause cls, [StdVar] def_vars):
+      iter_clause()       = desugar_iter_clause(cls.vars, cls.src, def_vars),
       and_clause(cs?)     = mk_and_clause(cs, def_vars),
       or_clause()         = or_clause(desugar_clause(cls.left, def_vars), desugar_clause(cls.right, def_vars)),
       match_clause()      = match_clause(desugar_ptrn(cls.ptrn), desugar_expr(cls.expr, def_vars)),
       asgnm_clause()      = asgnm_clause(cls.var, desugar_expr(cls.expr, def_vars)),
       filter_clause()     = filter_clause(desugar_expr(cls.cond, def_vars));
+
+
+    Clause desugar_iter_clause(StdVar+ vars, SynExpr syn_src_expr, [StdVar] def_vars)
+    {
+      if syn_src_expr :: <rel_memb_test(target: IdChain, args: Maybe[SynExpr]+)>:
+        syn_args = syn_src_expr.args;
+        if at_least_one((a == nil | a <- syn_args)):
+          symbols = destructure_id_chain(syn_src_expr.target);
+          target = only(resolve_by_priority_as_rel_var(symbols, def_vars));
+          args = (apply(a, desugar_expr($, def_vars)) | a <- syn_args);
+          return rel_tuple_clause(vars, target, args);
+        ;
+      ;
+
+      assert length(vars) == 1 or length(vars) == 2;
+
+      src_expr = desugar_expr(syn_src_expr, def_vars);
+      return if length(vars) == 1
+        then set_elem_clause(only(vars), src_expr)
+        else map_entry_clause(vars(0), vars(1), src_expr);
+    }
   }
 
   ////////////////////////////////////////////////////////////////////////////////
 
   //## BAD: THIS SHOULD BE REPLACED BY A COUPLE OF SUBSIGNATURES.
-  () desugar_stmts((), [Var]) = ();
+  () desugar_stmts((), [StdVar]) = ();
 
-  Statement+ desugar_stmts(SynStmt+ stmts, [Var] def_vars)
+  Statement+ desugar_stmts(SynStmt+ stmts, [StdVar] def_vars)
   {
     vs = def_vars;
     ss = ();
     for s <- stmts:
-      ss = ss & (desugar_stmt(s, vs));
+      ss = ss & desugar_stmt(s, vs);
       vs = vs & syn_new_vars(s);
     ;
     return nonempty(ss);
   }
 
 
-  Statement desugar_stmt(SynStmt stmt, [Var] def_vars) =
-    transfer_attachments(desugar_stmt_plain(stmt, def_vars), stmt);
+  Statement+ desugar_stmt(SynStmt stmt, [StdVar] def_vars)
+  {
+    stmts = match (stmt)
+      delete_stmt() = (desugar_delete_entry(e, def_vars) | e <- stmt.entries),
+      insert_stmt() = (desugar_insert_entry(e, stmt.force, def_vars) | e <- stmt.entries),
+      _             = (desugar_stmt_plain(stmt, def_vars));
+
+    return (transfer_attachments(s, stmt) | s <- stmts);
+  }
 
 
-  Statement desugar_stmt_plain(SynStmt stmt, [Var] def_vars):
+  Statement desugar_stmt_plain(SynStmt stmt, [StdVar] def_vars):
     assignment_stmt()         = assignment_stmt(stmt.vars, desugar_expr(stmt.value, def_vars)),
     imp_update_stmt()         = imp_update_stmt(stmt.obj, desugar_expr(stmt.idx, def_vars), desugar_expr(stmt.value, def_vars)),
     return_stmt(e?)           = return_stmt(desugar_expr(e, def_vars)),
@@ -477,7 +428,15 @@ implicit
     send_msg_ctrl_stmt()      = send_msg_ctrl_stmt(var(stmt.res_var), loc_db_var(stmt.db_var), desugar_expr(stmt.msg, def_vars));
 
 
-  Statement desugar_if_stmt(SynIfStmt[SynStmt] stmt, [Var] def_vars)
+  Statement desugar_delete_entry((var: Atom, args: Maybe[SynExpr]+) entry, [StdVar] def_vars) =
+    delete_stmt(rel_var(entry.var), (apply(a, desugar_expr($, def_vars)) | a <- entry.args));
+
+
+  Statement desugar_insert_entry((var: Atom, args: SynExpr+) entry, Bool force, [StdVar] def_vars) =
+    insert_stmt(rel_var(entry.var), (desugar_expr(e, def_vars) | e <- entry.args), force);
+
+
+  Statement desugar_if_stmt(SynIfStmt[SynStmt] stmt, [StdVar] def_vars)
   {
     else_stmts = stmt.else; //## THIS IS HERE JUST TO SHUT UP THE TYPECHECKER
     res = if else_stmts != () then desugar_stmts(else_stmts, def_vars) else ();
@@ -492,16 +451,16 @@ implicit
   }
 
 
-  Statement desugar_let_stmt(SynLetStmt[SynStmt] stmt, [Var] def_vars)
+  Statement desugar_let_stmt(SynLetStmt[SynStmt] stmt, [StdVar] def_vars)
   {
     asgnms = merge(([var -> desugar_expr(val, def_vars)] | var, val <- stmt.asgnms));
-    //## BUG BUG BUG: WHAT ABOUT named_args_arities? THAT'S NOT SET!
-    body   = desugar_stmts(stmt.body, def_vars, named_args = named_args & keys(asgnms));
+    new_impl_args = update(impl_args, [v -> 0 | v : unused_var <- asgnms]);
+    body   = desugar_stmts(stmt.body, def_vars, impl_args=new_impl_args);
     return let_stmt(asgnms, body);
   }
 
 
-  Statement desugar_loop_stmt(SynLoopStmt[SynStmt] stmt, [Var] def_vars)
+  Statement desugar_loop_stmt(SynLoopStmt[SynStmt] stmt, [StdVar] def_vars)
   {
     cond      = desugar_expr(stmt.cond, def_vars);
     exit_stmt = if_stmt(not_expr(cond), (break_stmt), ());
@@ -515,7 +474,7 @@ implicit
   }
 
 
-  Statement desugar_for_stmt(SynIter+ loops, SynStmt+ body, [Var] def_vars)
+  Statement desugar_for_stmt(SynIter+ loops, SynStmt+ body, [StdVar] def_vars)
   {
     //## ALSO MAKE SURE SYNTAX CHECK GETS IT RIGHT
     iters  = loops;
@@ -548,12 +507,12 @@ implicit
   }
 
 
-  Statement desugar_assert_stmt(SynAssertStmt stmt, [Var] def_vars)
+  Statement desugar_assert_stmt(SynAssertStmt stmt, [StdVar] def_vars)
   {
     expr = desugar_expr(stmt.cond, def_vars);
     loc_vars = [v | v <- def_vars, v :: StdVar];
-    scalar_named_args = [arg | arg : arity <- named_args_arities, arity == 0];
-    return assert_stmt(expr, loc_vars & scalar_named_args, stmt.file, stmt.line, stmt.text);
+    scalar_impl_args = [arg | arg : arity <- impl_args, arity == 0];
+    return assert_stmt(expr, loc_vars & scalar_impl_args, stmt.file, stmt.line, stmt.text);
   }
 
   ////////////////////////////////////////////////////////////////////////////////

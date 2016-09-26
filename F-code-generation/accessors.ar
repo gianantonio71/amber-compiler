@@ -1,0 +1,104 @@
+type Artifact = nil, Function, Procedure, Automaton, DataBase;
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit program : Program
+{
+  Int+* int_seqs = rand_sort(retrieve_nested_int_seqs(program));
+
+  [Int+ -> Nat] int_seqs_ids = merge(([s -> i] | s @ i <- int_seqs));
+
+  Bool input_is_discrete(AutoSymbol auto, Atom input) = auto_input_is_discrete_map[auto][input];
+
+  Bool output_is_discrete(AutoSymbol auto, Atom output) = auto_output_is_discrete_map[auto][output];
+
+  Bool is_time_sensitive(AutoSymbol auto) = in(auto, time_sensitive_autos);
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  [AutoSymbol -> [Atom -> Bool]] auto_input_is_discrete_map =
+    [a.name -> [id -> input.discrete  | id : input <- a.inputs]  | a <- program.auto_defs];
+
+
+  [AutoSymbol -> [Atom -> Bool]] auto_output_is_discrete_map =
+    [a.name -> [id -> output.discrete | id : output <- a.outputs] | a <- program.auto_defs];
+
+
+  [AutoSymbol] time_sensitive_autos
+  {
+    automata = program.auto_defs;
+    autos_with_time_rules = [a.name | a <- automata, a.time_rules != [:]];
+    auto_shallow_deps = [a.name -> [na.type | unused_var : na <- a.nested_autos] | a <- automata];
+    auto_deep_deps = transitive_closure(auto_shallow_deps);
+    autos_with_time_sensitive_nested_autos =  [a.name | a <- automata, not disjoint(auto_deep_deps[a.name], autos_with_time_rules)];
+    return autos_with_time_rules & autos_with_time_sensitive_nested_autos;
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  [DBSymbol -> [RelVar -> Table]] tables_by_db = [
+    db.name -> value_stores_and_tables(database=db)(1) | db <- program.data_bases
+  ];
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit artifact : Artifact
+{
+  AutoSymbol var_type(MembAutoVar var) =
+    match (artifact)
+      automaton()   = artifact.nested_autos[bare_id(var)].type;
+
+
+  AutoSymbol var_type(LocAutoVar var) =
+    match (artifact)
+      procedure()    = artifact.auto_vars[var];
+
+
+  DBSymbol var_type(MembDBVar var) =
+    match (artifact)
+      automaton()   = artifact.nested_dbs[var],
+      data_base()   = artifact.nested_dbs[var];
+
+
+  DBSymbol var_type(LocDBVar var) =
+    match (artifact)
+      procedure()    = artifact.db_vars[var];
+
+
+  DBSymbol var_type(NestedDBVar var) = {fail;}; //## IMPLEMENT IMPLEMENT IMPLEMENT
+
+
+  AutoSymbol this_auto_symbol =
+    match (artifact)
+      automaton() = artifact.name;
+
+
+  DBSymbol this_db_symbol =
+    match (artifact)
+      data_base()  = artifact.name;
+
+
+  (types: NeType+, unique: [[+Nat]]) rel_var_info(RelVar rel_var) =
+    match (artifact)
+      data_base() = artifact.rel_vars[rel_var];
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit program : Program, artifact : Artifact
+{
+  ValueStoreId table_col_store_id(RelVar rel_var, Nat col_idx) =
+    tables_by_db[this_db_symbol][rel_var].cols[col_idx].store_id;
+
+
+  NestedValueStoreId table_col_store_id(QualRelVar rel_var, Nat col_idx)
+  {
+    db_type = var_type(rel_var.db_var);
+    store_id = tables_by_db[db_type][rel_var.rel_var].cols[col_idx].store_id;
+    return nested_value_store_id(rel_var.db_var, store_id);
+  }
+}

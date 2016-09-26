@@ -1,3 +1,16 @@
+type AutoInterface  =  ( inputs:          [Atom -> (discrete: Bool)],
+                         outputs:         [Atom -> (discrete: Bool)],
+                         pos_inputs:      Atom*,
+                         default_output:  Maybe[Atom]
+                       );
+
+type DBInterface    = ( memb_vars:  [Atom],
+                        rel_vars:   [Atom -> NzNat],
+                        nested_dbs: [Atom -> Atom]
+                      );
+
+////////////////////////////////////////////////////////////////////////////////
+
 NzNat syn_case_arity(SynCase c) = nz_nat(length(c.patterns));
 
 Nat arity(SynTypeSymbol type):
@@ -12,20 +25,11 @@ NzNat arity(SynParTypedef td) = length(td.params);
 
 Nat arity(SynFnDef d) = length(d.args);
 
-
 Nat arity(SynProcDef p) = length(p.args);
 
 Nat arity(SynSgn s) = length(s.args);
 
-Nat arity(SynFnArg arg)
-{
-  // return 0 if not arg.type?;
-  type = arg.type;
-  return match (type)
-    cls_type() = length(type.in_types),
-    _         = 0;
-}
-
+Nat arity(SynArg arg) = syn_type_arity(arg.type);
 
 []         type_vars(SynTypedef)        = [];
 [+TypeVar] type_vars(SynParTypedef td)  = set(td.params);
@@ -43,24 +47,25 @@ Nat arity(SynFnArg arg)
           | o <- set(auto_def.outputs)];
 
 
-type AutoInterface  =  ( inputs:         [Atom -> (discrete: Bool)],
-                         outputs:        [Atom -> (discrete: Bool)],
-                         pos_inputs:     Atom*,
-                         default_output: Bool
-                       );
-
-type DBInterface    = (memb_vars: [Atom], nested_dbs: [Atom -> Atom]);
-
-
-AutoInterface interface_info(SynAutoDef auto_def) = (
-    inputs:         [n -> (discrete: info.discrete) | n : info <- inputs(auto_def)],
-    outputs:        [n -> (discrete: info.discrete) | n : info <- outputs(auto_def)],
+AutoInterface interface_info(SynAutoDef auto_def)
+{
+  inputs = inputs(auto_def);
+  outputs = outputs(auto_def);
+  return (
+    inputs:         [n -> (discrete: info.discrete) | n : info <- inputs],
+    outputs:        [n -> (discrete: info.discrete) | n : info <- outputs],
     pos_inputs:     auto_def.pos_inputs,
-    default_output: auto_def.res_type?
+    default_output: if auto_def.res_type? then just(only(keys(outputs))) else nil
   );
+}
 
 
-DBInterface interface_info(SynDBDef db_def) = (
-    memb_vars:    [d.name | d <- set(db_def.decls), state_var_decl() <~ d],
+DBInterface interface_info(SynDBDef db_def)
+{
+  decls = set(db_def.decls);
+  return (
+    memb_vars:    [d.name | d <- decls, state_var_decl() <~ d],
+    rel_vars:     [d.name -> length(d.cols) | d <- decls, rel_var_decl() <~ d],
     nested_dbs:   [d.name -> d.type | d <- set(db_def.decls), nested_db_decl() <~ d]
   );
+}

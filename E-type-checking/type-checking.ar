@@ -3,38 +3,35 @@
 //## THAT ALL CLOSURE PARAMETERS HAVE EXACTLY THE SAME TYPE.
 
 
-[FnDef -> [+TypeCheckingError]] typecheck(Program prg, Bool verbose)
+[Function -> [+TypeCheckingError]] typecheck(Program prg, Bool verbose)
 {
   typedefs = prg.typedefs & builtin_typedefs;
-  signatures = merge_values([[(fd.name, arity(fd)) -> signature(fd)] | fd <- prg.fndefs]);
+  signatures = merge_values([[(family_id(fd.name), arity(fd)) -> signature(fd)] | fd <- prg.fndefs]);
   sgn_sets = [n -> preprocess_signatures(ss, typedefs) | n : ss <- signatures];
-  let verbose = verbose:
-    errors = [fd -> typecheck(fd, typedefs, sgn_sets) | fd <- prg.fndefs];
+  let typedefs = typedefs, signatures = sgn_sets, verbose = verbose:
+    errors = [fd -> typecheck_function(fd) | fd <- prg.fndefs];
   ;
   return [fd -> es | fd : es <- errors, es != []];
 }
 
 
-implicit verbose : Bool
+implicit typedefs : [TypeName -> Type], signatures : [(FnFamilyId, Nat) -> SgnSet], verbose : Bool
 {
-  [TypeCheckingError] typecheck(FnDef fn_def, [TypeName -> Type] typedefs, [(FnSymbol, Nat) -> SgnSet] signatures)
+  [TypeCheckingError] typecheck_function(Function func)
   {
-    //## REMOVE THIS STUFF
-    errs = set((missing_param_type(p, i) | p @ i <- fn_def.params, not p.type?)) & [missing_res_type if not fn_def.res_type?];
-    return errs if errs != [];
+    args = func.args;
+    var_aliases = set(([fn_par(i), a.var] | a @ i <- args, a :: FormalObjArg and a.var?));
 
-    var_aliases = set(([fn_par(i), p.var] | p @ i <- fn_def.params, p :: ScalarFrmParam and p.var?));
-    let typedefs=typedefs, signatures=signatures, var_aliases=var_aliases:
-      scalar_vars = [scalar_var(p) -> scalar_param_type(p) | p <- set(fn_def.params), is_scalar_par(p), p.var?] &
-                    [fn_par(i) -> scalar_param_type(p) | i <- index_set(fn_def.params), p = fn_def.params[i], is_scalar_par(p)] &
-                    [v -> t | v : t <- fn_def.named_args, t :: Type];
+    obj_vars = [a.var -> a.type | a <- set(args), formal_obj_arg() <~ a, a.var?] &
+               [fn_par(i) -> a.type | i <- index_set(args), a = args[i], formal_obj_arg() <~ a] &
+               [v -> t | v : t <- func.impl_args, t :: Type];
 
-      cls_vars = [cls_var(p) -> cls_param_type(p) | p <- set(fn_def.params), not is_scalar_par(p), p.var?] &
-                 [v -> t | v : t <- fn_def.named_args, t :: ClsType];
+    cls_vars = [a.var -> a.type | a <- set(args), formal_cls_arg() <~ a] &
+               [v -> t | v : t <- func.impl_args, t :: ClsType];
 
-      errs = typecheck(fn_def.expr, return_type(fn_def), environment=scalar_vars, closures=cls_vars);
-    ;
-    return errs;
+    //## THE FOLLOWING LINE WAS PRODUCING A COMPLETELY WRONG ERROR MESSAGE
+    // errs = typecheck(func.expr, nonexistent_function(func), environment=obj_vars, closures=cls_vars);
+    return typecheck(func.expr, func.res_type, var_aliases=var_aliases, environment=obj_vars, closures=cls_vars);
   }
 }
 
@@ -44,7 +41,7 @@ implicit verbose : Bool
 implicit
 {
   typedefs    : [TypeName -> Type],
-  signatures  : [(FnSymbol, Nat) -> SgnSet],
+  signatures  : [(FnFamilyId, Nat) -> SgnSet],
   environment : [Var -> Type],
   closures    : [<ClsVar, NamedArg> -> ClsType],
   var_aliases : [[Var]],
@@ -70,14 +67,14 @@ implicit
       sgn_set = signatures[(expr.name, expr.arity)];
       sgns = sgn_set.sgns;
       assert size(sgns) == 1;
-      sgn = only_element(sgns);
+      sgn = only(sgns);
       assert sgn.named_args == [:]; //## BUG BUG BUG: THIS IS NOT CHECKED IN THE WELL-FORMEDNESS CHECKING LAYER
       assert not (p <- set(sgn.params) | not p :: Type);
       sgn_cls = cls_type(cast_as_type_ne_seq(sgn.params), sgn.ret_type);
       return [invalid_cls_param_type(sgn_cls, exp_type) if not is_subset(sgn_cls, exp_type)];
     },
     cls_expr() = {
-      delta_env = merge(([fn_par(i) -> t, v -> t if v != nil] | v, t @ i <- zip(expr.params, exp_type.in_types)));
+      delta_env = merge(([fn_par(i) -> t, value(v) -> t if v != nil] | v, t @ i <- zip(expr.args, exp_type.in_types)));
       new_env = update(environment, delta_env);
       return typecheck(expr.expr, exp_type.out_type, environment=new_env); //## BAD: HERE I SHOULD PROVIDE MORE INFORMATION
     };

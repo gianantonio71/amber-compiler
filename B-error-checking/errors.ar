@@ -20,17 +20,29 @@ type TypeWFError        = invalid_int_range(<syn_int_range(min: Int, max: Int)>)
 
 type ExprSpecWFError    = already_def_var(Var),
                           undef_var_or_const(Atom),
+                          not_an_object(
+                            expr:   SynExpr,
+                            resols: [<SymbChainExpr, ClsVar, AnyAutoVar, AnyDBVar, AnyRelVar, FnFamilyId, PreCall>]
+                          ),
+                          ambiguous_expr(
+                            expr:   SynExpr,
+                            resols: [<SymbChainExpr, FnCallExpr, AutoMethodCallExpr, DBMethodCallExpr>]
+                          ),
+                          invalid_expr(expr: SynExpr),
                           wrong_builtin_arity(name: BuiltIn, args: SynExpr+),
                           invalid_named_arg(NamedArg),
                           missing_named_arg(NamedArg),
                           invalid_named_arg_arity(arg: NamedArg, exp_arity: Nat, actual_arity: Nat),
                           undef_impl_cls_arg(ClsPar),
-                          duplicate_named_args(expr: SynFnCall, bad_args: [+NamedArg]),
-                          wrong_fn_arity(expr: SynFnCall, actual_arities: [+Nat]),
-                          calling_unknown_function(SynFnCall),
+                          duplicate_named_args(expr: SynNamedArgsCall, bad_args: [+NamedArg]),
+                          wrong_fn_arity(expr: SynNamedArgsCall, actual_arities: [+Nat]),
+                          wrong_arity(expr: <call_lookalike(target: IdChain, args: SynExpr+)>, actual_arities: [+Nat]),
+                          wrong_pseudocall_arity(expr: SynCallLookalike),
+                          unknown_function(expr: SynNamedArgsCall),
+                          unknown_function_or_method(expr: <call_lookalike(target: IdChain, args: SynExpr+)>),
                           wrong_cls_arg_arity(expr: ConstOrVar, exp_arity: NzNat, arities: [+Nat]),
-                          wrong_cls_call_arity(expr: SynFnCall, exp_arity: Nat),
-                          named_args_not_allowed(expr: SynFnCall),
+                          wrong_cls_call_arity(expr: SynNamedArgsCall, exp_arity: Nat),
+                          named_args_not_allowed(expr: SynNamedArgsCall),
                           not_a_scalar_var(names: Atom+),
                           dupl_var_mult_asgnm(StdVar),
                           diff_var_sets_in_ptrn_union(SynPtrn+),
@@ -111,17 +123,24 @@ ProcDefSpecWFError wrong_main_proc_arity                = :wrong_main_proc_arity
 
 ExprSpecWFError already_def_var(Var v)                                  = :already_def_var(v);
 ExprSpecWFError undef_var_or_const(Atom v)                              = :undef_var_or_const(v);
+ExprSpecWFError not_an_object(SynExpr e, <SymbChainExpr, ClsVar, AnyAutoVar, AnyDBVar, AnyRelVar, FnFamilyId, PreCall> r) = not_an_object(expr: e, resols: [r]);
+ExprSpecWFError not_an_object(SynExpr e, [<SymbChainExpr, ClsVar, AnyAutoVar, AnyDBVar, AnyRelVar, FnFamilyId, PreCall>] rs) = not_an_object(expr: e, resols: rs);
+ExprSpecWFError ambiguous_expr(SynExpr e, [<SymbChainExpr, FnCallExpr, AutoMethodCallExpr, DBMethodCallExpr>] rs) = ambiguous_expr(expr: e, resols: rs);
+ExprSpecWFError invalid_expr(SynExpr e)                                 = invalid_expr(expr: e);
 ExprSpecWFError wrong_builtin_arity(BuiltIn b, SynExpr+ ps)             = wrong_builtin_arity(name: b, args: ps);
 ExprSpecWFError invalid_named_arg(NamedArg p)                           = :invalid_named_arg(p);
 ExprSpecWFError missing_named_arg(NamedArg p)                           = :missing_named_arg(p);
 ExprSpecWFError invalid_named_arg_arity(NamedArg p, Nat ea, Nat aa)     = invalid_named_arg_arity(arg: p, exp_arity: ea, actual_arity: aa);
 ExprSpecWFError undef_impl_cls_arg(ClsPar p)                            = :undef_impl_cls_arg(p);
-ExprSpecWFError duplicate_named_args(SynFnCall c, [+NamedArg] ps)       = duplicate_named_args(expr: c, bad_args: ps);
-ExprSpecWFError wrong_fn_arity(SynFnCall c, [+Nat] as)                  = wrong_fn_arity(expr: c, actual_arities: as);
-ExprSpecWFError calling_unknown_function(SynFnCall c)                   = :calling_unknown_function(c);
+ExprSpecWFError duplicate_named_args(SynNamedArgsCall c, [+NamedArg] ps)  = duplicate_named_args(expr: c, bad_args: ps);
+ExprSpecWFError wrong_fn_arity(SynNamedArgsCall c, [+Nat] as)           = wrong_fn_arity(expr: c, actual_arities: as);
+ExprSpecWFError wrong_arity(<call_lookalike(target: IdChain, args: SynExpr+)> c, [+Nat] as) = wrong_arity(expr: c, actual_arities: as);
+ExprSpecWFError wrong_pseudocall_arity(SynCallLookalike c)              = wrong_pseudocall_arity(expr: c);
+ExprSpecWFError unknown_function(SynNamedArgsCall c)                    = unknown_function(expr: c);
+ExprSpecWFError unknown_function_or_method(<call_lookalike(target: IdChain, args: SynExpr+)> c) = unknown_function_or_method(expr: c);
 ExprSpecWFError wrong_cls_arg_arity(ConstOrVar e, NzNat ea, [+Nat] as)  = wrong_cls_arg_arity(expr: e, exp_arity: ea, arities: as);
-ExprSpecWFError wrong_cls_call_arity(SynFnCall c, Nat ea)               = wrong_cls_call_arity(expr: c, exp_arity: ea);
-ExprSpecWFError named_args_not_allowed(SynFnCall c)                     = named_args_not_allowed(expr: c);
+ExprSpecWFError wrong_cls_call_arity(SynNamedArgsCall c, Nat ea)        = wrong_cls_call_arity(expr: c, exp_arity: ea);
+ExprSpecWFError named_args_not_allowed(SynNamedArgsCall c)              = named_args_not_allowed(expr: c);
 ExprSpecWFError not_a_scalar_var(Atom a)                                = not_a_scalar_var(names: (a));
 ExprSpecWFError not_a_scalar_var(Atom+ as)                              = not_a_scalar_var(names: as);
 ExprSpecWFError dupl_var_mult_asgnm(StdVar v)                           = :dupl_var_mult_asgnm(v);
@@ -155,43 +174,48 @@ Any anchor_obj(TypeWFError err)     = nil;
 
 
 Any anchor_obj(ExprSpecWFError err):
-  already_def_var(v?)               = v,
-  undef_var_or_const(a?)            = nil,
-  wrong_builtin_arity()             = nil,
-  invalid_named_arg()               = nil,
-  missing_named_arg()               = nil,
-  invalid_named_arg_arity()         = nil,
-  undef_impl_cls_arg(p?)            = nil,
-  duplicate_named_args()            = err.expr,
-  wrong_fn_arity()                  = err.expr,
-  calling_unknown_function(c?)      = c,
-  wrong_cls_arg_arity()             = err.expr,
-  wrong_cls_call_arity()            = err.expr,
-  named_args_not_allowed()          = err.expr,
-  not_a_scalar_var()                = nil,
-  dupl_var_mult_asgnm()             = nil,
-  diff_var_sets_in_ptrn_union(ps?)  = head(ps),
+  already_def_var(v?)                     = v,
+  undef_var_or_const(a?)                  = nil,
+  not_an_object()                         = err.expr,
+  ambiguous_expr()                        = err.expr,
+  invalid_expr()                          = err.expr,
+  wrong_builtin_arity()                   = nil,
+  invalid_named_arg()                     = nil,
+  missing_named_arg()                     = nil,
+  invalid_named_arg_arity()               = nil,
+  undef_impl_cls_arg(p?)                  = nil,
+  duplicate_named_args()                  = err.expr,
+  wrong_fn_arity()                        = err.expr,
+  wrong_arity()                           = err.expr,
+  wrong_pseudocall_arity()                = err.expr,
+  unknown_function()                      = err.expr,
+  unknown_function_or_method()            = err.expr,
+  wrong_cls_arg_arity()                   = err.expr,
+  wrong_cls_call_arity()                  = err.expr,
+  named_args_not_allowed()                = err.expr,
+  not_a_scalar_var()                      = nil,
+  dupl_var_mult_asgnm()                   = nil,
+  diff_var_sets_in_ptrn_union(ps?)        = head(ps),
+  ro_vars_asgnm()                         = err.stmt,
+  wrong_return(s?)                        = s,
+  vars_redef()                            = err.stmt,
+  undef_update_var()                      = err.stmt,
+  wrong_proc_arity()                      = err.stmt,
+  uncaught_ret_val(s?)                    = s,
+  proc_has_no_ret_val(s?)                 = s,
+  undef_proc(s?)                          = s,
+  proc_call_not_allowed()                 = {fail;},
+  break_outside_loop(s?)                  = s,
+  missing_ret_stmt(ss?)                   = head(ss),
+  unreachable_stmt(s?)                    = s,
 
-  ro_vars_asgnm()                   = err.stmt,
-  wrong_return(s?)                  = s,
-  vars_redef()                      = err.stmt,
-  undef_update_var()                = err.stmt,
-  wrong_proc_arity()                = err.stmt,
-  uncaught_ret_val(s?)              = s,
-  proc_has_no_ret_val(s?)           = s,
-  undef_proc(s?)                    = s,
-  proc_call_not_allowed()           = {fail;},
-  break_outside_loop(s?)            = s,
-  missing_ret_stmt(ss?)             = head(ss),
-  unreachable_stmt(s?)              = s,
+  auto_var_not_defined()                  = nil,
+  unknown_input()                         = nil,
+  unknown_output()                        = nil,
+  unknown_db_field()                      = nil,
+  not_a_discrete_signal()                 = nil,
 
-  auto_var_not_defined()            = nil,
-  unknown_input()                   = nil,
-  unknown_output()                  = nil,
-  unknown_db_field()                = nil,
-  not_a_discrete_signal()           = nil,
-
-  annotated_syn_expr_error()        = err.expr;
+  annotated_syn_expr_error()              = err.expr;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -213,7 +237,7 @@ ExprWFError attach_anchor_obj_if_needed(ExprWFError error, SynExpr anchor)
   print data if not data :: [(String, NzNat, NzNat)] or size(data) != 1;
   return ("Unknown source file", 1, 1) if data == [];
   fail if not data :: [+(String, NzNat, NzNat)];
-  return only_element(data);
+  return only(data);
 }
 
 
@@ -359,6 +383,9 @@ String* basic_err_msg(TypeWFError err):
 String* basic_err_msg(ExprSpecWFError err):
   already_def_var(v?)         = ("Variable redefinition: " & user_repr(v)),
   undef_var_or_const(a?)      = ("Undefined variable or constant: " & _str_(a)),
+  not_an_object()             = ("Expression resolves to something other than an object"),
+  ambiguous_expr()            = ("Ambiguous expression"),
+  invalid_expr()              = ("Invalid expression. Due to an internal error, I am unable to be more specific than that"),
   wrong_builtin_arity()       = ("Wrong builtin function arity: " & user_repr(err.name)),
   invalid_named_arg(p?)       = ("Invalid named argument: " & user_repr(p)),
   missing_named_arg(p?)       = ("Undefined named argument: " & user_repr(p)),
@@ -375,14 +402,29 @@ String* basic_err_msg(ExprSpecWFError err):
                                 },
   undef_impl_cls_arg(p?)      = ("Invalid implicit closure argument: " & user_repr(p)),
   duplicate_named_args()      = ("Duplicated named parameter" & plural(err.bad_args) & ": " & user_repr(np) | np <- rand_sort(err.bad_args)),
-  wrong_fn_arity()            = ("Wrong number of arguments: " & user_repr(err.expr.name) &
-                                ", actual arity: " & append((printed(a) | a <- rand_sort(err.actual_arities)), ", ")),
-  calling_unknown_function(c?)  = ("Unknown function: " & user_repr(c.name)),
+  wrong_fn_arity()            = ( "Wrong number of arguments: " & user_repr(fn_symbol(err.expr.name)) &
+                                  ", actual arity: " & append((printed(a) | a <- rand_sort(err.actual_arities)), ", ")
+                                ),
+  wrong_arity()               = { last_symbol = last(destructure_id_chain(err.expr.target));
+                                  return (
+                                    "Wrong number of arguments: " & user_repr(fn_symbol(last_symbol)) &
+                                    ", actual arity: " & append((printed(a) | a <- rand_sort(err.actual_arities)), ", ")
+                                  );
+                                },
+  wrong_pseudocall_arity()    = ("Too many arguments for set/map membership test or map lookup"),
+  unknown_function()          = ("Unknown function: " & user_repr(fn_symbol(err.expr.name))),
+  unknown_function_or_method()= { symbs = destructure_id_chain(err.expr.target);
+                                  if length(symbs) == 1:
+                                    return ("Unknown function or method: " & user_repr(fn_symbol(only(symbs))));
+                                  else
+                                    return ("Unknown method: " & user_repr(method_symbol(last(symbs))));
+                                  ;
+                                },
   wrong_cls_arg_arity()       = ("Closure has wrong arity: " & user_repr(err.expr) &
                                 ", expected arity: " & printed(err.exp_arity) &
                                 ", actual arity: " & append((printed(a) | a <- rand_sort(err.arities)), ", ")),
-  wrong_cls_call_arity()      = ("Wrong number of arguments: " & user_repr(err.expr.name) & ", actual arity: " & printed(err.exp_arity)),
-  named_args_not_allowed()    = ("Closures cannot have named parameters: " & user_repr(err.expr.name)),
+  wrong_cls_call_arity()      = ("Wrong number of arguments: " & user_repr(fn_symbol(err.expr.name)) & ", actual arity: " & printed(err.exp_arity)),
+  named_args_not_allowed()    = ("Closures cannot have named parameters: " & user_repr(fn_symbol(err.expr.name))),
   not_a_scalar_var()          = ("Invalid use of non-object variable: " & append((_str_(n) | n <- err.names), ".")),
   dupl_var_mult_asgnm(v?)     = ("Duplicated variable in multiple assignment: " & user_repr(v)),
   diff_var_sets_in_ptrn_union(ps?)  = ("Individual patterns in a union must define the same set of variables"),
@@ -432,7 +474,7 @@ Maybe[((NzNat, NzNat), (NzNat, NzNat))] source_code_location(ExprWFError err)
   info = _fetch_(obj);
   assert size(info) <= 1;
   return nil if size(info) != 1;
-  loc_info = only_element(info);
+  loc_info = only(info);
   return nil if not loc_info :: ((NzNat, NzNat), (NzNat, NzNat));
   return just(loc_info);
 }

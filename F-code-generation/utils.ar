@@ -1,3 +1,37 @@
+Nat+ choose_disp_args(AnyType++ types, [TypeName -> Type] typedefs)
+{
+  //## IF THERE'S MORE THAN ONE CHOICE OF DISPATCH ARGUMENTS,
+  //## WE SHOULD CHOOSE THE ONE THAT IS THE MOST EFFICIENT
+  some_types = types(0);
+  obj_args = nonempty((i | t @ i <- some_types, t :: NeType));
+  ptypes = ((pseudotype(cast_as_type(ts[i]), typedefs) | i <- obj_args) | ts <- types);
+  count = length(obj_args);
+  for n = 1...count:
+    for idxs <- ordered_combinations(n, count):
+      if are_sufficient(idxs, ptypes, typedefs):
+        return (obj_args[i] | i <- idxs);
+      ;
+    ;
+  ;
+  fail;
+
+
+  Bool are_sufficient(Nat+ arg_idxs, PseudoType++ ptypes, [TypeName -> Type] typedefs)
+  {
+    count = length(ptypes);
+    for i1 < count-1; i2 = i1+1..count:
+      pts1 = ptypes[i1];
+      pts2 = ptypes[i2];
+      disjoint = at_least_one((are_disjoint(pts1(j), pts2(j)) | j <- arg_idxs));
+      return false if not disjoint;
+    ;
+    return true;
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
 [Int+] retrieve_nested_int_seqs(Expr expr):
   tuple_expr(es?)   = if es :: IntObj+
                         then [(match (e) object(n?) = n | e <- es)]
@@ -10,9 +44,9 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 
-[Int+] retrieve_nested_int_seqs(FnDef fd) = retrieve_nested_int_seqs(fd.expr);
+[Int+] retrieve_nested_int_seqs(Function fn) = retrieve_nested_int_seqs(fn.expr);
 
-[Int+] retrieve_nested_int_seqs(ProcDef2 pd) = retrieve_nested_int_seqs(pd.body);
+[Int+] retrieve_nested_int_seqs(Procedure pc) = retrieve_nested_int_seqs(pc.body);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -73,77 +107,73 @@
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-implicit program : Program
+type CounterSet[T] = counter_set(nz_ctrs: [T -> NzNat]);
+
+
+Nat next_value(CounterSet[T] ctr_set, T ctr) = lookup(ctr_set.nz_ctrs, ctr, 0);
+
+
+CounterSet[T] increment(CounterSet[T] ctr_set, T ctr)
 {
-  Int+* int_seqs = rand_sort(retrieve_nested_int_seqs(program));
-
-  [Int+ -> Nat] int_seqs_ids = merge(([s -> i] | s @ i <- int_seqs));
-
-  Bool input_is_discrete(AutoSymbol auto, Atom input) = auto_input_is_discrete_map[auto][input];
-
-  Bool output_is_discrete(AutoSymbol auto, Atom output) = auto_output_is_discrete_map[auto][output];
-
-  Bool is_time_sensitive(AutoSymbol auto) = in(auto, time_sensitive_autos);
-
-  //////////////////////////////////////////////////////////////////////////////
-
-  [AutoSymbol -> [Atom -> Bool]] auto_input_is_discrete_map =
-    [a.name -> [id -> input.discrete  | id : input <- a.inputs]  | a <- program.auto_defs];
-
-
-  [AutoSymbol -> [Atom -> Bool]] auto_output_is_discrete_map =
-    [a.name -> [id -> output.discrete | id : output <- a.outputs] | a <- program.auto_defs];
-
-
-  [AutoSymbol] time_sensitive_autos
-  {
-    automata = program.auto_defs;
-    autos_with_time_rules = [a.name | a <- automata, a.time_rules != [:]];
-    auto_shallow_deps = [a.name -> [na.type | unused_var : na <- a.nested_autos] | a <- automata];
-    auto_deep_deps = transitive_closure(auto_shallow_deps);
-    autos_with_time_sensitive_nested_autos =  [a.name | a <- automata, not disjoint(auto_deep_deps[a.name], autos_with_time_rules)];
-    return autos_with_time_rules & autos_with_time_sensitive_nested_autos;
-  }
+  nz_ctrs = ctr_set.nz_ctrs;
+  new_nz_ctrs = if nz_ctrs(ctr, ?)
+    then [c -> nz_nat(n + bit(c == ctr)) | c : n <- nz_ctrs]
+    else nz_ctrs & [ctr -> 1];
+  return counter_set(nz_ctrs: new_nz_ctrs);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
 
-type Artifact = FnDef, DataBase, Automaton, ProcDef2;
+type GenVarType = obj, int, bool, set_it, seq_it, map_it, table_it, stream, vector;
+
+type VarGen = CounterSet[GenVarType];
 
 
-implicit artifact : Artifact
+VarGen blank_var_gen = counter_set(nz_ctrs: [:]);
+
+
+(T, VarGen) next_var(VarGen gen, GenVarType var_type, (Nat -> T) mk_var) =
+  (mk_var(next_value(gen, var_type)), increment(gen, var_type));
+  //## BUG BUG BUG: THE COMPILER FAILED TO DETECT THE WRONG NUMBER
+  //## OF ARGUMENTS IN THE next_value() CALL, AND THE DESUGARING CRASHED
+  //## WHAT'S GOING ON HERE? WAS IT BECAUSE IT WAS AN ARGUMENT TO A CLOSURE?
+  // (mk_var(next_value(gen)), increment(gen, var_type));
+
+
+(LocVar, VarGen)  next_obj_var(VarGen gen)  = next_var(gen, :obj, lvar($));
+(IntVar, VarGen)  next_int_var(VarGen gen)  = next_var(gen, :int, ivar($));
+(BoolVar, VarGen) next_bool_var(VarGen gen) = next_var(gen, :bool, bvar($));
+
+(SetItVar, VarGen) next_set_it_var(VarGen gen) = next_var(gen, :set_it, set_it_var($));
+(SeqItVar, VarGen) next_seq_it_var(VarGen gen) = next_var(gen, :seq_it, seq_it_var($));
+(MapItVar, VarGen) next_map_it_var(VarGen gen) = next_var(gen, :map_it, map_it_var($));
+
+(TableItVar, VarGen) next_table_it_var(VarGen gen, NzNat arity) = next_var(gen, :table_it, table_it_var($, arity));
+
+(StreamVar, VarGen) next_stream_var(VarGen gen) = next_var(gen, :stream, svar($));
+
+(VecVar, VarGen) next_vector_var(VarGen gen, NzNat size) = next_var(gen, :vector, vvar($, size));
+
+
+(IntVar*, VarGen) next_int_vars(VarGen gen, Nat count)
 {
-  AutoSymbol var_type(MembAutoVar var) =
-    match (artifact)
-      automaton()   = artifact.nested_autos[bare_id(var)].type;
+  g = gen;
+  vs = ();
+  for i < count:
+    v, g = next_int_var(g);
+    vs = (vs || v);
+  ;
+  return (vs, g);
+}
 
 
-  AutoSymbol var_type(LocAutoVar var) =
-    match (artifact)
-      proc_def()    = artifact.auto_vars[var];
-
-
-  DBSymbol var_type(MembDBVar var) =
-    match (artifact)
-      automaton()   = artifact.nested_dbs[var],
-      data_base()   = artifact.nested_dbs[var];
-
-
-  DBSymbol var_type(LocDBVar var) =
-    match (artifact)
-      proc_def()    = artifact.db_vars[var];
-
-
-  DBSymbol var_type(NestedDBVar var) = {fail;}; //## IMPLEMENT IMPLEMENT IMPLEMENT
-
-
-  AutoSymbol this_auto_symbol =
-    match (artifact)
-      automaton() = artifact.name;
-
-
-  DBSymbol this_db_symbol =
-    match (artifact)
-      data_base()  = artifact.name;
+(BoolVar*, VarGen) next_bool_vars(VarGen gen, Nat count)
+{
+  g = gen;
+  vs = ();
+  for i < count:
+    v, g = next_bool_var(g);
+    vs = (vs || v);
+  ;
+  return (vs, g);
 }

@@ -18,6 +18,9 @@ Atom bare_id(FnSymbol):
 Atom bare_id(AutoSymbol):
   auto_symbol(a?) = a;
 
+Atom bare_id(DBSymbol):
+  db_symbol(a?) = a;
+
 Atom bare_id(MethodSymbol):
   method_symbol(a?) = a;
 
@@ -82,70 +85,21 @@ ClsExpr cast_as_cls_expr(Expr)          = {fail;};
 
 ////////////////////////////////////////////////////////////////////////////////
 
-//Nat arity(<FnDef, Signature> obj) = length(obj.params);
-Nat arity(FnDef fd) = length(fd.params);
+Nat arity(Function fn) = length(fn.args);
 
-Nat arity(ProcDef2 pd) = length(pd.args);
+Nat arity(Procedure pc) = length(pc.args);
 
 NzNat arity(ClsType t)  = nz_nat(length(t.in_types));
 Nat arity(Type)         = 0;
 
-// NzNat arity(ClsExpr e) = length(e.params);
-// Nat arity(Expr)        = 0;
-
 Nat arity(FnType t) = length(t.params);
 
-Bool is_scalar_par(FnFrmPar):
-  scalar_par()      = true,
-  non_scalar_par()  = false;
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 
-Bool is_cls_par(FnFrmPar param) = not is_scalar_par(param);
-
-
-Var scalar_var(FnFrmPar param):
-  scalar_par()      = if param.var? then param.var else {fail;},
-  non_scalar_par()  = {fail;};
-
-ClsVar cls_var(FnFrmPar param):
-  scalar_par()      = {fail;},
-  non_scalar_par()  = if param.var? then param.var else {fail;};
-
-
-Type scalar_param_type(FnFrmPar param):
-  scalar_par()      = if param.type? then param.type else {fail;},
-  non_scalar_par()  = {fail;};
-
-ClsType cls_param_type(FnFrmPar param):
-  scalar_par()      = {fail;},
-  non_scalar_par()  = if param.type? then param.type else {fail;};
-
-
-Type return_type(FnDef fn_def) = if fn_def.res_type? then fn_def.res_type else {fail;};
-
-
-[Var] scalar_vars(FnDef fndef)
-{
-  pos_vars = seq_union((scalar_vars_if_any(p, i) | p @ i <- fndef.params));
-  named_vars = [v | v : t <- fndef.named_args, t :: Type];
-  return pos_vars & named_vars;
-
-  [Var] scalar_vars_if_any(FnFrmPar par, Nat pos):
-    scalar_par()      = [:fn_par(pos), par.var if par.var?],
-    non_scalar_par()  = [];
-}
-
-// Var* scalar_vars(FnDef fndef) = {p.var : p <- set(fn_def.params), p.var? and (not p.type? or p.type :: Type)} &
-//                                 set([:fn_par(i) : p @ i <- fn_def.params, not p.type? or p.type :: Type])     &
-//                                 {v : t @ v <- fn_def.named_args, t :: Type};
-
-
-[Var -> NzNat] cls_vars(FnDef fn_def) = {fail;};
-
-//## FOR THE TIME BEING, THE fn_par(Nat) VARIABLES ARE DEFINED ONLY FOR SCALAR PARAMETERS, NOT CLOSURES
-// THIS FUNCTION FAILS IF THERE ARE DUPLICATE PARAMETER NAMES. THIS IS CHECHED BEFORE THE FUNCTION IS INVOKED THOUGH
-// (Var => NzNat) cls_vars(FnDef fn_def) = (p.var => length(p.type.in_types) : p <- set(fn_def.params), p.var? and (p.type? and p.type :: ClsType)) &
-//                                         (v => length(t.in_types) : t @ v <- fn_def.named_args, t :: ClsType);
-
+AtomicFnSymb      family_id(AtomicFnSymb symb) = symb;
+AtomicFnSymb      family_id(UniqueFnSymb symb) = symb.symbol;
+NestedFnFamilyId  family_id(NestedFnSymb symb) = nested_fn_symbol(outer: symb.outer, inner: family_id(symb.inner));
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -166,4 +120,9 @@ AnyDBVar one_level_down(NestedDBVar var) =
     memb_db_var()   = var.inner,
     nested_db_var() = one_level_down(var.outer);
 
+AnyRelVar one_level_down(QualRelVar var) =
+  match (var.db_var)
+    loc_db_var()    = var.rel_var,
+    memb_db_var()   = var.rel_var,
+    nested_db_var() = qual_rel_var(one_level_down(var.db_var), var.rel_var);
 

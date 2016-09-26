@@ -1,30 +1,12 @@
 BoolProcDef mk_named_type_memb_test_fn(TypeSymbol type_symb, [TypeName -> Type] typedefs)
 {
-  res_var = bvar(0);
-
-  code = gen_type_checking_code(
-    expand_type_ref(type_symb, typedefs),
-    fn_par(0),
-    res_var,
-    next_set_it_var_id = 0,
-    next_seq_it_var_id = 0,
-    next_map_it_var_id = 0,
-    next_obj_var_id    = 0,
-    next_int_var_id    = 0
-  );
-
+  res_var, var_gen = next_bool_var(blank_var_gen);
+  code = gen_type_checking_code(expand_type_ref(type_symb, typedefs), fn_par(0), res_var, next_var_gen = var_gen);
   return bool_proc_def(memb_test(type_symb), 1, nonempty(code & (ret_val(res_var))));
 }
 
-implicit
+implicit next_var_gen : VarGen
 {
-  next_set_it_var_id : Nat,
-  next_seq_it_var_id : Nat,
-  next_map_it_var_id : Nat,
-  next_obj_var_id    : Nat,
-  next_int_var_id    : Nat;
-
-
   Instr+ gen_type_checking_code(Type type, AtomicExpr obj, BoolVar res_var):
     ne_set_type()       = gen_ne_set_type_checking_code(type.elem_type, obj, res_var),
     ne_seq_type()       = gen_ne_seq_type_checking_code(type.elem_type, obj, res_var),
@@ -39,16 +21,10 @@ implicit
   //## OPTIMIZE FOR SETS OF ANY
   Instr+ gen_ne_set_type_checking_code(Type elem_type, AtomicExpr obj, BoolVar res_var)
   {
-    it_var   = set_it_var(next_set_it_var_id);
-    elem_var = lvar(next_obj_var_id);
+    elem_var, var_gen = next_obj_var(next_var_gen);
+    it_var, var_gen = next_set_it_var(var_gen);
 
-    elem_code = gen_type_checking_code(
-      elem_type,
-      elem_var,
-      res_var,
-      next_obj_var_id    = nat(next_obj_var_id + 1),
-      next_set_it_var_id = nat(next_set_it_var_id + 1)
-    );
+    elem_code = gen_type_checking_code(elem_type, elem_var, res_var, next_var_gen = var_gen);
 
     code = (
       block_failure_if_not(is_ne_set(obj), res_var),
@@ -74,16 +50,10 @@ implicit
     //## OPTIMIZE FOR SEQUENCES OF ANY
   Instr+ gen_ne_seq_type_checking_code(Type elem_type, AtomicExpr obj, BoolVar res_var)
   {
-    elem_var = lvar(next_obj_var_id);
-    it_var   = seq_it_var(next_seq_it_var_id);
+    elem_var, var_gen = next_obj_var(next_var_gen);
+    it_var, var_gen = next_seq_it_var(var_gen);
 
-    elem_code = gen_type_checking_code(
-      elem_type,
-      elem_var,
-      res_var,
-      next_obj_var_id    = nat(next_obj_var_id + 1),
-      next_seq_it_var_id = nat(next_seq_it_var_id + 1)
-    );
+    elem_code = gen_type_checking_code(elem_type, elem_var, res_var, next_var_gen = var_gen);
 
     code = (
       block_failure_if_not(is_ne_seq(obj), res_var),
@@ -108,10 +78,10 @@ implicit
 
   Instr+ gen_map_type_checking_code(Type key_type, Type value_type, AtomicExpr obj, BoolVar res_var)
   {
-    obj_var = lvar(next_obj_var_id);
-    it_var  = map_it_var(next_map_it_var_id);
+    obj_var, var_gen = next_obj_var(next_var_gen);
+    it_var, var_gen = next_map_it_var(var_gen);
 
-    let next_obj_var_id = nat(next_obj_var_id + 1), next_map_it_var_id = nat(next_map_it_var_id + 1):
+    let next_var_gen = var_gen:
       code = (
         //block_success_if(is_empty_map(obj), res_var),
         block_failure_if_not(is_ne_map(obj), res_var),
@@ -141,9 +111,9 @@ implicit
 
   Instr+ gen_ne_record_type_checking_code([+SymbObj -> (type: Type, optional: Bool)] fs, AtomicExpr obj, BoolVar res_var)
   {
-    size_var = ivar(next_int_var_id);
-    obj_var  = lvar(next_obj_var_id);
-    it_var   = map_it_var(next_map_it_var_id);
+    size_var, var_gen = next_int_var(next_var_gen);
+    obj_var, var_gen = next_obj_var(var_gen);
+    it_var, var_gen = next_map_it_var(var_gen);
 
     max_fields = size(fs);
     min_fields = size([f | l : f <- fs, not f.optional]);
@@ -161,14 +131,7 @@ implicit
 
     for b <- sorted_fields:
       inner_code = (set_var(obj_var, get_curr_value(it_var))) &
-                    gen_type_checking_code(
-                      b.type,
-                      obj_var,
-                      res_var,
-                      next_int_var_id    = nat(next_int_var_id + 1),
-                      next_obj_var_id    = nat(next_obj_var_id + 1),
-                      next_map_it_var_id = nat(next_map_it_var_id + 1)
-                    ) &
+                    gen_type_checking_code(b.type, obj_var, res_var, next_var_gen = var_gen) &
                     (exit_block_if_not(res_var), move_forward(it_var));
 
       if b.optional:
@@ -197,9 +160,9 @@ implicit
 
   Instr+ gen_tuple_type_checking_code(Type+ ts, AtomicExpr obj, BoolVar res_var)
   {
-    len_var  = ivar(next_int_var_id);
-    elem_var = lvar(next_obj_var_id);
-    it_var   = seq_it_var(next_seq_it_var_id);
+    len_var, var_gen = next_int_var(next_var_gen);
+    elem_var, var_gen = next_obj_var(var_gen);
+    it_var, var_gen = next_seq_it_var(var_gen);
 
     len  = length(ts);
 
@@ -211,10 +174,7 @@ implicit
       get_iter(it_var, obj)
     );
 
-    let next_int_var_id = nat(next_int_var_id + 1),
-        next_obj_var_id = nat(next_obj_var_id + 1),
-        next_seq_it_var_id = nat(next_seq_it_var_id + 1):
-
+    let next_var_gen = var_gen:
       for t @ i <- ts:
         code = code &
                 (get_curr_obj(elem_var, it_var)) &
@@ -225,17 +185,15 @@ implicit
       ;
     ;
 
-    code = code & (set_bvar(res_var, true));
-
-    return (execute_block(nonempty(code)));
+    return (execute_block((code || set_bvar(res_var, true))));
   }
 
 
   Instr+ gen_tag_obj_type_checking_code(TagType tag_type, Type obj_type, AtomicExpr obj, BoolVar res_var)
   {
-    obj_var = lvar(next_obj_var_id);
+    obj_var, var_gen = next_obj_var(next_var_gen);
 
-    let next_obj_var_id = nat(next_obj_var_id + 1):
+    let next_var_gen = var_gen:
       code = ( block_failure_if_not(is_tagged_obj(obj), res_var),
                 set_var(obj_var, get_tag(obj))
               ) &

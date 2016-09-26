@@ -25,8 +25,10 @@ type Record         = [Atom -> Any];
 type Byte           = <0..255>;
 type String         = string(Nat*);
 
-
+type Nil            = nil;
+type Just[T]        = just(T);
 type Maybe[T]       = nil, just(T);
+
 type Result[TS, TF] = success(TS), failure(TF);
 
 type List[T]        = nil, list(head: T, tail: List[T]);
@@ -53,7 +55,7 @@ Stack[T] replace_top(Stack[T] stack, T new_top):
 // Replace this with === or ~=
 Bool is_eq(T x, Maybe[T] maybe) = maybe == :just(x);
 
-Maybe[T] just(T x) = :just(x);
+Just[T] just(T x) = :just(x);
 
 T value(Maybe[T]):
   just(x?)  = x,
@@ -68,6 +70,10 @@ Maybe[T] maybe(T x, Bool cond) = if cond then :just(x) else nil;
 T* values(Maybe[T]* maybe_seq) = (value(maybe_value) | maybe_value <- maybe_seq, maybe_value != nil);
 
 [T] values([Maybe[T]] maybe_seq) = [value(maybe_value) | maybe_value <- maybe_seq, maybe_value != nil];
+
+Maybe[T2] apply(Maybe[T1] m, (T1 -> T2) f):
+  just(x?)  = just(f(x)),
+  nil       = nil;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -171,6 +177,20 @@ Int sum(Int* ns)
     res = res + n;
   ;
   return res;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+//## THIS ABOUT THIS ONE, A VOID TYPE WOULD BE USEFUL HERE...
+// [] min_by([], (</> -> Int) p) = [];
+// [+T] min_by([+T] xs, (T -> Int) p)
+
+[T] min_by([T] xs, (T -> Int) p)
+{
+  return [] if xs == [];
+  by_priority = group_by(xs, p);
+  min_priority = min(nonempty(keys(by_priority)));
+  return by_priority[min_priority];
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -371,7 +391,7 @@ Nat size([Any] s) = length(rand_sort(s));
 
 Bool is_singleton([Any] s) = size(s) == 1;
 
-T only_element([T] set)
+T only([T] set)
 {
   seq = rand_sort(set);
   return seq[0] if length(seq) == 1;
@@ -415,6 +435,8 @@ Nat size([Any -> Any] map) = size(keys(map));
 [T1] keys([T1 -> T2] map) = [k | k : unused_var <- map];
 
 Bool has_key([T1 -> T2] map, T1 key) = _has_key_(map, key);
+
+Bool has_key_value_pair([T1 -> T2] map, T1 key, T2 value) = _has_key_(map, key) and _lookup_(map, key) == value;
 
 [T1 -> T2] (_&_)([T1 -> T2] map1, [T1 -> T2] map2) = _merge_([map1, map2]);
 
@@ -523,7 +545,8 @@ String string(Nat* raw)                  = :string(raw);
 Nat* raw_str(String str)                 = _obj_(str);
 
 Nat length(String s)                      = length(_obj_(s));
-Nat (_[_]) (String s, Int n)              = (_[_])(_obj_(s), n);
+// Nat (_[_]) (String s, Int n)              = (_[_])(_obj_(s), n);
+Nat (_[_]) (String s, Int n)              = _obj_(s)[n];
 
 String (_&_) (String s1, String s2)       = string(_obj_(s1) & _obj_(s2));
 String append(String* ss)                = string(join((raw_str(s) | s <- ss)));
@@ -738,14 +761,14 @@ String* split(String str)
 // }
 
 
-T only_item(T* seq)
+T only(T* seq)
 {
   fail if length(seq) > 1;
   return seq[0];
 }
 
 
-Maybe[T] maybe_only_item(T* seq)
+Maybe[T] maybe_only(T* seq)
 {
   fail if length(seq) > 1;
   return if seq != () then just(seq[0]) else nil;

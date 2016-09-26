@@ -1,18 +1,5 @@
-implicit
+implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options : CompilationOptions
 {
-  program            : Program,
-  artifact           : Artifact,
-  options            : CompilationOptions,
-  next_obj_var_id    : Nat,
-  next_int_var_id    : Nat,
-  next_bool_var_id   : Nat,
-  next_set_it_var_id : Nat,
-  next_seq_it_var_id : Nat,
-  next_map_it_var_id : Nat,
-  next_vector_var_id : Nat,
-  next_stream_var_id : Nat;
-
-
   () gen_code((), EvalDestVar) = ();  //## BAD BAD: SHOULD BE A SUBSIGNATURE
 
   Instr+ gen_code(Statement+ stmts, EvalDestVar res_var)
@@ -44,6 +31,8 @@ implicit
     send_msg_stmt()           = gen_code_for_send_msg_stmt(stmt.target, stmt.msg),
     try_update_stmt()         = gen_code_for_try_update_stmt(stmt.name, stmt.args),
     set_memb_var_stmt()       = gen_code_for_set_memb_var_stmt(stmt.var, stmt.value),
+    delete_stmt()             = gen_code_for_delete_stmt(stmt.var, stmt.fields),
+    insert_stmt()             = gen_code_for_insert_stmt(stmt.var, stmt.fields, stmt.force),
 
     set_input_ctrl_stmt()     = gen_code_for_set_input_ctrl_stmt(stmt.var, stmt.input, stmt.value),
     clear_input_ctrl_stmt()   = gen_code_for_clear_input_ctrl_stmt(stmt.var, stmt.input),
@@ -70,6 +59,71 @@ implicit
   {
     eval_info = gen_eval_info(value);
     return (eval_info.eval_code || set_var(var, eval_info.expr));
+  }
+
+
+  Instr+ gen_code_for_delete_stmt(RelVar rel_var, Maybe[Expr]+ args)
+  {
+    filtered_idxs = idxs_into_filtered_seq((a != nil | a <- args));
+    unfiltered_idxs = (i | a @ i <- args, a != nil);
+    set_args = (value(a) | a <- args, a != nil);
+    info = gen_eval_info(set_args);
+
+    surr_vars, var_gen = next_int_vars(info.next_var_gen, length(set_args));
+    surr_args = (apply(mi, surr_vars($)) | mi <- filtered_idxs);
+
+    code = (queue_deletes(rel_var, nonempty(surr_args)));
+
+    for e @ i <- reverse(info.exprs):
+      store_id = table_col_store_id(rel_var, rev_at(unfiltered_idxs, i));
+      surr_var = rev_at(surr_vars, i);
+      code = (
+        set_ivar(surr_var, lookup_value(store_id, e)),
+        do_if_not(is_eq(surr_var, -1), code)
+      );
+    ;
+
+    return nonempty(info.eval_code & code);
+  }
+
+
+  Instr+ gen_code_for_insert_stmt(RelVar rel_var, Expr+ fields, Bool force)
+  {
+    info = gen_eval_info(fields);
+
+    arity = length(fields);
+    surr_vars, var_gen = next_int_vars(info.next_var_gen, arity);
+    is_new_val_vars, var_gen = next_bool_vars(var_gen, arity);
+
+    unique_arg_sets = rel_var_info(rel_var).unique;
+    col_is_tracked = if force then union(unique_arg_sets) else [];
+
+    value_prep_code = join(({
+        store_id = table_col_store_id(rel_var, i);
+        surr_var = surr_vars(i);
+        is_new_val_var = is_new_val_vars(i);
+        return (
+          set_ivar(surr_var, lookup_value(store_id, e)),
+          set_bvar(is_new_val_var, is_eq(surr_var, -1)) if col_is_tracked(i),
+          do_if(if col_is_tracked(i) then is_new_val_var else is_eq(surr_var, -1), queue_insert(surr_var, store_id, e))
+        );
+      } | e @ i <- info.exprs
+    ));
+
+    if force:
+      deletion_code = ({
+          value_cond = and([neg(is_new_val_vars(i)) | i <- as]);
+          surr_args = (if as(i) then just(surr_vars(i)) else nil | i < arity);
+          return do_if(value_cond, queue_deletes(rel_var, surr_args));
+        } | as <- rand_sort(unique_arg_sets)
+      );
+    else
+      deletion_code = ();
+    ;
+
+    insertion_code = (queue_insert(rel_var, nonempty(surr_vars)));
+
+    return nonempty(info.eval_code & value_prep_code & deletion_code & insertion_code);
   }
 
 
@@ -135,12 +189,10 @@ implicit
       expr = asgnms[var];
       rem_asgnms = [v -> e | v : e <- asgnms, v != var];
 
-      backup_var = lvar(next_obj_var_id);
+      backup_var, var_gen = next_obj_var(next_var_gen);
 
-      let next_obj_var_id = nat(next_obj_var_id + 1):
-        info = gen_eval_info(expr);
-        inner_body = gen_code_for_let_stmt(rem_asgnms, body, res_var, next_obj_var_id = info.next_var_id);
-      ;
+      info = gen_eval_info(expr, next_var_gen = var_gen);
+      inner_body = gen_code_for_let_stmt(rem_asgnms, body, res_var, next_var_gen = info.next_var_gen);
 
       set_up_code = (set_var(backup_var, var), set_var(var, info.expr));
       tear_down_code = (set_var(var, backup_var));
@@ -157,14 +209,14 @@ implicit
     if length(vars) == 1:
       var = vars[0];
       if in(var, extern_vars(value)):
-        tmp_var = lvar(next_obj_var_id);
-        code    = gen_eval_code(value, tmp_var, next_obj_var_id = nat(next_obj_var_id + 1)) & (set_var(var, tmp_var));
+        tmp_var, var_gen = next_obj_var(next_var_gen);
+        code = (gen_eval_code(value, tmp_var, next_var_gen = var_gen) || set_var(var, tmp_var));
       else
         code = gen_eval_code(value, var);
       ;
     else
-      tmp_var = lvar(next_obj_var_id);
-      code = gen_eval_code(value, tmp_var, next_obj_var_id = nat(next_obj_var_id + 1));
+      tmp_var, var_gen = next_obj_var(next_var_gen);
+      code = gen_eval_code(value, tmp_var, next_var_gen = var_gen);
       code = code & join(((set_var(v, at(tmp_var, i))) | v @ i <- vars));
     ;
     return nonempty(code);
@@ -173,11 +225,11 @@ implicit
 
   Instr+ gen_code_for_imp_update_stmt(StdVar obj, Expr idx, Expr value, EvalDestVar res_var)
   {
-    idx_var = lvar(next_obj_var_id);
-    value_var = lvar(nat(next_obj_var_id + 1));
+    idx_var, var_gen = next_obj_var(next_var_gen);
+    idx_info = gen_eval_info(idx, idx_var, next_var_gen = var_gen);
 
-    idx_info = gen_eval_info(idx, idx_var, next_obj_var_id = nat(next_obj_var_id + 1));
-    val_info = gen_eval_info(value, value_var, next_obj_var_id = nat(next_obj_var_id + 2));
+    value_var, var_gen = next_obj_var(var_gen);
+    val_info = gen_eval_info(value, value_var, next_var_gen = var_gen);
 
     //## SINCE THE INDEX VARIABLE IS AN INTEGER, THERE'S NO NEED TO WORRY ABOUT
     //## ABOUT MEMORY ALLOCATION AND DEALLOCATION. BUT IF WE EXTEND THE CONSTRUCT
@@ -193,7 +245,7 @@ implicit
   {
     cond_info = gen_eval_info(cond);
     // The variable used to store the value of the condition is not
-    // needed anymore here, so there's no need to update next_obj_var_id
+    // needed anymore here, so there's no need to update next_var_gen
     if_code   = gen_code(body, res_var);
     else_code = gen_code(else, res_var);
     branch_code = (branch(is_true(cond_info.expr), if_code, else_code));
@@ -203,22 +255,19 @@ implicit
 
   Instr+ gen_code_for_for_stmt(Maybe[StdVar] maybe_var, Expr start_val, Expr end_val, Bool end_val_incl, Statement+ body, EvalDestVar res_var)
   {
-    tmp_var   = lvar(next_obj_var_id);
-    start_var = ivar(next_int_var_id);
-    end_var   = ivar(nat(next_int_var_id + 1));
-    idx_var   = ivar(nat(next_int_var_id + 2));
+    tmp_var, var_gen = next_obj_var(next_var_gen);
+    start_eval_code = gen_eval_code(start_val, tmp_var, next_var_gen = var_gen);
+    end_eval_code = gen_eval_code(end_val, tmp_var, next_var_gen = var_gen);
 
-    let next_obj_var_id = nat(next_obj_var_id + 1):
-      start_eval_code = gen_eval_code(start_val, tmp_var);
-      end_eval_code   = gen_eval_code(end_val, tmp_var);
-      body_code       = gen_code(body, res_var, next_int_var_id = nat(next_int_var_id + 3));
-    ;
+    end_var, var_gen = next_int_var(var_gen);
+    idx_var, var_gen = next_int_var(var_gen);
+    body_code = gen_code(body, res_var, next_var_gen = var_gen);
 
     loop_code = (
       repeat(
         nonempty(
           ( break_if(if end_val_incl then is_gt(idx_var, end_var) else is_ge(idx_var, end_var)),
-            set_var(value(maybe_var), to_obj(idx_var)) if maybe_var != nil
+            set_var(value(maybe_var), int_obj(idx_var)) if maybe_var != nil
           ) & body_code &
           (increment(idx_var))
         )
@@ -235,42 +284,41 @@ implicit
 
   Instr+ gen_code_for_foreach_stmt(StdVar+ vars, Maybe[StdVar] maybe_idx_var, Expr values, Statement+ body, EvalDestVar res_var)
   {
-    src_var = lvar(next_obj_var_id);
-    tmp_var = lvar(nat(next_obj_var_id + 1)); // Only used for destructuring assignments, remains free for the body to use
-    idx_var = ivar(next_int_var_id);
-    it_var  = seq_it_var(next_seq_it_var_id);
+    src_var, var_gen = next_obj_var(next_var_gen);
+    src_eval_code = gen_eval_code(values, src_var, next_var_gen = var_gen);
 
-    has_idx_var = maybe_idx_var != nil;
-
-    src_eval_code = gen_eval_code(values, src_var, next_obj_var_id = nat(next_obj_var_id + 1));
-
-    body_code = gen_code(
-      body,
-      res_var,
-      next_obj_var_id    = nat(next_obj_var_id + 1),
-      next_int_var_id    = nat(next_int_var_id + if has_idx_var then 1 else 0),
-      next_seq_it_var_id = nat(next_seq_it_var_id + 1)
-    );
+    it_var, var_gen = next_seq_it_var(var_gen);
 
     if length(vars) == 1:
       var_set_code = (set_var(vars[0], get_curr_obj(it_var)));
     else
+      // tmp_var is used only for destructuring and remains free for the body to use
+      tmp_var, unused_var = next_obj_var(var_gen);
       var_set_code = (set_var(tmp_var, get_curr_obj(it_var)));
       var_set_code = var_set_code & (set_var(v, at(tmp_var, i)) | v @ i <- vars);
     ;
-    var_set_code = var_set_code & (set_var(value(maybe_idx_var), to_obj(idx_var))) if has_idx_var;
+
+    if maybe_idx_var != nil:
+      idx_var, var_gen = next_int_var(var_gen);
+      var_set_code = (var_set_code || set_var(value(maybe_idx_var), int_obj(idx_var)));
+      idx_var_init_instr = set_ivar(idx_var, 0);
+      idx_var_incr_instr = increment(idx_var);
+    else
+      idx_var_init_instr = no_op;
+      idx_var_incr_instr = no_op;
+    ;
+
+    body_code = gen_code(body, res_var, next_var_gen = var_gen);
 
     loop_code = (
       get_iter(it_var, src_var),
-      if has_idx_var then set_ivar(idx_var, 0) else no_op,
+      idx_var_init_instr,
       repeat(
         nonempty(
           (break_if(is_out_of_range(it_var))) &
           var_set_code &
           body_code &
-          ( move_forward(it_var),
-            if has_idx_var then increment(idx_var) else no_op
-          )
+          (move_forward(it_var), idx_var_incr_instr)
         )
       )
     );

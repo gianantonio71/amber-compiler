@@ -28,12 +28,12 @@ type MembBoolVar    = cond_value_var(Nat),
 
 type MembIntVar     = update_source_var(Atom),
                       update_count_var(Nat),
-                      nodes_to_update_var(level: IntExpr, index: IntExpr),
+                      nodes_to_update_var(level: Nat, index: <Nat, IntVar>),
                       next_trigger_time_var(Atom),
                       curr_time_slot_var(Atom),
                       time_triggers_count_var,
-                      trigger_times_heap_var(IntExpr),
-                      time_varying_cond_ids_heap_var(IntExpr),
+                      trigger_times_heap_var(<0..0>),
+                      time_varying_cond_ids_heap_var(<0..0>),
                       last_update_time,
                       nested_auto_int_var(auto_var: MembAutoVar, memb_var: MembIntVar);
 
@@ -59,10 +59,12 @@ type IntVar         = ivar(Nat), update_time, curr_time, MembIntVar, IntArgVar;
 type StreamVar      = svar(Nat); //## DOES THIS NEED CLEANUP?
 
 type SetItVar       = set_it_var(Nat); //## MUST WORK WITHOUT THE NEED FOR EXPLICIT CLEANUP
-type SeqItVar       = seq_it_var(Nat); //## MUST WORK WITHOUT THE NEED FOR EXPLICIT CLEANUP
-type MapItVar       = map_it_var(Nat); //## MUST WORK WITHOUT THE NEED FOR EXPLICIT CLEANUP
+type SeqItVar       = seq_it_var(Nat); //## DITTO
+type MapItVar       = map_it_var(Nat); //## DITTO
 
-type ItVar          = SetItVar, SeqItVar, MapItVar;
+type TableItVar     = table_it_var(id: Nat, arity: NzNat); //## DITTO
+
+type ItVar          = SetItVar, SeqItVar, MapItVar, TableItVar;
 
 type AnyVar         = ObjVar, VecVar, BoolVar, IntVar, ItVar, StreamVar;
 
@@ -96,7 +98,8 @@ type NatBoolOp      = is_symb(ObjExpr),
                       inline_is_eq(expr: ObjExpr, value: InlineObj),
                       is_out_of_range(ItVar),
                       is_blank(<MembVar, QualAutoMembVar, LocVar>),
-                      is_null(AnyNullableVar);
+                      is_null(AnyNullableVar),
+                      contains(table: AnyRelVar, tuple: IntVar+);
 
 type NatIntOp       = get_int_val(ObjExpr),
                       get_set_size(ObjExpr),
@@ -110,6 +113,8 @@ type NatIntOp       = get_int_val(ObjExpr),
                       mod(val1: IntExpr, val2: IntExpr),
                       mantissa(ObjExpr),
                       dec_exp(ObjExpr),
+                      lookup_value(store: AnyValueStoreId, value: AtomicExpr),
+                      get_tuple_field(iter: TableItVar, field: Nat),
                       rand_nat(IntExpr),  // Non-deterministic
                       unique_nat,         // Non-deterministic
                       ticks;              // Impure
@@ -177,6 +182,7 @@ type RefObjExpr     = mk_set_from_stream(stream: StreamVar),
                       // Can be used only once per pending variable, and does not automatically clear it,
                       // it has to be manually cleared with init_memb_var(...)
                       read_pending_var(<PendingStateVar, PendingInputVar>),
+                      lookup_surrogate(store: AnyValueStoreId, surrogate: IntExpr), //## THIS SHOULD BELONG IN NatObjOp, NOT HERE...
                       add_attachment(target: AtomicExpr, data: AtomicExpr), // Impure
                       fetch_attachments(AtomicExpr);                        // Impure
 
@@ -262,7 +268,18 @@ type BasicInstr     = init_stream(StreamVar),
                         type:       DBSymbol,
                         method_id:  MethodId,
                         args:       AtomicExpr*
-                      );
+                      ),
+
+                      // Table instructions
+                      init_value_store(store: ValueStoreId),
+                      cleanup_value_store(store: ValueStoreId),
+                      init_table(rel_var: RelVar, table: Table),
+                      cleanup_table(rel_var: RelVar, table: Table),
+
+                      get_table_iter(it_var: TableItVar, table: AnyRelVar, args: Maybe[IntVar]+),
+                      queue_deletes(rel_var: RelVar, args: Maybe[IntVar]+),
+                      queue_insert_value(res_var: IntVar, store: ValueStoreId, value: AtomicExpr), // Ownership transfer: <value>
+                      queue_insert_tuple(rel_var: RelVar, tuple: IntVar+);
 
 type JumpInstr      = break_loop,
                       exit_block,
@@ -316,6 +333,12 @@ type BlockNodeId    = StdBlockNodeId, CondNodeId, NestedAutoInputNodeId;
 type MethodId   = method_id(symbol: MethodSymbol, arity: Nat, id: Nat?);
 type UpdateId   = main_handler, handler_id(Nat), update_id(symbol: UpdateSymbol, arity: Nat, id: Nat?);
 
+type ValueStoreId       = value_store_id(Nat);
+type NestedValueStoreId = nested_value_store_id(db_var: AnyDBVar, store_id: ValueStoreId);
+type AnyValueStoreId    = ValueStoreId, NestedValueStoreId;
+
+type Table        = table(cols: (store_id: ValueStoreId, unique: Bool)+);
+
 type Block  = block(
                 name:                 AutoSymbol,
                 inputs:               Atom*,
@@ -336,6 +359,8 @@ type Block  = block(
 type TransBlock = trans_block(
                     name:           DBSymbol,
                     state_vars:     [MembVar],
+                    value_stores:   [ValueStoreId],
+                    tables:         [RelVar -> Table],
                     nested_blocks:  [MembDBVar -> DBSymbol],
                     init_code:      Instr*,
                     cleanup_code:   Instr*,

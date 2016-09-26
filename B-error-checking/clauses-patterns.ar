@@ -1,23 +1,7 @@
-implicit
+implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> Nat], actual_arg_arity : Nat
 {
-  syn_prg                  : SynPrg,
-
-  type_arity_map           : [BasicTypeSymbol -> [+Nat]],
-  curr_function_named_args : [NamedArg -> Nat],
-  global_functions         : [FnSymbol -> [Nat -> (Nat*, [+[NamedArg -> Nat]])]],
-  local_functions          : [FnSymbol -> [Nat -> Nat*]],
-  closures                 : [FnSymbol -> NzNat],
-  procedures               : [ProcSymbol -> (Nat, Bool)],
-  auto_vars                : [AnyAutoVar -> AutoSymbol],
-  db_vars                  : [AnyDBVar -> DBSymbol],
-  automata                 : [AutoSymbol -> SynAutoDef],
-  actual_arg_arity         : Nat;
-
-
-  ExprWFError* clause_wf_errors(SynClause cls, [Var] def_vars):
-    set_elem_clause()   = (already_def_var(cls.var) if already_def(cls.var, def_vars)) & expr_wf_errors(cls.src, def_vars),
-    seq_elem_clause()   = (already_def_var(cls.var) if already_def(cls.var, def_vars)) & expr_wf_errors(cls.src, def_vars), //## BAD: SAME AS ABOVE
-    map_entry_clause()  = map_entry_clause_wf_errors(cls.key_var, cls.value_var, cls.src, def_vars),
+  ExprWFError* clause_wf_errors(SynClause cls, [DefVar] def_vars):
+    iter_clause()       = iter_clause_wf_errors(cls.vars, cls.src, def_vars),
     and_clause(cs?)     = and_clause_wf_errors(cs, def_vars),
     or_clause()         = clause_wf_errors(cls.left, def_vars) & clause_wf_errors(cls.right, def_vars),
     match_clause()      = ptrn_wf_errors(cls.ptrn, def_vars) & expr_wf_errors(cls.expr, def_vars),
@@ -25,17 +9,16 @@ implicit
     filter_clause()     = expr_wf_errors(cls.cond, def_vars);
 
 
-  ExprWFError* map_entry_clause_wf_errors(StdVar key_var, StdVar value_var, SynExpr src_expr, [Var] def_vars)
+  ExprWFError* iter_clause_wf_errors(StdVar+ vars, SynExpr src_expr, [DefVar] def_vars)
   {
-    var_errs = (
-      already_def_var(key_var) if already_def(key_var, def_vars),
-      already_def_var(value_var) if already_def(value_var, def_vars) or value_var == key_var
-    );
+    //## TODO: CHECK THAT THE NUMBER OF VARIABLES IS CORRECT
+    //## IF WE ARE ITERATING THROUGH A PROJECTION OF A RELATION
+    var_errs = (already_def_var(v) | v <- vars, already_def(v, def_vars));
     return var_errs & expr_wf_errors(src_expr, def_vars);
   }
 
 
-  ExprWFError* and_clause_wf_errors(SynClause+ clauses, [Var] def_vars)
+  ExprWFError* and_clause_wf_errors(SynClause+ clauses, [DefVar] def_vars)
   {
     errs = ();
     curr_vars = def_vars;
@@ -47,7 +30,7 @@ implicit
   }
 
 
-  ExprWFError* ptrn_wf_errors(SynPtrn ptrn, [Var] def_vars):
+  ExprWFError* ptrn_wf_errors(SynPtrn ptrn, [DefVar] def_vars):
     ptrn_symbol       = (),
     ptrn_float        = (),
     ptrn_seq          = (),
@@ -64,7 +47,7 @@ implicit
     ptrn_union(ps?)   = ptrn_union_wf_errors(ps, def_vars);
 
 
-  ExprWFError* ptrn_tuple_wf_errors(SynPtrn+ ptrns, [Var] def_vars)
+  ExprWFError* ptrn_tuple_wf_errors(SynPtrn+ ptrns, [DefVar] def_vars)
   {
     curr_vars = def_vars;
     for p <- ptrns:
@@ -76,7 +59,7 @@ implicit
   }
 
 
-  ExprWFError* ptrn_union_wf_errors(SynPtrn+ ptrns, [Var] def_vars)
+  ExprWFError* ptrn_union_wf_errors(SynPtrn+ ptrns, [DefVar] def_vars)
   {
     assert length(ptrns) > 1;
     errs = join((ptrn_wf_errors(p, def_vars) | p <- ptrns));

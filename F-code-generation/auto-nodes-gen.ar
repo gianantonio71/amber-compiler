@@ -7,13 +7,16 @@ type CondInfo     = ( cond:         Expr,
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type AutoNodeDependency = BlockNodeId, QualMembVar; // QualMembVar IS TOO LOOSE, AUTO/DB LOCAL VARIABLES SHOULD BE RULED OUT.
+type AutoNodeDependency = BlockNodeId, QualMembVar, QualRelVar; // QualMembVar/QualRelVar ARE TOO LOOSE, AUTO/DB LOCAL VARIABLES SHOULD BE RULED OUT.
 
 
 BlockNodeId dependency_to_node_id(BlockNodeId id)   = id;
 
 StdBlockNodeId dependency_to_node_id(QualAutoMembVar var)  = auto_or_db_var_to_node_id(var.auto_var);
 StdBlockNodeId dependency_to_node_id(QualDBMembVar var)    = auto_or_db_var_to_node_id(var.db_var);
+
+StdBlockNodeId dependency_to_node_id(QualRelVar var)  = auto_or_db_var_to_node_id(var.db_var);
+
 
 StdBlockNodeId auto_or_db_var_to_node_id(AnyAutoVar):
   loc_auto_var()      = {fail;},
@@ -222,15 +225,16 @@ implicit automaton : Automaton
 
 
   //## TYPECHECKING BUG SAME AS ABOVE
-  [StdBlockNodeId -> [<MembVar, QualDBMembVar> -> [BlockNodeId]]] nested_db_vars_trigger_down_nodes_map
+  [StdBlockNodeId -> [<MembVar, QualDBMembVar, AnyRelVar> -> [BlockNodeId]]] nested_db_vars_trigger_down_nodes_map
   {
     // Reversing the dependency mapping: node -> all nodes that depend on it: [AutoNodeDependency -> [+BlockNodeId]]
     fat_map = reverse_multi(trigger_up_nodes_map);
     // Coalescing all the (automaton, output -> ...) into (automaton -> ...) entries
-    pre_map = merge_values(
-      [[dependency_to_node_id(s) -> [one_level_down(s) -> ts]] | s : ts <- fat_map, qual_db_memb_var() <~ s]
-    );
-    return [s -> merge_value_sets(ms) | s : ms <- pre_map];
+    pre_map = [
+      [dependency_to_node_id(s) -> [one_level_down(s) -> ts]]
+      | s : ts <- fat_map, qual_db_memb_var() | qual_rel_var() <~ s
+    ];
+    return [s -> merge_value_sets(ms) | s : ms <- merge_values(pre_map)];
   }
 }
 
@@ -411,11 +415,27 @@ implicit program : Program, automaton : Automaton
       qual_db_memb_var()    = v
     | v <- vars, not v :: MembCopyVar
   ];
-  return var_deps & nested_auto_deps(expr);
+  return var_deps & nested_deps(expr);
 
 
-  [StdBlockNodeId] nested_auto_deps(Expr expr):
+  [AutoNodeDependency] nested_deps(Expr expr):
     auto_method_call_expr() |
     db_method_call_expr()   = [std_block_node_id(bare_id(expr.var)) if expr.var?],
-    _                       = retrieve_from_nested_exprs(expr, nested_auto_deps);
+    ex_qual()               = nested_deps(expr.source) & nested_deps(expr.cond),
+    set_comp()              = nested_deps(expr.source) & nested_deps(expr.expr),
+    map_comp()              = nested_deps(expr.source) & nested_deps(expr.key_expr) & nested_deps(expr.value_expr),
+    _                       = retrieve_from_nested_exprs(expr, nested_deps($)); //## BAD: WORKAROUND FOR TYPECHECKING BUG
+
+
+  [AutoNodeDependency] nested_deps(Clause cls)
+  {
+    rel_var_deps = match (cls)
+      rel_tuple_clause()  = { match (cls.rel_var)
+                                rel_var()       = [],
+                                qual_rel_var()  = [cls.rel_var]
+                            },
+      _                   = [];
+
+    return rel_var_deps & retrieve_from_nested_exprs(cls, nested_deps($)); //## BAD: WORKAROUND FOR TYPECHECKING BUG
+  }
 }

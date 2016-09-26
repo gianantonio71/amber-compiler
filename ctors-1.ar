@@ -56,16 +56,20 @@ SynSetExpr syn_set_expr(SynSubExpr* ses)              = :set_expr(set(ses));
 SynMapExpr syn_map_expr(SynMapExprEntry* es)          = :map_expr(set(es));
 SynTagObjExpr syn_tag_obj_expr(SynExpr t, SynExpr o)  = tag_obj_expr(tag: t, obj: o);
 
-SynFnCall syn_fn_call(FnSymbol n, SynExpr+ ps) = syn_fn_call(n, ps, ());
-SynFnCall syn_fn_call(FnSymbol n, SynExpr+ ps, (NamedArg, <var(Atom)>*, SynExpr)* nps) = fn_call(name: n, args: ps, named_args: nps);
-SynFnCall syn_fn_call(FnSymbol n, (), (NamedArg, <var(Atom)>*, SynExpr)+ nps) = fn_call(name: n, args: (), named_args: nps);
+SynNamedArgsCall named_args_call(Atom n, SynExpr* ps, (NamedArg, StdVar*, SynExpr)+ nps) = named_args_call(name: n, args: ps, named_args: nps);
+
+SynUnaryOpCall  syn_op_call(UnaryOperator op, SynExpr e)              = unary_op_call(op: op, expr: e);
+SynBinaryOpCall syn_op_call(BinaryOperator op, SynExpr l, SynExpr r)  = binary_op_call(op: op, left_arg: l, right_arg: r);
 
 SynBuiltInCall syn_builtin_call(BuiltIn bi, SynExpr+ ps) = builtin_call(name: bi, args: ps);
 
-SynPseudoCallExpr syn_unary_pseudo_call(SynExpr t, SynExpr p)     = unary_pseudo_call(target: t, param: p);
-SynMapSearchExpr  syn_map_search(SynExpr t, SynExpr k, SynExpr v) = map_search(map: t, key: k, value: v);
-SynKeySearchExpr  syn_key_search(SynExpr m, SynExpr k)            = key_search(map: m, key: k);
-SynOnlyElemExpr   syn_singl_only_elem(SynExpr s)                  = singl_only_elem(set: s);
+SynCallLookalike syn_call_lookalike(Atom a, SynExpr+ as)    = syn_call_lookalike(const_or_var(a), as);
+SynCallLookalike syn_call_lookalike(SynExpr t, SynExpr+ as) = call_lookalike(target: t, args: as);
+
+SynOnlyElemExpr syn_singl_only_elem(SynExpr s)                    = singl_only_elem(set: s);
+
+SynRelMembTest  syn_rel_memb_test(SynExpr t, Maybe[SynExpr]+ as)  = rel_memb_test(target: t, args: as);
+SynRelLookup    syn_rel_lookup(Atom+ ss, Maybe[SynExpr]+ as)      = rel_lookup(target: ss, args: as);
 
 SynBoolExpr syn_and(SynExpr l, SynExpr r) = and(left: l, right: r);
 SynBoolExpr syn_or(SynExpr l, SynExpr r)  = or(left: l, right: r);
@@ -91,7 +95,7 @@ SynTryExpr syn_try_expr(SynExpr+ es, SynCase+ cs) = match_expr(exprs: es, cases:
 
 SynDoExpr syn_do_expr(SynStmt+ ss) = :do_expr(ss);
 
-SynMethodCallExpr syn_method_call_expr(Atom v, MethodSymbol s, SynExpr* as) = method_call_expr(var: v, name: s, args: as);
+SynIsSetExpr syn_is_set(Atom a) = :is_set(a);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -105,9 +109,11 @@ SynAssertStmt     syn_assert_stmt(SynExpr c, String f, NzNat l, Maybe[String] t)
 SynPrintStmt      syn_print_stmt(SynExpr e)                                       = :print_stmt(e);
 SynImpUpdateStmt  syn_imp_update_stmt(StdVar o, SynExpr i, SynExpr v)             = imp_update_stmt(obj: o, idx: i, value: v);
 
-SynAtomicMethStmt syn_send_msg_stmt(Atom v, SynExpr m)      = send_msg_stmt(var: v, msg: m);
-SynAtomicMethStmt syn_try_update_stmt(Atom n, SynExpr* as)  = try_update_stmt(name: n, args: as);
-SynAtomicMethStmt syn_set_memb_var_stmt(Atom v, SynExpr e)  = set_memb_var_stmt(var: v, value: e);
+SynAtomicUpdateStmt syn_send_msg_stmt(Atom v, SynExpr m)          = send_msg_stmt(var: v, msg: m);
+SynAtomicUpdateStmt syn_try_update_stmt(Atom n, SynExpr* as)      = try_update_stmt(name: n, args: as);
+SynAtomicUpdateStmt syn_set_memb_var_stmt(Atom v, SynExpr e)      = set_memb_var_stmt(var: v, value: e);
+SynAtomicUpdateStmt syn_delete_stmt((Atom, Maybe[SynExpr]+)+ es)  = delete_stmt(entries: ((var: v, args: as) | v, as <- es));
+SynAtomicUpdateStmt syn_insert_stmt((Atom, SynExpr+)+ es, Bool f) = insert_stmt(entries: ((var: v, args: as) | v, as <- es), force: f);
 
 SynAtomicProcStmt syn_proc_call_stmt(ProcSymbol n, SynExpr* ps)            = proc_call_stmt(proc_name: n, args: ps);
 SynAtomicProcStmt syn_proc_call_stmt(StdVar v, ProcSymbol n, SynExpr* ps)  = proc_call_stmt(res_var: v, proc_name: n, args: ps);
@@ -133,14 +139,12 @@ SynIter syn_seq_iter(StdVar+ vs, StdVar iv, SynExpr e)  = seq_iter(vars: vs, idx
 
 ////////////////////////////////////////////////////////////////////////////////
 
-SynClause syn_set_elem_clause(StdVar v, SynExpr e)              = set_elem_clause(var: v, src: e);
-SynClause syn_map_entry_clause(StdVar kv, StdVar vv, SynExpr e) = map_entry_clause(key_var: kv, value_var: vv, src: e);
-SynClause syn_seq_elem_clause(StdVar v, SynExpr e)              = seq_elem_clause(var: v, src: e);
-SynClause syn_and_clause(SynClause+ cs)                         = if length(cs) == 1 then cs[0] else :and_clause(cs);
-SynClause syn_or_clause(SynClause l, SynClause r)               = or_clause(left: l, right: r);
-SynClause syn_match_clause(SynPtrn p, SynExpr e)                = match_clause(ptrn: p, expr: e);
-SynClause syn_asgnm_clause(StdVar v, SynExpr e)                 = asgnm_clause(var: v, expr: e);
-SynClause syn_filter_clause(SynExpr c)                          = filter_clause(cond: c);
+SynClause syn_iter_clause(StdVar+ vs, SynExpr e)    = iter_clause(vars: vs, src: e);
+SynClause syn_and_clause(SynClause+ cs)             = if length(cs) == 1 then cs[0] else :and_clause(cs);
+SynClause syn_or_clause(SynClause l, SynClause r)   = or_clause(left: l, right: r);
+SynClause syn_match_clause(SynPtrn p, SynExpr e)    = match_clause(ptrn: p, expr: e);
+SynClause syn_asgnm_clause(StdVar v, SynExpr e)     = asgnm_clause(var: v, expr: e);
+SynClause syn_filter_clause(SynExpr c)              = filter_clause(cond: c);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -165,7 +169,7 @@ SynPtrn syn_ptrn_type(SynType t)                  = :ptrn_type(t);
 SynPtrn syn_ptrn_union(SynPtrn+ ps)
 {
   nps = nonempty(join((get_nu_ptrns(p) | p <- ps)));
-  return if length(nps) > 1 then :ptrn_union(nps) else only_item(nps);
+  return if length(nps) > 1 then :ptrn_union(nps) else only(nps);
 
   SynPtrn* get_nu_ptrns(SynPtrn ptrn):
     ptrn_union(ps?) = join((get_nu_ptrns(p) | p <- ps)),
@@ -176,15 +180,21 @@ SynCase syn_case(SynPtrn+ ps, SynExpr e) = case(patterns: ps, expr: e);
 
 ////////////////////////////////////////////////////////////////////////////////
 
+SynObjArg obj_arg(SynType t)            = obj_arg(type: t);
+SynObjArg obj_arg(SynType t, Atom n)    = obj_arg(type: t, name: n);
+SynClsArg cls_arg(SynClsType t, Atom n) = cls_arg(type: t, name: n);
+
 SynSgn syn_sgn(NamedArg n, SynType* ps, SynType rt) = syn_sgn(name: n, args: ps, res_type: rt);
 
-SynImplBlock implicit_block(SynSgn+ ss, SynFnDef+ fds) = implicit_block(signatures: ss, fn_defs: fds);
+ImplBlock implicit_block(SynSgn+ ss, SynFnDef+ fds) = implicit_block(signatures: ss, fn_defs: fds);
 
 ////////////////////////////////////////////////////////////////////////////////
 
 InputDecl     input_decl(Atom n, SynType t, Bool d)         = input_decl(name: n, type: t, discrete: d);
 OutputDecl    output_decl(Atom n, SynType t, Bool d)        = output_decl(name: n, type: t, discrete: d);
 StateVarDecl  state_var_decl(Atom n, SynType t, SynExpr d)  = state_var_decl(name: n, type: t, init_value: d);
+RelVarDecl    rel_var_decl(Atom n, (SynType, Bool)+ cs)     = rel_var_decl(name: n, cols: ((type: t, unique: u) | t, u <- cs));
+
 NestedDBDecl  nested_db_decl(Atom n, Atom t)                = nested_db_decl(name: n, type: t);
 ConstDecl     const_decl(Atom n, SynExpr e)                 = const_decl(name: n, value: e);
 ConstDecl     const_decl(Atom n, SynType t, SynExpr e)      = const_decl(name: n, type: t, value: e);
@@ -204,12 +214,14 @@ SynNestedAuto syn_nested_auto(Atom n, Atom an, (Atom, SynExpr)* as) = syn_nested
 SynMethodStmt syn_memb_asgnm(Atom mv, SynExpr v)                    = syn_memb_asgnm(memb_var: mv, value: v);
 SynMethodStmt syn_nested_call(Atom v, UpdateSymbol m, SynExpr* as)  = syn_nested_call(auto_var: v, method: m, args: as);
 
-SynMethodDef syn_method_def(<AutoSymbol, DBSymbol> tgt, MethodSymbol m, (SynType, StdVar)* as, SynType t, SynExpr e) =
-  syn_method_def(target: tgt, name: m, args: as, ret_type: t, expr: e);
+AutoMethodDef auto_method_def(Atom a, Atom m, (SynType, StdVar)* as, SynType t, SynExpr e) =
+  auto_method_def(target: a, name: m, args: as, ret_type: t, expr: e);
 
-SynUpdateDef syn_update_def(DBSymbol db, UpdateSymbol n, (SynType, StdVar)* as, SynStmt* ss) =
-  syn_update_def(target: db, name: n, args: as, body: ss);
+UsingBlock using_block(Atom t, <SynFnDef, UpdateDef>* ds) = using_block(target: t, decls: ds);
 
-HandlerDef handler_def(DBSymbol db, SynType t, SynStmt* b) = handler_def(target: db, type: t, body: b);
+UpdateDef update_def(Atom n, (SynType, StdVar)* as, SynStmt* ss) =
+  update_def(name: n, args: as, body: ss);
+
+HandlerDef handler_def(Atom db, SynType t, SynStmt* b) = handler_def(target: db, type: t, body: b);
 
 SynDBDef syn_db_def(Atom n, DataBaseDecl* ds) = syn_db_def(name: n, decls: ds);
