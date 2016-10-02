@@ -39,7 +39,8 @@ implicit
   ExprWFError* stmt_wf_errors(SynStmt stmt, [DefVar] ro_vars, [StdVar] rw_vars)
   {
     errs = stmt_local_wf_errors(stmt, ro_vars, rw_vars);
-    return if errs != () then errs else stmt_nested_wf_errors(stmt, ro_vars, rw_vars);
+    errs = stmt_nested_wf_errors(stmt, ro_vars, rw_vars) if errs == ();
+    return (annotated_syn_stmt_error(e, stmt) | e <- errs);
   }
 
 
@@ -47,32 +48,34 @@ implicit
   {
     all_vars = ro_vars & rw_vars;
     return match (stmt)
-      assignment_stmt()         = expr_wf_errors(stmt.value, all_vars),
-      return_stmt(e?)           = expr_wf_errors(e, all_vars),
-      if_stmt()                 = if_stmt_wf_errors(stmt, ro_vars, rw_vars, all_vars),
-      loop_stmt()               = expr_wf_errors(stmt.cond, ro_vars & rw_vars) &
-                                  stmts_wf_errors(stmt.body, ro_vars, rw_vars, is_inside_loop=true),
-      inf_loop_stmt(ss?)        = stmts_wf_errors(ss, ro_vars, rw_vars, is_inside_loop=true),
-      for_stmt()                = for_stmt_wf_errors(stmt, ro_vars, rw_vars, all_vars),
-      let_stmt()                = (),
-      break_stmt                = (),
-      fail_stmt                 = (),
-      assert_stmt()             = expr_wf_errors(stmt.cond, all_vars),
-      print_stmt(e?)            = expr_wf_errors(e, all_vars),
-      imp_update_stmt()         = expr_wf_errors(stmt.idx, all_vars) & expr_wf_errors(stmt.value, all_vars),
-      return_stmt               = (),
-      proc_call_stmt()          = join((expr_wf_errors(e, all_vars) | e <- stmt.args)),
+      assignment_stmt()       = expr_wf_errors(stmt.value, all_vars),
+      return_stmt(e?)         = expr_wf_errors(e, all_vars),
+      if_stmt()               = if_stmt_wf_errors(stmt, ro_vars, rw_vars, all_vars),
+      loop_stmt()             = expr_wf_errors(stmt.cond, ro_vars & rw_vars) &
+                                stmts_wf_errors(stmt.body, ro_vars, rw_vars, is_inside_loop=true),
+      inf_loop_stmt(ss?)      = stmts_wf_errors(ss, ro_vars, rw_vars, is_inside_loop=true),
+      for_stmt()              = for_stmt_wf_errors(stmt, ro_vars, rw_vars, all_vars),
+      let_stmt()              = (),
+      break_stmt              = (),
+      fail_stmt               = (),
+      assert_stmt()           = expr_wf_errors(stmt.cond, all_vars),
+      print_stmt(e?)          = expr_wf_errors(e, all_vars),
+      imp_update_stmt()       = expr_wf_errors(stmt.idx, all_vars) & expr_wf_errors(stmt.value, all_vars),
+      return_stmt             = (),
+      proc_call_stmt()        = join((expr_wf_errors(e, all_vars) | e <- stmt.args)),
 
-      send_msg_stmt()           = expr_wf_errors(stmt.msg, all_vars),
-      try_update_stmt()         = join((expr_wf_errors(e, all_vars) | e <- stmt.args)),
-      set_memb_var_stmt()       = expr_wf_errors(stmt.value, all_vars),
+      send_msg_stmt()         = expr_wf_errors(stmt.msg, all_vars),
+      try_update_stmt()       = join((expr_wf_errors(e, all_vars) | e <- stmt.args)),
+      set_memb_var_stmt()     = expr_wf_errors(stmt.value, all_vars),
+      delete_stmt()           = join((join((expr_wf_errors(value(a), all_vars) | a <- e.args, a != nil)) | e <- stmt.entries)),
+      insert_stmt()           = join((join((expr_wf_errors(a, all_vars) | a <- e.args)) | e <- stmt.entries)),
 
-      set_input_ctrl_stmt()     = expr_wf_errors(stmt.value, all_vars),
-      clear_input_ctrl_stmt()   = (),
-      apply_ctrl_stmt()         = if stmt.elapsed_time? then expr_wf_errors(stmt.elapsed_time, all_vars) else (),
-      send_msg_ctrl_stmt()      = expr_wf_errors(stmt.msg, all_vars),
+      set_input_ctrl_stmt()   = expr_wf_errors(stmt.value, all_vars),
+      clear_input_ctrl_stmt() = (),
+      apply_ctrl_stmt()       = if stmt.elapsed_time? then expr_wf_errors(stmt.elapsed_time, all_vars) else (),
+      send_msg_ctrl_stmt()    = expr_wf_errors(stmt.msg, all_vars),
 
-      fn_def_stmt()             = {fail;};
+      fn_def_stmt()           = {fail;};
 
 
     ExprWFError* if_stmt_wf_errors(SynIfStmt[SynStmt] stmt, [DefVar] ro_vars, [StdVar] rw_vars, [DefVar] all_vars)
@@ -116,9 +119,11 @@ implicit
     return_stmt               = ret_stmt_local_wf_errors(stmt, false),
     break_stmt                = (break_outside_loop(stmt) if not is_inside_loop),
 
-    send_msg_stmt()           = {fail;},
-    try_update_stmt()         = {fail;},
-    set_memb_var_stmt()       = {fail;},
+    send_msg_stmt()           = send_msg_stmt_local_wf_errors(stmt.var, stmt.msg, ro_vars, rw_vars),
+    try_update_stmt()         = try_update_stmt_local_wf_errors(stmt.name, stmt.args, ro_vars, rw_vars),
+    set_memb_var_stmt()       = set_memb_var_stmt_local_wf_errors(stmt.var, stmt.value, ro_vars, rw_vars),
+    delete_stmt()             = join((delete_or_insert_stmt_local_wf_errors(e.var, length(e.args)) | e <- stmt.entries)),
+    insert_stmt()             = join((delete_or_insert_stmt_local_wf_errors(e.var, length(e.args)) | e <- stmt.entries)),
 
     set_input_ctrl_stmt()     |
     clear_input_ctrl_stmt()   = set_or_clear_input_ctrl_stmt_local_wf_errors(stmt.var, stmt.input, ro_vars, rw_vars),
@@ -133,6 +138,64 @@ implicit
     loop_stmt()               = (),
     inf_loop_stmt(ss?)        = (),
     set_memb_var_stmt()       = ();
+
+
+  ExprWFError* send_msg_stmt_local_wf_errors(Atom var, SynExpr msg, [DefVar] ro_vars, [StdVar] rw_vars)
+  {
+    // <var> must identify a nested database, which must have at least one message handler
+    interface = db_interfaces[db_symbol(curr_db_def.name)];
+    if interface.nested_dbs(var, ?):
+      nested_db_name = interface.nested_dbs(var);
+      return (db_has_no_handlers(nested_db_name) if not handlers_by_db(nested_db_name, ?));
+    elif interface.memb_vars(var) or interface.rel_vars(var, ?):
+      return (not_a_nested_db_var(var, curr_db_def));
+    else
+      return (unknown_nested_db_var(var, curr_db_def));
+    ;
+  }
+
+
+  ExprWFError* try_update_stmt_local_wf_errors(Atom name, SynExpr* args, [DefVar] ro_vars, [StdVar] rw_vars)
+  {
+    // The target database must have an update with the specified name and arity
+    updates = updates_by_db[curr_db_def.name];
+    arity = length(args);
+    return () if (u <- updates | u.name == name and length(u.args) == arity);
+    arities = [length(u.args) | u <- updates, u.name == name];
+    return if arities == []
+      then (unknown_update(name, curr_db_def.name))
+      else (invalid_update_arity(name, arity, arities));
+
+  }
+
+
+  ExprWFError* set_memb_var_stmt_local_wf_errors(Atom var, SynExpr value, [DefVar] ro_vars, [StdVar] rw_vars)
+  {
+    // <var> must be a scalar member variable of the target database
+    interface = db_interfaces[db_symbol(curr_db_def.name)];
+    if interface.memb_vars(var):
+      return ();
+    elif interface.rel_vars(var, ?) or interface.nested_dbs(var, ?):
+      return (not_a_memb_var(var, curr_db_def));
+    else
+      return (unknown_memb_var(var, curr_db_def));
+    ;
+  }
+
+
+  ExprWFError* delete_or_insert_stmt_local_wf_errors(Atom var, NzNat arity)
+  {
+    // <var> must be a relational variable of the specified arity in the target database
+    interface = db_interfaces[db_symbol(curr_db_def.name)];
+    if interface.rel_vars(var, ?):
+      relvar_arity = interface.rel_vars(var);
+      return (invalid_rel_var_arity(var, arity, relvar_arity) if arity != relvar_arity);
+    elif interface.memb_vars(var) or interface.nested_dbs(var, ?):
+      return (not_a_rel_var(var, curr_db_def));
+    else
+      return (unknown_rel_var(var, curr_db_def));
+    ;
+  }
 
 
   ExprWFError* asgn_stmt_local_wf_errors(SynAsgnStmt stmt, [DefVar] ro_vars, [StdVar] rw_vars)

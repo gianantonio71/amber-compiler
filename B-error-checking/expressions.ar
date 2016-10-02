@@ -29,7 +29,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
     binary_op_call()    = expr_wf_errors(expr.left_arg, def_vars) & expr_wf_errors(expr.right_arg, def_vars),
     builtin_call()      = join((expr_wf_errors(e, def_vars) | e <- expr.args)),
     call_lookalike()    = if expr.target :: IdChain then () else join((expr_wf_errors(e, def_vars) | e <- expr.args)),
-    rel_memb_test()     = expr_wf_errors(expr.target, def_vars) & join((expr_wf_errors(value(e), def_vars) | e <- expr.args, e != nil)),
+    rel_memb_test()     = join((expr_wf_errors(value(e), def_vars) | e <- expr.args, e != nil)),
     rel_lookup()        = join((expr_wf_errors(value(a), def_vars) | a <- expr.args, a != nil)),
     singl_only_elem()   = expr_wf_errors(expr.set, def_vars),
     and()               = expr_wf_errors(expr.left, def_vars) & expr_wf_errors(expr.right, def_vars),
@@ -109,6 +109,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
     call_lookalike()    = if expr :: <call_lookalike(target: IdChain, args: SynExpr+)> //## BAD BAD: WORKING AROUND TYPE CHECKING "BUG"
                             then call_lookalike_local_wf_errors(expr, def_vars)
                             else (wrong_pseudocall_arity(expr) if not in(length(expr.args), [1, 2])),
+    rel_memb_test()     = rel_memb_test_local_wf_errors(expr, def_vars),
     named_args_call()   = named_args_call_local_wf_errors(expr, def_vars),
     builtin_call()      = (wrong_builtin_arity(expr.name, expr.args) if length(expr.args) != builtin_arities[expr.name]),
     seq_comp()          = seq_comp_expr_local_wf_errors(expr, def_vars),
@@ -119,6 +120,46 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
     _                   = ();
 
 
+  ExprWFError* rel_memb_test_local_wf_errors(SynRelMembTest expr, [DefVar] def_vars)
+  {
+    return (invalid_expr(expr)) if all((a == nil | a <- expr.args));
+
+    target = expr.target;
+    arity = nz_nat(length(expr.args));
+    if target :: IdChain:
+      symbols = destructure_id_chain(target);
+      resols = resolve_by_priority_as_memb_test_target(symbols, arity, def_vars);
+      return (ambiguous_expr(expr, resols)) if size(resols) > 1;
+
+      if resols == []:
+        //## BAD BAD BAD: USING A FIXED MAXIMUM ARITY
+        // Now passing and empty set of defined vars, so we avoid unary or binary pseudocalls
+        valid_arities = set((a | a < 20, resolve_by_priority_as_memb_test_target(symbols, arity, def_vars) != []));
+        return if valid_arities != []
+          then (wrong_rel_test_arity(expr, valid_arities))
+          else (invalid_expr(expr));
+      ;
+
+      return () if is_rel_var(resols(~));
+
+    else
+      errs = expr_wf_errors(target, def_vars);
+      return errs if errs != ();
+    ;
+
+    return if arity != 2
+        then (wrong_rel_test_arity(expr, [2]))
+      elif expr.args(0) == nil or expr.args(1) != nil
+        then (invalid_expr(expr))
+      else
+        ();
+
+
+    True  is_rel_var(AnyRelVar) = true;
+    False is_rel_var(Expr)      = false;
+ }
+
+
   ExprWFError* call_lookalike_local_wf_errors(<call_lookalike(target: IdChain, args: SynExpr+)> expr, [DefVar] def_vars)
   {
     target = expr.target;
@@ -126,7 +167,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
     symbols = destructure_id_chain(target);
 
     resols = resolve_by_priority_as_call_lookalike_target(symbols, arity, def_vars);
-    return (ambiguous_expr(target, [])) if size(resols) > 1; //## BAD: IGNORING RESOLUTIONS
+    return (ambiguous_expr(target, resols)) if size(resols) > 1;
 
     if resols == []:
       //## BAD BAD BAD: USING A FIXED MAXIMUM ARITY

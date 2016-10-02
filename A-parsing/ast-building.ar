@@ -311,17 +311,63 @@ implicit filename : String, lines : Nat**
     assert length(nodes) == 3;
     target = get_lowercase_id(nodes[1]);
     decls = (build_using_block_decl_ast(n) | n <- rep_rule_nodes(block_node(nodes[2])));
-    return using_block(target, decls);
+    block = using_block(target, decls);
+    return attach_src_code_info(block, filename, mtc);
   }
 
-  <SynFnDef, UpdateDef> build_using_block_decl_ast(RuleMatch mtc)
+  <DBMethodDef, UpdateDef> build_using_block_decl_ast(RuleMatch mtc)
   {
     inner_match = get_rule_match(mtc);
-    return match (get_rule_name(mtc))
-      std_method      = build_std_fndef_ast(inner_match),
-      switch_method   = build_switch_fndef_ast(inner_match),
-      proc_method     = build_proc_fndef_ast(inner_match),
+    decl = match (get_rule_name(mtc))
+      std_method      = build_std_db_method_ast(inner_match),
+      switch_method   = build_switch_db_method_ast(inner_match),
+      proc_method     = build_proc_db_method_ast(inner_match),
       update          = build_update_def_ast(inner_match);
+    return attach_src_code_info(decl, filename, inner_match);
+  }
+
+  DBMethodDef build_std_db_method_ast(RuleMatch mtc)
+  {
+    nodes = rule_seq_nodes(mtc);
+    assert length(nodes) == 6;
+    arg_nodes = if nodes[2] != null_match then rep_rule_nodes(block_node(nodes[2])) else ();
+    args = ((build_type_ast(rule_seq_node(n, 0)), get_lowercase_id(rule_seq_node(n, 1))) | n <- arg_nodes);
+    return db_method_def(
+      name:       get_lowercase_id(nodes[1]),
+      args:       args,
+      ret_type:   build_type_ast(nodes[0]),
+      expr:       build_expr_ast(nodes[4])
+    );
+  }
+
+  DBMethodDef build_proc_db_method_ast(RuleMatch mtc)
+  {
+    nodes = rule_seq_nodes(mtc);
+    assert length(nodes) == 4;
+    arg_nodes = if nodes[2] != null_match then rep_rule_nodes(block_node(nodes[2])) else ();
+    args = ((build_type_ast(rule_seq_node(n, 0)), get_lowercase_id(rule_seq_node(n, 1))) | n <- arg_nodes);
+    return db_method_def(
+      name:       get_lowercase_id(nodes[1]),
+      args:       args,
+      ret_type:   build_type_ast(nodes[0]),
+      expr:       syn_do_expr(nonempty(build_stmts_ast(block_node(nodes[3]))))
+    );
+  }
+
+  DBMethodDef build_switch_db_method_ast(RuleMatch mtc)
+  {
+    nodes = rule_seq_nodes(mtc);
+    assert length(nodes) == 6;
+    arg_nodes = rep_rule_nodes(block_node(nodes[2]));
+    args = ((build_type_ast(rule_seq_node(n, 0)), get_lowercase_id(rule_seq_node(n, 1))) | n <- arg_nodes);
+    cases = (build_switch_case_ast(n) | n <- rep_rule_nodes(nodes[4]));
+    expr = syn_try_expr(nonempty((fn_par(i) | i < syn_case_arity(cases[0]))), nonempty(cases));
+    return db_method_def(
+      name:       get_lowercase_id(nodes[1]),
+      args:       args,
+      ret_type:   build_type_ast(nodes[0]),
+      expr:       expr
+    );
   }
 
   SynProcDef build_proc_def_ast(RuleMatch mtc)

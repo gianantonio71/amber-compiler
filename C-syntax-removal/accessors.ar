@@ -5,7 +5,7 @@ type NestedFnDef          = nested_fn_def(
                               parent_unique_name: BasicFnSymb,
                               impl_args:          [SynSgn]
                             );
-type UsingBlockFnDef      = using_block_fndef(target: Atom, fndef: SynFnDef);
+type UsingBlockFnDef      = using_block_method_def(target: Atom, fndef: DBMethodDef);
 type UsingBlockUpdateDef  = using_block_update_def(target: Atom, fndef: UpdateDef);
 
 type SynArtifact  = SynProcDef, SynAutoDef, SynDBDef, AutoMethodDef, HandlerDef,
@@ -25,8 +25,8 @@ TopLevelFnDef top_level_fn_def(SynFnDef fd, BasicFnSymb un, [SynSgn] ias) =
 NestedFnDef nested_fn_def(SynFnDef fd, SynFnDef pfd, BasicFnSymb pun, [SynSgn] ias) =
   nested_fn_def(fndef: fd, parent_fndef: pfd, parent_unique_name: pun, impl_args: ias);
 
-UsingBlockFnDef     using_block_fndef(Atom t, SynFnDef fd)        = using_block_fndef(target: t, fndef: fd);
-UsingBlockUpdateDef using_block_update_def(Atom t, UpdateDef ud)  = using_block_update_def(target: t, fndef: ud);
+UsingBlockFnDef     using_block_method_def(Atom t, DBMethodDef fd)  = using_block_method_def(target: t, fndef: fd);
+UsingBlockUpdateDef using_block_update_def(Atom t, UpdateDef ud)    = using_block_update_def(target: t, fndef: ud);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -80,7 +80,7 @@ implicit syn_prg : SynPrg
     merge_values([[m.target -> m] | m <- auto_methods]);
 
 
-  [Atom -> [HandlerDef]] handlers_by_db =
+  [Atom -> [+HandlerDef]] handlers_by_db =
     merge_values([[h.target -> h] | h <- handler_defs]);
 
 
@@ -88,12 +88,12 @@ implicit syn_prg : SynPrg
     merge_values([[u.target -> u] | u <- using_blocks]);
 
 
-  [Atom -> [+SynFnDef]] methods_by_db =
-    merge_values([[db -> d] | db : ubs <- using_blocks_by_db, ub <- ubs, d <- set(ub.decls), syn_fn_def() <~ d]);
+  [Atom -> [+DBMethodDef]] methods_by_db =
+    merge_values([[db -> d] | db : ubs <- using_blocks_by_db, ub <- ubs, d <- set(ub.decls), db_method_def() <~ d]);
 
 
   [Atom -> [Atom]] method_ids_by_db_id =
-    [db.name -> [match (m.name) fn_symbol(a?) = a | m <- lookup(methods_by_db, db.name, [])] | db <- syn_db_defs];
+    [db.name -> [m.name | m <- lookup(methods_by_db, db.name, [])] | db <- syn_db_defs];
 
 
   [Atom -> [+UpdateDef]] updates_by_db =
@@ -353,7 +353,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact
       auto_method_def()         = memb_db_vars(auto_symbol(syn_artifact.target)),
       syn_db_def()              = memb_db_vars(db_symbol(syn_artifact.name)),
       handler_def()             |
-      using_block_fndef()       |
+      using_block_method_def()  |
       using_block_update_def()  = memb_db_vars(db_symbol(syn_artifact.target)),
       _                         = [:];
 
@@ -385,7 +385,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact
     has_self_db = match (syn_artifact)
       syn_db_def()              |
       handler_def()             |
-      using_block_fndef()       |
+      using_block_method_def()  |
       using_block_update_def()  = true,
       _                         = false;
 
@@ -403,6 +403,16 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact
 
   //////////////////////////////////////////////////////////////////////////////
 
+  SynDBDef curr_db_def
+  {
+    db_name = match (syn_artifact)
+      handler_def()             = syn_artifact.target,
+      using_block_update_def()  = syn_artifact.target;
+    return db_defs_by_id[db_symbol(db_name)];
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
   AutoSymbol self_auto_type =
     match (syn_artifact)
       syn_auto_def()    = syn_artifact.name,
@@ -413,7 +423,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact
     match (syn_artifact)
       syn_db_def()              = db_symbol(syn_artifact.name),
       handler_def()             = db_symbol(syn_artifact.target),
-      using_block_fndef()       = db_symbol(syn_artifact.target),
+      using_block_method_def()  = db_symbol(syn_artifact.target),
       using_block_update_def()  = db_symbol(syn_artifact.target);
 
 

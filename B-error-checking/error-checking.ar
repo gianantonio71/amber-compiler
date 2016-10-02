@@ -15,6 +15,8 @@ implicit syn_prg : SynPrg
   {
     return typedefs_wf_errors if typedefs_wf_errors != ();
 
+    //## INSERT HERE GLOBAL CHECKS FOR AUTOMATA AND SCHEMAS
+
     args_errs = join(rand_sort([block_args_wf_errors(b.signatures) | b <- impl_blocks]));
     return args_errs if args_errs != ();
 
@@ -42,7 +44,75 @@ implicit syn_prg : SynPrg
       ;
     ;
 
-    return rand_sort(standalone_fndef_errs) & impl_block_fndef_errs & rand_sort(proc_def_errs);
+    auto_meth_errs = join(rand_sort([auto_method_def_wf_errors(m) | m <- auto_methods]));
+    db_meth_errs = join(rand_sort([db_method_def_wf_errors(db, m) | db : ms <- methods_by_db, m <- ms]));
+    update_errs = join(rand_sort([update_def_wf_errors(db, u) | db : us <- updates_by_db, u <- us]));
+
+    return rand_sort(standalone_fndef_errs) & impl_block_fndef_errs & rand_sort(proc_def_errs) &
+           auto_meth_errs & db_meth_errs & update_errs;
+  }
+
+
+  WFError* db_method_def_wf_errors(Atom db_name, DBMethodDef method)
+  {
+    //## WE ARE NOT ALLOWING TYPE VARIABLES IN A METHOD SIGNATURE FOR NOW
+    errs = join((type_wf_errors(t, type_arity_map, true) | t, unused_var <- method.args));
+    errs = errs & type_wf_errors(method.ret_type, type_arity_map, true);
+
+    arg_names = (n | unused_var, n <- method.args);
+    dupl_args = dupl_elems(arg_names);
+    errs = (errs || dupl_par_names([a | a <- dupl_args], [])) if dupl_args != [];
+
+    artifact = using_block_method_def(db_name, method);
+    let syn_artifact = artifact, impl_args = [:], actual_arg_arity = 0:
+      errs = errs & expr_wf_errors(method.expr, seq_union(([fn_par(i), var(n)] | n @ i <- arg_names)));
+    ;
+
+    return (db_method_def_errors(db_defs_by_id[db_symbol(db_name)], method, errs) if errs != ());
+  }
+
+
+  WFError* update_def_wf_errors(Atom db_name, UpdateDef update_def)
+  {
+    errs = join((type_wf_errors(t, type_arity_map, true) | t, unused_var <- update_def.args));
+
+    args = (v | unused_var, v <- update_def.args);
+    dupl_args = dupl_elems(args);
+    errs = (errs || dupl_par_names([bare_id(a) | a <- dupl_args], [])) if dupl_args != [];
+
+    body = update_def.body;
+    if body != ():
+      artifact = using_block_update_def(db_name, update_def);
+      let syn_artifact = artifact, impl_args = [:], actual_arg_arity = 0:
+        errs = root_stmt_block_wf_errors(body, set(args), false, false);
+      ;
+    ;
+
+    return (update_def_errs(db_defs_by_id[db_symbol(db_name)], update_def, errs) if errs != ());
+  }
+
+
+  WFError* auto_method_def_wf_errors(AutoMethodDef method)
+  {
+    //## WE ARE NOT ALLOWING TYPE VARIABLES IN A METHOD SIGNATURE FOR NOW
+    errs = join((type_wf_errors(t, type_arity_map, true) | t, unused_var <- method.args));
+    errs = errs & type_wf_errors(method.ret_type, type_arity_map, true);
+
+    arg_names = (v | unused_var, v <- method.args);
+    dupl_args = dupl_elems(arg_names);
+    errs = (errs || dupl_par_names([bare_id(a) | a <- dupl_args], [])) if dupl_args != [];
+
+    auto_symb = auto_symbol(method.target);
+    if not auto_defs_by_id(auto_symb, ?):
+      return (auto_method_def_errors(method, (errs || unknown_auto(auto_symb))));
+    ;
+    auto_def = auto_defs_by_id[auto_symb];
+
+    let syn_artifact = method, impl_args = [:], actual_arg_arity = 0:
+      errs = errs & expr_wf_errors(method.expr, seq_union(([fn_par(i), s] | s @ i <- arg_names)));
+    ;
+
+    return (auto_method_def_errors(method, errs) if errs != ());
   }
 
 

@@ -1,5 +1,5 @@
 type SymbObjVar     = StdVar, NamedArg, MembVar, QualAutoMembVar;
-type SymbChainAcc   = accessor(expr: SymbChainExpr, field: SymbObj);
+type SymbChainAcc   = accessor(expr: <SymbChainExpr, FnCallExpr, AutoMethodCallExpr, DBMethodCallExpr>, field: SymbObj);
 type SymbChainExpr  = SymbObjVar, QualDBMembVar, SymbChainAcc;
 
 
@@ -8,7 +8,7 @@ Nat resol_priority(NamedArg)                  = 0;
 Nat resol_priority(MembVar)                   = 1;
 Nat resol_priority(QualAutoMembVar)           = 2;
 Nat resol_priority(QualDBMembVar)             = 2;
-Nat resol_priority(SymbChainAcc)              = 2;
+Nat resol_priority(SymbChainAcc symb_chain)   = resol_priority(symb_chain.expr);
 Nat resol_priority(AutoMethodCallExpr call)   = if call.var? then 2 else 3;
 Nat resol_priority(DBMethodCallExpr call)     = if call.var? then 2 else 3;
 Nat resol_priority(FnCallExpr call)           = resol_priority(call.name);
@@ -59,8 +59,8 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
       then db_var_type(precall.var)
       else self_db_type;
     methods = methods_by_db[bare_id(db_type)];
-    fn_symb = fn_symbol(bare_id(precall.method));
-    arities = [length(m.args) | m <- methods, m.name == fn_symb];
+    name = bare_id(precall.method);
+    arities = [length(m.args) | m <- methods, m.name == name];
     return arities(arity);
   }
 
@@ -125,6 +125,13 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
     resols = [r | r <- raw_resols, r :: <AnyAutoVar, LocDBVar, MembDBVar>];
     assert size(resols) <= 1;
     return min_by(resols, resol_priority($)); //## BAD BAD: WORKAROUND FOR TYPECHECKING BUG
+  }
+
+
+  [<AnyRelVar, SymbChainExpr, FnCallExpr, AutoMethodCallExpr, DBMethodCallExpr>]
+  resolve_by_priority_as_memb_test_target(Atom+ symbols, NzNat arity, [Var] def_vars)
+  {
+    return resolve_by_priority_as_memb_test_target(symbols, def_vars);
   }
 
 
@@ -236,7 +243,16 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
     return resols;
 
 
-    Nil try_resolve_accessor(<ClsVar, AnyRelVar, FnFamilyId, PreCall>, Atom) = nil;
+    Nil try_resolve_accessor(<ClsVar, AnyRelVar>, Atom) = nil;
+
+
+    Maybe[SymbChainExpr] try_resolve_accessor(<FnFamilyId, PreCall> target, Atom field)
+    {
+      maybe_resol_target = try_resolve_as_expr(target);
+      return if maybe_resol_target != nil
+        then just(accessor(expr: value(maybe_resol_target), field: object(field)))
+        else nil;
+    }
 
 
     Just[SymbChainExpr] try_resolve_accessor(SymbChainExpr target, Atom field) =
