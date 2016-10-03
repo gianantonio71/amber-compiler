@@ -1,26 +1,36 @@
 BoolProcDef mk_named_type_memb_test_fn(TypeSymbol type_symb, [TypeName -> Type] typedefs)
 {
   res_var, var_gen = next_bool_var(blank_var_gen);
-  code = gen_type_checking_code(expand_type_ref(type_symb, typedefs), fn_par(0), res_var, next_var_gen = var_gen);
+  type = expand_type_ref(type_symb, typedefs);
+  let typedefs = typedefs, next_var_gen = var_gen:
+    code = gen_type_checking_code(type, fn_par(0), res_var);
+  ;
   return bool_proc_def(memb_test(type_symb), 1, nonempty(code & (ret_val(res_var))));
 }
 
-implicit next_var_gen : VarGen
+
+implicit typedefs : [TypeName -> Type], next_var_gen : VarGen
 {
-  Instr+ gen_type_checking_code(Type type, AtomicExpr obj, BoolVar res_var):
-    ne_set_type()       = gen_ne_set_type_checking_code(type.elem_type, obj, res_var),
-    ne_seq_type()       = gen_ne_seq_type_checking_code(type.elem_type, obj, res_var),
-    ne_map_type()       = gen_map_type_checking_code(type.key_type, type.value_type, obj, res_var),
-    ne_record_type(fs?) = gen_ne_record_type_checking_code(fs, obj, res_var),
-    tuple_type(ts?)     = gen_tuple_type_checking_code(ts, obj, res_var),
-    tag_obj_type()      = gen_tag_obj_type_checking_code(type.tag_type, type.obj_type, obj, res_var),
-    union_type(ts?)     = gen_union_type_checking_code(ts, obj, res_var),
-    _                   = (set_bvar(res_var, gen_type_checking_expr(type, obj)));
+  Instr+ gen_type_checking_code(Type type, AtomicExpr obj, BoolVar res_var)
+  {
+    return (set_bvar(res_var, true)) if is_type_any(type);
+
+    return match (type)
+      ne_set_type()       = gen_ne_set_type_checking_code(type.elem_type, obj, res_var),
+      ne_seq_type()       = gen_ne_seq_type_checking_code(type.elem_type, obj, res_var),
+      ne_map_type()       = gen_ne_map_type_checking_code(type.key_type, type.value_type, obj, res_var),
+      ne_record_type(fs?) = gen_ne_record_type_checking_code(fs, obj, res_var),
+      tuple_type(ts?)     = gen_tuple_type_checking_code(ts, obj, res_var),
+      tag_obj_type()      = gen_tag_obj_type_checking_code(type.tag_type, type.obj_type, obj, res_var),
+      union_type(ts?)     = gen_union_type_checking_code(ts, obj, res_var),
+      _                   = (set_bvar(res_var, gen_type_checking_expr(type, obj)));
+  }
 
 
-  //## OPTIMIZE FOR SETS OF ANY
   Instr+ gen_ne_set_type_checking_code(Type elem_type, AtomicExpr obj, BoolVar res_var)
   {
+    return (set_bvar(res_var, is_ne_set(obj))) if is_type_any(elem_type);
+
     elem_var, var_gen = next_obj_var(next_var_gen);
     it_var, var_gen = next_set_it_var(var_gen);
 
@@ -47,9 +57,10 @@ implicit next_var_gen : VarGen
   }
 
 
-    //## OPTIMIZE FOR SEQUENCES OF ANY
   Instr+ gen_ne_seq_type_checking_code(Type elem_type, AtomicExpr obj, BoolVar res_var)
   {
+    return (set_bvar(res_var, is_ne_seq(obj))) if is_type_any(elem_type);
+
     elem_var, var_gen = next_obj_var(next_var_gen);
     it_var, var_gen = next_seq_it_var(var_gen);
 
@@ -76,8 +87,10 @@ implicit next_var_gen : VarGen
   }
 
 
-  Instr+ gen_map_type_checking_code(Type key_type, Type value_type, AtomicExpr obj, BoolVar res_var)
+  Instr+ gen_ne_map_type_checking_code(Type key_type, Type value_type, AtomicExpr obj, BoolVar res_var)
   {
+    return (set_bvar(res_var, is_ne_map(obj))) if is_type_any(key_type) and is_type_any(value_type);
+
     obj_var, var_gen = next_obj_var(next_var_gen);
     it_var, var_gen = next_map_it_var(var_gen);
 
@@ -111,50 +124,39 @@ implicit next_var_gen : VarGen
 
   Instr+ gen_ne_record_type_checking_code([+SymbObj -> (type: Type, optional: Bool)] fs, AtomicExpr obj, BoolVar res_var)
   {
-    size_var, var_gen = next_int_var(next_var_gen);
-    obj_var, var_gen = next_obj_var(var_gen);
-    it_var, var_gen = next_map_it_var(var_gen);
+    count_var, var_gen = next_int_var(next_var_gen);
+    it_var,    var_gen = next_map_it_var(var_gen);
+    key_var,   var_gen = next_obj_var(var_gen);
+    value_var, var_gen = next_obj_var(var_gen);
+    tmp_bvar,  var_gen = next_bool_var(var_gen);
 
-    max_fields = size(fs);
-    min_fields = size([f | l : f <- fs, not f.optional]);
+    mandatory_fields_count = size([l | l : f <- fs, not f.optional]); //## BAD BAD BAD: REALLY UGLY WAY TO DO A COUNT
 
-    code = (
-      // maybe_op(block_success_if(is_empty_map(obj), res_var), min_fields == 0),
-      block_failure_if_not(is_ne_map(obj), res_var),
-      set_ivar(size_var, get_map_size(obj)),
-      block_failure_if_not(is_between(size_var, min_fields, max_fields), res_var),
-      get_iter(it_var, obj)
-    );
-
-    //## BAD: THIS IS PROBABLY NOT IDEAL, IT IS LIKE THIS IN ORDER TO MINIMIZE THE AMOUNT OF CODE THAT HAD TO BE CHANGED WHEN I CHANGED THE TUPLE TYPE
-    sorted_fields = sort_set([(label: l, type: f.type, optional: f.optional) | l : f <- fs], $a.label < $b.label);
-
-    for b <- sorted_fields:
-      inner_code = (set_var(obj_var, get_curr_value(it_var))) &
-                    gen_type_checking_code(b.type, obj_var, res_var, next_var_gen = var_gen) &
-                    (exit_block_if_not(res_var), move_forward(it_var));
-
-      if b.optional:
-        code = code & (
-          do_if_not(
-            is_out_of_range(it_var),
-            ( set_var(obj_var, get_curr_key(it_var)),
-              do_if(is_eq(obj_var, b.label), inner_code)
-            )
+    let next_var_gen = var_gen:
+      code_cases = [
+        ( [bare_obj(l)],
+          ( gen_type_checking_code(f.type, value_var, tmp_bvar) ||
+            branch(tmp_bvar, (increment(count_var) if not f.optional), (exit_block))
           )
-        );
-      else
-        code = code & (
-          block_failure_if(is_out_of_range(it_var), res_var),
-          set_var(obj_var, get_curr_key(it_var)),
-          block_failure_if_not(is_eq(obj_var, b.label), res_var)
-        ) & inner_code;
-      ;
+        ) | l : f <- fs
+      ];
     ;
 
-    code = code & (set_bvar(res_var, is_out_of_range(it_var)));
-
-    return (execute_block(nonempty(code)));
+    return (
+      execute_block((
+        set_ivar(count_var, 0),
+        set_bvar(res_var, false),
+        get_iter(it_var, obj),
+        repeat((
+          break_if(is_out_of_range(it_var)),
+          get_curr_key(key_var, it_var),
+          get_curr_value(value_var, it_var),
+          symb_switch(key_var, code_cases, (exit_block)),
+          move_forward(it_var)
+        )),
+        set_bvar(res_var, is_eq(count_var, mandatory_fields_count))
+      ))
+    );
   }
 
 
