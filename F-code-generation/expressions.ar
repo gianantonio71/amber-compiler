@@ -314,19 +314,22 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_eval_code_for_rel_memb_test_expr(AnyRelVar rel_var, Maybe[Expr]+ args, EvalDestVar res_var)
+  Instr+ gen_eval_code_for_rel_memb_test_expr(AnyRelVar rel_var, Maybe[Expr]+ relvar_args, EvalDestVar res_var)
   {
-    filtered_idxs = idxs_into_filtered_seq((a != nil | a <- args));
-    unfiltered_idxs = (i | a @ i <- args, a != nil);
-    set_args = (value(a) | a <- args, a != nil);
+    args_perm = relvar_cols_perm(rel_var);
+    table_args = (relvar_args(i) | i <- args_perm);
+
+    filtered_idxs = idxs_into_filtered_seq((a != nil | a <- table_args));
+    unfiltered_idxs = (i | a @ i <- table_args, a != nil);
+    set_args = (value(a) | a <- table_args, a != nil);
     info = gen_eval_info(set_args);
 
     surr_vars, var_gen = next_int_vars(info.next_var_gen, length(set_args));
-    it_var, var_gen = next_table_it_var(var_gen, length(args));
+    it_var, var_gen = next_table_it_var(var_gen, length(table_args));
 
     surr_args = (apply(mi, surr_vars($)) | mi <- filtered_idxs);
 
-    if all((a != nil | a <- args)):
+    if all((a != nil | a <- table_args)):
       code = (set_var(res_var, bool_obj(contains(rel_var, nonempty(surr_vars)))));
     else
       code = (
@@ -349,6 +352,34 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
 
 
   Instr+ gen_eval_code_for_rel_lookup_expr(AnyRelVar rel_var, Expr+ set_args, Nat unknown_arg_idx, EvalDestVar res_var)
+  {
+    args_perm = relvar_cols_perm(rel_var);
+    args_rev_perm = reverse_perm(args_perm);
+
+    unknown_table_arg_idx = args_rev_perm(unknown_arg_idx);
+
+    all_relvar_args = subseq(set_args, 0, unknown_arg_idx, nil) & (nil) & subseq(set_args, unknown_arg_idx, nil, 0);
+    all_table_args = (all_relvar_args(i) | i <- args_perm);
+    set_table_args = (a | a <- all_table_args, a != nil);
+
+    assert {
+      set_args_perm = ({
+          j = i + bit(i >= unknown_table_arg_idx); // Index of the argument in the full list of permutated arguments
+          k = args_perm(j); // Index of the argument in the full list of arguments, before permutation
+          assert k != unknown_arg_idx;
+          h = k - bit(k > unknown_arg_idx); // Index of the argument in the list of set arguments before permutation
+          return h;
+        } | i < length(set_args)
+      );
+      set_table_args_2 = (set_args(i) | i <- set_args_perm);
+      return set_table_args == set_table_args_2;
+    };
+
+    return gen_eval_code_for_rel_lookup_expr_after_perm(rel_var, nonempty(set_table_args), unknown_table_arg_idx, res_var);
+  }
+
+
+  Instr+ gen_eval_code_for_rel_lookup_expr_after_perm(AnyRelVar rel_var, Expr+ set_args, Nat unknown_arg_idx, EvalDestVar res_var)
   {
     arity = length(set_args) + 1;
 

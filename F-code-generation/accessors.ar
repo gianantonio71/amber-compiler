@@ -40,6 +40,9 @@ implicit program : Program
   [DBSymbol -> [RelVar -> Table]] tables_by_db = [
     db.name -> value_stores_and_tables(database=db)(1) | db <- program.data_bases
   ];
+
+
+  [DBSymbol -> DataBase] data_bases_by_id = [db.name -> db | db <- program.data_bases];
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -81,9 +84,9 @@ implicit artifact : Artifact
       data_base()  = artifact.name;
 
 
-  (types: NeType+, unique: [[+Nat]]) rel_var_info(RelVar rel_var) =
+  [[+Nat]] relvar_keys(RelVar rel_var) =
     match (artifact)
-      data_base() = artifact.rel_vars[rel_var];
+      data_base() = artifact.rel_vars(rel_var).keys;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -92,13 +95,33 @@ implicit artifact : Artifact
 implicit program : Program, artifact : Artifact
 {
   ValueStoreId table_col_store_id(RelVar rel_var, Nat col_idx) =
-    tables_by_db[this_db_symbol][rel_var].cols[col_idx].store_id;
+    tables_by_db[this_db_symbol][rel_var].value_stores[col_idx];
 
 
   NestedValueStoreId table_col_store_id(QualRelVar rel_var, Nat col_idx)
   {
     db_type = var_type(rel_var.db_var);
-    store_id = tables_by_db[db_type][rel_var.rel_var].cols[col_idx].store_id;
+    store_id = tables_by_db[db_type][rel_var.rel_var].value_stores[col_idx];
     return nested_value_store_id(rel_var.db_var, store_id);
   }
+
+
+  //## INEFFICIENT, SHOULD BE CACHED
+  Nat+ relvar_cols_perm(AnyRelVar rel_var)
+  {
+    rv_info = match (rel_var)
+      rel_var()       = {match (artifact) data_base() = artifact.rel_vars(rel_var)},
+      qual_rel_var()  = data_bases_by_id[var_type(rel_var.db_var)].rel_vars(rel_var.rel_var);
+    arity = only([length(s) | s <- rv_info.signatures]);
+    return table_cols_perm(arity, rv_info.keys);
+  }
+
+
+  //## THIS DOESN'T REALLY NEED THE "program" IMPLICIT ARGUMENT, BUT
+  //## THE TYPE CHECKER IS CURRENTLY TOO DUMB TO FIGURE THAT OUT
+  //## INEFFICIENT, SHOULD BE CACHED
+  [[+Nat]] table_keys(RelVar rel_var) = permutate_keys(
+    relvar_keys(rel_var),
+    nonempty(relvar_cols_perm(rel_var))
+  );
 }

@@ -67,9 +67,17 @@ AutoInterface interface_info(SynAutoDef auto_def)
 DBInterface interface_info(SynDBDef db_def)
 {
   decls = set(db_def.decls);
+  relvars_decls = [d | d <- decls, relvars_decl() <~ d];
+
+  main_relvars = [d.name -> length(d.col_types) | d <- relvars_decls];
+  attr_relvars = merge_values([
+    [a.name -> nz_nat(length(d.col_types) + 1)]
+    | d <- relvars_decls, a <- set(d.attributes)
+  ]);
+
   return (
     memb_vars:    [d.name | d <- decls, state_var_decl() <~ d],
-    rel_vars:     [d.name -> length(d.cols) | d <- decls, rel_var_decl() <~ d],
+    rel_vars:     main_relvars & [n -> as(~) | n : as <- attr_relvars],
     nested_dbs:   [d.name -> d.type | d <- set(db_def.decls), nested_db_decl() <~ d]
   );
 }

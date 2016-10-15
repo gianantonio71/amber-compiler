@@ -11,10 +11,44 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
 
   ExprWFError* iter_clause_wf_errors(StdVar+ vars, SynExpr src_expr, [DefVar] def_vars)
   {
-    //## TODO: CHECK THAT THE NUMBER OF VARIABLES IS CORRECT
-    //## IF WE ARE ITERATING THROUGH A PROJECTION OF A RELATION
+    if src_expr :: <rel_memb_test(target: IdChain, args: Maybe[SynExpr]+)>:
+      args = src_expr.args;
+      if at_least_one((a == nil | a <- args)):
+        target = src_expr.target;
+        symbols = destructure_id_chain(target);
+        resols = resolve_by_priority_as_rel_var(symbols, def_vars);
+        return (ambiguous_expr(target, resols)) if size(resols) > 1;
+        if resols == []:
+          //## TODO: ADD BETTER MESSAGES HERE
+          return (invalid_expr(target));
+        ;
+        relvar = only(resols);
+        relvar_arity = relvar_arity(relvar);
+        exp_clause_arity = nz_nat(count(args, $ == nil));
+        args_errs = join((expr_wf_errors(value(a), def_vars) | a <- args, a != nil));
+        arity_errs = (
+          invalid_rel_var_arity(last(symbols), length(args), relvar_arity) if length(args) != relvar_arity,
+          iter_clause_wrong_arity(vars, [exp_clause_arity]) if length(vars) != exp_clause_arity
+        );
+        return args_errs & arity_errs;
+      ;
+
+    elif src_expr :: IdChain:
+      symbols = destructure_id_chain(src_expr);
+      resols = resolve_by_priority_as_rel_var(symbols, def_vars);
+      if size(resols) == 1:
+        relvar_arity = relvar_arity(only(resols));
+        return (iter_clause_wrong_arity(vars, [relvar_arity]) if length(vars) != relvar_arity);
+      ;
+    ;
+
+    arity = length(vars);
+    arity_errs = (iter_clause_wrong_arity(vars, [1, 2]) if arity != 1 and arity != 2);
     var_errs = (already_def_var(v) | v <- vars, already_def(v, def_vars));
-    return var_errs & expr_wf_errors(src_expr, def_vars);
+    dupl_vars = dupl_elems(vars);
+    dupl_vars_errs = (dupl_var_mult_asgnm(v) | v <- rand_sort(dupl_vars));
+
+    return arity_errs & var_errs & dupl_vars_errs & expr_wf_errors(src_expr, def_vars);
   }
 
 

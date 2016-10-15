@@ -9,13 +9,6 @@ implicit syn_prg : SynPrg, db_def : SynDBDef
       ) | v <- db_state_vars
     ];
 
-    rel_vars = [
-      rel_var(v.name) -> (
-        types:  (syn_type_to_type(c.type, nil) | c <- v.cols),
-        unique: set(([i] | c @ i <- v.cols, c.unique))
-      ) | v <- db_rel_vars
-    ];
-
     methods  = [desugar_db_method(m) | m <- lookup(methods_by_db, db_def.name, [])];
     updates  = [desugar_update(u)    | u <- lookup(updates_by_db, db_def.name, [])];
     handlers = [desugar_handler(h)   | h <- lookup(handlers_by_db, db_def.name, [])];
@@ -23,7 +16,7 @@ implicit syn_prg : SynPrg, db_def : SynDBDef
     return data_base(
       name:         db_symbol(db_def.name),
       state_vars:   state_vars,
-      rel_vars:     rel_vars,
+      rel_vars:     desugared_relvars,
       nested_dbs:   db_vars_types,
       methods:      methods,
       updates:      updates,
@@ -33,6 +26,48 @@ implicit syn_prg : SynPrg, db_def : SynDBDef
 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
+
+  [RelVar -> (signatures: [+NeType+], keys: [[+Nat]])] desugared_relvars
+  {
+    root_relvars_sgns = [
+      [rel_var(v.name) -> (syn_type_to_type(t, nil) | t <- v.col_types)] | v <- db_rel_vars
+    ];
+
+    attr_relvars_sgns = [
+      [rel_var(arv.name) -> (syn_type_to_type(t, nil) | t <- (rv.col_types || arv.type))]
+      | rv <- db_rel_vars, arv <- set(rv.attributes)
+    ];
+
+    relvars_sgns = merge_values(root_relvars_sgns & attr_relvars_sgns);
+
+    root_relvars_keys = [[rel_var(v.name) -> [set(k) | k <- set(v.keys)] | v <- db_rel_vars]];
+
+    attr_relvars_keys = [
+      [rel_var(arv.name) -> if arv.cardinality.multiple then [] else [set(k) | k <- set(rv.keys)]]
+      | rv <- db_rel_vars, arv <- set(rv.attributes)
+    ];
+
+    relvars_keys = merge(root_relvars_keys & attr_relvars_keys);
+
+    assert keys(relvars_sgns) == keys(relvars_keys);
+
+    return [v -> (signatures: ss, keys: relvars_keys(v)) | v : ss <- relvars_sgns];
+
+    // root_relvars = [[
+    //   rel_var(v.name) -> (
+    //     types:  (syn_type_to_type(t, nil) | t <- v.col_types),
+    //     keys:   v.keys
+    //   )] | v <- db_rel_vars
+    // ];
+
+    // attr_relvars = [[
+    //   rel_var(arv.name) -> (
+    //     types:  (syn_type_to_type(t, nil) | t <- (rv.col_types || arv.type)),
+    //     keys:   if arv.cardinality.multiple then [] else rv.keys
+    //   )] | rv <- db_rel_vars, arv <- set(rv.attributes)
+    // ];
+  }
+
 
   Method desugar_db_method(DBMethodDef method_def)
   {

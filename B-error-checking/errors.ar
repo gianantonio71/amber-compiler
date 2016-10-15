@@ -10,6 +10,7 @@ type WFError            = dupl_typedef((SynAnyTypedef, SynAnyTypedef)),
                           auto_method_def_errors(meth_def: AutoMethodDef, errors: FnDefWFError+),
                           db_method_def_errors(db: SynDBDef, method: DBMethodDef, errors: FnDefWFError+),
                           update_def_errs(db: SynDBDef, update: UpdateDef, errors: UpdateDefWFError+),
+                          handler_def_errs(handler: HandlerDef, errors: UpdateDefWFError+),
                           same_name_proc_defs(SynProcDef+);
 
 type TypeWFError        = invalid_int_range(<syn_int_range(min: Int, max: Int)>),
@@ -47,6 +48,7 @@ type ExprSpecWFError    = already_def_var(Var),
                           not_a_scalar_var(names: Atom+),
                           dupl_var_mult_asgnm(StdVar),
                           diff_var_sets_in_ptrn_union(SynPtrn+),
+                          iter_clause_wrong_arity(vars: StdVar+, valid_arities: [+NzNat]),
 
                           ro_vars_asgnm(stmt: <SynAsgnStmt, SynProcCallStmt>, vars: [+Var]),
                           wrong_return(<SynReturnStmt, return_stmt>),
@@ -61,7 +63,7 @@ type ExprSpecWFError    = already_def_var(Var),
                           missing_ret_stmt(SynStmt+),
                           unreachable_stmt(SynStmt),
 
-                          unknown_auto(auto_symb: AutoSymbol),
+                          unknown_auto(auto_symb: <AutoSymbol, DBSymbol>),
                           auto_var_not_defined(var: AnyAutoVar, is_other_var_type: Bool),
                           unknown_input(name: Atom, automaton: SynAutoDef),
                           unknown_output(name: Atom, automaton: SynAutoDef),
@@ -109,6 +111,8 @@ WFError fndef_errors(SynFnDef fd, FnDefWFError+ errs)           = fndef_errors(f
 WFError auto_method_def_errors(AutoMethodDef m, FnDefWFError+ es) = auto_method_def_errors(meth_def: m, errors: es);
 WFError db_method_def_errors(SynDBDef db, DBMethodDef m, FnDefWFError+ es)  = db_method_def_errors(db: db, method: m, errors: es);
 WFError update_def_errs(SynDBDef db, UpdateDef u, UpdateDefWFError+ es) = update_def_errs(db: db, update: u, errors: es);
+WFError handler_def_errs(HandlerDef h, UpdateDefWFError+ es)    = handler_def_errs(handler: h, errors: es);
+
 WFError proc_def_errors(SynProcDef pd, ProcDefWFError+ es)      = proc_def_errors(proc_def: pd, errors: es);
 WFError same_name_proc_defs(SynProcDef+ pds)                    = :same_name_proc_defs(pds);
 
@@ -146,6 +150,7 @@ ExprSpecWFError not_an_object(SynExpr e, <SymbChainExpr, ClsVar, AnyAutoVar, Any
 ExprSpecWFError not_an_object(SynExpr e, [<SymbChainExpr, ClsVar, AnyAutoVar, AnyDBVar, AnyRelVar, FnFamilyId, PreCall>] rs) = not_an_object(expr: e, resols: rs);
 ExprSpecWFError ambiguous_expr(SynExpr e, [Any] rs)                     = ambiguous_expr(expr: e, resols: rs);
 ExprSpecWFError invalid_expr(SynExpr e)                                 = invalid_expr(expr: e);
+// ExprSpecWFError invalid_expr(SynExpr e)                                 = {print :invalid_expr; fail;};
 ExprSpecWFError wrong_builtin_arity(BuiltIn b, SynExpr+ ps)             = wrong_builtin_arity(name: b, args: ps);
 ExprSpecWFError invalid_named_arg(NamedArg p)                           = :invalid_named_arg(p);
 ExprSpecWFError missing_named_arg(NamedArg p)                           = :missing_named_arg(p);
@@ -165,6 +170,7 @@ ExprSpecWFError not_a_scalar_var(Atom a)                                = not_a_
 ExprSpecWFError not_a_scalar_var(Atom+ as)                              = not_a_scalar_var(names: as);
 ExprSpecWFError dupl_var_mult_asgnm(StdVar v)                           = :dupl_var_mult_asgnm(v);
 ExprSpecWFError diff_var_sets_in_ptrn_union(SynPtrn+ ps)                = :diff_var_sets_in_ptrn_union(ps);
+ExprSpecWFError iter_clause_wrong_arity(StdVar+ vs, [+NzNat] as)        = iter_clause_wrong_arity(vars: vs, valid_arities: as);
 
 ExprSpecWFError ro_vars_asgnm(<SynAsgnStmt, SynProcCallStmt> s, [+Var] vs)  = ro_vars_asgnm(stmt: s, vars: vs);
 ExprSpecWFError wrong_return(<SynReturnStmt, return_stmt> s)                = :wrong_return(s);
@@ -179,7 +185,7 @@ ExprSpecWFError break_outside_loop(SynBreakStmt s)                          = :b
 ExprSpecWFError missing_ret_stmt(SynStmt+ ss)                               = :missing_ret_stmt(ss);
 ExprSpecWFError unreachable_stmt(SynStmt s)                                 = :unreachable_stmt(s);
 
-ExprSpecWFError unknown_auto(AutoSymbol s)                  = unknown_auto(auto_symb: s);
+ExprSpecWFError unknown_auto(<AutoSymbol, DBSymbol> s)      = unknown_auto(auto_symb: s);
 ExprSpecWFError auto_var_not_defined(AnyAutoVar v, Bool b)  = auto_var_not_defined(var: v, is_other_var_type: b);
 ExprSpecWFError unknown_input(Atom n, SynAutoDef a)         = unknown_input(name: n, automaton: a);
 ExprSpecWFError unknown_output(Atom n, SynAutoDef a)        = unknown_output(name: n, automaton: a);
@@ -231,6 +237,8 @@ Any anchor_obj(ExprSpecWFError err):
   not_a_scalar_var()                  = nil,
   dupl_var_mult_asgnm()               = nil,
   diff_var_sets_in_ptrn_union(ps?)    = head(ps),
+  iter_clause_wrong_arity()           = nil,
+
   ro_vars_asgnm()                     = err.stmt,
   wrong_return(s?)                    = s,
   vars_redef()                        = err.stmt,
@@ -267,14 +275,17 @@ Any anchor_obj(ExprSpecWFError err):
 
 ////////////////////////////////////////////////////////////////////////////////
 
-ExprWFError attach_anchor_obj_if_needed(ExprWFError error, SynExpr anchor)
+ExprWFError attach_anchor_obj_if_needed(ExprWFError error, <SynExpr, SynStmt> anchor)
 {
   obj = anchor_obj(error);
   att = _fetch_(obj);
   return error if att != [];
   new_att = _fetch_(anchor);
   return error if new_att == [];
-  return annotated_syn_expr_error(error, anchor);
+  return annotated_error(error, anchor);
+
+  ExprWFError annotated_error(ExprWFError error, SynExpr anchor) = annotated_syn_expr_error(error, anchor);
+  ExprWFError annotated_error(ExprWFError error, SynStmt anchor) = annotated_syn_stmt_error(error, anchor);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -342,6 +353,7 @@ String* create_error_msg(WFError err):
   auto_method_def_errors()            = create_auto_method_def_err_msg(err.meth_def, err.errors),
   db_method_def_errors()              = create_db_method_def_err_msg(err.db, err.method, err.errors),
   update_def_errs()                   = create_update_def_err_msg(err.db, err.update, err.errors),
+  handler_def_errs()                  = create_handler_def_err_msg(err.handler, err.errors),
   same_name_proc_defs(pds?)           = create_same_name_proc_defs_err_msg(pds);
 
 
@@ -408,6 +420,11 @@ String* create_db_method_def_err_msg(SynDBDef db, DBMethodDef method, FnDefWFErr
 
 String* create_update_def_err_msg(SynDBDef db, UpdateDef upd, UpdateDefWFError+ errs) =
   ("Error" & plural(errs) & " in update definition: " & user_name(db, upd), source_code_loc_str(upd)) &
+  ("    " & l | l <- join((create_error_msg(e) | e <- errs)));
+
+
+String* create_handler_def_err_msg(HandlerDef handler, UpdateDefWFError+ errs) =
+  ("Error" & plural(errs) & " in message handler definition") &
   ("    " & l | l <- join((create_error_msg(e) | e <- errs)));
 
 
@@ -500,14 +517,19 @@ String* basic_err_msg(ExprSpecWFError err):
                                     return ("Unknown method: " & user_repr(method_symbol(last(symbs))));
                                   ;
                                 },
-  wrong_cls_arg_arity()       = ("Closure has wrong arity: " & user_repr(err.expr) &
-                                ", expected arity: " & printed(err.exp_arity) &
-                                ", actual arity: " & append((printed(a) | a <- rand_sort(err.arities)), ", ")),
+  wrong_cls_arg_arity()       = ( "Closure has wrong arity: " & user_repr(err.expr) &
+                                  ", expected arity: " & printed(err.exp_arity) &
+                                  ", actual arity: " & append((printed(a) | a <- rand_sort(err.arities)), ", ")
+                                ),
   wrong_cls_call_arity()      = ("Wrong number of arguments: " & user_repr(fn_symbol(err.expr.name)) & ", actual arity: " & printed(err.exp_arity)),
   named_args_not_allowed()    = ("Closures cannot have named parameters: " & user_repr(fn_symbol(err.expr.name))),
   not_a_scalar_var()          = ("Invalid use of non-object variable: " & append((_str_(n) | n <- err.names), ".")),
   dupl_var_mult_asgnm(v?)     = ("Duplicated variable in multiple assignment: " & user_repr(v)),
   diff_var_sets_in_ptrn_union(ps?)  = ("Individual patterns in a union must define the same set of variables"),
+  iter_clause_wrong_arity()   = { arities_str = append((printed(a) | a <- rand_sort(err.valid_arities)), " ");
+                                  suffix = if size(err.valid_arities) == 1 then "y" else "ies";
+                                  return ("Invalid clause arity. Expected arit" & suffix & ": " & arities_str);
+                                },
 
   ro_vars_asgnm()             = ("Invalid assignment to read-only variable: " & user_repr(v) | v <- rand_sort(err.vars)),
   wrong_return(s?)            = (if s == return_stmt then "Return value required" else "Cannot return a value"),
@@ -536,6 +558,7 @@ String* basic_err_msg(ExprSpecWFError err):
   invalid_update_arity()      = ( "Wrong number of arguments: " & printed(err.arity) &
                                   ", actual arity: " & append((printed(a) | a <- rand_sort(err.arities)), ", ")
                                 ),
+
   not_a_memb_var()            = ("Not a scalar member variable: " & _str_(err.var)),
   unknown_memb_var()          = ("Unknown member variable: " & _str_(err.var)),
   invalid_rel_var_arity()     = ( "Wrong relational variable arity: " & _str_(err.var) &

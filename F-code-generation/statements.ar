@@ -62,11 +62,14 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_code_for_delete_stmt(RelVar rel_var, Maybe[Expr]+ args)
+  Instr+ gen_code_for_delete_stmt(RelVar rel_var, Maybe[Expr]+ relvar_args)
   {
-    filtered_idxs = idxs_into_filtered_seq((a != nil | a <- args));
-    unfiltered_idxs = (i | a @ i <- args, a != nil);
-    set_args = (value(a) | a <- args, a != nil);
+    args_perm = relvar_cols_perm(rel_var);
+    table_args = (relvar_args(i) | i <- args_perm);
+
+    filtered_idxs = idxs_into_filtered_seq((a != nil | a <- table_args));
+    unfiltered_idxs = (i | a @ i <- table_args, a != nil);
+    set_args = (value(a) | a <- table_args, a != nil);
     info = gen_eval_info(set_args);
 
     surr_vars, var_gen = next_int_vars(info.next_var_gen, length(set_args));
@@ -87,16 +90,19 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_code_for_insert_stmt(RelVar rel_var, Expr+ fields, Bool force)
+  Instr+ gen_code_for_insert_stmt(RelVar rel_var, Expr+ relvar_args, Bool force)
   {
-    info = gen_eval_info(fields);
+    args_perm = relvar_cols_perm(rel_var);
+    table_args = (relvar_args(i) | i <- args_perm);
 
-    arity = length(fields);
+    info = gen_eval_info(table_args);
+
+    arity = length(table_args);
     surr_vars, var_gen = next_int_vars(info.next_var_gen, arity);
     is_new_val_vars, var_gen = next_bool_vars(var_gen, arity);
 
-    unique_arg_sets = rel_var_info(rel_var).unique;
-    col_is_tracked = if force then union(unique_arg_sets) else [];
+    keys = table_keys(rel_var);
+    col_is_tracked = if force then union(keys) else [];
 
     value_prep_code = join(({
         store_id = table_col_store_id(rel_var, i);
@@ -115,7 +121,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
           value_cond = and([neg(is_new_val_vars(i)) | i <- as]);
           surr_args = (if as(i) then just(surr_vars(i)) else nil | i < arity);
           return do_if(value_cond, queue_deletes(rel_var, surr_args));
-        } | as <- rand_sort(unique_arg_sets)
+        } | as <- rand_sort(keys)
       );
     else
       deletion_code = ();

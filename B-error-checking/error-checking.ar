@@ -47,9 +47,10 @@ implicit syn_prg : SynPrg
     auto_meth_errs = join(rand_sort([auto_method_def_wf_errors(m) | m <- auto_methods]));
     db_meth_errs = join(rand_sort([db_method_def_wf_errors(db, m) | db : ms <- methods_by_db, m <- ms]));
     update_errs = join(rand_sort([update_def_wf_errors(db, u) | db : us <- updates_by_db, u <- us]));
+    handler_errs = join(rand_sort([handler_def_wf_errors(h) | h <- handler_defs]));
 
     return rand_sort(standalone_fndef_errs) & impl_block_fndef_errs & rand_sort(proc_def_errs) &
-           auto_meth_errs & db_meth_errs & update_errs;
+           auto_meth_errs & db_meth_errs & update_errs & handler_errs;
   }
 
 
@@ -72,6 +73,24 @@ implicit syn_prg : SynPrg
   }
 
 
+  WFError* handler_def_wf_errors(HandlerDef handler_def)
+  {
+    errs = type_wf_errors(handler_def.type, type_arity_map, true);
+
+    db_symb = db_symbol(handler_def.target);
+    if db_defs_by_id(db_symb, ?):
+      body = handler_def.body;
+      let syn_artifact = handler_def, impl_args = [:], actual_arg_arity = 0:
+        errs = errs & root_stmt_block_wf_errors(body, [var(:it)], false, false) if body != ();
+      ;
+    else
+      errs = (errs || unknown_auto(db_symb)) if not db_defs_by_id(db_symb, ?);
+    ;
+
+    return (handler_def_errs(handler_def, errs) if errs != ());
+  }
+
+
   WFError* update_def_wf_errors(Atom db_name, UpdateDef update_def)
   {
     errs = join((type_wf_errors(t, type_arity_map, true) | t, unused_var <- update_def.args));
@@ -84,7 +103,7 @@ implicit syn_prg : SynPrg
     if body != ():
       artifact = using_block_update_def(db_name, update_def);
       let syn_artifact = artifact, impl_args = [:], actual_arg_arity = 0:
-        errs = root_stmt_block_wf_errors(body, set(args), false, false);
+        errs = errs & root_stmt_block_wf_errors(body, set(args), false, false);
       ;
     ;
 

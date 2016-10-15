@@ -146,22 +146,31 @@ implicit program : Program, database : DataBase, options : CompilationOptions
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-implicit database : DataBase
+implicit program : Program, database : DataBase //## program IS NOT REALLY NEEDED, BUT THE TYPECHECKER...
 {
   ([ValueStoreId], [RelVar -> Table]) value_stores_and_tables
   {
-    sorted_cols = rand_sort([(v, i) | v : info <- database.rel_vars, i <- index_set(info.types)]);
+    sorted_cols = rand_sort([(v, i) | v : info <- database.rel_vars, i <- range(arity(info.signatures))]);
     col_to_id_map = merge(([c -> i] | c @ i <- sorted_cols));
 
     value_stores = set((value_store_id(i) | i < length(sorted_cols)));
 
-    tables = [
-      v -> table(
-        ((value_store_id(col_to_id_map((v, i))), in([i], info.unique)) | unused_var @ i <- info.types)
-      ) | v : info <- database.rel_vars
-    ];
+    let artifact = database:
+      tables = [
+        v -> table(
+          (value_store_id(col_to_id_map((v, i))) | i < arity(info.signatures)),
+          table_keys(v)
+        )
+        | v : info <- database.rel_vars
+      ];
+    ;
 
     return (value_stores, tables);
+
+
+    [Nat] range(Nat n) = set((i | i < n));
+
+    NzNat arity([+NeType+] signatures) = only([length(s) | s <- signatures]); //## BAD BAD BAD: THIS THING IS PRETTY UGLY AND UNSAFE...
   }
 }
 

@@ -1658,21 +1658,57 @@ implicit filename : String, lines : Nat**
   {
     inner_match = get_rule_match(mtc);
     return match (get_rule_name(mtc))
-      var       = build_state_var_decl_ast(inner_match),
-      relvar    = build_rel_var_decl_ast(inner_match),
-      nested_db = build_nested_db_decl_ast(inner_match);
+      var           = build_state_var_decl_ast(inner_match),
+      relvar        = build_relvar_decl_ast(inner_match),
+      relvar_attrs  = build_relvar_attrs_decl_ast(inner_match),
+      nested_db     = build_nested_db_decl_ast(inner_match);
   }
 
-  RelVarDecl build_rel_var_decl_ast(RuleMatch mtc)
+  RelVarsDecl build_relvar_attrs_decl_ast(RuleMatch mtc)
   {
     nodes = rule_seq_nodes(mtc);
-    assert length(nodes) == 3;
+    assert length(nodes) == 5;
+    name = get_lowercase_id(nodes(0));
+    col_types = (build_type_ast(n) | n <- rep_rule_nodes(block_node(nodes(1))));
+    attrs = (build_attr_relvar_ast(n) | n <- rep_rule_nodes(nodes(3)));
+    return relvars_decl(name, nonempty(col_types), (nonempty((i | i < length(col_types)))), attrs);
+
+
+    (name: Atom, type: SynType, cardinality: AttrCard) build_attr_relvar_ast(RuleMatch mtc)
+    {
+      nodes = rule_seq_nodes(mtc);
+      assert length(nodes) == 4;
+      name = get_lowercase_id(nodes(0));
+      type = build_type_ast(nodes(3));
+      card_node = nodes(1);
+      if card_node != null_match:
+        card = match (get_token(card_node))
+          question_mark = attr_card(false, false),
+          asterisk      = attr_card(false, true),
+          plus          = attr_card(true, true);
+      else
+        card = attr_card(true, false);
+      ;
+      return (name: name, type: type, cardinality: card);
+    }
+  }
+
+  RelVarsDecl build_relvar_decl_ast(RuleMatch mtc)
+  {
+    nodes = rule_seq_nodes(mtc);
+    assert length(nodes) == 4;
     name = get_lowercase_id(nodes[0]);
-    cols = (
-      (build_type_ast(rule_seq_node(n, 0)), rule_seq_node(n, 1) != null_match)
-      | n <- rep_rule_nodes(block_node(nodes[1]))
-    );
-    return rel_var_decl(name, nonempty(cols));
+    col_types = (build_type_ast(n) | n <- rep_rule_nodes(block_node(nodes[1])));
+    keys = ();
+    if nodes(2) != null_match:
+      for an <- rep_rule_nodes(block_node(nodes(2))):
+        key_decl_nodes = rule_seq_nodes(an);
+        assert length(key_decl_nodes) == 3;
+        key_cols = (get_integer(n) | n <- rep_rule_nodes(key_decl_nodes(2)));
+        keys = (keys || nonempty(key_cols));
+      ;
+    ;
+    return relvars_decl(name, nonempty(col_types), keys, ());
   }
 
   SynDBDef build_db_def_ast(RuleMatch mtc)

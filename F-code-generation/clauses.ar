@@ -121,16 +121,35 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_rel_tuple_clause_code(StdVar+ vars, AnyRelVar rel_var, Maybe[Expr]+ args, [StdVar] loc_bound_vars, MatchAction action)
+  Instr+ gen_rel_tuple_clause_code(StdVar+ vars, AnyRelVar rel_var, Maybe[Expr]+ relvar_args, [StdVar] loc_bound_vars, MatchAction action)
   {
-    filtered_idxs = idxs_into_filtered_seq((a != nil | a <- args));
-    unfiltered_idxs = (i | a @ i <- args, a != nil);
-    blank_idxs = (i | a @ i <- args, a == nil);
-    set_args = (value(a) | a <- args, a != nil);
+    args_perm = relvar_cols_perm(rel_var);
+    table_args = (relvar_args(i) | i <- args_perm);
+
+    //## INVALID ARGS SHOULD BE NULL...
+    arg_to_var_before_perm = (i-1 | i <- partial_sums((bit(a == nil) | a <- relvar_args)));
+    var_to_arg_after_perm = (i | a @ i <- table_args, a == nil);
+    vars_perm = (arg_to_var_before_perm(args_perm(var_to_arg_after_perm(i))) | unused_var @ i <- vars); //## UGLY UGLY UGLY
+    perm_vars = (vars(vars_perm(i)) | unused_var @ i <- vars); //## UGLY UGLY UGLY
+
+    assert {
+      if all((a == nil | a <- relvar_args)):
+        return false if length(vars) != length(relvar_args);
+        return perm_vars == (vars(i) | i <- args_perm);
+      else
+        //## ADD SOME CHECK HERE TOO...
+        return true;
+      ;
+    };
+
+    filtered_idxs = idxs_into_filtered_seq((a != nil | a <- table_args));
+    unfiltered_idxs = (i | a @ i <- table_args, a != nil);
+    blank_idxs = (i | a @ i <- table_args, a == nil);
+    set_args = (value(a) | a <- table_args, a != nil);
     info = gen_eval_info(set_args);
 
     surr_vars, var_gen = next_int_vars(info.next_var_gen, length(set_args));
-    it_var, var_gen = next_table_it_var(var_gen, length(args));
+    it_var, var_gen = next_table_it_var(var_gen, length(table_args));
 
     surr_args = (apply(mi, surr_vars($)) | mi <- filtered_idxs);
 
@@ -138,14 +157,14 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
 
     if surr_args :: Just[IntVar]+:
       plain_surr_args = (value(a) | a <- surr_args);
-      vars_setup_code = (lookup_surrogate(v, table_col_store_id(rel_var, i), plain_surr_args(i)) | v @ i <- vars);
+      vars_setup_code = (lookup_surrogate(v, table_col_store_id(rel_var, i), plain_surr_args(i)) | v @ i <- perm_vars);
       code = (do_if(contains(rel_var, plain_surr_args), vars_setup_code & action_code));
     else
       lookup_exprs = (
         lookup_surrogate(table_col_store_id(rel_var, i), get_tuple_field(it_var, i))
         | i <- blank_idxs
       );
-      vars_setup_code = (set_var(v, lookup_exprs(i)) | v @ i <- vars);
+      vars_setup_code = (set_var(v, lookup_exprs(i)) | v @ i <- perm_vars);
       loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & action_code & (move_forward(it_var));
       code = (
         get_table_iter(it_var, rel_var, nonempty(surr_args)),
