@@ -30,6 +30,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
     var = memb_var(id);
     nv_var, var_gen = next_obj_var(blank_var_gen);
     eval_code = gen_safe_eval_code(node.expr, nv_var, next_var_gen = var_gen);
+    eval_code = (try_block(nv_var, eval_code)) if not is_total(node.expr);
     cond = neg(is_eq(var, nv_var));
     body = (set_var(var, nv_var), set_bvar(memb_has_changed(id), true) if in(id, memb_copy_vars_ids)) &
            (mark_for_update(n) | n <- rand_sort(node.downstream_nodes));
@@ -47,6 +48,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
       cases = nonempty((gen_safe_eval_code(e, nv_var) | e <- node.exprs) & ((clear_loc_var(nv_var))));
       eval_instr = switch_on_nat(update_source_var(id), cases);
     ;
+    eval_instr = try_block(nv_var, (eval_instr)) if at_least_one((not is_total(e) | e <- node.exprs));
     cond = neg(is_eq(var, nv_var));
     body = (set_var(var, nv_var), set_bvar(memb_has_changed(id), true) if in(id, memb_copy_vars_ids)) &
            (mark_for_update(n) | n <- rand_sort(node.downstream_nodes));
@@ -64,6 +66,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
       cases = nonempty((gen_safe_eval_code(e, nv_var) | e <- node.exprs) & ((clear_loc_var(nv_var))));
       eval_instr = switch_on_nat(update_source_var(id), cases);
     ;
+    eval_instr = try_block(nv_var, (eval_instr)) if at_least_one((not is_total(e) | e <- node.exprs));
     return nonempty((eval_instr, set_var(var, nv_var)) & (mark_for_update(n) | n <- rand_sort(node.downstream_nodes)));
   }
 
@@ -361,13 +364,16 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
       );
     ;
 
+    cond_eval_code = gen_safe_eval_code(node.cond, l0, next_var_gen = var_gen);
+    cond_eval_code = (try_block(l0, cond_eval_code)) if not is_total(node.cond);
+
     // Final node code
     return (
       // First we recalculate the watched signal, if needed, and then execute
       // the code for the four possible cases listed above
       do_if_not(
         watched_signal_up_to_date_var,
-        gen_safe_eval_code(node.cond, l0, next_var_gen = var_gen) &
+        cond_eval_code &
         ( branch(
             is_null(l0),
             (do_if_not(is_null(watched_signal_value_var), watched_signal_becomes_undefined_code)),
@@ -504,6 +510,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
     auto_var = memb_auto_var(node_id.auto);
 
     eval_code = gen_safe_eval_code(node.value, nv_var, next_var_gen = var_gen);
+    eval_code = (try_block(nv_var, eval_code)) if not is_total(node.value);
 
     set_var_code = (
       //## SHOULD I CHECK THAT THE INPUT IS NOT NULL BEFORE SETTING IT, OR IS THIS ALREADY DONE
@@ -561,8 +568,16 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
     db_var = memb_db_var(inner_id);
     db_type = automaton.nested_dbs[db_var];
 
-    msg_eval_info = gen_safe_eval_info(node.message, next_var_gen = blank_var_gen);
-    atomic_msg_expr = msg_eval_info.expr;
+    if is_total(node.message):
+      msg_eval_info = gen_safe_eval_info(node.message, next_var_gen = blank_var_gen);
+      eval_code = msg_eval_info.eval_code;
+      atomic_msg_expr = msg_eval_info.expr;
+    else
+      nv_var, var_gen = next_obj_var(blank_var_gen);
+      eval_code = (try_block(nv_var, gen_safe_eval_code(node.message, nv_var, next_var_gen = var_gen)));
+      atomic_msg_expr = nv_var;
+    ;
+
     msg_send_instr = send_msg(db_var, db_type, atomic_msg_expr, true);
 
     //## CURRENTLY WE PROPAGATE THE UPDATE WITHOUT CHECKING WHAT INPUTS (IF ANY) HAVE CHANGED. FIX
@@ -571,7 +586,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
     msg_send_code = (msg_send_instr) & prop_code;
     msg_send_code = (do_if_not(is_null(atomic_msg_expr), msg_send_code)) if atomic_msg_expr :: NullableVar;
 
-    return msg_eval_info.eval_code & msg_send_code;
+    return eval_code & msg_send_code;
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -583,6 +598,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
 
     // Evaluating the local condition. If there's no parent, that's all we need to do
     loc_cond_eval_code = gen_safe_eval_code(cond, l0, next_var_gen = var_gen);
+    loc_cond_eval_code = (try_block(l0, loc_cond_eval_code)) if not is_total(cond);
     return loc_cond_eval_code if parent == nil;
 
     // Local condition variables
@@ -639,6 +655,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
 
     // Evaluating the local condition.
     cond_eval_code = gen_safe_eval_code(cond, l0, next_var_gen = var_gen);
+    cond_eval_code = (try_block(l0, cond_eval_code)) if not is_total(cond);
 
     // Anding the local condition with the 'parent == trigger' one, if a parent exists
     if parent != nil:

@@ -10,6 +10,7 @@ type CodeTree       = std_node(Nat),
                       symb_switch_node(idx: Nat, cases: CodeTree++, else: CodeTree*),
                       loop_node(CodeTree+),
                       block_node(CodeTree+),
+                      try_block_node(var: LocVar, body: CodeTree+),
                       cls_scope_node(idx: Nat, body: CodeTree+),
                       root_node(CodeTree+);
 
@@ -35,6 +36,7 @@ CodeTree nat_switch_node(Nat i, CodeTree*+ cs)                = nat_switch_node(
 CodeTree symb_switch_node(Nat i, CodeTree++ cs, CodeTree* e)  = symb_switch_node(idx: i, cases: cs, else: e);
 CodeTree loop_node(CodeTree+ b)                               = :loop_node(b);
 CodeTree block_node(CodeTree+ b)                              = :block_node(b);
+CodeTree try_block_node(LocVar v, CodeTree+ b)                = try_block_node(var: v, body: b);
 CodeTree cls_scope_node(Nat i, CodeTree+ b)                   = cls_scope_node(idx: i, body: b);
 CodeTree root_node(CodeTree+ b)                               = :root_node(b);
 
@@ -62,6 +64,7 @@ RCNodeInfo set_cls_par_node(NamedArg v, BoundCls c, Instr* is)  = set_cls_par_no
   symb_switch()           = build_symb_switch_code_graph(instr.value, instr.cases, instr.else, offset),
   repeat(is?)             = build_loop_code_graph(is, offset),
   execute_block(is?)      = build_block_code_graph(is, offset),
+  try_block()             = build_try_block_code_graph(instr.var, instr.body, offset),
   cls_scope()             = build_cls_scope_code_graph(instr.var, instr.bound_cls, instr.body, offset);
 
 
@@ -119,6 +122,13 @@ RCNodeInfo set_cls_par_node(NamedArg v, BoundCls c, Instr* is)  = set_cls_par_no
 }
 
 
+(NodeInfo+, CodeTree) build_try_block_code_graph(LocVar var, Instr+ body, Nat offset)
+{
+  leaf_nodes, code_trees = build_code_graph(body, offset);
+  return (leaf_nodes, try_block_node(var, code_trees));
+}
+
+
 (NodeInfo+, CodeTree) build_cls_scope_code_graph(NamedArg var, BoundCls cls, Instr+ body, Nat offset)
 {
   leaf_nodes, code_trees = build_code_graph(body, nat(offset+1));
@@ -155,6 +165,7 @@ Instr* reconstruct(CodeTree code_tree, RCNodeInfo+ rc_nodes):
 
   loop_node(ts?)      = (repeat(nonempty(reconstruct(ts, rc_nodes)))),
   block_node(ts?)     = (execute_block(nonempty(reconstruct(ts, rc_nodes)))),
+  try_block_node()    = (try_block(code_tree.var, nonempty(reconstruct(code_tree.body, rc_nodes)))),
   cls_scope_node()    = (reconstruct_cls_scope(code_tree.idx, code_tree.body, rc_nodes)),
   root_node(ts?)      = reconstruct(ts, rc_nodes);
 

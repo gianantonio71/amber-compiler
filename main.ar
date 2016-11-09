@@ -27,7 +27,11 @@ String* create_error_msg(ParserError err, String filename):
                               };
 
 
-Maybe[CCodeOutput] Compile([String -> Nat*] src_files, Bool run_typechecking, Bool add_rc, Bool ignore_assertions, Bool verbose_typechecking, Bool print_intermediate, Bool print_times)
+Maybe[CCodeOutput] Compile(
+  [String -> Nat*] src_files, Bool run_typechecking,
+  Bool add_rc, Bool ignore_assertions, Bool verbose_typechecking,
+  Bool print_intermediate, Bool print_times, Bool wait_for_key
+)
 {
   t0 = _ticks_(nil);
 
@@ -47,6 +51,9 @@ Maybe[CCodeOutput] Compile([String -> Nat*] src_files, Bool run_typechecking, Bo
   t1 = _ticks_(nil);
 
   Print("Source files parsed\n");
+  if wait_for_key:
+    unused_var = GetChar();
+  ;
 
   if print_intermediate:
     FileWrite("dump_syn_prg.txt", false, raw_str(printed(syn_prg, 100)));
@@ -58,6 +65,9 @@ Maybe[CCodeOutput] Compile([String -> Nat*] src_files, Bool run_typechecking, Bo
 
   if errs == ():
     Print("Program is well-formed\n");
+    if wait_for_key:
+      unused_var = GetChar();
+    ;
   else
     msgs = (create_error_msg(e) | e <- errs);
     for m <- msgs:
@@ -72,6 +82,9 @@ Maybe[CCodeOutput] Compile([String -> Nat*] src_files, Bool run_typechecking, Bo
   prg = desugared_prg(syn_prg=syn_prg);
   t3 = _ticks_(nil);
   Print("Syntax removed\n");
+  if wait_for_key:
+    unused_var = GetChar();
+  ;
 
   if print_intermediate:
     FileWrite("dump_prg.txt", false, raw_str(printed(prg, 100)));
@@ -81,6 +94,9 @@ Maybe[CCodeOutput] Compile([String -> Nat*] src_files, Bool run_typechecking, Bo
     errs = typecheck(prg, verbose_typechecking);
     if errs == [:]:
       Print("The programs typechecks\n");
+      if wait_for_key:
+        unused_var = GetChar();
+      ;
     else
       Print("Error: the program does not typecheck\n\n");
       // msgs = rand_sort([create_error_msgs(fd, es) : es @ fd <- errs]);
@@ -99,12 +115,16 @@ Maybe[CCodeOutput] Compile([String -> Nat*] src_files, Bool run_typechecking, Bo
       return nil;
     ;
   ;
+
   t4 = _ticks_(nil);
 
   options = compilation_options(ignore_assertions: ignore_assertions);
   code = compiled_program(program=prg, options=options);
   t5 = _ticks_(nil);
   Print("Code generated\n");
+  if wait_for_key:
+    unused_var = GetChar();
+  ;
 
   if print_intermediate:
     FileWrite("dump_code.txt", false, raw_str(printed(code, 100)));
@@ -119,6 +139,9 @@ Maybe[CCodeOutput] Compile([String -> Nat*] src_files, Bool run_typechecking, Bo
   );
   t6 = _ticks_(nil);
   Print("Dead code removed\n");
+  if wait_for_key:
+    unused_var = GetChar();
+  ;
 
   if print_intermediate:
     FileWrite("dump_opt_code.txt", false, raw_str(printed(opt_code, 100)));
@@ -133,6 +156,9 @@ Maybe[CCodeOutput] Compile([String -> Nat*] src_files, Bool run_typechecking, Bo
       int_seqs:     opt_code.int_seqs
     );
     Print("Reference counting added\n");
+    if wait_for_key:
+      unused_var = GetChar();
+    ;
   else
     rc_code = opt_code;
   ;
@@ -146,6 +172,9 @@ Maybe[CCodeOutput] Compile([String -> Nat*] src_files, Bool run_typechecking, Bo
   c_code  = compile_to_c(rc_code);
   t8 = _ticks_(nil);
   Print("C code generated\n");
+  if wait_for_key:
+    unused_var = GetChar();
+  ;
 
   if print_times:
     Print("\n");
@@ -216,7 +245,8 @@ Int Main(String* args)
   verbose_typechecking = false;
   print_intermediate = false;
   print_times = false;
-  wait_for_key = false;
+  wait_for_key_at_the_end = false;
+  wait_for_key_at_every_step = false;
 
   for o <- options:
     if o == "-stc":
@@ -232,7 +262,10 @@ Int Main(String* args)
     elif o == "-t":
       print_times = true;
     elif o == "-w":
-      wait_for_key = true;
+      wait_for_key_at_the_end = true;
+    elif o == "-W":
+      wait_for_key_at_the_end = true;
+      wait_for_key_at_every_step = true;
     else
       Print("Unknown option: " & o & "\n");
       return 1;
@@ -260,7 +293,8 @@ Int Main(String* args)
     src_files = src_files & [fn -> value(fc)];
   ;
 
-  output = Compile(src_files, run_typechecking, add_ref_counting, ignore_assertions, verbose_typechecking, print_intermediate, print_times);
+  output = Compile(src_files, run_typechecking, add_ref_counting, ignore_assertions,
+                   verbose_typechecking, print_intermediate, print_times, wait_for_key_at_every_step);
 
   if output != nil:
     output = value(output);
@@ -270,7 +304,7 @@ Int Main(String* args)
     FileWrite("generated.h", false, _obj_(header));
   ;
 
-  if wait_for_key:
+  if wait_for_key_at_the_end:
     unused_var = GetChar();
   ;
 

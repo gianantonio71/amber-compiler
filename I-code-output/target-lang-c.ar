@@ -347,10 +347,18 @@ implicit
         "  static OBJ " & cache_var_name & " = make_blank_obj();" if is_real_const,
         "  if (is_blank_obj(" & cache_var_name & "))",
         "  {",
+        "     bool in_try_state = is_in_try_state();",
+        "     if (in_try_state)",
+        "       enter_copy_state();",
         "    " & cache_var_name & " = " & fn_name & suffix & "(env);",
         "    add_obj_to_cache(" & cache_var_name & ");" if is_real_const,
+        "    if (in_try_state)",
+        "      restore_try_state();",
+        "    else",
+        "      add_ref(" & cache_var_name & ");",
         "  }",
-        "  add_ref(" & cache_var_name & ");",
+        "  else",
+        "    add_ref(" & cache_var_name & ");",
         "  return " & cache_var_name & ";",
         "}"
       );
@@ -475,6 +483,8 @@ implicit
                               return body_code & label;
                             },
 
+    try_block()           = compile_try_block_to_c(instr.var, instr.body, block_id),
+
     exit_block            = { fail if block_id == nil; //assert block_id != nil; //## BAD
                               return ("goto block_" & printed(block_id) & "_end;");
                             },
@@ -544,9 +554,33 @@ implicit
 
     get_table_iter()      = compile_get_table_iter_to_c(instr.it_var, instr.table, instr.args),
     queue_deletes()       = compile_queue_deletes_to_c(instr.rel_var, instr.args),
-    queue_insert_value()  = mk_call(instr.res_var, "insert_value", (instr.store, instr.value)),
+    queue_insert_value()  = (mk_gen_call(instr.res_var, "value_store_insert", (aux_struct_var_ref_name(instr.store)), (instr.value), ())),
     queue_insert_tuple()  = compile_queue_insert_tuple_to_c(instr.rel_var, instr.tuple);
 
+
+  String* compile_try_block_to_c(LocVar var, Instr+ body, <Nat, nil> block_id)
+  {
+    var_name = to_c_var_ref_name(var);
+    body_code = compile_to_c(body, block_id);
+
+    return (
+      "int depth = get_call_stack_depth();",
+      "enter_try_state();",
+      "try",
+      "{"
+      ) & indent_lines(body_code) & (
+      "  enter_copy_state();",
+      "  " & var_name & " = copy_obj(" & var_name & ");",
+      "  return_to_normal_state();",
+      "}",
+      "catch (...)",
+      "{",
+      "  pop_try_mode_call_info(depth);",
+      "  abort_try_state();",
+      "  " & var_name & " = make_null_obj();",
+      "}"
+    );
+  }
 
   String* compile_init_table_to_c(RelVar rel_var, Table table)
   {
@@ -674,12 +708,21 @@ implicit
 
   String compile_send_msg_to_c(AnyDBVar db_var, DBSymbol type, AtomicExpr msg, Bool is_root, Maybe[StdVar] maybe_res_var)
   {
-    name_str = update_entry_point_name(type);
-    db_var_str = "&" & to_c_var_ref_name(db_var);
-    right_args = (printed(is_root), "env");
-    return if maybe_res_var == nil
-      then mk_gen_call(name_str, (db_var_str), (msg), right_args)
-      else mk_gen_call(value(maybe_res_var), name_str, (db_var_str), (msg), right_args);
+    if is_root:
+      name_str = update_entry_point_name(type);
+      db_var_str = "&" & to_c_var_ref_name(db_var);
+      return if maybe_res_var == nil
+        then mk_gen_call(name_str, (db_var_str), (msg), ("env"))
+        else mk_gen_call(value(maybe_res_var), name_str, (db_var_str), (msg), ("env"));
+    else
+      assert db_var :: MembDBVar;
+      fail if not db_var :: MembDBVar;
+      name_str = update_name(type, main_handler);
+      db_var_str = "&" & to_c_var_ref_name(db_var);
+      aux_db_var_str = aux_struct_var_ref_name(db_var);
+      return mk_gen_call(name_str, (db_var_str, aux_db_var_str), (msg), ("env")) & " /" & "/ HEREHEREHERE";
+
+    ;
   }
 
 
@@ -940,7 +983,7 @@ implicit
     );
     vars_content = ("  dump_var(" & printed(_str_(bare_id(v))) & ", " & to_c_var_ref_name(v) & ");" | v <- vars);
     footer = (
-      "  hard_fail(0);",
+      "  soft_fail(0);",
       "}"
     );
     return header & vars_content & footer;
@@ -1114,7 +1157,8 @@ implicit typesymb2name : TypeSymbol -> String
 
   String to_c_expr(IntExpr expr, Bool parentesised):
     Int                 = printed(expr),
-    time_slot_length()  = to_c_time_slots_table_name(expr.automaton, expr.expr_id) & "[" & to_c_expr(expr.time_slot) & "]",
+    time_slot_length()  = to_c_time_slots_table_name(expr.automaton, expr.expr_id) &
+                            "[" & to_c_expr(expr.time_slot) & "]",
     IntVar              = to_c_var_ref_name(expr),
     get_int_val(e?)     = "get_int_val("  & to_c_expr(e) & ")",
     get_set_size(e?)    = "get_set_size(" & to_c_expr(e) & ")",
@@ -1130,6 +1174,8 @@ implicit typesymb2name : TypeSymbol -> String
     dec_exp(e?)         = "dec_exp(" & to_c_expr(e) & ")",
     rand_nat(e?)        = "rand_nat(" & to_c_expr(e) & ")",
     lookup_value()      = "lookup_value(" & to_c_expr(expr.store) & ", " & to_c_expr(expr.value) & ")",
+    lookup_value_ex()   = "lookup_value_ex(" & to_c_expr(expr.store) & ", " &
+                            aux_struct_var_ref_name(expr.store) & ", " & to_c_expr(expr.value) & ")",
     get_tuple_field()   = get_tuple_field_to_c_expr(expr.iter, expr.field),
     unique_nat          = "unique_nat()",
     ticks               = "get_tick_count()";
