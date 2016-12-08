@@ -51,17 +51,19 @@ MembIntVectVar nodes_to_update_vect_var(Nat l, NzNat s)  = nodes_to_update_vect_
 
 StreamVar svar(Nat n) = :svar(n);
 
-SetItVar set_it_var(Nat n) = :set_it_var(n);
-SeqItVar seq_it_var(Nat n) = :seq_it_var(n);
-MapItVar map_it_var(Nat n) = :map_it_var(n);
+SetItVar set_it_var(Nat n)          = :set_it_var(n);
+SeqItVar seq_it_var(Nat n)          = :seq_it_var(n);
+BinRelItVar bin_rel_it_var(Nat n)   = :bin_rel_it_var(n);
+TernRelItVar tern_rel_it_var(Nat n) = :tern_rel_it_var(n);
 
 TableItVar table_it_var(Nat id, NzNat a) = table_it_var(id: id, arity: a);
 
 BoolFnName memb_test(TypeSymbol ts) = :memb_test(ts);
 
-AtomicExpr empty_set = :empty_set;
-AtomicExpr empty_seq = :empty_seq;
-AtomicExpr empty_map = :empty_map;
+AtomicExpr empty_seq        = :empty_seq;
+AtomicExpr empty_set        = :empty_set;
+AtomicExpr empty_bin_rel    = :empty_bin_rel;
+AtomicExpr empty_tern_rel   = :empty_tern_rel;
 
 NatBoolOp is_symb(ObjExpr e)                              = :is_symb(e);
 NatBoolOp is_int(ObjExpr e)                               = :is_int(e);
@@ -69,8 +71,9 @@ NatBoolOp is_float(ObjExpr e)                             = :is_float(e);
 NatBoolOp is_ne_set(ObjExpr e)                            = :is_ne_set(e);
 NatBoolOp is_ne_seq(ObjExpr e)                            = :is_ne_seq(e);
 NatBoolOp is_ne_map(ObjExpr e)                            = :is_ne_map(e);
+NatBoolOp is_ne_bin_rel(ObjExpr e)                        = :is_ne_bin_rel(e);
+NatBoolOp is_ne_tern_rel(ObjExpr e)                       = :is_ne_tern_rel(e);
 NatBoolOp is_tagged_obj(ObjExpr e)                        = :is_tagged_obj(e);
-NatBoolOp has_elem(ObjExpr s, ObjExpr e)                  = has_elem(set: s, elem: e);
 NatBoolOp is_eq(BoolExpr e1, BoolExpr e2)                 = is_eq_bool(expr1: e1, expr2: e2);
 NatBoolOp is_eq(IntExpr e1, IntExpr e2)                   = is_eq_int(expr1: e1, expr2: e2);
 // NatBoolOp is_eq(ObjExpr e1, ObjExpr e2)                   = is_eq(expr1: e1, expr2: e2);
@@ -82,7 +85,8 @@ NatBoolOp inline_is_eq(ObjExpr e, InlineObj v)            = inline_is_eq(expr: e
 NatBoolOp is_out_of_range(ItVar v)                        = :is_out_of_range(v);
 NatBoolOp is_blank(<MembVar, QualAutoMembVar, LocVar> v)  = :is_blank(v);
 NatBoolOp is_null(AnyNullableVar v)                       = :is_null(v);
-NatBoolOp contains(AnyRelVar rv, IntVar+ vs)              = contains(table: rv, tuple: vs);
+NatBoolOp contains(ObjExpr r, ObjExpr+ t)                 = contains(coll: r, entry: t);
+NatBoolOp table_contains(AnyRelVar rv, IntVar+ vs)        = table_contains(table: rv, tuple: vs);
 
 BoolExpr is_eq(ObjExpr e1, ObjExpr e2):
   InlineObj,  InlineObj   = e1 == e2,
@@ -91,9 +95,8 @@ BoolExpr is_eq(ObjExpr e1, ObjExpr e2):
   _,          _           = is_eq(expr1: e1, expr2: e2);
 
 NatIntOp get_int_val(ObjExpr e)                         = :get_int_val(e);
-NatIntOp get_set_size(ObjExpr e)                        = :get_set_size(e);
 NatIntOp get_seq_len(ObjExpr e)                         = :get_seq_len(e);
-NatIntOp get_map_size(ObjExpr e)                        = :get_map_size(e);
+NatIntOp get_size(ObjExpr e)                            = :get_size(e);
 NatIntOp minus(IntExpr e)                               = :minus(e);
 NatIntOp add(IntExpr e1, IntExpr e2)                    = add(val1: e1, val2: e2);
 NatIntOp sub(IntExpr e1, IntExpr e2)                    = sub(val1: e1, val2: e2);
@@ -118,8 +121,8 @@ NatObjOp int_obj(IntExpr e)                             = :int_obj(e);
 NatObjOp obj_neg(ObjExpr e)                             = :obj_neg(e);
 NatObjOp to_symb(ObjExpr e)                             = :to_symb(e);
 NatObjOp get_curr_obj(<SetItVar, SeqItVar> it)          = :get_curr_obj(it);
-NatObjOp get_curr_key(MapItVar it)                      = :get_curr_key(it);
-NatObjOp get_curr_value(MapItVar it)                    = :get_curr_value(it);
+NatObjOp get_curr_arg(BinRelItVar v, <0..1> a)          = get_curr_arg(var: v, arg: a);
+NatObjOp get_curr_arg(TernRelItVar v, <0..2> a)         = get_curr_arg(var: v, arg: a);
 NatObjOp rand_elem(ObjExpr s)                           = :rand_elem(s);
 
 BoolExpr neg(BoolExpr e):
@@ -142,16 +145,22 @@ RefObjExpr lookup_surrogate(AnyValueStoreId s, IntExpr e) = lookup_surrogate(sto
 Instr init_stream(StreamVar v)          = :init_stream(v);
 Instr append(StreamVar v, AtomicExpr e) = append(stream: v, obj: e);
 
-Instr mk_set_from_stream(WriteObjVar v, StreamVar s) = set_var(v, mk_set_from_stream(stream: s));
-Instr mk_set(WriteObjVar v, VecVar es, IntExpr s)    = set_var(v, mk_set(elems: es, size: s));
+Instr mk_set(WriteObjVar v, StreamVar s)            = set_var(v, mk_set_from_stream(stream: s));
+Instr mk_set(WriteObjVar v, VecVar es, IntExpr s)   = set_var(v, mk_set(elems: es, size: s));
 
-Instr mk_seq_from_stream(WriteObjVar v, StreamVar s) = set_var(v, mk_seq_from_stream(stream: s));
-Instr mk_seq(WriteObjVar v, VecVar es, IntExpr s)    = set_var(v, mk_seq(elems: es, size: s));
+Instr mk_seq(WriteObjVar v, StreamVar s)            = set_var(v, mk_seq_from_stream(stream: s));
+Instr mk_seq(WriteObjVar v, VecVar es, IntExpr s)   = set_var(v, mk_seq(elems: es, size: s));
 
-Instr build_const_int_seq(WriteObjVar v, Nat id)     = set_var(v, build_const_int_seq(seq_id: id));
+Instr build_const_int_seq(WriteObjVar v, Nat id)    = set_var(v, build_const_int_seq(seq_id: id));
 
-Instr mk_map_from_streams(WriteObjVar v, StreamVar ks, StreamVar vs) = set_var(v, mk_map_from_streams(key_stream: ks, value_stream: vs));
-Instr mk_map(WriteObjVar v, VecVar ks, VecVar vs, IntExpr s)         = set_var(v, mk_map(keys: ks, values: vs, size: s));
+Instr mk_map(WriteObjVar v, StreamVar ks, StreamVar vs)       = set_var(v, mk_map_from_streams(key_stream: ks, value_stream: vs));
+Instr mk_map(WriteObjVar v, VecVar ks, VecVar vs, IntExpr s)  = set_var(v, mk_map(keys: ks, values: vs, size: s));
+
+Instr mk_rel(WriteObjVar v, StreamVar s1, StreamVar s2)       = set_var(v, mk_bin_rel_from_streams(streams: (s1, s2)));
+Instr mk_rel(WriteObjVar v, VecVar c1, VecVar c2, IntExpr s)  = set_var(v, mk_bin_rel(cols: (c1, c2), size: s));
+
+Instr mk_rel(WriteObjVar v, StreamVar s1, StreamVar s2, StreamVar s3)   = set_var(v, mk_tern_rel_from_streams(streams: (s1, s2, s3)));
+Instr mk_rel(WriteObjVar v, VecVar c1, VecVar c2, VecVar c3, IntExpr s) = set_var(v, mk_tern_rel(cols: (c1, c2, c3), size: s));
 
 Instr mk_tagged_obj(WriteObjVar v, AtomicExpr t, AtomicExpr o) = set_var(v, mk_tagged_obj(tag: t, obj: o));
 
@@ -197,9 +206,14 @@ Instr read_pending_var(WriteObjVar tv, <PendingStateVar, PendingInputVar> sv) = 
 Instr add_attachment(WriteObjVar v, AtomicExpr t, AtomicExpr d) = set_var(v, add_attachment(target: t, data: d));
 Instr fetch_attachments(WriteObjVar v, AtomicExpr e)            = set_var(v, :fetch_attachments(e));
 
-Instr get_iter(SetItVar v, AtomicExpr s) = get_set_iter(var: v, src: s);
 Instr get_iter(SeqItVar v, AtomicExpr s) = get_seq_iter(var: v, src: s);
-Instr get_iter(MapItVar v, AtomicExpr m) = get_map_iter(var: v, src: m);
+Instr get_iter(SetItVar v, AtomicExpr s) = get_set_iter(var: v, src: s);
+
+Instr get_iter(BinRelItVar v, AtomicExpr r, (Maybe[AtomicExpr], Maybe[AtomicExpr]) as) =
+  get_bin_rel_iter(var: v, src: r, args: as);
+
+Instr get_iter(TernRelItVar v, AtomicExpr r, (Maybe[AtomicExpr], Maybe[AtomicExpr], Maybe[AtomicExpr]) as) =
+  get_tern_rel_iter(var: v, src: r, args: as);
 
 Instr move_forward(ItVar v) = :move_forward(v);
 
@@ -370,9 +384,10 @@ BoolExpr or(BoolExpr e1, BoolExpr e2, BoolExpr e3)       = or((e1, e2, e3));
 BoolExpr and_then(BoolExpr e1, BoolExpr e2, BoolExpr e3) = and_then((e1, e2, e3));
 BoolExpr or_else(BoolExpr e1, BoolExpr e2, BoolExpr e3)  = or_else((e1, e2, e3));
 
-BoolExpr is_empty_set(ObjExpr e) = is_eq(e, empty_set);
-BoolExpr is_empty_seq(ObjExpr e) = is_eq(e, empty_seq);
-BoolExpr is_empty_map(ObjExpr e) = is_eq(e, empty_map);
+BoolExpr is_empty_seq(ObjExpr e)      = is_eq(e, empty_seq);
+
+BoolExpr is_empty_set(ObjExpr e)      = is_eq(e, empty_set);
+BoolExpr is_empty_bin_rel(ObjExpr e)  = is_eq(e, empty_bin_rel);
 
 BoolExpr is_not_blank(<MembVar, QualAutoMembVar, LocVar> v) = neg(is_blank(v));
 BoolExpr is_not_null(AnyNullableVar v)                      = neg(is_null(v));
@@ -446,9 +461,9 @@ Instr check(BoolExpr e) = do_if_not(e, terminate);
 
 Instr check_is_bool(ObjExpr e) = check(is_bool(e));
 
-Instr get_curr_obj(WriteObjVar v, <SetItVar, SeqItVar> it) = set_var(v, get_curr_obj(it));
-Instr get_curr_key(WriteObjVar v, MapItVar it)             = set_var(v, get_curr_key(it));
-Instr get_curr_value(WriteObjVar v, MapItVar it)           = set_var(v, get_curr_value(it));
+Instr get_curr_obj(WriteObjVar v, <SetItVar, SeqItVar> it)    = set_var(v, get_curr_obj(it));
+Instr get_curr_arg(WriteObjVar v, BinRelItVar  it, <0..1> a)  = set_var(v, get_curr_arg(it, a));
+Instr get_curr_arg(WriteObjVar v, TernRelItVar it, <0..2> a)  = set_var(v, get_curr_arg(it, a));
 
 Instr maybe_op(Instr instr, Bool cond) = if cond then instr else no_op;
 

@@ -31,7 +31,8 @@
 // they are in scope
 //   set_it_var(Nat)
 //   seq_it_var(Nat)
-//   map_it_var(Nat)
+//   bin_rel_it_var(Nat)
+//   tern_rel_it_var(Nat)
 
 
 // Always local, and with deterministic scope, so again no need for reference counting
@@ -43,7 +44,7 @@
 //   evar(id: Nat, idx: <Nat, IntVar>)
 //   vvar(id: Nat, size: NzNat)
 
-type TrkItVar   = SeqItVar, SetItVar, MapItVar;
+type TrkItVar   = SeqItVar, SetItVar, BinRelItVar, TernRelItVar;
 type TrkObjVar  = StdVar, LocVar;
 type TrkVar     = TrkObjVar, TrkItVar;
 
@@ -65,8 +66,7 @@ Maybe[StdObjVar] maybe_var(AtomicExpr expr) = if expr :: StdObjVar then just(exp
 [TrkVar] tracked_vars_used_by_any_type_expr(AnyTypeExpr expr):
   is_out_of_range(iv?)  = [iv if iv :: TrkItVar],
   get_curr_obj(iv?)     = [iv],
-  get_curr_key(iv?)     = [iv],
-  get_curr_value(iv?)   = [iv],
+  get_curr_arg()        = [expr.var],
   TrkVar                = [expr],
   _                     = retrieve_from_nested_low_level_exprs(expr, tracked_vars_used_by_any_type_expr);
 
@@ -98,7 +98,8 @@ Maybe[StdObjVar] maybe_var(AtomicExpr expr) = if expr :: StdObjVar then just(exp
   ext_lookup()            = trk_vars(instr.var),
   get_set_iter()          = trk_vars(instr.var),
   get_seq_iter()          = trk_vars(instr.var),
-  get_map_iter()          = trk_vars(instr.var),
+  get_bin_rel_iter()      = trk_vars(instr.var),
+  get_tern_rel_iter()     = trk_vars(instr.var),
   move_forward()          = [],
   set_var()               = trk_vars(instr.var),
   set_bvar()              = [],
@@ -162,7 +163,8 @@ Maybe[StdObjVar] maybe_var(AtomicExpr expr) = if expr :: StdObjVar then just(exp
   ext_lookup()          = tracked_vars_used(instr.map),
   get_set_iter()        = tracked_vars_used(instr.src),
   get_seq_iter()        = tracked_vars_used(instr.src),
-  get_map_iter()        = tracked_vars_used(instr.src),
+  get_bin_rel_iter()    |
+  get_tern_rel_iter()   = tracked_vars_used(instr.src) & seq_union((tracked_vars_used(a) | a <- values(instr.args))),
   // move_forward(iv?)    = {iv},
   move_forward()        = [],
   set_var()             = tracked_vars_used(instr.value),

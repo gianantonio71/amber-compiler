@@ -419,22 +419,24 @@ implicit program : Program, automaton : Automaton
 
 
   [AutoNodeDependency] nested_deps(Expr expr):
-    auto_method_call_expr() |
-    db_method_call_expr()   = [std_block_node_id(bare_id(expr.var)) if expr.var?],
-    ex_qual()               = nested_deps(expr.source) & nested_deps(expr.cond),
-    set_comp()              = nested_deps(expr.source) & nested_deps(expr.expr),
-    map_comp()              = nested_deps(expr.source) & nested_deps(expr.key_expr) & nested_deps(expr.value_expr),
-    _                       = retrieve_from_nested_exprs(expr, nested_deps($)); //## BAD: WORKAROUND FOR TYPECHECKING BUG
+    auto_method_call()  |
+    db_method_call()    = [std_block_node_id(bare_id(expr.var)) if expr.var?],
+    ex_qual()           = nested_deps(expr.source) & nested_deps(expr.cond),
+    set_comp()          = nested_deps(expr.source) & nested_deps(expr.expr),
+    map_comp()          = nested_deps(expr.source) & nested_deps(expr.key_expr) & nested_deps(expr.value_expr),
+    bin_rel_comp()      |
+    tern_rel_comp()     = nested_deps(expr.source) & seq_union((nested_deps(e) | e <- expr.exprs)),
+    _                   = retrieve_from_nested_exprs(expr, nested_deps($)); //## BAD: WORKAROUND FOR TYPECHECKING BUG
 
 
   [AutoNodeDependency] nested_deps(Clause cls)
   {
     rel_var_deps = match (cls)
-      rel_tuple_clause()  = { match (cls.rel_var)
-                                rel_var()       = [],
-                                qual_rel_var()  = [cls.rel_var]
-                            },
-      _                   = [];
+      relvar_clause() = { match (cls.rel_var)
+                            rel_var()       = [],
+                            qual_rel_var()  = [cls.rel_var]
+                        },
+      _               = [];
 
     return rel_var_deps & retrieve_from_nested_exprs(cls, nested_deps($)); //## BAD: WORKAROUND FOR TYPECHECKING BUG
   }

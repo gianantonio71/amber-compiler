@@ -20,14 +20,15 @@ implicit
     seq_tail_expr()       = seq_tail_expr_type(expr.seq, expr.tail),
     set_expr(ses?)        = set_expr_type(ses),
     map_expr(es?)         = map_expr_type(es),
+    bin_rel_expr(es?)     = bin_rel_expr_type(es),
+    tern_rel_expr(es?)    = tern_rel_expr_type(es),
     tag_obj_expr()        = tag_obj_expr_type(expr.tag, expr.obj),
     Var                   = environment[expr],
     fn_call()             = fn_call_expr_type(expr.name, expr.args, expr.named_args),
     cls_call()            = closures[expr.name].out_type,
     builtin_call()        = builtin_call_expr_type(expr.name, expr.args),
     unary_pseudo_call()   = unary_pseudo_call_expr_type(expr.target, expr.arg),
-    map_search()          = type_bool,
-    key_search()          = type_bool,
+    rel_memb_test()       = type_bool,
     singl_only_elem()     = set_elem_supertype(expr_type(expr.set)),
     and_expr()            = type_bool,
     or_expr()             = type_bool,
@@ -43,6 +44,8 @@ implicit
     ex_qual()             = type_bool,
     set_comp()            = set_comp_expr_type(expr.expr, expr.source),
     map_comp()            = map_comp_expr_type(expr.key_expr, expr.value_expr, expr.source),
+    bin_rel_comp()        = bin_rel_comp_expr_type(expr.exprs, expr.source),
+    tern_rel_comp()       = tern_rel_comp_expr_type(expr.exprs, expr.source),
     seq_comp()            = seq_comp_expr_type(expr),
     range_comp()          = range_comp_expr_type(expr);
 
@@ -100,6 +103,53 @@ implicit
   }
 
 
+  Type bin_rel_expr_type([(args: (Expr, Expr), cond: Expr?)] raw_entries)
+  {
+    entries = [entry_info(e) | e <- raw_entries];
+    actual_arg0_type = union_superset([e.arg_types(0) | e <- entries]);
+    actual_arg1_type = union_superset([e.arg_types(1) | e <- entries]);
+    nonempty = (e <- entries | not e.optional);
+    return type_bin_rel(actual_arg0_type, actual_arg1_type, nonempty);
+
+
+    (arg_types: (Type, Type), optional: Bool) entry_info((args: (Expr, Expr), cond: Expr?) entry)
+    {
+      new_env = if entry.cond? then left(refine_environment(entry.cond)) else environment;
+      arg0, arg1 = entry.args;
+      return (
+        arg_types: (expr_type(arg0, environment=new_env), expr_type(arg1, environment=new_env)),
+        optional:  entry.cond?
+      );
+    }
+  }
+
+
+  Type tern_rel_expr_type([(args: (Expr, Expr, Expr), cond: Expr?)] raw_entries)
+  {
+    entries = [entry_info(e) | e <- raw_entries];
+    actual_arg0_type = union_superset([e.arg_types(0) | e <- entries]);
+    actual_arg1_type = union_superset([e.arg_types(1) | e <- entries]);
+    actual_arg2_type = union_superset([e.arg_types(2) | e <- entries]);
+    nonempty = (e <- entries | not e.optional);
+    return type_tern_rel(actual_arg0_type, actual_arg1_type, actual_arg2_type, nonempty);
+
+
+    (arg_types: (Type, Type, Type), optional: Bool) entry_info((args: (Expr, Expr, Expr), cond: Expr?) entry)
+    {
+      new_env = if entry.cond? then left(refine_environment(entry.cond)) else environment;
+      arg0, arg1, arg2 = entry.args;
+      return (
+        arg_types: (
+          expr_type(arg0, environment=new_env),
+          expr_type(arg1, environment=new_env),
+          expr_type(arg2, environment=new_env)
+        ),
+        optional:  entry.cond?
+      );
+    }
+  }
+
+
   Type tag_obj_expr_type(Expr tag_expr, Expr obj_expr)
   {
     tag_types = disassemble_tag_type(expr_type(tag_expr));
@@ -135,7 +185,7 @@ implicit
 
     else
       assert is_subset(target_type, type_map);
-      return restricted_map_value_supertype(target_type, arg_type);
+      return restricted_bin_rel_arg1_supertype(target_type, arg_type);
     ;
   }
 
@@ -186,6 +236,31 @@ implicit
     ;
     nonempty = always_yields_results(source);
     return type_map(key_type, value_type, nonempty);
+  }
+
+
+  Type bin_rel_comp_expr_type((Expr, Expr) exprs, Clause source)
+  {
+    new_env = generate_env(source);
+    let environment = new_env:
+      arg0_type = expr_type(exprs(0));
+      arg1_type = expr_type(exprs(1));
+    ;
+    nonempty = always_yields_results(source);
+    return type_bin_rel(arg0_type, arg1_type, nonempty);
+  }
+
+
+  Type tern_rel_comp_expr_type((Expr, Expr, Expr) exprs, Clause source)
+  {
+    new_env = generate_env(source);
+    let environment = new_env:
+      arg0_type = expr_type(exprs(0));
+      arg1_type = expr_type(exprs(1));
+      arg2_type = expr_type(exprs(2));
+    ;
+    nonempty = always_yields_results(source);
+    return type_tern_rel(arg0_type, arg1_type, arg2_type, nonempty);
   }
 
 
@@ -468,14 +543,15 @@ implicit
     (Type, Type) eq_refine(Type var_type, Type expr_type)
     {
       type_if_eq, type_if_not_eq = match (expr_type)
-        symb_type(object(a?))   = (expr_type,       subtract_obj_from_type(var_type, a)),
-        empty_set_type          = (empty_set_type,  subtract_obj_from_type(var_type, [])),
-        empty_seq_type          = (empty_seq_type,  subtract_obj_from_type(var_type, ())),
-        empty_map_type          = (empty_map_type,  subtract_obj_from_type(var_type, [:])),
-        int_range()             = (expr_type,       if expr_type.size == 1
-                                                      then subtract_obj_from_type(var_type, expr_type.min)
-                                                      else var_type),
-        _                       = (var_type,        var_type);
+        symb_type(object(a?))   = (expr_type,           subtract_obj_from_type(var_type, a)),
+        empty_set_type          = (empty_set_type,      subtract_obj_from_type(var_type, [])),
+        empty_seq_type          = (empty_seq_type,      subtract_obj_from_type(var_type, ())),
+        empty_bin_rel_type      = (empty_bin_rel_type,  subtract_obj_from_type(var_type, [:])),
+        empty_tern_rel_type     = (empty_tern_rel_type, subtract_obj_from_type(var_type, [::])),
+        int_range()             = (expr_type,           if expr_type.size == 1
+                                                          then subtract_obj_from_type(var_type, expr_type.min)
+                                                          else var_type),
+        _                       = (var_type,            var_type);
 
       type_if_eq = var_type if type_if_eq == empty_type;
       type_if_not_eq = var_type if type_if_not_eq == empty_type;
@@ -518,15 +594,10 @@ implicit
   //////////////////////////////////////////////////////////////////////////////
 
   [Var -> Type] generate_env(Clause cls):
-    set_elem_clause()   = environment & [cls.var -> set_elem_supertype(expr_type(cls.src))],
-    map_entry_clause()  = { src_expr_type = expr_type(cls.src);
-                            env_delta = [
-                              cls.key_var -> map_key_supertype(src_expr_type),
-                              cls.value_var -> map_value_supertype(src_expr_type)
-                            ];
-                            return environment & env_delta;
-                          },
-    seq_elem_clause()   = environment & [cls.var -> set_elem_supertype(expr_type(cls.src))],
+    set_clause()        = environment & [cls.var -> set_elem_supertype(expr_type(cls.src))],
+    rel_clause()        = gen_rel_clause_env(cls.vars, cls.src, cls.args),
+    relvar_clause()     = gen_relvar_clause_env(cls.vars, cls.rel_var, cls.args),
+    seq_clause()        = environment & [cls.var -> set_elem_supertype(expr_type(cls.src))],
     and_clause()        = { new_env = generate_env(cls.left);
                             return generate_env(cls.right, environment=new_env);
                           },
@@ -535,6 +606,28 @@ implicit
     match_clause()      = update_environment(cls.expr, cls.ptrn),
     asgnm_clause()      = environment & [cls.var -> expr_type(cls.expr)],
     filter_clause(e?)   = left(refine_environment(e));
+
+
+  [Var -> Type] gen_rel_clause_env(StdVar+ vars, Expr src, Maybe[Expr]+ args)
+  {
+    assert length(args) == 2 or length(args) == 3;
+    assert length(vars) == count(args, $ == nil);
+
+    src_expr_type = expr_type(src);
+    rel_arity = length(args);
+    args_types = if rel_arity == 2
+      then bin_rel_args_supertypes(src_expr_type)
+      else tern_rel_args_supertypes(src_expr_type);
+    idxs = packed_seq_idxs((a == nil | a <- args));
+    env_delta = merge(([vars(idxs(i)) -> args_types(i)] | a @ i <- args, a == nil));
+    return environment & env_delta;
+  }
+
+
+  [Var -> Type] gen_relvar_clause_env(StdVar+ vars, AnyRelVar rel_var, Maybe[Expr]+ args)
+  {
+    fail;
+  }
 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
@@ -696,12 +789,22 @@ implicit
   //////////////////////////////////////////////////////////////////////////////
 
   Bool always_yields_results(Clause cls): //## FIND BETTER NAME
-    set_elem_clause()   = is_subset(expr_type(cls.src), type_ne_set),
-    map_entry_clause()  = is_subset(expr_type(cls.src), type_ne_map),
-    seq_elem_clause()   = is_subset(expr_type(cls.src), type_ne_seq),
+    set_clause()        = is_subset(expr_type(cls.src), type_ne_set),
+    rel_clause()        = rel_clause_always_yields_results(cls.vars, cls.src, cls.args),
+    relvar_clause()     = false, //## CAN WE DO BETTER HERE?
+    seq_clause()        = is_subset(expr_type(cls.src), type_ne_seq),
     and_clause()        = always_yields_results(cls.left) and always_yields_results(cls.right),
     or_clause()         = always_yields_results(cls.left) or always_yields_results(cls.right),
     match_clause()      = false, //## WE CAN DO BETTER HERE
     asgnm_clause()      = true,
     filter_clause()     = false;
+
+
+  Bool rel_clause_always_yields_results(StdVar+ vars, Expr src, Maybe[Expr]+ args)
+  {
+    supertype = match (args)
+      (_, _)    = type_ne_bin_rel,
+      (_, _, _) = type_ne_tern_rel;
+    return is_subset(expr_type(src), supertype) and all((a == nil | a <- args));
+  }
 }

@@ -11,8 +11,23 @@ Type replace_type_vars_computed(Type type, (TypeVar -> Type) replace):
   type_ref(ts?)       = type_ref(replace_type_vars_computed(ts, replace)),
   ne_seq_type()       = ne_seq_type(replace_type_vars_computed(type.elem_type, replace)),
   ne_set_type()       = ne_set_type(replace_type_vars_computed(type.elem_type, replace)),
-  ne_map_type()       = ne_map_type(replace_type_vars_computed(type.key_type, replace), replace_type_vars_computed(type.value_type, replace)),
-  ne_record_type(fs?) = record_type([l -> (type: replace_type_vars_computed(f.type, replace), optional: f.optional) | l : f <- fs]), //## BAD: WOULD BE GOOD TO HAVE A "DECLARATIVE" UPDATE OPERATION
+  ne_map_type()       = ne_map_type(
+                          replace_type_vars_computed(type.key_type, replace),
+                          replace_type_vars_computed(type.value_type, replace)
+                        ),
+  ne_bin_rel_type()   = ne_bin_rel_type(
+                          replace_type_vars_computed(type.args_types(0), replace),
+                          replace_type_vars_computed(type.args_types(1), replace)
+                        ),
+  ne_tern_rel_type()  = ne_tern_rel_type(
+                          replace_type_vars_computed(type.args_types(0), replace),
+                          replace_type_vars_computed(type.args_types(1), replace),
+                          replace_type_vars_computed(type.args_types(2), replace)
+                        ),
+  ne_record_type(fs?) = record_type([ //## BAD: WOULD BE GOOD TO HAVE A "DECLARATIVE" UPDATE OPERATION
+                          l -> (type: replace_type_vars_computed(f.type, replace), optional: f.optional)
+                          | l : f <- fs
+                        ]),
   tuple_type(ts?)     = tuple_type((replace_type_vars_computed(t, replace) | t <- ts)),
   tag_obj_type()      = tag_obj_type(type.tag_type, replace_type_vars_computed(type.obj_type, replace)),
   union_type(ts?)     = union_type([replace_type_vars_computed(t, replace) | t <- ts]);
@@ -44,6 +59,8 @@ TypeSymbol replace_type_vars_computed(TypeSymbol type_symb, (TypeVar -> Type) re
   ne_seq_type()       = retrieve(type.elem_type),
   ne_set_type()       = retrieve(type.elem_type),
   ne_map_type()       = retrieve(type.key_type) & retrieve(type.value_type),
+  ne_bin_rel_type()   |
+  ne_tern_rel_type()  = seq_union((retrieve(t) | t <- type.args_types)),
   ne_record_type(fs?) = union([retrieve(f.type) | unused_var : f <- fs]),
   tuple_type(ts?)     = seq_union((retrieve(t) | t <- ts)),
   tag_obj_type()      = retrieve(type.tag_type) & retrieve(type.obj_type),
@@ -75,11 +92,13 @@ Type expand_type_ref(TypeSymbol type_symb, [TypeName -> Type] typedefs)
       float_type,
       empty_seq_type,
       empty_set_type,
-      empty_map_type,
-      ne_seq_type(type_ref(builtin_type_symbol(:any))),
-      ne_set_type(type_ref(builtin_type_symbol(:any))),
-      ne_map_type(type_ref(builtin_type_symbol(:any)), type_ref(builtin_type_symbol(:any))),
-      tag_obj_type(atom_type, type_ref(builtin_type_symbol(:any)))
+      empty_bin_rel_type,
+      empty_tern_rel_type,
+      type_ne_seq,
+      type_ne_set,
+      type_ne_bin_rel,
+      type_ne_tern_rel,
+      tag_obj_type(atom_type, type_any)
     ]);
 }
 
@@ -107,16 +126,17 @@ Bool is_param_type(FnType type) = at_least_one((is_param_type(t) | t <- type.par
   tuple_expr(es?)         = seq_union((retrieve(e) | e <- es)),
   seq_tail_expr()         = retrieve(expr.seq) & seq_union((retrieve(e) | e <- expr.tail)),
   map_expr(es?)           = union([retrieve(e.key) & retrieve(e.value) & if e.cond? then retrieve(e.cond) else [] | e <- es]),
+  bin_rel_expr(es?)       |
+  tern_rel_expr(es?)      = union([seq_union((retrieve(e2) | e2 <- e1.args & (e1.cond if e1.cond?))) | e1 <- es]),
   tag_obj_expr()          = retrieve(expr.tag) & retrieve(expr.obj),
   Var                     = [],
   fn_call()               = union([any_expr_retrieve_from_nested_exprs(p, retrieve) | p <- set(expr.args) & values(expr.named_args)]),
   cls_call()              = seq_union((retrieve(p) | p <- expr.args)),
   builtin_call()          = seq_union((retrieve(p) | p <- expr.args)),
   unary_pseudo_call()     = retrieve(expr.target) & retrieve(expr.arg),
-  map_search()            = retrieve(expr.map) & retrieve(expr.key) & retrieve(expr.value),
-  key_search()            = retrieve(expr.map) & retrieve(expr.key),
-  rel_memb_test_expr()    = seq_union((retrieve(value(a)) | a <- expr.args, a != nil)),
-  rel_lookup_expr()       = seq_union((retrieve(e) | e <- expr.set_args)),
+  rel_memb_test()         = retrieve(expr.rel) & seq_union((retrieve(value(a)) | a <- expr.args, a != nil)),
+  relvar_memb_test()      = seq_union((retrieve(value(a)) | a <- expr.args, a != nil)),
+  relvar_lookup()         = seq_union((retrieve(e) | e <- expr.set_args)),
   singl_only_elem()       = retrieve(expr.set),
   and_expr()              = retrieve(expr.left) & retrieve(expr.right),
   or_expr()               = retrieve(expr.left) & retrieve(expr.right),
@@ -127,8 +147,8 @@ Bool is_param_type(FnType type) = at_least_one((is_param_type(t) | t <- type.par
   accessor()              = retrieve(expr.expr),
   accessor_test()         = retrieve(expr.expr),
   output_is_def()         = [],
-  auto_method_call_expr() = seq_union((retrieve(a) | a <- expr.args)),
-  db_method_call_expr()   = seq_union((retrieve(a) | a <- expr.args)),
+  auto_method_call()      = seq_union((retrieve(a) | a <- expr.args)),
+  db_method_call()        = seq_union((retrieve(a) | a <- expr.args)),
   if_expr()               = retrieve(expr.cond) & retrieve(expr.then) & retrieve(expr.else),
   match_expr()            = seq_union((retrieve(e) | e <- expr.exprs)) &
                             seq_union((retrieve(c.expr) | c <- expr.cases)),
@@ -136,6 +156,8 @@ Bool is_param_type(FnType type) = at_least_one((is_param_type(t) | t <- type.par
   ex_qual()               = retrieve_from_nested_exprs(expr.source, retrieve) & retrieve(expr.cond),
   set_comp()              = retrieve_from_nested_exprs(expr.source, retrieve) & retrieve(expr.expr),
   map_comp()              = retrieve_from_nested_exprs(expr.source, retrieve) & retrieve(expr.key_expr) & retrieve(expr.value_expr),
+  bin_rel_comp()          |
+  tern_rel_comp()         = retrieve_from_nested_exprs(expr.source, retrieve) & seq_union((retrieve(e) | e <- expr.exprs)),
   seq_comp()              = retrieve(expr.expr) & retrieve(expr.src_expr)   & if expr.sel_expr? then retrieve(expr.sel_expr) else [],
   range_comp()            = retrieve(expr.expr) & retrieve(expr.bound_expr) & if expr.sel_expr? then retrieve(expr.sel_expr) else [],
   is_set()                = [];
@@ -182,15 +204,15 @@ Bool is_param_type(FnType type) = at_least_one((is_param_type(t) | t <- type.par
 
 
 [T] retrieve_from_nested_exprs(Clause cls, (Expr -> [T]) retrieve):
-  set_elem_clause()   = retrieve(cls.src),
-  map_entry_clause()  = retrieve(cls.src),
-  rel_tuple_clause()  = seq_union((retrieve(value(a)) | a <- cls.args, a != nil)),
-  seq_elem_clause()   = retrieve(cls.src),
-  and_clause()        = retrieve_from_nested_exprs(cls.left, retrieve) & retrieve_from_nested_exprs(cls.right, retrieve),
-  or_clause()         = retrieve_from_nested_exprs(cls.left, retrieve) & retrieve_from_nested_exprs(cls.right, retrieve),
-  match_clause()      = retrieve(cls.expr),
-  asgnm_clause()      = retrieve(cls.expr),
-  filter_clause(e?)   = retrieve(e);
+  set_clause()      = retrieve(cls.src),
+  rel_clause()      = retrieve(cls.src) & seq_union((retrieve(value(a)) | a <- cls.args, a != nil)),
+  relvar_clause()   = seq_union((retrieve(value(a)) | a <- cls.args, a != nil)),
+  seq_clause()      = retrieve(cls.src),
+  and_clause()      = retrieve_from_nested_exprs(cls.left, retrieve) & retrieve_from_nested_exprs(cls.right, retrieve),
+  or_clause()       = retrieve_from_nested_exprs(cls.left, retrieve) & retrieve_from_nested_exprs(cls.right, retrieve),
+  match_clause()    = retrieve(cls.expr),
+  asgnm_clause()    = retrieve(cls.expr),
+  filter_clause(e?) = retrieve(e);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -245,8 +267,9 @@ Expr replace_nested_exprs(Expr expr, (Expr -> Expr) replace):
   cls_call()          = cls_call(expr.name, (replace(p) | p <- expr.args)),
   builtin_call()      = builtin_call(expr.name, (replace(p) | p <- expr.args)),
   unary_pseudo_call() = unary_pseudo_call(replace(expr.target), replace(expr.arg)),
-  map_search()        = map_search(replace(expr.map), replace(expr.key), replace(expr.value)),
-  key_search()        = key_search(replace(expr.map), replace(expr.key)),
+  rel_memb_test()     = rel_memb_test(replace(expr.rel), (apply(a, replace) | a <- expr.args)),
+  relvar_memb_test()  = relvar_memb_test(expr.rel_var, (apply(a, replace) | a <- expr.args)),
+  relvar_lookup()     = relvar_lookup(expr.rel_var, (replace(a) | a <- expr.set_args), expr.unknown_arg_idx),
   singl_only_elem()   = singl_only_elem(replace(expr.set)),
   and_expr()          = and_expr(replace(expr.left), replace(expr.right)),
   or_expr()           = or_expr(replace(expr.left), replace(expr.right)),
@@ -257,14 +280,22 @@ Expr replace_nested_exprs(Expr expr, (Expr -> Expr) replace):
   accessor()          = accessor(replace(expr.expr), expr.field),
   accessor_test()     = accessor_test(replace(expr.expr), expr.field),
   output_is_def()     = expr,
-  auto_method_call_expr() = auto_method_call_expr(var: expr.var if expr.var?, name: expr.name, args: (replace(a) | a <- expr.args)),
-  db_method_call_expr()   = db_method_call_expr(var: expr.var if expr.var?, name: expr.name, args: (replace(a) | a <- expr.args)),
+  auto_method_call()  = auto_method_call(var: expr.var if expr.var?, name: expr.name, args: (replace(a) | a <- expr.args)),
+  db_method_call()    = db_method_call(var: expr.var if expr.var?, name: expr.name, args: (replace(a) | a <- expr.args)),
   if_expr()           = if_expr(replace(expr.cond), replace(expr.then), replace(expr.else)),
   match_expr()        = match_expr((replace(e) | e <- expr.exprs), ((ptrns: c.ptrns, expr: replace(c.expr)) | c <- expr.cases)),
   do_expr(ss?)        = do_expr(replace_exprs_in_stmts(ss, replace)),
   ex_qual()           = ex_qual(replace_exprs_in_clause(expr.source, replace), replace(expr.cond)),
   set_comp()          = set_comp(replace(expr.expr), replace_exprs_in_clause(expr.source, replace)),
   map_comp()          = map_comp(replace(expr.key_expr), replace(expr.value_expr), replace_exprs_in_clause(expr.source, replace)),
+  bin_rel_comp()      = bin_rel_comp(
+                          (replace(expr.exprs(0)), replace(expr.exprs(1))), //## BAD: REPLACE WITH SEQUENCE COMPREHENSION ONE THE TYPE CHECKER IS UPGRADED
+                          replace_exprs_in_clause(expr.source, replace)
+                        ),
+  tern_rel_comp()     = tern_rel_comp(
+                          (replace(expr.exprs(0)), replace(expr.exprs(1)), replace(expr.exprs(2))), //## BAD: REPLACE WITH SEQUENCE COMPREHENSION ONE THE TYPE CHECKER IS UPGRADED
+                          replace_exprs_in_clause(expr.source, replace)
+                        ),
   seq_comp()          = seq_comp(
                           expr:     replace(expr.expr),
                           vars:     expr.vars,
@@ -351,14 +382,15 @@ Statement+ replace_exprs_in_stmts(Statement+ stmts, (Expr -> Expr) replace) = (r
 
 
 Clause replace_exprs_in_clause(Clause cls, (Expr -> Expr) replace):
-  set_elem_clause()   = set_elem_clause(cls.var, replace(cls.src)),
-  map_entry_clause()  = map_entry_clause(cls.key_var, cls.value_var, replace(cls.src)),
-  seq_elem_clause()   = seq_elem_clause(cls.var, replace(cls.src)),
-  and_clause()        = and_clause(replace_exprs_in_clause(cls.left, replace), replace_exprs_in_clause(cls.right, replace)),
-  or_clause()         = or_clause(replace_exprs_in_clause(cls.left, replace), replace_exprs_in_clause(cls.right, replace)),
-  match_clause()      = match_clause(cls.ptrn, replace(cls.expr)),
-  asgnm_clause()      = asgnm_clause(cls.var, replace(cls.expr)),
-  filter_clause(e?)   = filter_clause(replace(e));
+  set_clause()      = set_clause(cls.var, replace(cls.src)),
+  rel_clause()      = rel_clause(cls.vars, replace(cls.src), (apply(a, replace) | a <- cls.args)),
+  relvar_clause()   = relvar_clause(cls.vars, cls.rel_var, (apply(a, replace) | a <- cls.args)),
+  seq_clause()      = seq_clause(cls.var, replace(cls.src)),
+  and_clause()      = and_clause(replace_exprs_in_clause(cls.left, replace), replace_exprs_in_clause(cls.right, replace)),
+  or_clause()       = or_clause(replace_exprs_in_clause(cls.left, replace), replace_exprs_in_clause(cls.right, replace)),
+  match_clause()    = match_clause(cls.ptrn, replace(cls.expr)),
+  asgnm_clause()    = asgnm_clause(cls.var, replace(cls.expr)),
+  filter_clause(e?) = filter_clause(replace(e));
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -371,6 +403,8 @@ Expr replace_external_vars(Expr expr, [Var -> Var] subst_map):
   ex_qual()       = replace_external_vars_in_ex_qual(expr, subst_map),
   set_comp()      = replace_external_vars_in_set_comp(expr, subst_map),
   map_comp()      = replace_external_vars_in_map_comp(expr, subst_map),
+  bin_rel_comp()  = replace_external_vars_in_bin_rel_comp(expr, subst_map),
+  tern_rel_comp() = replace_external_vars_in_tern_rel_comp(expr, subst_map),
   seq_comp()      = replace_external_vars_in_seq_comp(expr, subst_map),
   range_comp()    = replace_external_vars_in_range_comp(expr, subst_map),
   is_set(v?)      = {nv = lookup(subst_map, v, v); fail if not nv :: MembVar; return is_set(nv);}, //## BAD BAD BAD
@@ -440,6 +474,37 @@ Expr replace_external_vars_in_map_comp(MapCompExpr expr, [Var -> Var] subst_map)
 }
 
 
+Expr replace_external_vars_in_bin_rel_comp(BinRelCompExpr expr, [Var -> Var] subst_map)
+{
+  new_source = replace_external_vars_in_clause(expr.source, subst_map);
+  new_vars = new_vars(expr.source);
+  assert disjoint(new_vars, keys(subst_map));
+  new_subst_map = remove_keys(subst_map, new_vars);
+  exprs = (
+    replace_external_vars(expr.exprs(0), new_subst_map),
+    replace_external_vars(expr.exprs(1), new_subst_map)
+  );
+  // exprs = (replace_external_vars(e, new_subst_map) | e <- expr.exprs); //## ENABLE THIS ONCE THE TYPECHECKER HAS BEEN UPGRADED
+  return bin_rel_comp(exprs, new_source);
+}
+
+
+Expr replace_external_vars_in_tern_rel_comp(TernRelCompExpr expr, [Var -> Var] subst_map)
+{
+  new_source = replace_external_vars_in_clause(expr.source, subst_map);
+  new_vars = new_vars(expr.source);
+  assert disjoint(new_vars, keys(subst_map));
+  new_subst_map = remove_keys(subst_map, new_vars);
+  exprs = (
+    replace_external_vars(expr.exprs(0), new_subst_map),
+    replace_external_vars(expr.exprs(1), new_subst_map),
+    replace_external_vars(expr.exprs(2), new_subst_map)
+  );
+  // exprs = (replace_external_vars(e, new_subst_map) | e <- expr.exprs); //## ENABLE THIS ONCE THE TYPECHECKER HAS BEEN UPGRADED
+  return tern_rel_comp(exprs, new_source);
+}
+
+
 Expr replace_external_vars_in_seq_comp(SeqCompExpr expr, [Var -> Var] subst_map)
 {
   redef_vars = set(expr.vars) & [expr.idx_var if expr.idx_var?];
@@ -491,37 +556,47 @@ ClsExpr replace_external_vars(Maybe[StdVar]+ args, Expr expr, [Var -> Var] subst
 
 
 Clause replace_external_vars_in_clause(Clause clause, [Var -> Var] subst_map):
-  set_elem_clause()   = replace_external_vars_in_set_elem_clause(clause.var, clause.src, subst_map),
-  map_entry_clause()  = replace_external_vars_in_map_entry_clause(clause.key_var, clause.value_var, clause.src, subst_map),
-  seq_elem_clause()   = replace_external_vars_in_seq_elem_clause(clause.var, clause.src, subst_map),
-  and_clause()        = replace_external_vars_in_and_clause(clause.left, clause.right, subst_map),
-  or_clause()         = replace_external_vars_in_or_clause(clause.left, clause.right, subst_map),
-  match_clause()      = replace_external_vars_in_match_clause(clause.ptrn, clause.expr, subst_map),
-  asgnm_clause()      = replace_external_vars_in_asgnm_clause(clause.var, clause.expr, subst_map),
-  filter_clause(e?)   = filter_clause(replace_external_vars(e, subst_map));
+  set_clause()      = replace_external_vars_in_set_clause(clause.var, clause.src, subst_map),
+  rel_clause()      = replace_external_vars_in_rel_clause(clause.vars, clause.src, clause.args, subst_map),
+  relvar_clause()   = replace_external_vars_in_relvar_clause(clause.vars, clause.rel_var, clause.args, subst_map),
+  seq_clause()      = replace_external_vars_in_seq_clause(clause.var, clause.src, subst_map),
+  and_clause()      = replace_external_vars_in_and_clause(clause.left, clause.right, subst_map),
+  or_clause()       = replace_external_vars_in_or_clause(clause.left, clause.right, subst_map),
+  match_clause()    = replace_external_vars_in_match_clause(clause.ptrn, clause.expr, subst_map),
+  asgnm_clause()    = replace_external_vars_in_asgnm_clause(clause.var, clause.expr, subst_map),
+  filter_clause(e?) = filter_clause(replace_external_vars(e, subst_map));
 
 
-Clause replace_external_vars_in_set_elem_clause(StdVar var, Expr src, [Var -> Var] subst_map)
+Clause replace_external_vars_in_set_clause(StdVar var, Expr src, [Var -> Var] subst_map)
 {
   assert not has_key(subst_map, var);
   new_src = replace_external_vars(src, subst_map);
-  return set_elem_clause(var, new_src);
+  return set_clause(var, new_src);
 }
 
 
-Clause replace_external_vars_in_map_entry_clause(StdVar key_var, StdVar value_var, Expr src, [Var -> Var] subst_map)
+Clause replace_external_vars_in_rel_clause(StdVar+ vars, Expr src, Maybe[Expr]+ args, [Var -> Var] subst_map)
 {
-  assert not (has_key(subst_map, key_var) or has_key(subst_map, value_var));
+  assert none((has_key(subst_map, v) | v <- vars));
   new_src = replace_external_vars(src, subst_map);
-  return map_entry_clause(key_var, value_var, new_src);
+  new_args = (apply(a, replace_external_vars($, subst_map)) | a <- args);
+  return rel_clause(vars, new_src, new_args);
 }
 
 
-Clause replace_external_vars_in_seq_elem_clause(StdVar var, Expr src, [Var -> Var] subst_map)
+Clause replace_external_vars_in_relvar_clause(StdVar+ vars, AnyRelVar src, Maybe[Expr]+ args, [Var -> Var] subst_map)
+{
+  assert none((has_key(subst_map, v) | v <- vars));
+  new_args = (apply(a, replace_external_vars($, subst_map)) | a <- args);
+  return relvar_clause(vars, src, new_args);
+}
+
+
+Clause replace_external_vars_in_seq_clause(StdVar var, Expr src, [Var -> Var] subst_map)
 {
   assert not has_key(subst_map, var);
   new_src = replace_external_vars(src, subst_map);
-  return seq_elem_clause(var, new_src);
+  return seq_clause(var, new_src);
 }
 
 
@@ -593,15 +668,15 @@ Bool is_pattern_any(Pattern ptrn):
   _               = [];
 
 [StdVar] new_vars(Clause cls):
-  set_elem_clause()   = [cls.var],
-  map_entry_clause()  = [cls.key_var, cls.value_var],
-  rel_tuple_clause()  = set(cls.vars),
-  seq_elem_clause()   = [cls.var],
-  and_clause()        = new_vars(cls.left) & new_vars(cls.right),
-  or_clause()         = intersection(new_vars(cls.left), new_vars(cls.right)),
-  match_clause()      = new_vars(cls.ptrn),
-  asgnm_clause()      = [cls.var],
-  filter_clause()     = [];
+  set_clause()      = [cls.var],
+  rel_clause()      = set(cls.vars),
+  relvar_clause()   = set(cls.vars),
+  seq_clause()      = [cls.var],
+  and_clause()      = new_vars(cls.left) & new_vars(cls.right),
+  or_clause()       = intersection(new_vars(cls.left), new_vars(cls.right)),
+  match_clause()    = new_vars(cls.ptrn),
+  asgnm_clause()    = [cls.var],
+  filter_clause()   = [];
 
 
 [Var] new_vars(Statement stmt):
@@ -619,9 +694,11 @@ Bool is_pattern_any(Pattern ptrn):
 [Var] extern_vars(Expr expr):
   Var             = [expr],
   fn_call()       = union([any_expr_extern_vars(e) | e <- set(expr.args) & values(expr.named_args)]),
-  ex_qual()       = ex_qual_extern_vars(expr),
-  set_comp()      = set_comp_extern_vars(expr),
-  map_comp()      = map_comp_extern_vars(expr),
+  ex_qual()       = comp_extern_vars((expr.cond), expr.source),
+  set_comp()      = comp_extern_vars((expr.expr), expr.source),
+  map_comp()      = comp_extern_vars((expr.key_expr, expr.value_expr), expr.source),
+  bin_rel_comp()  |
+  tern_rel_comp() = comp_extern_vars(expr.exprs, expr.source),
   seq_comp()      = seq_comp_extern_vars(expr),
   range_comp()    = range_comp_extern_vars(expr),
   do_expr(ss?)    = stmts_extern_vars(ss),
@@ -630,30 +707,12 @@ Bool is_pattern_any(Pattern ptrn):
   _               = retrieve_from_nested_exprs(expr, extern_vars);
 
 
-[Var] ex_qual_extern_vars(ExQualExpr expr)
+[Var] comp_extern_vars(Expr+ exprs, Clause source)
 {
-  source_vars = clause_extern_vars(expr.source);
-  sel_expr_vars = extern_vars(expr.cond) - new_vars(expr.source);
-  return source_vars & sel_expr_vars;
-}
-
-
-[Var] set_comp_extern_vars(SetCompExpr expr)
-{
-  source_vars = clause_extern_vars(expr.source);
-  new_vars = new_vars(expr.source);
-  expr_vars = extern_vars(expr.expr) - new_vars;
-  return source_vars & expr_vars;
-}
-
-
-[Var] map_comp_extern_vars(MapCompExpr expr)
-{
-  source_vars = clause_extern_vars(expr.source);
-  new_vars = new_vars(expr.source);
-  key_expr_vars = extern_vars(expr.key_expr) - new_vars;
-  value_expr_vars = extern_vars(expr.value_expr) - new_vars;
-  return source_vars & key_expr_vars & value_expr_vars;
+  source_vars = clause_extern_vars(source);
+  new_vars = new_vars(source);
+  exprs_vars = seq_union((extern_vars(e) | e <- exprs)) - new_vars;
+  return source_vars & exprs_vars;
 }
 
 
@@ -700,10 +759,10 @@ Bool is_pattern_any(Pattern ptrn):
 ///////////////////////////////////////////////////////////////////////////////
 
 [Var] clause_extern_vars(Clause cls):
-  set_elem_clause()   = extern_vars(cls.src),
-  map_entry_clause()  = extern_vars(cls.src),
-  rel_tuple_clause()  = seq_union((extern_vars(value(a)) | a <- cls.args, a != nil)),
-  seq_elem_clause()   = extern_vars(cls.src),
+  set_clause()        = extern_vars(cls.src),
+  rel_clause()        = extern_vars(cls.src) & seq_union((extern_vars(value(a)) | a <- cls.args, a != nil)),
+  relvar_clause()     = seq_union((extern_vars(value(a)) | a <- cls.args, a != nil)),
+  seq_clause()        = extern_vars(cls.src),
   and_clause()        = clause_extern_vars(cls.left) & {clause_extern_vars(cls.right) - new_vars(cls.left)},
   or_clause()         = clause_extern_vars(cls.left) & clause_extern_vars(cls.right),
   match_clause()      = extern_vars(cls.expr),
@@ -817,6 +876,7 @@ Bool may_fall_through(Statement* stmts) = in(:falls_through, outcomes(stmts));
   symb:        1,
   at:          2,
   len:         1,
+  size:        1,
   slice:       3,
   cat:         2,
   rev:         1,

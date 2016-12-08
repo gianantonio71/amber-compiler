@@ -34,7 +34,8 @@ TypeVar type_var(<Atom, Nat> n) = :type_var(n);
 
 <empty_seq_type> empty_seq_type = :empty_seq_type;
 <empty_set_type> empty_set_type = :empty_set_type;
-<empty_map_type> empty_map_type = :empty_map_type;
+<empty_bin_rel_type> empty_bin_rel_type = :empty_bin_rel_type;
+<empty_tern_rel_type> empty_tern_rel_type = :empty_tern_rel_type;
 
 <empty_type> ne_seq_type(<empty_type>)  = empty_type;
 NeType ne_seq_type(NeType t)            = ne_seq_type(elem_type: t);
@@ -47,14 +48,26 @@ NeType ne_set_type(NeType t)            = ne_set_type(elem_type: t);
 <empty_type> ne_map_type(<empty_type>, NeType)        = empty_type;
 NeType ne_map_type(NeType kt, NeType vt)              = ne_map_type(key_type: kt, value_type: vt);
 
+Type ne_bin_rel_type(Type t1, Type t2) =
+  if t1 != empty_type and t2 != empty_type
+    then ne_bin_rel_type(args_types: (t1, t2))
+  else
+    empty_type;
+
+Type ne_tern_rel_type(Type t1, Type t2, Type t3) =
+  if t1 != empty_type and t2 != empty_type and t3 != empty_type
+    then ne_tern_rel_type(args_types: (t1, t2, t3))
+  else
+    empty_type;
+
 RecordType ne_record_type(RecordTypeFields fs) = :ne_record_type(fs);
 
 //## BAD: IF THE LANGUAGE HAD SUBSIGNATURES, THIS FUNCTION WOULD NOT BE NEEDED
 NeType record_type_nonempty([SymbObj -> (type: NeType, optional: Bool)] fs)
 {
-  return empty_map_type if fs == [:];
+  return empty_bin_rel_type if fs == [:];
   nonempty = (l : f <- fs | not f.optional);
-  return union_type_nonempty([:ne_record_type(fs), empty_map_type if not nonempty]);
+  return union_type_nonempty([:ne_record_type(fs), empty_bin_rel_type if not nonempty]);
 }
 
 Type record_type([SymbObj -> (type: Type, optional: Bool)] fs)
@@ -120,16 +133,22 @@ TagPtrn ptrn_symbol                             = :ptrn_symbol;
 Pattern ptrn_integer                            = :ptrn_integer(:integer);
 <ptrn_float> ptrn_float                         = :ptrn_float;
 
-Pattern ptrn_empty_set                          = :ptrn_empty_set;
-Pattern ptrn_ne_set                             = :ptrn_ne_set;
 Pattern ptrn_empty_seq                          = :ptrn_empty_seq;
 Pattern ptrn_ne_seq                             = :ptrn_ne_seq;
-Pattern ptrn_empty_map                          = :ptrn_empty_map;
+
+Pattern ptrn_empty_set                          = :ptrn_empty_set;
+Pattern ptrn_ne_set                             = :ptrn_ne_set;
+Pattern ptrn_empty_bin_rel                      = :ptrn_empty_bin_rel;
 Pattern ptrn_ne_map                             = :ptrn_ne_map;
+Pattern ptrn_ne_bin_rel                         = :ptrn_ne_bin_rel;
+Pattern ptrn_empty_tern_rel                     = :ptrn_empty_tern_rel;
+Pattern ptrn_ne_tern_rel                        = :ptrn_ne_tern_rel;
 
 Pattern ptrn_seq                                = ptrn_union([ptrn_empty_seq, ptrn_ne_seq]);
 Pattern ptrn_set                                = ptrn_union([ptrn_empty_set, ptrn_ne_set]);
-Pattern ptrn_map                                = ptrn_union([ptrn_empty_map, ptrn_ne_map]);
+Pattern ptrn_map                                = ptrn_union([ptrn_empty_bin_rel, ptrn_ne_map]);
+Pattern ptrn_bin_rel                            = ptrn_union([ptrn_empty_bin_rel, ptrn_ne_bin_rel]);
+Pattern ptrn_tern_rel                           = ptrn_union([ptrn_empty_tern_rel, ptrn_ne_tern_rel]);
 
 <ptrn_any> ptrn_any                             = :ptrn_any;
 TagPtrn ptrn_symbol(Atom a)                     = :ptrn_symbol(:object(a));
@@ -212,6 +231,9 @@ Expr set_expr([SubExpr] ses) = :set_expr(ses);
 
 Expr map_expr([(key: Expr, value: Expr, cond: Expr?)] es) = :map_expr(es);
 
+BinRelExpr  bin_rel_expr([(args: (Expr, Expr), cond: Expr?)] es)        = :bin_rel_expr(es);
+TernRelExpr tern_rel_expr([(args: (Expr, Expr, Expr), cond: Expr?)] es) = :tern_rel_expr(es);
+
 Expr tag_obj_expr(Expr t, Expr o)   = tag_obj_expr(tag: t, obj: o);
 
 FnCallExpr fn_call(FnFamilyId n, AnyExpr* as) = fn_call(n, as, [:]);
@@ -220,13 +242,13 @@ FnCallExpr fn_call(FnFamilyId n, AnyExpr* as, [NamedArg -> AnyExpr] nas) = fn_ca
 Expr builtin_call(BuiltIn n, Expr+ as) = builtin_call(name: n, args: as);
 Expr cls_call(<ClsVar, NamedArg> n, Expr+ as) = cls_call(name: n, args: as);
 
-Expr unary_pseudo_call(Expr c, Expr v)    = unary_pseudo_call(target: c, arg: v);
-Expr map_search(Expr m, Expr k, Expr v)   = map_search(map: m, key: k, value: v);
-Expr key_search(Expr m, Expr k)           = key_search(map: m, key: k);
+UnaryPseudoCall unary_pseudo_call(Expr c, Expr v) = unary_pseudo_call(target: c, arg: v);
 
-RelMembTestExpr rel_memb_test_expr(AnyRelVar v, Maybe[Expr]+ as) = rel_memb_test_expr(rel_var: v, args: as);
+RelMembTest rel_memb_test(Expr r, Maybe[Expr]+ as) = rel_memb_test(rel: r, args: as);
 
-RelLookupExpr rel_lookup_expr(AnyRelVar v, Expr+ as, Nat i) = rel_lookup_expr(rel_var: v, set_args: as, unknown_arg_idx: i);
+RelVarMembTest relvar_memb_test(AnyRelVar v, Maybe[Expr]+ as) = relvar_memb_test(rel_var: v, args: as);
+
+RelVarLookup relvar_lookup(AnyRelVar v, Expr+ as, Nat i) = relvar_lookup(rel_var: v, set_args: as, unknown_arg_idx: i);
 
 Expr singl_only_elem(Expr s)              = singl_only_elem(set: s);
 
@@ -259,14 +281,11 @@ Expr accessor_test(Expr e, SymbObj f) = accessor_test(expr: e, field: f);
 
 OutputIsDefExpr output_is_def(LocAutoVar v, Atom o)  = output_is_def(var: v, output: o);
 
-AutoMethodCallExpr auto_method_call_expr(AnyAutoVar v, MethodSymbol m, Expr* as)  = auto_method_call_expr(var: v, name: m, args: as);
-AutoMethodCallExpr auto_method_call_expr(MethodSymbol m, Expr* as)                = auto_method_call_expr(name: m, args: as);
+AutoMethodCall auto_method_call(AnyAutoVar v, MethodSymbol m, Expr* as)  = auto_method_call(var: v, name: m, args: as);
+AutoMethodCall auto_method_call(MethodSymbol m, Expr* as)                = auto_method_call(name: m, args: as);
 
-DBMethodCallExpr db_method_call_expr(AnyDBVar v, MethodSymbol m, Expr* as)  = db_method_call_expr(var: v, name: m, args: as);
-DBMethodCallExpr db_method_call_expr(MethodSymbol m, Expr* as)              = db_method_call_expr(name: m, args: as);
-
-AutoMethodCallExpr method_call_expr(AnyAutoVar v, MethodSymbol m, Expr* as) = auto_method_call_expr(var: v, name: m, args: as);
-DBMethodCallExpr   method_call_expr(AnyDBVar v, MethodSymbol m, Expr* as)   = db_method_call_expr(var: v, name: m, args: as);
+DBMethodCall db_method_call(AnyDBVar v, MethodSymbol m, Expr* as)  = db_method_call(var: v, name: m, args: as);
+DBMethodCall db_method_call(MethodSymbol m, Expr* as)              = db_method_call(name: m, args: as);
 
 Expr cast_expr(Expr, <empty_type>)  = {fail;}; //## TRY TO REMOVE...
 Expr membership(Expr, <empty_type>) = {fail;}; //## TRY TO REMOVE...
@@ -280,9 +299,11 @@ Expr match_expr(Expr+ es, (ptrns: Pattern+, expr: Expr)+ cs) = match_expr(exprs:
 
 Expr do_expr(Statement+ ss) = :do_expr(ss);
 
-ExQualExpr  ex_qual(Clause s, Expr c)             = ex_qual(source: s, cond: c);
-SetCompExpr set_comp(Expr e, Clause c)            = set_comp(expr: e, source: c);
-MapCompExpr map_comp(Expr ke, Expr ve, Clause c)  = map_comp(key_expr: ke, value_expr: ve, source: c);
+ExQualExpr  ex_qual(Clause s, Expr c)                           = ex_qual(source: s, cond: c);
+SetCompExpr set_comp(Expr e, Clause c)                          = set_comp(expr: e, source: c);
+MapCompExpr map_comp(Expr ke, Expr ve, Clause c)                = map_comp(key_expr: ke, value_expr: ve, source: c);
+BinRelCompExpr bin_rel_comp((Expr, Expr) es, Clause c)          = bin_rel_comp(exprs: es, source: c);
+TernRelCompExpr tern_rel_comp((Expr, Expr, Expr) es, Clause c)  = tern_rel_comp(exprs: es, source: c);
 
 IsSetExpr is_set(<MembVar, QualAutoMembVar> v)  = :is_set(v);
 
@@ -299,15 +320,25 @@ ClsExpr named_args_cls_expr(StdVar+ as, Expr e) = cls_expr(args: (just(a) | a <-
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Clause set_elem_clause(StdVar v, Expr e)              = set_elem_clause(var: v, src: e);
-Clause map_entry_clause(StdVar kv, StdVar vv, Expr e) = map_entry_clause(key_var: kv, value_var: vv, src: e);
-Clause rel_tuple_clause(StdVar+ vs, AnyRelVar rv, Maybe[Expr]+ as) = rel_tuple_clause(vars: vs, rel_var: rv, args: as);
-Clause seq_elem_clause(StdVar v, Expr e)              = seq_elem_clause(var: v, src: e);
-Clause and_clause(Clause l, Clause r)                 = and_clause(left: l, right: r);
-Clause or_clause(Clause l, Clause r)                  = or_clause(left: l, right: r);
-Clause match_clause(Pattern p, Expr e)                = match_clause(ptrn: p, expr: e);
-Clause asgnm_clause(StdVar v, Expr e)                 = asgnm_clause(var: v, expr: e);
-Clause filter_clause(Expr e)                          = :filter_clause(e);
+Clause set_clause(StdVar v, Expr e)         = set_clause(var: v, src: e);
+Clause seq_clause(StdVar v, Expr e)         = seq_clause(var: v, src: e);
+Clause and_clause(Clause l, Clause r)       = and_clause(left: l, right: r);
+Clause or_clause(Clause l, Clause r)        = or_clause(left: l, right: r);
+Clause match_clause(Pattern p, Expr e)      = match_clause(ptrn: p, expr: e);
+Clause asgnm_clause(StdVar v, Expr e)       = asgnm_clause(var: v, expr: e);
+Clause filter_clause(Expr e)                = :filter_clause(e);
+
+Clause rel_clause(StdVar+ vs, Expr e, Maybe[Expr]+ as)
+{
+  assert length(vs) == count(as, $ == nil) and (length(as) == 2 or length(as) == 3);
+  return rel_clause(vars: vs, src: e, args: as);
+}
+
+Clause relvar_clause(StdVar+ vs, AnyRelVar rv, Maybe[Expr]+ as)
+{
+  assert length(vs) == count(as, $ == nil) and (length(as) == 2 or length(as) == 3);
+  return relvar_clause(vars: vs, rel_var: rv, args: as);
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 

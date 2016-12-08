@@ -19,8 +19,7 @@ implicit
     Var                   = [invalid_var_type(expr, actual_type, exp_type)],
     fn_call()             = generate_fn_call_typechecking_error_messages(expr.name, expr.args, expr.named_args, actual_type, exp_type),
     unary_pseudo_call()   = generate_unary_pseudo_call_typechecking_error_messages(expr.target, expr.arg, exp_type),
-    map_search()          = generate_map_search_typechecking_error_messages(expr.map, expr.key, expr.value, exp_type),
-    key_search()          = generate_key_search_typechecking_error_messages(expr.map, expr.key, exp_type),
+    rel_memb_test()       = generate_rel_memb_test_typechecking_error_messages(expr.rel, expr.args, exp_type),
     set_comp()            = generate_set_comp_typechecking_error_messages(expr.expr, expr.source, actual_type, exp_type),
     map_comp()            = generate_map_comp_typechecking_error_messages(expr.key_expr, expr.value_expr, expr.source, actual_type, exp_type),
     seq_comp()            = generate_seq_comp_typechecking_error_messages(expr, actual_type, exp_type),
@@ -113,8 +112,8 @@ implicit
 
   [TypeCheckingError] generate_map_comp_typechecking_error_messages(Expr key_expr, Expr value_expr, Clause source, Type actual_type, Type exp_type)
   {
-    key_supertype = map_key_supertype(exp_type);
-    value_supertype = map_value_supertype(exp_type);
+    key_supertype = bin_rel_arg_supertype(exp_type, 0);
+    value_supertype = bin_rel_arg_supertype(exp_type, 1);
     return [exp_type_does_not_contain_maps(exp_type)] if key_supertype == empty_type or value_supertype == empty_type;
     new_env = generate_env(source);
     let environment = new_env:
@@ -191,75 +190,79 @@ implicit
 
     [TypeCheckingError] map_lookup_err_msg(Type map_type, Expr key_expr, Type exp_type)
     {
-      exp_key_type = map_key_supertype(map_type);
+      exp_key_type = bin_rel_arg_supertype(map_type, 0);
       errs = typecheck(key_expr, exp_key_type);
       if errs != []:
         loose_errs = typecheck(key_expr, type_any);
         return loose_errs if loose_errs != [];
         return [invalid_map_lookup_key_type(exp_key_type, expr_type(key_expr))];
       ;
-      res_type = restricted_map_value_supertype(map_type, expr_type(key_expr));
+      res_type = restricted_bin_rel_arg1_supertype(map_type, expr_type(key_expr));
       return invalid_type_if_not_subset(res_type, exp_type);
     }
   }
 
 
-  [TypeCheckingError] generate_map_search_typechecking_error_messages(Expr map, Expr key, Expr value, Type exp_type)
+  [TypeCheckingError] generate_rel_memb_test_typechecking_error_messages(Expr rel, Maybe[Expr]+ args, Type exp_type)
   {
-    errs = typecheck(map, type_map);
-    if errs != []:
-      loose_errs = typecheck(map, type_any);
-      return if loose_errs != [] then loose_errs else [actual_type_not_a_map_type(expr_type(map))];
-    ;
+    fail;
 
-    map_type = expr_type(map);
-    if map_type != empty_type:
-      exp_key_type = map_key_supertype(map_type);
-      errs = typecheck(key, exp_key_type);
-      if errs != []:
-        loose_errs = typecheck(key, type_any);
-        return loose_errs if loose_errs != [];
-        return [invalid_map_lookup_key_type(exp_key_type, expr_type(key))];
-      ;
-      exp_value_type = restricted_map_value_supertype(map_type, expr_type(key));
-      errs = typecheck(value, exp_value_type);
-      if errs != []:
-        loose_errs = typecheck(value, type_any);
-        return loose_errs if loose_errs != [];
-        return [invalid_map_lookup_value_type(exp_value_type, expr_type(value))];
-      ;
-    else
-      errs = typecheck(key, type_any) & typecheck(value, type_any);
-      return errs if errs != [];
-    ;
+    // [TypeCheckingError] generate_map_search_typechecking_error_messages(Expr map, Expr key, Expr value, Type exp_type)
+    // {
+    //   errs = typecheck(map, type_map);
+    //   if errs != []:
+    //     loose_errs = typecheck(map, type_any);
+    //     return if loose_errs != [] then loose_errs else [actual_type_not_a_map_type(expr_type(map))];
+    //   ;
 
-    return invalid_type_if_not_subset(type_bool, exp_type);
+    //   map_type = expr_type(map);
+    //   if map_type != empty_type:
+    //     exp_key_type = map_key_supertype(map_type);
+    //     errs = typecheck(key, exp_key_type);
+    //     if errs != []:
+    //       loose_errs = typecheck(key, type_any);
+    //       return loose_errs if loose_errs != [];
+    //       return [invalid_map_lookup_key_type(exp_key_type, expr_type(key))];
+    //     ;
+    //     exp_value_type = restricted_bin_rel_arg1_supertype(map_type, expr_type(key));
+    //     errs = typecheck(value, exp_value_type);
+    //     if errs != []:
+    //       loose_errs = typecheck(value, type_any);
+    //       return loose_errs if loose_errs != [];
+    //       return [invalid_map_lookup_value_type(exp_value_type, expr_type(value))];
+    //     ;
+    //   else
+    //     errs = typecheck(key, type_any) & typecheck(value, type_any);
+    //     return errs if errs != [];
+    //   ;
+
+    //   return invalid_type_if_not_subset(type_bool, exp_type);
+    // }
+
+
+    // [TypeCheckingError] generate_key_search_typechecking_error_messages(Expr map, Expr key, Type exp_type)
+    // {
+    //   errs = typecheck(map, type_map);
+    //   if errs != []:
+    //     loose_errs = typecheck(map, type_any);
+    //     return if loose_errs != [] then loose_errs else [actual_type_not_a_map_type(expr_type(map))];
+    //   ;
+    //   map_type = expr_type(map);
+    //   if map_type != empty_type:
+    //     exp_key_type = map_key_supertype(map_type);
+    //     errs = typecheck(key, exp_key_type);
+    //     if errs != []:
+    //       loose_errs = typecheck(key, type_any);
+    //       return loose_errs if loose_errs != [];
+    //       return [invalid_map_lookup_key_type(exp_key_type, expr_type(key))];
+    //     ;
+    //   else
+    //     errs = typecheck(key, type_any);
+    //     return errs if errs != [];
+    //   ;
+    //   return invalid_type_if_not_subset(type_bool, exp_type);
+    // }
   }
-
-
-  [TypeCheckingError] generate_key_search_typechecking_error_messages(Expr map, Expr key, Type exp_type)
-  {
-    errs = typecheck(map, type_map);
-    if errs != []:
-      loose_errs = typecheck(map, type_any);
-      return if loose_errs != [] then loose_errs else [actual_type_not_a_map_type(expr_type(map))];
-    ;
-    map_type = expr_type(map);
-    if map_type != empty_type:
-      exp_key_type = map_key_supertype(map_type);
-      errs = typecheck(key, exp_key_type);
-      if errs != []:
-        loose_errs = typecheck(key, type_any);
-        return loose_errs if loose_errs != [];
-        return [invalid_map_lookup_key_type(exp_key_type, expr_type(key))];
-      ;
-    else
-      errs = typecheck(key, type_any);
-      return errs if errs != [];
-    ;
-    return invalid_type_if_not_subset(type_bool, exp_type);
-  }
-
 }
 
   // [TypeCheckingError] typecheck_set_expr([SubExpr] subexprs, Type exp_type)

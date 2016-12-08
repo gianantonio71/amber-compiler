@@ -9,8 +9,10 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
     float_lit()         = expr,
     seq_expr(ses?)      = desugar_seq_expr(ses, def_vars),
     seq_tail_expr()     = seq_tail_expr(desugar_expr(expr.seq, def_vars), (desugar_expr(e, def_vars) | e <- expr.tail)),
-    set_expr(es?)       = set_expr([desugar_expr(e, def_vars) | e <- es]),
-    map_expr(es?)       = desugar_map_expr(es, def_vars),
+    set_expr(es?)       = set_expr([desugar_expr(e, def_vars) | e <- set(es)]),
+    map_expr(es?)       = desugar_map_expr(set(es), def_vars),
+    bin_rel_expr(es?)   = desugar_bin_rel_expr(set(es), def_vars),
+    tern_rel_expr(es?)  = desugar_tern_rel_expr(set(es), def_vars),
     tag_obj_expr()      = tag_obj_expr(desugar_expr(expr.tag, def_vars), desugar_expr(expr.obj, def_vars)),
     FnPar               = expr,
     memb_copy_var()     = expr,
@@ -38,6 +40,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
     ex_qual()           = desugar_ex_qual_expr(expr.source, expr.cond, def_vars),
     set_comp()          = desugar_set_comp_expr(expr.expr, expr.source, def_vars),
     map_comp()          = desugar_map_comp_expr(expr.key_expr, expr.value_expr, expr.source, def_vars),
+    rel_comp()          = desugar_rel_comp_expr(expr.exprs, expr.source, def_vars),
     seq_comp()          = desugar_seq_comp_expr(expr, def_vars),
     range_comp()        = desugar_range_comp_expr(expr, def_vars),
     if_expr()           = desugar_if_expr(expr, def_vars),
@@ -52,23 +55,23 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
   Expr desugar_call_lookalike(<StdVar, MembVar, QualAutoMembVar, QualDBMembVar, SymbChainAcc> var, Expr+ args)
   {
     arity = length(args);
-    assert arity == 1 or arity == 2;
+    assert arity :: <1..3>;
     return if arity == 1
       then unary_pseudo_call(var, args(0))
-      else map_search(var, args(0), args(1));
+      else rel_memb_test(var, (just(a) | a <- args));
   }
 
   Expr desugar_call_lookalike(NamedArg var, Expr+ args)
   {
     exp_arity = impl_args(var);
     actual_arity = length(args);
-    assert (exp_arity == 0 and (actual_arity == 1 or actual_arity == 2)) or exp_arity == actual_arity;
+    assert (exp_arity == 0 and actual_arity :: <1..3>) or exp_arity == actual_arity;
     if exp_arity != 0:
       return cls_call(var, args);
     elif actual_arity == 1:
       return unary_pseudo_call(var, args(0));
     else
-      return map_search(var, args(0), args(1));
+      return rel_memb_test(var, (just(a) | a <- args));
     ;
   }
 
@@ -79,18 +82,18 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
     arity = length(args);
     rel_var_arity = rel_vars_arities[var];
     if arity == rel_var_arity:
-      return rel_memb_test_expr(var, (just(a) | a <- args));
+      return relvar_memb_test(var, (just(a) | a <- args));
     else
       assert arity == rel_var_arity - 1;
-      return rel_lookup_expr(var, args, nat(rel_var_arity-1));
+      return relvar_lookup(var, args, nat(rel_var_arity-1));
     ;
   }
 
   Expr desugar_call_lookalike(PreAutoCall pc, Expr+ args) =
-    auto_method_call_expr(var: pc.var if pc.var?, name: pc.method, args: args);
+    auto_method_call(var: pc.var if pc.var?, name: pc.method, args: args);
 
   Expr desugar_call_lookalike(PreDBCall pc, Expr+ args) =
-    db_method_call_expr(var: pc.var if pc.var?, name: pc.method, args: args);
+    db_method_call(var: pc.var if pc.var?, name: pc.method, args: args);
 
   Expr desugar_call_lookalike(FnFamilyId fn_symb, Expr+ args) = fn_call(fn_symb, args, [:]);
 
@@ -117,7 +120,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
         return unary_pseudo_call(target, only(args));
       else
         assert arity == 2;
-        return map_search(target, args[0], args[1]);
+        return rel_memb_test(target, (just(a) | a <- args));
       ;
     ;
   }
@@ -138,12 +141,12 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
     return desugar(target, args);
 
 
-    Expr desugar(AnyRelVar target, Maybe[Expr]+ args) = rel_memb_test_expr(target, args);
+    Expr desugar(AnyRelVar target, Maybe[Expr]+ args) = relvar_memb_test(target, args);
 
     Expr desugar(Expr target, Maybe[Expr]+ args)
     {
-      assert length(args) == 2 and args[0] != nil and args[1] == nil;
-      return key_search(target, try_value(args[0]));
+      assert length(args) == 2 or length(args) == 3;
+      return rel_memb_test(target, args);
     }
   }
 
@@ -153,7 +156,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
     rel_var = only(resolve_by_priority_as_rel_var(symbols, def_vars));
     args = (desugar_expr(value(a), def_vars) | a <- syn_args, a != nil);
     unknown_arg_idx = only((i | a @ i <- syn_args, a == nil));
-    return rel_lookup_expr(rel_var, nonempty(args), unknown_arg_idx);
+    return relvar_lookup(rel_var, nonempty(args), unknown_arg_idx);
   }
 
 
@@ -169,6 +172,22 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
         key:   desugar_expr(e.key, def_vars),
         value: desugar_expr(e.value, def_vars),
         cond:  desugar_expr(e.cond, def_vars) if e.cond?
+      ) | e <- entries
+    ]);
+
+
+  BinRelExpr desugar_bin_rel_expr([SynBinRelEntry] entries, [StdVar] def_vars) =
+    bin_rel_expr([(
+        args: (desugar_expr(e.args(0), def_vars), desugar_expr(e.args(1), def_vars)),
+        cond: desugar_expr(e.cond, def_vars) if e.cond?
+      ) | e <- entries
+    ]);
+
+
+  TernRelExpr desugar_tern_rel_expr([SynTernRelEntry] entries, [StdVar] def_vars) =
+    tern_rel_expr([(
+        args: (desugar_expr(e.args(0), def_vars), desugar_expr(e.args(1), def_vars), desugar_expr(e.args(2), def_vars)),
+        cond: desugar_expr(e.cond, def_vars) if e.cond?
       ) | e <- entries
     ]);
 
@@ -238,6 +257,17 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
   {
     vs = def_vars & syn_new_vars(source);
     return map_comp(desugar_expr(key_expr, vs), desugar_expr(value_expr, vs), mk_and_clause(source, def_vars));
+  }
+
+
+  Expr desugar_rel_comp_expr(SynExpr+ syn_exprs, SynClause+ syn_source, [StdVar] def_vars)
+  {
+    vs = def_vars & syn_new_vars(syn_source);
+    exprs = (desugar_expr(e, vs) | e <- syn_exprs);
+    source = mk_and_clause(syn_source, def_vars);
+    return match (exprs)
+      (_, _)    = bin_rel_comp(exprs, source),
+      (_, _, _) = tern_rel_comp(exprs, source);
   }
 
 
@@ -348,29 +378,38 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
 
     Clause desugar_iter_clause(StdVar+ vars, SynExpr syn_src_expr, [StdVar] def_vars)
     {
-      if syn_src_expr :: <rel_memb_test(target: IdChain, args: Maybe[SynExpr]+)>:
-        syn_args = syn_src_expr.args;
-        if at_least_one((a == nil | a <- syn_args)):
-          symbols = destructure_id_chain(syn_src_expr.target);
-          relvar = only(resolve_by_priority_as_rel_var(symbols, def_vars));
-          args = (apply(a, desugar_expr($, def_vars)) | a <- syn_args);
-          return rel_tuple_clause(vars, relvar, args);
+      if syn_src_expr :: SynRelMembTest and at_least_one((a == nil | a <- syn_src_expr.args)):
+        if all((a == nil | a <- syn_src_expr.args)):
+          return desugar_iter_clause(vars, syn_src_expr.target, def_vars);
         ;
+        args = (apply(a, desugar_expr($, def_vars)) | a <- syn_src_expr.args);
+        syn_target = syn_src_expr.target;
+        if syn_target :: IdChain:
+          symbols = destructure_id_chain(syn_target);
+          resols = resolve_by_priority_as_memb_test_target(symbols, nz_nat(length(args)), def_vars);
+          if resols != []:
+            resol = only(resols);
+            return relvar_clause(vars, resol, args) if resol :: AnyRelVar;
+          ;
+        ;
+        target = desugar_expr(syn_target, def_vars);
+        return rel_clause(vars, target, args);
 
       elif syn_src_expr :: IdChain:
         symbols = destructure_id_chain(syn_src_expr);
-        resols = resolve_by_priority_as_rel_var(symbols, def_vars);
-        if resols != []:
-          return rel_tuple_clause(vars, only(resols), (nil | unused_var <- vars)); //## UGLY UGLY UGLY
+        resols = resolve_by_priority_as_memb_test_target(symbols, def_vars);
+        if size(resols) == 1:
+          resol = only(resols);
+          if resol :: AnyRelVar:
+            return relvar_clause(vars, resol, (nil | unused_var <- vars)); //## UGLY UGLY UGLY
+          ;
         ;
       ;
 
-      assert length(vars) == 1 or length(vars) == 2;
-
       src_expr = desugar_expr(syn_src_expr, def_vars);
       return if length(vars) == 1
-        then set_elem_clause(only(vars), src_expr)
-        else map_entry_clause(vars(0), vars(1), src_expr);
+        then set_clause(only(vars), src_expr)
+        else rel_clause(vars, src_expr, (nil | unused_var <- vars)); //## UGLY UGLY UGLY
     }
   }
 
@@ -534,6 +573,8 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
       ptrn_seq                = ptrn_seq,
       ptrn_set                = ptrn_set,
       ptrn_map                = ptrn_map,
+      ptrn_bin_rel            = ptrn_bin_rel,
+      ptrn_tern_rel           = ptrn_tern_rel,
       ptrn_symbol()           = ptrn,
       ptrn_integer(integer)   = ptrn_integer,
       ptrn_integer(int_obj?)  = ptrn_integer(int_obj),

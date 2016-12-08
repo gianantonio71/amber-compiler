@@ -21,7 +21,9 @@ type IntType            = integer, low_ints(max: Int), high_ints(min: Int), int_
 
 type FloatType          = float_type;
 
-type LeafType           = atom_type, SymbType, IntType, FloatType, empty_seq_type, empty_set_type, empty_map_type;
+type EmptyCollType      = empty_seq_type, empty_set_type, empty_bin_rel_type, empty_tern_rel_type;
+
+type LeafType           = atom_type, SymbType, IntType, FloatType, EmptyCollType;
 
 type TypeVar            = type_var(<Atom, Nat>);
 
@@ -33,6 +35,10 @@ type NeSetType          = ne_set_type(elem_type: NeType);
 
 type NeMapType          = ne_map_type(key_type: NeType, value_type: NeType);
 
+type NeBinRelType       = ne_bin_rel_type(args_types: (NeType, NeType));
+
+type NeTernRelType      = ne_tern_rel_type(args_types: (NeType, NeType, NeType));
+
 type RecordTypeFields   = [+SymbObj -> (type: NeType, optional: Bool)];
 type RecordType         = ne_record_type(RecordTypeFields);
 
@@ -43,8 +49,8 @@ type TagObjType         = tag_obj_type(tag_type: TagType, obj_type: NeType);
 
 type UnionType          = union_type([+NeType]);
 
-type NeType             = LeafType, TypeRef, TypeVar, NeSeqType, NeSetType, NeMapType,
-                          RecordType, TupleType, TagObjType, UnionType;
+type NeType             = LeafType, TypeRef, TypeVar, NeSeqType, NeSetType, NeMapType, NeBinRelType,
+                          NeTernRelType, RecordType, TupleType, TagObjType, UnionType;
 
 type Type               = empty_type, NeType;
 
@@ -68,7 +74,7 @@ type BinaryOperator = plus, minus, star, slash, exp, amp, lower, greater, lower_
 
 type Operator = UnaryOperator, BinaryOperator;
 
-type BuiltIn  = neg, add, sub, mult, div, mod, lt, le, gt, ge, str, symb, at, len, slice, cat,
+type BuiltIn  = neg, add, sub, mult, div, mod, lt, le, gt, ge, str, symb, at, len, size, slice, cat,
                 set, rev, mset, tag, isort, obj, in, has_key, lookup, union, merge,
                 fneg, fadd, fsub, fmult, fdiv, fsqrt, floor, ceiling, float, mantissa, dec_exp,
                 rand_nat, rand_elem, counter, attach, fetch, ticks;
@@ -131,17 +137,18 @@ type SubExpr  = Expr, CondExpr;
 type FloatLit = float_lit(mantissa: Int, dec_exp: Int);
 
 type Expr     = LeafObj, FloatLit, Var,
-                SetExpr, SeqExpr, TupleExpr, SeqTailExpr, MapExpr, TagObjExpr,
+                SetExpr, SeqExpr, TupleExpr, SeqTailExpr,
+                MapExpr, BinRelExpr, TernRelExpr, TagObjExpr,
                 FnCallExpr, ClsCall, BuiltinCall,
-                UnaryPseudoCallExpr, MapSearchExpr, KeySearchExpr, OnlyElemExpr,
-                RelMembTestExpr, RelLookupExpr,
+                UnaryPseudoCall, RelMembTest, OnlyElemExpr,
+                RelVarMembTest, RelVarLookup,
                 AndExpr, OrExpr, NotExpr,
                 EqExpr,
                 MembExpr, CastExpr,
                 AccExpr, AccTestExpr,
-                OutputIsDefExpr, AutoMethodCallExpr, DBMethodCallExpr,
+                OutputIsDefExpr, AutoMethodCall, DBMethodCall,
                 IfExpr, MatchExpr, DoExpr,
-                ExQualExpr, SetCompExpr, MapCompExpr,
+                ExQualExpr, SetCompExpr, MapCompExpr, BinRelCompExpr, TernRelCompExpr,
                 SeqCompExpr, RangeCompExpr,
                 IsSetExpr;
 
@@ -150,18 +157,20 @@ type TupleExpr      = tuple_expr(Expr+); //## THIS IS REDUNDANT NOW, IT'S STILL 
 type SeqTailExpr    = seq_tail_expr(seq: Expr, tail: Expr+);
 type SetExpr        = set_expr([SubExpr]);
 type MapExpr        = map_expr([(key: Expr, value: Expr, cond: Expr?)]);
+type BinRelExpr     = bin_rel_expr([(args: (Expr, Expr), cond: Expr?)]);
+type TernRelExpr    = tern_rel_expr([(args: (Expr, Expr, Expr), cond: Expr?)]);
 type TagObjExpr     = tag_obj_expr(tag: Expr, obj: Expr);
 
 type FnCallExpr     = fn_call(name: FnFamilyId, args: AnyExpr*, named_args: [NamedArg -> AnyExpr]);
 type ClsCall        = cls_call(name: <ClsVar, NamedArg>, args: Expr+);  //## BAD: THERE SHOULD BE A NAMED VERSION OF ClsVar
 type BuiltinCall    = builtin_call(name: BuiltIn, args: Expr+);
 
-type UnaryPseudoCallExpr  = unary_pseudo_call(target: Expr, arg: Expr);
-type MapSearchExpr  = map_search(map: Expr, key: Expr, value: Expr);
-type KeySearchExpr  = key_search(map: Expr, key: Expr);
+type UnaryPseudoCall  = unary_pseudo_call(target: Expr, arg: Expr);
 
-type RelMembTestExpr  = rel_memb_test_expr(rel_var: AnyRelVar, args: Maybe[Expr]+);
-type RelLookupExpr  = rel_lookup_expr(rel_var: AnyRelVar, set_args: Expr+, unknown_arg_idx: Nat);
+type RelMembTest    = rel_memb_test(rel: Expr, args: Maybe[Expr]+);
+
+type RelVarMembTest = relvar_memb_test(rel_var: AnyRelVar, args: Maybe[Expr]+);
+type RelVarLookup   = relvar_lookup(rel_var: AnyRelVar, set_args: Expr+, unknown_arg_idx: Nat);
 
 type OnlyElemExpr   = singl_only_elem(set: Expr);
 
@@ -179,16 +188,19 @@ type AccTestExpr    = accessor_test(expr: Expr, field: SymbObj); //## DITTO
 
 type OutputIsDefExpr  = output_is_def(var: LocAutoVar, output: Atom);
 
-type AutoMethodCallExpr = auto_method_call_expr(var: AnyAutoVar?, name: MethodSymbol, args: Expr*);
-type DBMethodCallExpr   = db_method_call_expr(var: AnyDBVar?, name: MethodSymbol, args: Expr*);
+type AutoMethodCall = auto_method_call(var: AnyAutoVar?, name: MethodSymbol, args: Expr*);
+type DBMethodCall   = db_method_call(var: AnyDBVar?, name: MethodSymbol, args: Expr*);
 
 type IfExpr         = if_expr(cond: Expr, then: Expr, else: Expr);
 type MatchExpr      = match_expr(exprs: Expr+, cases: (ptrns: Pattern+, expr: Expr)+);
 type DoExpr         = do_expr(Statement+);
 
 type ExQualExpr     = ex_qual(source: Clause, cond: Expr);
-type SetCompExpr    = set_comp(expr: Expr, source: Clause);
-type MapCompExpr    = map_comp(key_expr: Expr, value_expr: Expr, source: Clause);
+
+type SetCompExpr      = set_comp(expr: Expr, source: Clause);
+type MapCompExpr      = map_comp(key_expr: Expr, value_expr: Expr, source: Clause);
+type BinRelCompExpr   = bin_rel_comp(exprs: (Expr, Expr), source: Clause);
+type TernRelCompExpr  = tern_rel_comp(exprs: (Expr, Expr, Expr), source: Clause);
 
 type SeqCompExpr    = seq_comp(expr: Expr, vars: StdVar+, idx_var: StdVar?, src_expr: Expr, sel_expr: Expr?);
 type RangeCompExpr  = range_comp(expr: Expr, var: StdVar, bound_expr: Expr, inclusive: Bool, sel_expr: Expr?);
@@ -211,8 +223,11 @@ type Pattern  = ptrn_symbol, //## THE CORRESPONDING TYPE IS CALLED atom_type. RE
                 ptrn_ne_set,
                 ptrn_empty_seq,
                 ptrn_ne_seq,
-                ptrn_empty_map,
+                ptrn_empty_bin_rel,
                 ptrn_ne_map,
+                ptrn_ne_bin_rel,
+                ptrn_empty_tern_rel,
+                ptrn_ne_tern_rel,
                 ptrn_any,
                 ptrn_symbol(SymbObj),
                 ptrn_integer(IntType),
@@ -231,10 +246,10 @@ type TagPtrn  = ptrn_symbol, ptrn_symbol(SymbObj), ptrn_var(var: StdVar, ptrn: p
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type Clause   = set_elem_clause(var: StdVar, src: Expr),
-                map_entry_clause(key_var: StdVar, value_var: StdVar, src: Expr),
-                rel_tuple_clause(vars: StdVar+, rel_var: AnyRelVar, args: Maybe[Expr]+),
-                seq_elem_clause(var: StdVar, src: Expr),
+type Clause   = set_clause(var: StdVar, src: Expr),
+                rel_clause(vars: StdVar+, src: Expr, args: Maybe[Expr]+),
+                relvar_clause(vars: StdVar+, rel_var: AnyRelVar, args: Maybe[Expr]+),
+                seq_clause(var: StdVar, src: Expr),
                 and_clause(left: Clause, right: Clause),
                 or_clause(left: Clause, right: Clause),
                 match_clause(ptrn: Pattern, expr: Expr),

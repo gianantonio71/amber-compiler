@@ -128,6 +128,7 @@ implicit typedefs : [TypeName -> Type]
   Type restricted_seq_elem_supertype(Type type, NzNat seq_len) =
     restricted_seq_elem_supertype(type, int_range(0, seq_len));
 
+
   Type set_elem_supertype(Type type):
     ne_set_type()     = type.elem_type,
     union_type(ts?)   = union_superset([set_elem_supertype(t) | t <- ts]),
@@ -136,32 +137,47 @@ implicit typedefs : [TypeName -> Type]
     _                 = empty_type;
 
 
-  Type map_key_supertype(Type type):
-    ne_map_type()       = type.key_type,
-    ne_record_type(fs?) = union_type([symb_type(s) | s : unused_var <- fs]),
-    union_type(ts?)     = union_superset([map_key_supertype(t) | t <- ts]),
+  Type bin_rel_arg_supertype(Type type, <0..1> arg):
+    ne_map_type()       = if arg == 0 then type.key_type else type.value_type,
+    ne_bin_rel_type()   = type.args_types(arg),
+    ne_record_type(fs?) = if arg == 0
+                            then union_type([symb_type(s) | s : unused_var <- fs])
+                            else union_superset([f.type | unused_var : f <- fs]),
+    union_type(ts?)     = union_superset([bin_rel_arg_supertype(t, arg) | t <- ts]),
     type_var()          = type_any,
-    type_ref(ts?)       = map_key_supertype(expand_type_ref(ts, typedefs)),
+    type_ref(ts?)       = bin_rel_arg_supertype(expand_type_ref(ts, typedefs), arg),
     _                   = empty_type;
 
 
-  Type map_value_supertype(Type type):
-    ne_map_type()       = type.value_type,
-    ne_record_type(fs?) = union_superset([f.type | unused_var : f <- fs]),
-    union_type(ts?)     = union_superset([map_value_supertype(t) | t <- ts]),
+  (Type, Type) bin_rel_args_supertypes(Type type) = (
+      bin_rel_arg_supertype(type, 0), bin_rel_arg_supertype(type, 1)
+    );
+
+
+  Type tern_rel_arg_supertype(Type type, <0..2> arg):
+    ne_tern_rel_type()  = type.args_types(arg),
+    union_type(ts?)     = union_superset([tern_rel_arg_supertype(t, arg) | t <- ts]),
     type_var()          = type_any,
-    type_ref(ts?)       = map_value_supertype(expand_type_ref(ts, typedefs)),
+    type_ref(ts?)       = tern_rel_arg_supertype(expand_type_ref(ts, typedefs), arg),
     _                   = empty_type;
 
 
-  Type restricted_map_value_supertype(Type type, Type key_type):
-    ne_map_type()       = if pseudotypes_are_disjoint(type.key_type, key_type, typedefs)
+  (Type, Type, Type) tern_rel_args_supertypes(Type type) = (
+      tern_rel_arg_supertype(type, 0), tern_rel_arg_supertype(type, 1), tern_rel_arg_supertype(type, 2)
+    );
+
+
+  Type restricted_bin_rel_arg1_supertype(Type type, Type arg0_type):
+    ne_map_type()       = if pseudotypes_are_disjoint(type.key_type, arg0_type, typedefs)
                             then empty_type
                             else type.value_type,
-    ne_record_type(fs?) = union_superset([f.type | s : f <- fs, type_contains_obj(key_type, bare_obj(s))]),
-    union_type(ts?)     = union_superset([restricted_map_value_supertype(t, key_type) | t <- ts]),
-    type_var()          = if key_type != empty_type then type_any else empty_type,
-    type_ref(ts?)       = restricted_map_value_supertype(expand_type_ref(ts, typedefs), key_type),
+    ne_bin_rel_type()   = if pseudotypes_are_disjoint(type.args_types(0), arg0_type, typedefs)
+                            then empty_type
+                            else type.args_types(1),
+    ne_record_type(fs?) = union_superset([f.type | s : f <- fs, type_contains_obj(arg0_type, bare_obj(s))]),
+    union_type(ts?)     = union_superset([restricted_bin_rel_arg1_supertype(t, arg0_type) | t <- ts]),
+    type_var()          = if arg0_type != empty_type then type_any else empty_type,
+    type_ref(ts?)       = restricted_bin_rel_arg1_supertype(expand_type_ref(ts, typedefs), arg0_type),
     _                   = empty_type;
 
 

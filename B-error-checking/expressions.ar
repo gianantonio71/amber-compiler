@@ -18,8 +18,10 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
     float_lit()         = (),
     seq_expr(ses?)      = join((expr_wf_errors(se, def_vars) | se <- ses)),
     seq_tail_expr()     = expr_wf_errors(expr.seq, def_vars) & join((expr_wf_errors(e, def_vars) | e <- expr.tail)),
-    set_expr(ses?)      = join((expr_wf_errors(se, def_vars) | se <- rand_sort(ses))),
-    map_expr(es?)       = join((map_entry_wf_errors(e, def_vars) | e <- rand_sort(es))),
+    set_expr(ses?)      = join((expr_wf_errors(se, def_vars) | se <- ses)),
+    map_expr(es?)       = join((map_entry_wf_errors(e, def_vars) | e <- es)),
+    bin_rel_expr(es?)   |
+    tern_rel_expr(es?)  = join((rel_entry_wf_errors(e, def_vars) | e <- es)),
     tag_obj_expr()      = expr_wf_errors(expr.tag, def_vars) & expr_wf_errors(expr.obj, def_vars),
     FnPar               = {assert in(expr, def_vars); return ();},
     const_or_var(a?)    = (),
@@ -46,6 +48,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
     ex_qual()           = clauses_exprs_wf_errors(expr.source, (expr.cond), def_vars),
     set_comp()          = clauses_exprs_wf_errors(expr.source, (expr.expr), def_vars),
     map_comp()          = clauses_exprs_wf_errors(expr.source, (expr.key_expr, expr.value_expr), def_vars),
+    rel_comp()          = clauses_exprs_wf_errors(expr.source, expr.exprs, def_vars),
     seq_comp()          = seq_comp_expr_nested_wf_errors(expr, def_vars),
     range_comp()        = range_comp_expr_nested_wf_errors(expr, def_vars),
     if_expr()           = expr_wf_errors(expr.else, def_vars) &
@@ -147,9 +150,9 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
       return errs if errs != ();
     ;
 
-    return if arity != 2
-        then (wrong_rel_test_arity(expr, [2]))
-      elif expr.args(0) == nil or expr.args(1) != nil
+    return if arity != 2 and arity != 3
+        then (wrong_rel_test_arity(expr, [2, 3]))
+      elif all((a == nil | a <- expr.args))
         then (invalid_expr(expr))
       else
         ();
@@ -255,7 +258,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
 
     ExprWFError* wf_errors(SymbChainAcc, SynExpr) = ();
 
-    ExprWFError* wf_errors(<QualDBMembVar, FnCallExpr, AutoMethodCallExpr, DBMethodCallExpr>, SynExpr expr) =
+    ExprWFError* wf_errors(<QualDBMembVar, FnCallExpr, AutoMethodCall, DBMethodCall>, SynExpr expr) =
       (invalid_expr(expr));
 
     // This is just not supposed to happen. An accessor cannot resolve to an unqualified variable
@@ -323,6 +326,10 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
       expr_wf_errors(entry.value, def_vars),
       expr_wf_errors(entry.cond, def_vars) if entry.cond?
     ));
+
+
+  ExprWFError* rel_entry_wf_errors(<SynBinRelEntry, SynTernRelEntry> entry, [DefVar] def_vars) =
+    join((expr_wf_errors(e, def_vars) | e <- entry.args & (entry.cond if entry.cond?)));
 
 
   ExprWFError* exp_named_arg_errors(NamedArg arg, Nat exp_arity, [DefVar] def_vars)

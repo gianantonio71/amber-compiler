@@ -79,7 +79,8 @@ implicit typedefs : [TypeName -> Type]
 
     empty_seq_type,     _                 = if ptrn == ptrn_empty_seq then empty_seq_type else empty_type,
     empty_set_type,     _                 = if ptrn == ptrn_empty_set then empty_set_type else empty_type,
-    empty_map_type,     _                 = if ptrn == ptrn_empty_map then empty_map_type else empty_type,
+    empty_bin_rel_type, _                 = if ptrn == ptrn_empty_bin_rel then empty_bin_rel_type else empty_type,
+    empty_tern_rel_type,_                 = if ptrn == ptrn_empty_tern_rel then empty_tern_rel_type else empty_type,
 
     ne_seq_type(),      ptrn_ne_seq       = type,
     ne_seq_type(),      ptrn_tuple(ps?)   = tuple_type((type_pattern_intersection_superset(type.elem_type, p) | p <- ps)),
@@ -92,9 +93,19 @@ implicit typedefs : [TypeName -> Type]
     tuple_type(ts?),    _                 = empty_type,
 
     ne_set_type(),      _                 = if ptrn == ptrn_ne_set then type else empty_type,
-    ne_map_type(),      _                 = if ptrn == ptrn_ne_map then type else empty_type,
+
+    ne_map_type(),      ptrn_ne_bin_rel   = type,
+    ne_map_type(),      ptrn_ne_map       = type,
+    ne_map_type(),      _                 = empty_type,
+
+    ne_bin_rel_type(),  ptrn_ne_bin_rel   = type,
+    ne_bin_rel_type(),  ptrn_ne_map       = ne_map_type(type.args_types(0), type.args_types(1)),
+    ne_bin_rel_type(),  _                 = empty_type,
+
+    ne_tern_rel_type(), _                 = if ptrn == ptrn_ne_tern_rel then type else empty_type,
 
     ne_record_type(),   ptrn_ne_map       = type,
+    ne_record_type(),   ptrn_ne_bin_rel   = type,
     ne_record_type(),   _                 = empty_type,
 
     tag_obj_type(),     ptrn_tag_obj()    = { tag_type_int = type_pattern_intersection_superset(type.tag_type, ptrn.tag);
@@ -151,22 +162,43 @@ implicit typedefs : [TypeName -> Type]
 
     empty_seq_type,       _       = obj == (),
     empty_set_type,       _       = obj == [],
-    empty_map_type,       _       = obj == [:],
+    empty_bin_rel_type,   _       = obj == [:],
+    empty_tern_rel_type,  _       = obj == [::],
 
-    ne_seq_type(),        (..)    = obj != () and all((type_contains_obj(type.elem_type, e) | e <- obj)),
+    ne_seq_type(),        ()      = obj != () and all((type_contains_obj(type.elem_type, e) | e <- obj)),
     ne_seq_type(),        _       = false,
 
-    ne_set_type(),        [..]    = obj != [] and not (e <- obj | not type_contains_obj(type.elem_type, e)),
+    ne_set_type(),        []      = obj != [] and not (e <- obj | not type_contains_obj(type.elem_type, e)),
     ne_set_type(),        _       = false,
 
-    ne_map_type(),        [->]    = obj != [:] and not (k : v <- obj | not type_contains_obj(type.key_type, k) or not type_contains_obj(type.value_type, v)),
+    ne_map_type(),        [->]    = obj != [:] and
+                                    not (
+                                      k : v <- obj |
+                                        not type_contains_obj(type.key_type, k) or
+                                        not type_contains_obj(type.value_type, v)
+                                    ),
     ne_map_type(),        _       = false,
+
+    ne_bin_rel_type(),    [:]     = obj != [:] and
+                                    not (
+                                      l : r <- obj |
+                                        not type_contains_obj(type.args_types(0), l) or
+                                        not type_contains_obj(type.args_types(1), r)
+                                    ),
+    ne_bin_rel_type(),    _       = false,
+
+    ne_tern_rel_type(),   [::]    = obj != [::] and
+                                    not (
+                                      l : m : r <- obj |
+                                        not all((type_contains_obj(t, x) | t, x <- zip(type.args_types, (l, m, r))))
+                                    ),
+    ne_tern_rel_type(),   _       = false,
 
     ne_record_type(fs?),  [->]    = obj != [:] and subset([l | l : f <- fs, not f.optional], keys(obj)) and
                                     not (k : v <- obj | not has_key(fs, k) or not type_contains_obj(fs[k].type, v)),
     ne_record_type(fs?),  _       = false,
 
-    tuple_type(ts?),      (..)    = length(ts) == length(obj) and all((type_contains_obj(t, e) | t, e <- zip(ts, obj))),
+    tuple_type(ts?),      ()      = length(ts) == length(obj) and all((type_contains_obj(t, e) | t, e <- zip(ts, obj))),
     tuple_type(ts?),      _       = false,
 
     tag_obj_type(),       t?(o?)  = type_contains_obj(type.tag_type, t) and type_contains_obj(type.obj_type, o),
@@ -197,7 +229,7 @@ implicit typedefs : [TypeName -> Type]
 
     empty_seq_type          = if obj == () then empty_type else type,
     empty_set_type          = if obj == [] then empty_type else type,
-    empty_map_type          = if obj == [:] then empty_type else type,
+    empty_bin_rel_type      = if obj == [:] then empty_type else type,
 
     union_type(ts?)         = { nts = [nt | t <- ts, nt = subtract_obj_from_type(t, obj), nt != empty_type];
                                 return if nts == [] then empty_type else union_type(nts);
@@ -236,6 +268,7 @@ BuiltInType builtin_signature(BuiltIn):
   symb            = builtin_type((type_string),                        atom_type),
   at              = builtin_type((type_seq_t, integer),                type_var(:t)),
   len             = builtin_type((type_seq),                           high_ints(0)),
+  size            = builtin_type((type_set_rel),                       high_ints(0)),
   slice           = builtin_type((type_seq_t, integer, integer),       type_seq_t),
   cat             = builtin_type((type_seq_t, type_seq_t),             type_seq_t),
   set             = builtin_type((type_seq_t),                         type_set_t),
@@ -298,28 +331,49 @@ IntType type_nz_nat = high_ints(1);
 Type type_seq = type_seq(type_any);
 Type type_set = type_set(type_any);
 Type type_map = type_map(type_any, type_any);
+Type type_bin_rel = type_bin_rel(type_any, type_any);
+Type type_tern_rel = type_tern_rel(type_any, type_any, type_any);
+
+Type type_set_rel = union_type([type_set, type_bin_rel, type_tern_rel]);
 
 Type type_unary_pseudocall_target = union_type([atom_type, type_seq, type_set, type_map]);
 
-Type type_ne_seq = ne_seq_type(type_any);
-Type type_ne_set = ne_set_type(type_any);
-Type type_ne_map = ne_map_type(type_any, type_any);
+Type type_ne_seq      = ne_seq_type(type_any);
+Type type_ne_set      = ne_set_type(type_any);
+Type type_ne_map      = ne_map_type(type_any, type_any);
+Type type_ne_bin_rel  = ne_bin_rel_type(type_any, type_any);
+Type type_ne_tern_rel = ne_tern_rel_type(type_any, type_any, type_any);
 
 // TagObjType type_tagged_obj = tag_obj_type(atom_type, type_any);
 TagObjType type_tagged_obj = {res = tag_obj_type(atom_type, type_any); fail if res == empty_type; return res;}; //## BAD BAD BAD
 
 Type type_seq(Type elem_type, Bool nonempty) = if nonempty then ne_seq_type(elem_type) else type_seq(elem_type);
 Type type_set(Type elem_type, Bool nonempty) = if nonempty then ne_set_type(elem_type) else type_set(elem_type);
+
 Type type_map(Type key_type, Type value_type, Bool nonempty) =
   if nonempty then ne_map_type(key_type, value_type) else type_map(key_type, value_type);
 
+Type type_bin_rel(Type arg_1_type, Type arg_2_type, Bool nonempty) =
+  if nonempty then ne_bin_rel_type(arg_1_type, arg_2_type) else type_bin_rel(arg_1_type, arg_2_type);
+
+Type type_tern_rel(Type arg_1_type, Type arg_2_type, Type arg_3_type, Bool nonempty) =
+  if nonempty
+    then ne_tern_rel_type(arg_1_type, arg_2_type, arg_3_type)
+    else type_tern_rel(arg_1_type, arg_2_type, arg_3_type);
+
 Type type_seq(Type elem_type)  = union_type([empty_seq_type, ne_seq_type(elem_type)]);
 Type type_set(Type elem_type)  = union_type([empty_set_type, ne_set_type(elem_type)]);
-Type type_mset(Type elem_type) = union_type([empty_map_type, ne_map_type(elem_type, high_ints(1))]);
+Type type_mset(Type elem_type) = union_type([empty_bin_rel_type, ne_map_type(elem_type, high_ints(1))]);
 
 Type type_tuple(<2..*> size)  = tuple_type(nonempty(size * (type_any)));
 
-Type type_map(Type key_type, Type value_type)  = union_type([empty_map_type, ne_map_type(key_type, value_type)]);
+Type type_map(Type key_type, Type value_type)  = union_type([empty_bin_rel_type, ne_map_type(key_type, value_type)]);
+
+Type type_bin_rel(Type arg_1_type, Type arg_2_type) =
+  union_type([empty_bin_rel_type, ne_bin_rel_type(arg_1_type, arg_2_type)]);
+
+Type type_tern_rel(Type arg_1_type, Type arg_2_type, Type arg_3_type) =
+  union_type([empty_tern_rel_type, ne_tern_rel_type(arg_1_type, arg_2_type, arg_3_type)]);
 
 Type type_string = tag_obj_type(symb_type(:string), union_type([empty_seq_type, ne_seq_type(type_nat)]));
 

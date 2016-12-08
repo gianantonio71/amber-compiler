@@ -46,9 +46,9 @@ String capitalize(String s, Bool keep_underscores)
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-String user_repr(Type type) = user_repr(type, false, false, false, false);
+String user_repr(Type type) = user_repr(type, false, false, false, false, false);
 
-String user_repr(Type type, Bool inside_type_union, Bool incl_empty_seq, Bool incl_empty_set, Bool incl_empty_map):
+String user_repr(Type type, Bool inside_type_union, Bool incl_empty_seq, Bool incl_empty_set, Bool incl_empty_bin_rel, Bool incl_empty_tern_rel):
   empty_type                = "</>",
   atom_type                 = "<+>",
   symb_type(object(a?))     = {res = _str_(a); res = "<" & res & ">" if not inside_type_union; return res;},
@@ -59,13 +59,19 @@ String user_repr(Type type, Bool inside_type_union, Bool incl_empty_seq, Bool in
   float_type                = "<^>",
   empty_seq_type            = "()",
   empty_set_type            = "[]",
-  empty_map_type            = "[:]",
+  empty_bin_rel_type        = "[:]",
+  empty_tern_rel_type       = "[::]",
   type_var(Atom a?)         = uppercase(a),
   type_var()                = {fail;},
   type_ref(ts?)             = user_repr(ts),
   ne_seq_type()             = user_repr(type.elem_type) & if incl_empty_seq then "*" else "+",
   ne_set_type()             = "[" & {if incl_empty_set then "" else "+"} & user_repr(type.elem_type) & "]",
-  ne_map_type()             = "[" & {if incl_empty_map then "" else "+"} & user_repr(type.key_type) & " -> " & user_repr(type.value_type) & "]",
+  ne_map_type()             = "[" & {if incl_empty_bin_rel then "" else "+"} &
+                              user_repr(type.key_type) & " -> " & user_repr(type.value_type) & "]",
+  ne_bin_rel_type()         = "[" & {if incl_empty_bin_rel then "" else "+"} &
+                              user_repr(type.args_types(0)) & ":" & user_repr(type.args_types(1)) & "]",
+  ne_tern_rel_type()        = "[" & {if incl_empty_tern_rel then "" else "+"} &
+                              append((user_repr(t) | t <- type.args_types), ":") & "]",
   ne_record_type(fs?)       = ne_record_type_user_repr(fs),
   tuple_type(ts?)           = "(" & append((user_repr(t) | t <- ts), ", ") & ")",
   tag_obj_type()            = tag_obj_type_user_repr(type.tag_type, type.obj_type),
@@ -86,17 +92,22 @@ String union_type_user_repr([+NeType] types)
 {
   incl_empty_seq = in(empty_seq_type, types);
   incl_empty_set = in(empty_set_type, types);
-  incl_empty_map = in(empty_map_type, types);
+  incl_empty_bin_rel = in(empty_bin_rel_type, types);
+  incl_empty_tern_rel = in(empty_tern_rel_type, types);
 
   types_to_exclude = [
     empty_seq_type if (t <- types | match (t) ne_seq_type() = true, _ = false),
     empty_set_type if (t <- types | match (t) ne_set_type() = true, _ = false),
-    empty_map_type if (t <- types | match (t) ne_map_type() = true, _ = false)
+    empty_bin_rel_type if (t <- types | match (t) ne_map_type() | ne_bin_rel_type() = true, _ = false),
+    empty_tern_rel_type if (t <- types | match (t) ne_tern_rel_type() = true, _ = false)
   ];
 
   types_left_sorted = rand_sort(types - types_to_exclude);
   is_still_union = length(types_left_sorted) > 1;
-  types_reprs = (user_repr(t, is_still_union, incl_empty_seq, incl_empty_set, incl_empty_map) | t <- types_left_sorted);
+  types_reprs = (
+    user_repr(t, is_still_union, incl_empty_seq, incl_empty_set, incl_empty_bin_rel, incl_empty_tern_rel)
+    | t <- types_left_sorted
+  );
   repr_str = append(types_reprs, ", ");
   repr_str = "<" & repr_str & ">" if is_still_union;
   return repr_str;
@@ -149,23 +160,9 @@ String user_repr(BuiltIn b) = "_" & _str_(b) & "_";
 
 String user_repr(FnSymbol fn_symb, Nat arity):
   fn_symbol(a?)         = _str_(a) & "/" & printed(arity),
-  op_symbol(op?)        = user_repr(op, arity),
+  op_symbol(op?)        = user_repr(op),
   nested_fn_symbol()    = user_repr(fn_symb.outer) & ":" & user_repr(fn_symb.inner),
   unique_fn_symbol()    = {fail;};
-
-
-String user_repr(Operator, Nat arity):
-  plus          = "(_+_)",
-  minus         = if arity == 1 then "(-_)" else "(_-_)",
-  star          = "(_*_)",
-  slash         = "(_/_)",
-  exp           = "(_^_)",
-  amp           = "(_&_)",
-  lower         = "(_<_)",
-  greater       = "(_>_)",
-  lower_eq      = "(_<=_)",
-  greater_eq    = "(_>=_)",
-  brackets      = "(_[_])";
 
 
 String user_repr(ClsVar v):
@@ -178,42 +175,26 @@ String user_repr(ClsType type) = "(" & append((user_repr(t) | t <- type.in_types
 String user_repr(FnType type) = append((user_repr(t) | t <- type.params), ", ") & " -> " & user_repr(type.ret_type);
 
 
-String user_repr(PseudoType pseudotype)
-{
-  bpts = match (pseudotype) pseudotype(pts?) = pts;
-  return append((user_repr(pt) | pt <- rand_sort(bpts)), ", ");
-
-  String user_repr(BasicPseudoType psuedotype):
-    symbol(a?)        = _str_(a),
-    integers          = "<*..*>",
-    floats            = "<^>",
-    empty_set         = "{}",
-    ne_sets           = "{..}",
-    empty_seq         = "[]",
-    ne_seqs           = "[..]",
-    empty_map         = "()",
-    ne_maps           = "(..)",
-    tag_obj(a?)       = _str_(a) & "()",
-    symbols           = "<+>",
-    tag_objs          = "*()";
-}
-
-
+//## BUG BUG BUG: THIS IS PROBABLY ALL WRONG...
 String user_repr(Pattern ptrn):
   ptrn_symbol         = "+",
   ptrn_float          = "*",
-  ptrn_empty_set      = "{...}",
-  ptrn_ne_set         = "{...}",
-  ptrn_empty_seq      = "[...]",
-  ptrn_ne_seq         = "[...]",
-  ptrn_empty_map      = "(...)",
-  ptrn_ne_map         = "(...)",
+  ptrn_empty_seq      = "()",
+  ptrn_ne_seq         = "(?)",
+  ptrn_empty_set      = "[]",
+  ptrn_ne_set         = "[?]",
+  ptrn_empty_bin_rel  = "[:]",
+  ptrn_ne_map         = "[->]",
+  ptrn_ne_bin_rel     = "[?:?]",
+  ptrn_empty_tern_rel = "[::]",
+  ptrn_ne_tern_rel    = "[?:?:?]",
   ptrn_any            = "_",
   ptrn_symbol(s?)     = _str_(match (s) object(a?) = a),
   ptrn_integer(t?)    = user_repr(t),
+  ptrn_tuple(ps?)     = "(" & append((user_repr(p) | p <- ps), ", ") & ")",
   ptrn_tag_obj()      = ptrn_tag_obj_user_repr(ptrn.tag, ptrn.obj),
   ptrn_var()          = {if ptrn.ptrn != ptrn_any then user_repr(ptrn.ptrn) & " " else ""} & user_repr(ptrn.var) & "?",
-  ptrn_union(ps?)     = "<" & append((user_repr(p) | p <- rand_sort(ps)), ", ") & ">";
+  ptrn_union(ps?)     = append((user_repr(p) | p <- rand_sort(ps)), " | ");
 
 
 String ptrn_tag_obj_user_repr(TagPtrn tag, Pattern obj):
@@ -239,8 +220,9 @@ String user_repr(DBSymbol): db_symbol(a?) = upper_camel_case(a);
 
 
 String user_repr(Operator):
+  unary_minus   = "(-_)",
   plus          = "(_+_)",
-  minus         = "(_-_)", //## BUG BUG BUG: THIS IS WRONG, THERE ARE TWO OPERATORS HERE, THE UNARY AND THE BINARY ONE
+  minus         = "(_-_)",
   star          = "(_*_)",
   slash         = "(_/_)",
   exp           = "(_^_)",

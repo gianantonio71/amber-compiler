@@ -446,7 +446,9 @@ implicit
 
     get_set_iter()        = mk_call("get_set_iter", (instr.var, instr.src)),
     get_seq_iter()        = mk_call("get_seq_iter", (instr.var, instr.src)),
-    get_map_iter()        = mk_call("get_map_iter", (instr.var, instr.src)),
+
+    get_bin_rel_iter()    = compile_get_bin_rel_iter_to_c(instr.var, instr.src, instr.args),
+    get_tern_rel_iter()   = compile_get_tern_rel_iter_to_c(instr.var, instr.src, instr.args),
 
     move_forward(v?)      = compile_move_forward_to_c(v),
 
@@ -558,6 +560,24 @@ implicit
     queue_insert_tuple()  = compile_queue_insert_tuple_to_c(instr.rel_var, instr.tuple);
 
 
+  String* compile_get_bin_rel_iter_to_c(BinRelItVar var, AtomicExpr src, (Maybe[AtomicExpr], Maybe[AtomicExpr]) args) =
+    match (args)
+      (nil,       nil)        = mk_call("get_bin_rel_iter",   (var, src)),
+      (just(a0?), nil)        = mk_call("get_bin_rel_iter_0", (var, src, a0)),
+      (nil,       just(a1?))  = mk_call("get_bin_rel_iter_1", (var, src, a1));
+
+
+  String* compile_get_tern_rel_iter_to_c(TernRelItVar var, AtomicExpr src, (Maybe[AtomicExpr], Maybe[AtomicExpr], Maybe[AtomicExpr]) args) =
+    match (args)
+      (nil,       nil,       nil)         = mk_call("get_tern_rel_iter",    (var, src)),
+      (just(a0?), nil,       nil)         = mk_call("get_tern_rel_iter_by", (var, src, 0, a0)),
+      (nil,       just(a1?), nil)         = mk_call("get_tern_rel_iter_by", (var, src, 1, a1)),
+      (nil,       nil,       just(a2?))   = mk_call("get_tern_rel_iter_by", (var, src, 2, a2)),
+      (just(a0?), just(a1?), nil)         = mk_call("get_tern_rel_iter_by", (var, src, 0, a0, a1)),
+      (just(a0?), nil,       just(a2?))   = mk_call("get_tern_rel_iter_by", (var, src, 2, a2, a0)),
+      (nil,       just(a1?), just(a2?))   = mk_call("get_tern_rel_iter_by", (var, src, 1, a1, a2));
+
+
   String* compile_try_block_to_c(LocVar var, Instr+ body, <Nat, nil> block_id)
   {
     var_name = to_c_var_ref_name(var);
@@ -608,7 +628,8 @@ implicit
   }
 
 
-  String* compile_move_forward_to_c(<SeqItVar, SetItVar, MapItVar> it_var) = mk_call("move_forward", (it_var));
+  String* compile_move_forward_to_c(<SeqItVar, SetItVar, BinRelItVar, TernRelItVar> it_var) =
+    mk_call("move_forward", (it_var));
 
 
   String* compile_move_forward_to_c(TableItVar var)
@@ -818,30 +839,37 @@ implicit
 
 
   String* compile_to_c(RefObjExpr expr, ObjVar var):
-    mk_set_from_stream()  = mk_call(var, "build_set",           (expr.stream)),
-    mk_set()              = mk_call(var, "build_set",           (expr.elems, expr.size)),
-    mk_seq_from_stream()  = mk_call(var, "build_seq",           (expr.stream)),
-    mk_seq()              = mk_call(var, "build_seq",           (expr.elems, expr.size)),
-    build_const_int_seq() = compile_build_const_int_seq_to_c(expr.seq_id, var),
-    mk_map_from_streams() = mk_call(var, "build_map",           (expr.key_stream, expr.value_stream)),
-    mk_map()              = mk_call(var, "build_map",           (expr.keys, expr.values, expr.size)),
-    mk_tagged_obj()       = mk_call(var, "build_tagged_obj",    (expr.tag, expr.obj)),
-    mk_array()            = mk_call(var, "blank_array",         (expr.size)),
-    get_seq_slice()       = mk_call(var, "get_seq_slice",       (expr.seq, expr.idx_first, expr.len)),
-    append_to_seq()       = mk_call(var, "append_to_seq",       (expr.seq, expr.new_elem)),
-    join_seqs()           = mk_call(var, "join_seqs",           (expr.left, expr.right)),
-    join_mult_seqs()      = mk_call(var, "join_mult_seqs",      (expr.seqs)),
-    rev_seq()             = mk_call(var, "rev_seq",             (expr.seq)),
-    merge_sets()          = mk_call(var, "merge_sets",          (expr.sets)),
-    merge_maps()          = mk_call(var, "merge_maps",          (expr.maps)),
-    seq_to_set()          = mk_call(var, "seq_to_set",          (expr.seq)),
-    seq_to_mset()         = mk_call(var, "seq_to_mset",         (expr.seq)),
-    internal_sort()       = mk_call(var, "internal_sort",       (expr.set)),
-    symb_to_str(e?)       = mk_call(var, "to_str",              (e)),
-    lookup_surrogate()    = mk_call(var, "lookup_surrogate",    (expr.store, expr.surrogate)),
-    read_pending_var(v?)  = (to_c_var_ref_name(var) & " = " & to_c_var_ref_name(v) & ";"),
-    add_attachment()      = mk_call(var, "add_attachment",      (expr.target, expr.data)),
-    fetch_attachments(e?) = mk_call(var, "fetch_attachments",   (e));
+    mk_set_from_stream()        = mk_call(var, "build_set",           (expr.stream)),
+    mk_set()                    = mk_call(var, "build_set",           (expr.elems, expr.size)),
+    mk_seq_from_stream()        = mk_call(var, "build_seq",           (expr.stream)),
+    mk_seq()                    = mk_call(var, "build_seq",           (expr.elems, expr.size)),
+    build_const_int_seq()       = compile_build_const_int_seq_to_c(expr.seq_id, var),
+    mk_map_from_streams()       = mk_call(var, "build_map",           (expr.key_stream, expr.value_stream)),
+    mk_map()                    = mk_call(var, "build_map",           (expr.keys, expr.values, expr.size)),
+    mk_bin_rel_from_streams()   = mk_call(var, "build_bin_rel",       expr.streams),
+    mk_bin_rel()                = mk_call(var, "build_bin_rel",       (expr.cols || expr.size)),
+    mk_tern_rel_from_streams()  = mk_call(var, "build_tern_rel",      expr.streams),
+    mk_tern_rel()               = mk_call(var, "build_tern_rel",      (expr.cols || expr.size)),
+    mk_tagged_obj()             = mk_call(var, "build_tagged_obj",    (expr.tag, expr.obj)),
+    mk_array()                  = mk_call(var, "blank_array",         (expr.size)),
+    get_seq_slice()             = mk_call(var, "get_seq_slice",       (expr.seq, expr.idx_first, expr.len)),
+    append_to_seq()             = mk_call(var, "append_to_seq",       (expr.seq, expr.new_elem)),
+    join_seqs()                 = mk_call(var, "join_seqs",           (expr.left, expr.right)),
+    join_mult_seqs()            = mk_call(var, "join_mult_seqs",      (expr.seqs)),
+    rev_seq()                   = mk_call(var, "rev_seq",             (expr.seq)),
+    merge_sets()                = mk_call(var, "merge_sets",          (expr.sets)),
+    merge_maps()                = mk_call(var, "merge_maps",          (expr.maps)),
+    seq_to_set()                = mk_call(var, "seq_to_set",          (expr.seq)),
+    seq_to_mset()               = mk_call(var, "seq_to_mset",         (expr.seq)),
+    internal_sort()             = mk_call(var, "internal_sort",       (expr.set)),
+    symb_to_str(e?)             = mk_call(var, "to_str",              (e)),
+    lookup_surrogate()          = mk_call(var, "lookup_surrogate",    (expr.store, expr.surrogate)),
+    read_pending_var(v?)        = (to_c_var_ref_name(var) & " = " & to_c_var_ref_name(v) & ";"),
+    add_attachment()            = mk_call(var, "add_attachment",      (expr.target, expr.data)),
+    fetch_attachments(e?)       = mk_call(var, "fetch_attachments",   (e));
+
+
+
 
 
   String* compile_build_const_int_seq_to_c(Nat seq_id, ObjVar var)
@@ -1038,9 +1066,10 @@ implicit typesymb2name : TypeSymbol -> String
   String to_c_expr(ObjExpr expr):
     object(Atom a?)     = upper_camel_case(a) & "_S",
     object(Int n?)      = "make_int(" & printed(n) & ")",
-    empty_set           = "make_empty_set()",
     empty_seq           = "make_empty_seq()",
-    empty_map           = "make_empty_map()",
+    empty_set           = "make_empty_set()",
+    empty_bin_rel       = "make_empty_bin_rel()",
+    empty_tern_rel      = "make_empty_tern_rel()",
     ObjVar              = to_c_var_ref_name(expr),
     at()                = "at("                 & to_c_expr(expr.seq)    & ", " & to_c_expr(expr.idx) & ")",
     search_or_lookup()  = "search_or_lookup("   & to_c_expr(expr.collection) & ", " & to_c_expr(expr.value) & ")",
@@ -1051,9 +1080,30 @@ implicit typesymb2name : TypeSymbol -> String
     obj_neg(e?)         = "obj_neg("            & to_c_expr(e)           & ")",
     to_symb(e?)         = "to_symb("            & to_c_expr(e)           & ")",
     get_curr_obj(v?)    = "get_curr_obj("       & to_c_var_ref_name(v) & ")",
-    get_curr_key(v?)    = "get_curr_key("       & to_c_var_ref_name(v) & ")",
-    get_curr_value(v?)  = "get_curr_value("     & to_c_var_ref_name(v) & ")",
+    get_curr_arg()      = get_curr_arg_to_c_expr(expr.var, expr.arg),
     rand_elem(e?)       = "rand_set_elem("      & to_c_expr(e)           & ")";
+
+
+  String get_curr_arg_to_c_expr(BinRelItVar var, <0..2> arg)
+  {
+    assert arg != 2;
+    return fn_names[arg] & "(" & to_c_var_ref_name(var) & ")";
+
+    [<0..1> -> String] fn_names = [0 -> "get_curr_left_arg", 1 -> "get_curr_right_arg"];
+
+  }
+
+
+  String get_curr_arg_to_c_expr(TernRelItVar var, <0..2> arg)
+  {
+    return fn_names[arg] & "(" & to_c_var_ref_name(var) & ")";
+
+    String+ fn_names = (
+      "tern_rel_it_get_left_arg",
+      "tern_rel_it_get_mid_arg",
+      "tern_rel_it_get_right_arg"
+    );
+  }
 
 
   String to_c_expr(BoolExpr expr)           = to_c_expr(expr, false);
@@ -1067,15 +1117,15 @@ implicit typesymb2name : TypeSymbol -> String
     true                  = "true",
     false                 = "false",
     BoolVar               = to_c_var_ref_name(expr),
-    is_symb(e?)           = "is_symb("    & to_c_expr(e) & ")",
-    is_int(e?)            = "is_int("     & to_c_expr(e) & ")",
-    is_float(e?)          = "is_float("   & to_c_expr(e) & ")",
-    is_ne_set(e?)         = "is_ne_set("  & to_c_expr(e) & ")",
-    is_ne_seq(e?)         = "is_ne_seq("  & to_c_expr(e) & ")",
-    is_ne_map(e?)         = "is_ne_map("  & to_c_expr(e) & ")",
+    is_symb(e?)           = "is_symb("        & to_c_expr(e) & ")",
+    is_int(e?)            = "is_int("         & to_c_expr(e) & ")",
+    is_float(e?)          = "is_float("       & to_c_expr(e) & ")",
+    is_ne_set(e?)         = "is_ne_set("      & to_c_expr(e) & ")",
+    is_ne_seq(e?)         = "is_ne_seq("      & to_c_expr(e) & ")",
+    is_ne_map(e?)         = "is_ne_map("      & to_c_expr(e) & ")",
+    is_ne_bin_rel(e?)     = "is_ne_bin_rel("  & to_c_expr(e) & ")",
+    is_ne_tern_rel(e?)    = "is_ne_tern_rel(" & to_c_expr(e) & ")",
     is_tagged_obj(e?)     = "is_tag_obj(" & to_c_expr(e) & ")",
-
-    has_elem()            = "has_elem(" & to_c_expr(expr.set) & ", " & to_c_expr(expr.elem) & ")",
 
     neg(is_eq_bool() e?)  = to_nary_op(" != ", (e.expr1, e.expr2), parentesised), //## BAD
     neg(is_eq_int() e?)   = to_nary_op(" != ", (e.expr1, e.expr2), parentesised), //## BAD
@@ -1098,7 +1148,9 @@ implicit typesymb2name : TypeSymbol -> String
     is_blank(v?)          = "is_blank_obj(" & to_c_var_ref_name(v) & ")",
     is_null(v?)           = "is_null_obj(" & to_c_var_ref_name(v) & ")",
 
-    contains()            = contains_to_c_expr(expr.table, expr.tuple),
+    contains()            = contains_to_c_expr(expr.coll, expr.entry),
+
+    table_contains()      = table_contains_to_c_expr(expr.table, expr.tuple),
 
     neg(e?)               = parentesize("!" & to_c_expr(e, true), parentesised),
 
@@ -1110,7 +1162,7 @@ implicit typesymb2name : TypeSymbol -> String
     eval_bool_fn()        = to_c_fn_name(expr.name) & "(" & to_nary_op(", ", expr.params, false) & ")";
 
 
-  String is_out_of_range_to_c_expr(<SeqItVar, SetItVar, MapItVar> var) =
+  String is_out_of_range_to_c_expr(<SeqItVar, SetItVar, BinRelItVar, TernRelItVar> var) =
     "is_out_of_range(" & to_c_var_ref_name(var) & ")";
 
 
@@ -1127,8 +1179,20 @@ implicit typesymb2name : TypeSymbol -> String
   }
 
 
+  String contains_to_c_expr(ObjExpr rel, ObjExpr+ tuple)
+  {
+    fn_name = fn_names_by_arity[length(tuple)];
+    return fn_name & "(" & append((to_c_expr(a) | a <- (rel) & tuple), ", ") & ")";
 
-  String contains_to_c_expr(AnyRelVar table, IntVar+ tuple)
+    [NzNat -> String] fn_names_by_arity = [
+      1 -> "has_elem",
+      2 -> "has_pair",
+      3 -> "has_triple"
+    ];
+  }
+
+
+  String table_contains_to_c_expr(AnyRelVar table, IntVar+ tuple)
   {
     fn_name = fn_names_by_arity[length(tuple)];
     return fn_name & "(&" & append((to_c_var_ref_name(v) | v <- (table) & tuple), ", ") & ")";
@@ -1149,36 +1213,36 @@ implicit typesymb2name : TypeSymbol -> String
       object(Int n?)    = "is_int("  & expr_str & ", " & printed(n) & ")",
       empty_seq         = "is_empty_seq(" & expr_str & ")",
       empty_set         = "is_empty_set(" & expr_str & ")",
-      empty_map         = "is_empty_map(" & expr_str & ")";
+      empty_bin_rel     = "is_empty_bin_rel(" & expr_str & ")",
+      empty_tern_rel    = "is_empty_tern_rel(" & expr_str & ")";
   }
 
 
   String to_c_expr(IntExpr expr) = to_c_expr(expr, false);
 
   String to_c_expr(IntExpr expr, Bool parentesised):
-    Int                 = printed(expr),
-    time_slot_length()  = to_c_time_slots_table_name(expr.automaton, expr.expr_id) &
-                            "[" & to_c_expr(expr.time_slot) & "]",
-    IntVar              = to_c_var_ref_name(expr),
-    get_int_val(e?)     = "get_int_val("  & to_c_expr(e) & ")",
-    get_set_size(e?)    = "get_set_size(" & to_c_expr(e) & ")",
-    get_seq_len(e?)     = "get_seq_len("  & to_c_expr(e) & ")",
-    get_map_size(e?)    = "get_map_size(" & to_c_expr(e) & ")",
-    minus(e?)           = "-" & to_c_expr(e, true),
-    add()               = to_nary_op(" + ", (expr.val1, expr.val2), parentesised),
-    sub()               = to_nary_op(" - ", (expr.val1, expr.val2), parentesised),
-    mult()              = to_nary_op(" * ", (expr.val1, expr.val2), parentesised),
-    div()               = to_nary_op(" / ", (expr.val1, expr.val2), parentesised),
-    mod()               = to_nary_op(" % ", (expr.val1, expr.val2), parentesised),
-    mantissa(e?)        = "mantissa(" & to_c_expr(e) & ")",
-    dec_exp(e?)         = "dec_exp(" & to_c_expr(e) & ")",
-    rand_nat(e?)        = "rand_nat(" & to_c_expr(e) & ")",
-    lookup_value()      = "lookup_value(" & to_c_expr(expr.store) & ", " & to_c_expr(expr.value) & ")",
-    lookup_value_ex()   = "lookup_value_ex(" & to_c_expr(expr.store) & ", " &
-                            aux_struct_var_ref_name(expr.store) & ", " & to_c_expr(expr.value) & ")",
-    get_tuple_field()   = get_tuple_field_to_c_expr(expr.iter, expr.field),
-    unique_nat          = "unique_nat()",
-    ticks               = "get_tick_count()";
+    Int                   = printed(expr),
+    time_slot_length()    = to_c_time_slots_table_name(expr.automaton, expr.expr_id) &
+                              "[" & to_c_expr(expr.time_slot) & "]",
+    IntVar                = to_c_var_ref_name(expr),
+    get_int_val(e?)       = "get_int_val("  & to_c_expr(e) & ")",
+    get_seq_len(e?)       = "get_seq_len("  & to_c_expr(e) & ")",
+    get_size(e?)          = "get_size(" & to_c_expr(e) & ")",
+    minus(e?)             = "-" & to_c_expr(e, true),
+    add()                 = to_nary_op(" + ", (expr.val1, expr.val2), parentesised),
+    sub()                 = to_nary_op(" - ", (expr.val1, expr.val2), parentesised),
+    mult()                = to_nary_op(" * ", (expr.val1, expr.val2), parentesised),
+    div()                 = to_nary_op(" / ", (expr.val1, expr.val2), parentesised),
+    mod()                 = to_nary_op(" % ", (expr.val1, expr.val2), parentesised),
+    mantissa(e?)          = "mantissa(" & to_c_expr(e) & ")",
+    dec_exp(e?)           = "dec_exp(" & to_c_expr(e) & ")",
+    rand_nat(e?)          = "rand_nat(" & to_c_expr(e) & ")",
+    lookup_value()        = "lookup_value(" & to_c_expr(expr.store) & ", " & to_c_expr(expr.value) & ")",
+    lookup_value_ex()     = "lookup_value_ex(" & to_c_expr(expr.store) & ", " &
+                              aux_struct_var_ref_name(expr.store) & ", " & to_c_expr(expr.value) & ")",
+    get_tuple_field()     = get_tuple_field_to_c_expr(expr.iter, expr.field),
+    unique_nat            = "unique_nat()",
+    ticks                 = "get_tick_count()";
 
 
   String get_tuple_field_to_c_expr(TableItVar var, Nat field)

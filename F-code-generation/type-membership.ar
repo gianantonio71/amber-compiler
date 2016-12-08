@@ -19,6 +19,8 @@ implicit typedefs : [TypeName -> Type], next_var_gen : VarGen
       ne_set_type()       = gen_ne_set_type_checking_code(type.elem_type, obj, res_var),
       ne_seq_type()       = gen_ne_seq_type_checking_code(type.elem_type, obj, res_var),
       ne_map_type()       = gen_ne_map_type_checking_code(type.key_type, type.value_type, obj, res_var),
+      ne_bin_rel_type()   = gen_ne_bin_rel_type_checking_code(type.args_types, obj, res_var),
+      ne_tern_rel_type()  = gen_ne_tern_rel_type_checking_code(type.args_types, obj, res_var),
       ne_record_type(fs?) = gen_ne_record_type_checking_code(fs, obj, res_var),
       tuple_type(ts?)     = gen_tuple_type_checking_code(ts, obj, res_var),
       tag_obj_type()      = gen_tag_obj_type_checking_code(type.tag_type, type.obj_type, obj, res_var),
@@ -92,23 +94,94 @@ implicit typedefs : [TypeName -> Type], next_var_gen : VarGen
     return (set_bvar(res_var, is_ne_map(obj))) if is_type_any(key_type) and is_type_any(value_type);
 
     obj_var, var_gen = next_obj_var(next_var_gen);
-    it_var, var_gen = next_map_it_var(var_gen);
+    it_var, var_gen = next_bin_rel_it_var(var_gen);
 
     let next_var_gen = var_gen:
       code = (
-        //block_success_if(is_empty_map(obj), res_var),
         block_failure_if_not(is_ne_map(obj), res_var),
-        get_iter(it_var, obj),
+        get_iter(it_var, obj, (nil, nil)),
         repeat(
           nonempty(
             ( break_if(is_out_of_range(it_var)),
-              get_curr_key(obj_var, it_var)
+              get_curr_arg(obj_var, it_var, 0)
             ) &
             gen_type_checking_code(key_type, obj_var, res_var) &
             ( exit_block_if_not(res_var),
-              get_curr_value(obj_var, it_var)
+              get_curr_arg(obj_var, it_var, 1)
             ) &
             gen_type_checking_code(value_type, obj_var, res_var) &
+            ( exit_block_if_not(res_var),
+              move_forward(it_var)
+            )
+          )
+        ),
+        set_bvar(res_var, true)
+      );
+    ;
+
+    return (execute_block(code));
+  }
+
+
+  Instr+ gen_ne_bin_rel_type_checking_code((Type, Type) args_types, AtomicExpr obj, BoolVar res_var)
+  {
+    return (set_bvar(res_var, is_ne_bin_rel(obj))) if all((is_type_any(t) | t <- args_types));
+
+    obj_var, var_gen = next_obj_var(next_var_gen);
+    it_var, var_gen = next_bin_rel_it_var(var_gen);
+
+    let next_var_gen = var_gen:
+      code = (
+        block_failure_if_not(is_ne_bin_rel(obj), res_var),
+        get_iter(it_var, obj, (nil, nil)),
+        repeat(
+          nonempty(
+            ( break_if(is_out_of_range(it_var)),
+              get_curr_arg(obj_var, it_var, 0)
+            ) &
+            gen_type_checking_code(args_types(0), obj_var, res_var) &
+            ( exit_block_if_not(res_var),
+              get_curr_arg(obj_var, it_var, 1)
+            ) &
+            gen_type_checking_code(args_types(1), obj_var, res_var) &
+            ( exit_block_if_not(res_var),
+              move_forward(it_var)
+            )
+          )
+        ),
+        set_bvar(res_var, true)
+      );
+    ;
+
+    return (execute_block(code));
+  }
+
+
+  Instr+ gen_ne_tern_rel_type_checking_code((Type, Type, Type) args_types, AtomicExpr obj, BoolVar res_var)
+  {
+    return (set_bvar(res_var, is_ne_tern_rel(obj))) if all((is_type_any(t) | t <- args_types));
+
+    obj_var, var_gen = next_obj_var(next_var_gen);
+    it_var, var_gen = next_tern_rel_it_var(var_gen);
+
+    let next_var_gen = var_gen:
+      code = (
+        block_failure_if_not(is_ne_tern_rel(obj), res_var),
+        get_iter(it_var, obj, (nil, nil, nil)),
+        repeat(
+          nonempty(
+            ( break_if(is_out_of_range(it_var)),
+              get_curr_arg(obj_var, it_var, 0)
+            ) &
+            gen_type_checking_code(args_types(0), obj_var, res_var) &
+            ( exit_block_if_not(res_var),
+              get_curr_arg(obj_var, it_var, 1)
+            ) &
+            gen_type_checking_code(args_types(1), obj_var, res_var) &
+            ( exit_block_if_not(res_var),
+              get_curr_arg(obj_var, it_var, 2)
+            ) &
+            gen_type_checking_code(args_types(2), obj_var, res_var) &
             ( exit_block_if_not(res_var),
               move_forward(it_var)
             )
@@ -125,7 +198,7 @@ implicit typedefs : [TypeName -> Type], next_var_gen : VarGen
   Instr+ gen_ne_record_type_checking_code([+SymbObj -> (type: Type, optional: Bool)] fs, AtomicExpr obj, BoolVar res_var)
   {
     count_var, var_gen = next_int_var(next_var_gen);
-    it_var,    var_gen = next_map_it_var(var_gen);
+    it_var,    var_gen = next_bin_rel_it_var(var_gen);
     key_var,   var_gen = next_obj_var(var_gen);
     value_var, var_gen = next_obj_var(var_gen);
     tmp_bvar,  var_gen = next_bool_var(var_gen);
@@ -144,13 +217,14 @@ implicit typedefs : [TypeName -> Type], next_var_gen : VarGen
 
     return (
       execute_block((
+        block_failure_if_not(is_ne_bin_rel(obj), res_var),
         set_ivar(count_var, 0),
         set_bvar(res_var, false),
-        get_iter(it_var, obj),
+        get_iter(it_var, obj, (nil, nil)),
         repeat((
           break_if(is_out_of_range(it_var)),
-          get_curr_key(key_var, it_var),
-          get_curr_value(value_var, it_var),
+          get_curr_arg(key_var, it_var, 0),
+          get_curr_arg(value_var, it_var, 1),
           symb_switch(key_var, code_cases, (exit_block)),
           move_forward(it_var)
         )),
@@ -223,16 +297,17 @@ implicit typedefs : [TypeName -> Type], next_var_gen : VarGen
 
 
 BoolExpr gen_type_checking_expr(Type type, AtomicExpr obj):
-  atom_type       = is_symb(obj),
-  symb_type(s?)   = is_eq(s, obj),
-  integer         = is_int(obj),
-  low_ints()      = and_then(is_int(obj), is_le(get_int_val(obj), type.max)),
-  high_ints()     = and_then(is_int(obj), is_ge(get_int_val(obj), type.min)),
-  int_range()     = and_then(is_int(obj), is_ge(get_int_val(obj), type.min), is_le(get_int_val(obj), max(type))),
-  float_type      = is_float(obj),
-  type_ref(ts?)   = eval_bool_fn(memb_test(ts), (obj)),
-  type_var()      = true, //## BUG BUG BUG THIS IS TEMPORARY...
-  empty_seq_type  = is_eq(obj, empty_seq),
-  empty_set_type  = is_eq(obj, empty_set),
-  empty_map_type  = is_eq(obj, empty_map);
+  atom_type           = is_symb(obj),
+  symb_type(s?)       = is_eq(s, obj),
+  integer             = is_int(obj),
+  low_ints()          = and_then(is_int(obj), is_le(get_int_val(obj), type.max)),
+  high_ints()         = and_then(is_int(obj), is_ge(get_int_val(obj), type.min)),
+  int_range()         = and_then(is_int(obj), is_ge(get_int_val(obj), type.min), is_le(get_int_val(obj), max(type))),
+  float_type          = is_float(obj),
+  type_ref(ts?)       = eval_bool_fn(memb_test(ts), (obj)),
+  type_var()          = true, //## BUG BUG BUG THIS IS TEMPORARY...
+  empty_seq_type      = is_eq(obj, empty_seq),
+  empty_set_type      = is_eq(obj, empty_set),
+  empty_bin_rel_type  = is_eq(obj, empty_bin_rel),
+  empty_tern_rel_type = is_eq(obj, empty_tern_rel);
 

@@ -90,14 +90,43 @@ implicit
 
 
     [TypeCheckingError] typecheck_without_annotations(Clause cls):
-      set_elem_clause()   = typecheck(cls.src, type_set),
-      map_entry_clause()  = typecheck(cls.src, type_map),
-      seq_elem_clause()   = typecheck(cls.src, type_seq),
-      and_clause()        = typecheck_and_clause(cls.left, cls.right),
-      or_clause()         = typecheck(cls.left) & typecheck(cls.right),
-      match_clause()      = typecheck_match_clause(cls.ptrn, cls.expr),
-      asgnm_clause()      = typecheck(cls.expr, type_any),
-      filter_clause(e?)   = typecheck(e, type_bool);
+      set_clause()      = typecheck(cls.src, type_set),
+      rel_clause()      = typecheck_rel_clause(cls.vars, cls.src, cls.args),
+      relvar_clause()   = {fail;},
+      seq_clause()      = typecheck(cls.src, type_seq),
+      and_clause()      = typecheck_and_clause(cls.left, cls.right),
+      or_clause()       = typecheck(cls.left) & typecheck(cls.right),
+      match_clause()    = typecheck_match_clause(cls.ptrn, cls.expr),
+      asgnm_clause()    = typecheck(cls.expr, type_any),
+      filter_clause(e?) = typecheck(e, type_bool);
+  }
+
+
+  [TypeCheckingError] typecheck_rel_clause(StdVar+ vars, Expr src, Maybe[Expr]+ args)
+  {
+    assert length(vars) == count(args, $ == nil);
+
+    return match (args)
+      (a1?, a2?)      = typecheck_bin_rel_clause(src, args),
+      (a1?, a2?, a3?) = typecheck_tern_rel_clause(src, args);
+
+
+    [TypeCheckingError] typecheck_bin_rel_clause(Expr src, (Maybe[Expr], Maybe[Expr]) args)
+    {
+      errs = typecheck(src, type_bin_rel);
+      return errs if errs != [];
+      args_types = bin_rel_args_supertypes(expr_type(src));
+      return seq_union((if a != nil then typecheck(value(a), t) else [] | a, t <- zip(args, args_types)));
+    }
+
+
+    [TypeCheckingError] typecheck_tern_rel_clause(Expr src, (Maybe[Expr], Maybe[Expr], Maybe[Expr]) args)
+    {
+      errs = typecheck(src, type_tern_rel);
+      return errs if errs != [];
+      args_types = tern_rel_args_supertypes(expr_type(src));
+      return seq_union((if a != nil then typecheck(value(a), t) else [] | a, t <- zip(args, args_types)));
+    }
   }
 
 

@@ -95,7 +95,7 @@ implicit typedefs : [TypeName -> Type], inst_type_vars : Bool
 
   SubsetCond shallow_subset_conds(Type t1, Type t2):
     empty_type,           _                   = [],
-    _,                    empty_type          = {fail;}, //false, //## BUG: THIS IS ACTUALLY WRONG. COUNTEREXAMPLE: t1 = f(T), with T being the empty type
+    _,                    empty_type          = {fail;}, //false,
 
     // Type vars only match themselves or type any
     // _,                    type_var()          = if inst_type_vars then subset_when(t2, t1) else if t1 == t2 then {} else not_a_subset end end,
@@ -135,18 +135,42 @@ implicit typedefs : [TypeName -> Type], inst_type_vars : Bool
     ne_set_type(),        ne_set_type()       = shallow_subset_conds(t1.elem_type, t2.elem_type),
     ne_set_type(),           _                = not_a_subset,
 
-    // Map types
-    empty_map_type,       empty_map_type      = [],
-    // empty_map_type,       record_type(fs?)    = if not (f @ l <- fs | not f.optional) then [] else not_a_subset,
-    empty_map_type,       _                   = not_a_subset,
+    // Binary relation/map types
+    empty_bin_rel_type,   empty_bin_rel_type  = [],
+    // empty_bin_rel_type,       record_type(fs?)    = if not (f @ l <- fs | not f.optional) then [] else not_a_subset,
+    empty_bin_rel_type,   _                   = not_a_subset,
 
-    ne_map_type(),        ne_map_type()       = all_conds([shallow_subset_conds(t1.key_type, t2.key_type), shallow_subset_conds(t1.value_type, t2.value_type)]),
+    ne_map_type(),        ne_map_type()       = all_conds([
+                                                  shallow_subset_conds(t1.key_type, t2.key_type),
+                                                  shallow_subset_conds(t1.value_type, t2.value_type)
+                                                ]),
+    ne_map_type(),        ne_bin_rel_type()   = all_conds([
+                                                  shallow_subset_conds(t1.key_type, t2.args_types(0)),
+                                                  shallow_subset_conds(t1.value_type, t2.args_types(1))
+                                                ]),
     // ne_map_type(),        ne_record_type(fs?) = map_record_shallow_subset_conds(t1.key_type, t1.value_type, fs),
     ne_map_type(),        _                   = not_a_subset,
 
+    ne_bin_rel_type(),    ne_bin_rel_type()   = all_conds(set(
+                                                  (shallow_subset_conds(at1, at2)
+                                                  | at1, at2 <- zip(t1.args_types, t2.args_types))
+                                                )),
+    ne_bin_rel_type(),    _                   = not_a_subset,
+
+    // Ternary relation types
+    empty_tern_rel_type,  empty_tern_rel_type = [],
+    empty_tern_rel_type,  _                   = not_a_subset,
+
+    ne_tern_rel_type(),   ne_tern_rel_type()  = all_conds(set(
+                                                  (shallow_subset_conds(at1, at2)
+                                                  | at1, at2 <- zip(t1.args_types, t2.args_types))
+                                                )),
+    ne_tern_rel_type(),   _                   = not_a_subset,
+
     // Record types
     ne_record_type(fs1?), ne_record_type(fs2?)  = record_shallow_subset_conds(fs1, fs2),
-    ne_record_type(fs?),  ne_map_type()       = record_map_shallow_subset_conds(fs, t2),
+    ne_record_type(fs?),  ne_map_type()       = record_bin_rel_shallow_subset_conds(fs, t2.key_type, t2.value_type),
+    ne_record_type(fs?),  ne_bin_rel_type()   = record_bin_rel_shallow_subset_conds(fs, t2.args_types(0), t2.args_types(1)),
     ne_record_type(),     _                   = not_a_subset,
 
     // Tuple types
@@ -210,15 +234,23 @@ implicit typedefs : [TypeName -> Type], inst_type_vars : Bool
   }
 
 
-  SubsetCond record_map_shallow_subset_conds(RecordTypeFields record_fields, NeMapType map_type) =
+  // SubsetCond record_map_shallow_subset_conds(RecordTypeFields record_fields, NeMapType map_type) =
+  //   all_conds([
+  //     all_conds([
+  //       shallow_subset_conds(symb_type(l), map_type.key_type),
+  //       shallow_subset_conds(f.type, map_type.value_type)
+  //     ])
+  //     | l : f <- record_fields
+  //   ]);
+
+
+  SubsetCond record_bin_rel_shallow_subset_conds(RecordTypeFields record_fields, NeType arg0_type, NeType arg1_type) =
     all_conds([
       all_conds([
-        shallow_subset_conds(symb_type(l), map_type.key_type),
-        shallow_subset_conds(f.type, map_type.value_type)
-      ])
-      | l : f <- record_fields
+        shallow_subset_conds(symb_type(l), arg0_type),
+        shallow_subset_conds(f.type, arg1_type)
+      ]) | l : f <- record_fields
     ]);
-
 
   //## THINK ABOUT THIS ONE, AND ONCE YOU UNDERSTAND IT (IF IT IS CORRECT), COMMENT IT
   //## IT IS RELATED TO THE COMMENT ABOVE, IN record_shallow_subset_conds()

@@ -40,47 +40,66 @@ implicit
 
     Bool needs_errors_refinement(Expr):
       unary_pseudo_call() |
-      map_search()        |
-      key_search()        = true,
+      rel_memb_test()     = true,
       _                   = false;
   }
 
 
   [TypeCheckingError] pre_typecheck(Expr expr, Type exp_type):
-    object(obj?)    = [],
-    float_lit()     = [],
-    seq_expr(ses?)  = seq_union((typecheck(se, type_any) | se <- ses)),
-    tuple_expr(es?) = seq_union((typecheck(e, type_any) | e <- es)),
-    seq_tail_expr() = typecheck(expr.seq, type_seq) & seq_union((typecheck(e, type_any) | e <- expr.tail)),
-    set_expr(ses?)  = union([typecheck(se, type_any) | se <- ses]),
-    map_expr(es?)   = union([pre_typecheck_map_entry(e) | e <- es]),
-    tag_obj_expr()  = typecheck(expr.tag, atom_type) & typecheck(expr.obj, type_any),
-    Var             = [],
-    fn_call()       = fully_typecheck_fn_call(expr.name, expr.args, expr.named_args, exp_type),
-    cls_call()      = seq_union((typecheck(e, t) | e, t <- zip(expr.args, closures[expr.name].in_types))),
-    builtin_call()  = seq_union((typecheck(p, t) | p, t <- zip(expr.args, builtin_signature(expr.name).param_types))),
+    object(obj?)        = [],
+    float_lit()         = [],
+    seq_expr(ses?)      = seq_union((typecheck(se, type_any) | se <- ses)),
+    tuple_expr(es?)     = seq_union((typecheck(e, type_any) | e <- es)),
+    seq_tail_expr()     = typecheck(expr.seq, type_seq) & seq_union((typecheck(e, type_any) | e <- expr.tail)),
+    set_expr(ses?)      = union([typecheck(se, type_any) | se <- ses]),
+    map_expr(es?)       = union([pre_typecheck_map_entry(e) | e <- es]),
+    bin_rel_expr(es?)   |
+    tern_rel_expr(es?)  = union([pre_typecheck_rel_entry(e) | e <- es]),
+    tag_obj_expr()      = typecheck(expr.tag, atom_type) & typecheck(expr.obj, type_any),
+    Var                 = [],
+    fn_call()           = fully_typecheck_fn_call(expr.name, expr.args, expr.named_args, exp_type),
+    cls_call()          = seq_union((typecheck(e, t) | e, t <- zip(expr.args, closures[expr.name].in_types))),
+    builtin_call()      = seq_union((typecheck(p, t) | p, t <- zip(expr.args, builtin_signature(expr.name).param_types))),
     unary_pseudo_call() = pre_typecheck_unary_pseudo_call(expr.target, expr.arg),
-    map_search()    = pre_typecheck_map_search(expr.map, expr.key, expr.value),
-    key_search()    = pre_typecheck_key_search(expr.map, expr.key),
-    singl_only_elem() = typecheck(expr.set, type_set),
-    and_expr()      = pre_typecheck_and_expr(expr.left, expr.right),
-    or_expr()       = pre_typecheck_or_expr(expr.left, expr.right),
-    not_expr(e?)    = typecheck(e, type_bool),
-    eq()            = pre_typecheck_eq_expr(expr.left, expr.right),
-    membership()    = pre_typecheck_membership(expr.obj, expr.type),
-    cast_expr()     = pre_typecheck_cast_expr(expr.expr, expr.type),
-    accessor()      = pre_typecheck_accessor_expr(expr.expr, expr.field),
-    accessor_test() = pre_typecheck_accessor_test_expr(expr.expr, expr.field),
-    if_expr()       = fully_typecheck_if_expr(expr.cond, expr.then, expr.else, exp_type),
-    match_expr()    = fully_typecheck_match_expr(expr.exprs, expr.cases, exp_type),
-    do_expr(ss?)    = typecheck(ss, exp_type),
-    ex_qual()       = pre_typecheck_ex_qual_expr(expr.source, expr.cond),
-    set_comp()      = pre_typecheck_set_comp_expr(expr.expr, expr.source),
-    map_comp()      = pre_typecheck_map_comp_expr(expr.key_expr, expr.value_expr, expr.source),
-    seq_comp()      = pre_typecheck_seq_comp_expr(expr),
-    range_comp()    = pre_typecheck_range_comp_expr(expr);
+    rel_memb_test()     = pre_typecheck_rel_memb_test(expr.rel, expr.args),
+    singl_only_elem()   = typecheck(expr.set, type_set),
+    and_expr()          = pre_typecheck_and_expr(expr.left, expr.right),
+    or_expr()           = pre_typecheck_or_expr(expr.left, expr.right),
+    not_expr(e?)        = typecheck(e, type_bool),
+    eq()                = pre_typecheck_eq_expr(expr.left, expr.right),
+    membership()        = pre_typecheck_membership(expr.obj, expr.type),
+    cast_expr()         = pre_typecheck_cast_expr(expr.expr, expr.type),
+    accessor()          = pre_typecheck_accessor_expr(expr.expr, expr.field),
+    accessor_test()     = pre_typecheck_accessor_test_expr(expr.expr, expr.field),
+    if_expr()           = fully_typecheck_if_expr(expr.cond, expr.then, expr.else, exp_type),
+    match_expr()        = fully_typecheck_match_expr(expr.exprs, expr.cases, exp_type),
+    do_expr(ss?)        = typecheck(ss, exp_type),
+    ex_qual()           = pre_typecheck_ex_qual_expr(expr.source, expr.cond),
+    set_comp()          = pre_typecheck_rel_comp((expr.expr), expr.source),
+    map_comp()          = pre_typecheck_rel_comp((expr.key_expr, expr.value_expr), expr.source),
+    bin_rel_comp()      |
+    tern_rel_comp()     = pre_typecheck_rel_comp(expr.exprs, expr.source),
+    seq_comp()          = pre_typecheck_seq_comp_expr(expr),
+    range_comp()        = pre_typecheck_range_comp_expr(expr);
 
 
+  [TypeCheckingError] pre_typecheck_rel_entry((args: Expr+, cond: Expr?) entry)
+  {
+    if entry.cond?:
+      errs = typecheck(entry.cond, type_bool);
+      return errs if errs != [];
+      new_env, unused_var = refine_environment(entry.cond);
+    else
+      new_env = environment;
+    ;
+    let environment = new_env:
+      errs = seq_union((typecheck(a, type_any) | a <- entry.args));
+    ;
+    return errs;
+  }
+
+
+  //## BAD BAD: IT'S ALMOST THE SAME CODE AS ABOVE
   [TypeCheckingError] pre_typecheck_map_entry((key: Expr, value: Expr, cond: Expr?) entry)
   {
     if entry.cond?:
@@ -112,7 +131,7 @@ implicit
     elif is_subset(target_type, type_set):
       exp_value_type = set_elem_supertype(target_type);
     elif is_subset(target_type, type_map):
-      exp_value_type = map_key_supertype(target_type);
+      exp_value_type = bin_rel_arg_supertype(target_type, 0);
     else
       //## BAD BAD: THIS ERROR MESSAGE IS ACTUALLY WRONG...
       return [unexpected_actual_type(target_type, type_unary_pseudocall_target)];
@@ -122,31 +141,44 @@ implicit
   }
 
 
-  [TypeCheckingError] pre_typecheck_map_search(Expr map, Expr key, Expr value)
+  [TypeCheckingError] pre_typecheck_rel_memb_test(Expr rel, Maybe[Expr]+ args)
   {
-    errs = typecheck(map, type_map);
-    return errs if errs != [];
-    map_type = expr_type(map);
-    exp_key_type = if map_type != empty_type then map_key_supertype(map_type) else type_any;
-    errs = typecheck(key, exp_key_type);
-    return errs if errs != [];
-    actual_key_type = expr_type(key);
-    if map_type != empty_type and actual_key_type != empty_type:
-      exp_value_type = restricted_map_value_supertype(map_type, actual_key_type);
-    else
-      exp_value_type = type_any;
-    ;
-    return typecheck(value, exp_value_type);
-  }
+    return match (args)
+      (a0?, a1?)  = pre_typecheck_bin_rel_memb_test(rel, a0, a1),
+      (_, _, _)   = pre_typecheck_tern_rel_memb_test(rel, args);
 
 
-  [TypeCheckingError] pre_typecheck_key_search(Expr map, Expr key)
-  {
-    errs = typecheck(map, type_map);
-    return errs if errs != [];
-    map_type = expr_type(map);
-    exp_key_type = if map_type != empty_type then map_key_supertype(map_type) else type_any;
-    return typecheck(key, exp_key_type);
+    [TypeCheckingError] pre_typecheck_bin_rel_memb_test(Expr rel, Maybe[Expr] maybe_arg0, Maybe[Expr] maybe_arg1)
+    {
+      errs = typecheck(rel, type_bin_rel);
+      return errs if errs != [];
+      rel_type = expr_type(rel);
+      exp_arg0_type, exp_arg1_type = if rel_type != empty_type
+        then bin_rel_args_supertypes(rel_type)
+        else (type_any, type_any);
+
+      if maybe_arg0 != nil:
+        arg0 = value(maybe_arg0);
+        errs = typecheck(arg0, exp_arg0_type);
+        return errs if errs != [];
+        actual_arg0_type = expr_type(arg0);
+        if rel_type != empty_type and actual_arg0_type != empty_type and is_subset(rel_type, type_map):
+          exp_arg1_type = restricted_bin_rel_arg1_supertype(rel_type, actual_arg0_type);
+        ;
+      ;
+
+      return if maybe_arg1 != nil then typecheck(value(maybe_arg1), exp_arg1_type) else [];
+    }
+
+
+    [TypeCheckingError] pre_typecheck_tern_rel_memb_test(Expr rel, (Maybe[Expr], Maybe[Expr], Maybe[Expr]) args)
+    {
+      errs = typecheck(rel, type_tern_rel);
+      return errs if errs != [];
+      rel_type = expr_type(rel);
+      exp_args_types = if rel_type != empty_type then tern_rel_args_supertypes(rel_type) else (type_any | i < 3);
+      return seq_union((typecheck(value(a), t) | a, t <- zip(args, exp_args_types), a != nil));
+    }
   }
 
 
@@ -265,21 +297,12 @@ implicit
   }
 
 
-  [TypeCheckingError] pre_typecheck_set_comp_expr(Expr expr, Clause source)
+  [TypeCheckingError] pre_typecheck_rel_comp(Expr+ exprs, Clause source)
   {
     errs = typecheck(source);
     return errs if errs != [];
     new_env = generate_env(source);
-    return typecheck(expr, type_any, environment=new_env);
-  }
-
-
-  [TypeCheckingError] pre_typecheck_map_comp_expr(Expr key_expr, Expr value_expr, Clause source)
-  {
-    errs = typecheck(source);
-    return errs if errs != [];
-    new_env = generate_env(source);
-    return typecheck(key_expr, type_any, environment=new_env) & typecheck(value_expr, type_any, environment=new_env);
+    return seq_union((typecheck(e, type_any, environment=new_env) | e <- exprs));
   }
 
 

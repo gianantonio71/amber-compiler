@@ -2,13 +2,15 @@ type Atom           = <+>;
 type Int            = <*..*>;
 type Float          = <^>;
 
-type Set            = [Any];
 type Seq            = Any*;
-type Map            = [Any -> Any];
+
+type Set            = [Any];
+type BinRel         = [Any:Any];
+type TernRel        = [Any:Any:Any];
 
 type TagObj         = <+>(Any);
 
-type Any            = Atom, Int, Float, Seq, Set, Map, TagObj;
+type Any            = Atom, Int, Float, Seq, Set, BinRel, TernRel, TagObj;
 
 
 type Bool           = true, false;
@@ -18,6 +20,8 @@ type False          = false;
 type Nat            = <0..*>;
 type NzNat          = <1..*>;
 type NegInt         = <*..-1>;
+
+type Map            = [Any -> Any];
 
 type NeSet          = [+Any];
 type NeSeq          = Any+;
@@ -352,14 +356,21 @@ Nat+ indexes(NeSeq s) = (i | i < length(s));
 
 Bool* bit_map(Int* idxs, Nat len) = (in(i, idxs) | i < len); //## BAD: HORRIBLY INEFFICIENT
 
-//## BAD: THE NAME IS TOTALLY MEANINGLESS, AND THE IMPLEMENTATION IS INEFFICIENT
-Maybe[Nat]* packed_indexes(Bool* bs)
+//## BAD: THE NAME IS TOTALLY MEANINGLESS
+[Nat -> Nat] packed_seq_idxs(Bool* bs)
 {
   idxs = ();
+  idx = 0;
   for b <- bs:
-    idxs = idxs & (if b then just(length(idxs)) else nil);
+    if b:
+      idxs = (idxs || idx);
+      idx = idx + 1;
+    else
+      idxs = (idxs || nil);
+    ;
+    // idxs = idxs & (if b then just(length(idxs)) else nil);
   ;
-  return idxs;
+  return merge(([j -> i] | i @ j <- idxs, i != nil));
 }
 
 Nat count(T* xs, (T -> Bool) p) = nat(sum((bit(p(x)) | x <- xs)));
@@ -394,7 +405,7 @@ Bool subset(Set s1, Set s2)   = s1 - s2 == [];
   return int;
 }
 
-Nat size([Any] s) = length(rand_sort(s));
+Nat size(<Set, BinRel, TernRel> c) = _size_(c);
 
 Bool is_singleton([Any] s) = size(s) == 1;
 
@@ -436,8 +447,6 @@ Maybe[T2] maybe_lookup([T1 -> T2] map, T1 key) = if has_key(map, key) then just(
 [T1 -> T2] update([T1 -> T2] map, [T1 -> T2] diffs) = [k -> map[k] | k <- keys(map) - keys(diffs)] & diffs;
 
 [T1 -> T2] update([T1 -> T2] map, T1 key, T2 new_val) = update(map, [key -> new_val]);
-
-Nat size([Any -> Any] map) = size(keys(map));
 
 [T1] keys([T1 -> T2] map) = [k | k : unused_var <- map];
 

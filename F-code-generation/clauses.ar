@@ -1,12 +1,6 @@
 //## FIND BETTER NAME
 type FinalMatchAction = set_found_var_and_leave(var: EvalDestVar),
-                        eval_expr_and_add_to_set(expr: Expr, stream_var: StreamVar),
-                        eval_exprs_and_add_to_map(
-                          key_expr:         Expr,
-                          value_expr:       Expr,
-                          key_stream_var:   StreamVar,
-                          value_stream_var: StreamVar
-                        );
+                        eval_and_store(streams: (Expr, StreamVar)+);
 
 type MatchAction      = FinalMatchAction, match_action(clause: Clause, action: MatchAction);
 
@@ -14,16 +8,7 @@ type MatchAction      = FinalMatchAction, match_action(clause: Clause, action: M
 
 FinalMatchAction set_found_var_and_leave(EvalDestVar v) = set_found_var_and_leave(var: v);
 
-FinalMatchAction eval_expr_and_add_to_set(Expr e, StreamVar sv) =
-  eval_expr_and_add_to_set(expr: e, stream_var: sv);
-
-FinalMatchAction eval_exprs_and_add_to_map(Expr ke, Expr ve, StreamVar ksv, StreamVar vsv) =
-  eval_exprs_and_add_to_map(
-    key_expr:         ke,
-    value_expr:       ve,
-    key_stream_var:   ksv,
-    value_stream_var: vsv
-  );
+FinalMatchAction eval_and_store((Expr, StreamVar)+ ss) = eval_and_store(streams: ss);
 
 MatchAction match_action(Clause c, MatchAction a) = match_action(clause: c, action: a);
 
@@ -34,8 +19,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   Instr+ gen_code(MatchAction action, [StdVar] loc_bound_vars):
     match_action()              = gen_clause_code(action.clause, loc_bound_vars, action.action),
     set_found_var_and_leave()   = (set_var(action.var, obj_true), exit_block),
-    eval_expr_and_add_to_set()  = gen_code_for_eval_expr_and_add_to_set(action.expr, action.stream_var),
-    eval_exprs_and_add_to_map() = gen_code_for_eval_exprs_and_add_to_map(action.key_expr, action.value_expr, action.key_stream_var, action.value_stream_var);
+    eval_and_store()            = gen_code_for_eval_and_store(action.streams);
 
 
   Instr+ gen_code_for_cond_match_action(Expr cond, FinalMatchAction action, [StdVar] loc_bound_vars)
@@ -48,41 +32,31 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_code_for_eval_expr_and_add_to_set(Expr expr, StreamVar stream_var)
+  Instr+ gen_code_for_eval_and_store((Expr, StreamVar)+ streams)
   {
     tmp_var, var_gen = next_obj_var(next_var_gen);
-    info = gen_eval_info(expr, tmp_var, next_var_gen = var_gen);
-    return (info.eval_code || append(stream_var, info.expr));
+    code = ();
+    for e, v <- streams:
+      info = gen_eval_info(e, tmp_var, next_var_gen = var_gen);
+      code = code & info.eval_code & (append(v, info.expr));
+    ;
+    return nonempty(code);
   }
 
 
-  Instr+ gen_code_for_eval_exprs_and_add_to_map(Expr key_expr, Expr value_expr, StreamVar key_stream_var, StreamVar value_stream_var)
-  {
-    tmp_var, var_gen = next_obj_var(next_var_gen);
-
-    key_info = gen_eval_info(key_expr, tmp_var, next_var_gen = var_gen);
-    value_info = gen_eval_info(value_expr, tmp_var, next_var_gen = var_gen);
-
-    key_code = (key_info.eval_code || append(key_stream_var, key_info.expr));
-    value_code = (value_info.eval_code || append(value_stream_var, value_info.expr));
-
-    return nonempty(key_code & value_code);
-  }
+  Instr+ gen_clause_code(Clause cls, [StdVar] loc_bound_vars, MatchAction action):
+    set_clause()      = gen_set_clause_code(cls.var, cls.src, loc_bound_vars, action),
+    rel_clause()      = gen_rel_clause_code(cls.vars, cls.src, cls.args, loc_bound_vars, action),
+    relvar_clause()   = gen_relvar_clause_code(cls.vars, cls.rel_var, cls.args, loc_bound_vars, action),
+    seq_clause()      = gen_seq_clause_code(cls.var, cls.src, loc_bound_vars, action),
+    and_clause()      = gen_clause_code(cls.left, loc_bound_vars, match_action(cls.right, action)),
+    or_clause()       = nonempty(gen_clause_code(cls.left, loc_bound_vars, action) & gen_clause_code(cls.right, loc_bound_vars, action)),
+    match_clause()    = gen_match_clause_code(cls.ptrn, cls.expr, loc_bound_vars, action),
+    asgnm_clause()    = gen_asgnm_clause_code(cls.var, cls.expr, loc_bound_vars, action),
+    filter_clause(e?) = gen_filter_clause_code(e, loc_bound_vars, action);
 
 
-  Instr+ gen_clause_code(Clause clause, [StdVar] loc_bound_vars, MatchAction action):
-    set_elem_clause()   = gen_set_elem_clause_code(clause.var, clause.src, loc_bound_vars, action),
-    map_entry_clause()  = gen_map_entry_clause_code(clause.key_var, clause.value_var, clause.src, loc_bound_vars, action),
-    rel_tuple_clause()  = gen_rel_tuple_clause_code(clause.vars, clause.rel_var, clause.args, loc_bound_vars, action),
-    seq_elem_clause()   = gen_seq_elem_clause_code(clause.var, clause.src, loc_bound_vars, action),
-    and_clause()        = gen_clause_code(clause.left, loc_bound_vars, match_action(clause.right, action)),
-    or_clause()         = nonempty(gen_clause_code(clause.left, loc_bound_vars, action) & gen_clause_code(clause.right, loc_bound_vars, action)),
-    match_clause()      = gen_match_clause_code(clause.ptrn, clause.expr, loc_bound_vars, action),
-    asgnm_clause()      = gen_asgnm_clause_code(clause.var, clause.expr, loc_bound_vars, action),
-    filter_clause(e?)   = gen_filter_clause_code(e, loc_bound_vars, action);
-
-
-  Instr+ gen_set_elem_clause_code(StdVar var, Expr src, [StdVar] loc_bound_vars, MatchAction action)
+  Instr+ gen_set_clause_code(StdVar var, Expr src, [StdVar] loc_bound_vars, MatchAction action)
   {
     src_var, var_gen = next_obj_var(next_var_gen);
     // Variables to avoid: src_var
@@ -99,29 +73,74 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_map_entry_clause_code(StdVar key_var, StdVar value_var, Expr src, [StdVar] loc_bound_vars, MatchAction action)
+  Instr+ gen_rel_clause_code(StdVar+ vars, Expr src, Maybe[Expr]+ args, [StdVar] loc_bound_vars, MatchAction action)
   {
-    src_var, var_gen = next_obj_var(next_var_gen);
-    // Variables to avoid: src_var
-    src_info = gen_eval_info(src, src_var, next_var_gen = var_gen);
+    return match (args)
+      (_, _)      = gen_bin_rel_clause_code(vars, src, args, loc_bound_vars, action),
+      (_, _, _)   = gen_tern_rel_clause_code(vars, src, args, loc_bound_vars, action);
 
-    it_var, var_gen = next_map_it_var(var_gen);
-    // Variables to avoid: src_var, it_var
-    next_step_code = gen_code(action, loc_bound_vars & [key_var, value_var], next_var_gen = var_gen);
 
-    body_head = (
-      break_if(is_out_of_range(it_var)),
-      set_var(key_var, get_curr_key(it_var)),
-      set_var(value_var, get_curr_value(it_var))
-    );
-    body_code = body_head & next_step_code & (move_forward(it_var));
-    loop_code = (get_iter(it_var, src_info.expr), repeat(nonempty(body_code)));
+    Instr+ gen_bin_rel_clause_code(StdVar+ vars, Expr src, (Maybe[Expr], Maybe[Expr]) args, [StdVar] loc_bound_vars, MatchAction action)
+    {
+      src_var, var_gen = next_obj_var(next_var_gen);
+      // Variables to avoid: src_var
+      src_info = gen_eval_info(src, src_var, next_var_gen = var_gen);
 
-    return nonempty(src_info.eval_code & loop_code);
+      // The arguments are only used when obtaining an iterator
+      // so it should be safe to reuse the corresponding variables downstream
+      //## I'M NOT TOTALLY SURE THOUGH
+      args_info = gen_eval_info(values(args), next_var_gen = var_gen);
+      args_idxs = packed_seq_idxs((a != nil | a <- args));
+      low_level_args = (if a != nil then just(args_info.exprs(args_idxs(i))) else nil | a @ i <- args);
+      //## IMPROVE THE TYPECHECKER!!!!!!!!!!!!!!!!!!!!!!!
+      fail if not low_level_args :: (Maybe[ExprEvalRes], Maybe[ExprEvalRes]);
+
+      it_var, var_gen = next_bin_rel_it_var(var_gen);
+      // Variables to avoid: src_var, it_var
+      next_step_code = gen_code(action, loc_bound_vars & set(vars), next_var_gen = var_gen);
+
+      set_vars_code = (set_var(v, get_curr_arg(it_var, nat_01(i))) | v, i <- zip(vars, (j | a @ j <- args, a == nil)));
+      body_code =(break_if(is_out_of_range(it_var))) & set_vars_code & next_step_code & (move_forward(it_var));
+      loop_code = (get_iter(it_var, src_info.expr, low_level_args), repeat(nonempty(body_code)));
+
+      return nonempty(src_info.eval_code & args_info.eval_code & loop_code);
+    }
+
+
+    Instr+ gen_tern_rel_clause_code(StdVar+ vars, Expr src, (Maybe[Expr], Maybe[Expr], Maybe[Expr]) args, [StdVar] loc_bound_vars, MatchAction action)
+    {
+      src_var, var_gen = next_obj_var(next_var_gen);
+      // Variables to avoid: src_var
+      src_info = gen_eval_info(src, src_var, next_var_gen = var_gen);
+
+      // The arguments are only used when obtaining an iterator
+      // so it should be safe to reuse the corresponding variables downstream
+      //## I'M NOT TOTALLY SURE THOUGH
+      args_info = gen_eval_info(values(args), next_var_gen = var_gen);
+      args_idxs = packed_seq_idxs((a != nil | a <- args));
+      low_level_args = (if a != nil then just(args_info.exprs(args_idxs(i))) else nil | a @ i <- args);
+      //## IMPROVE THE TYPECHECKER!!!!!!!!!!!!!!!!!!!!!!!
+      fail if not low_level_args :: (Maybe[ExprEvalRes], Maybe[ExprEvalRes], Maybe[ExprEvalRes]);
+
+      it_var, var_gen = next_tern_rel_it_var(var_gen);
+      // Variables to avoid: src_var, it_var
+      next_step_code = gen_code(action, loc_bound_vars & set(vars), next_var_gen = var_gen);
+
+      set_vars_code = (set_var(v, get_curr_arg(it_var, nat_02(i))) | v, i <- zip(vars, (j | a @ j <- args, a == nil)));
+      body_code = (break_if(is_out_of_range(it_var))) & set_vars_code & next_step_code & (move_forward(it_var));
+      loop_code = (get_iter(it_var, src_info.expr, low_level_args), repeat(nonempty(body_code)));
+
+      return nonempty(src_info.eval_code & args_info.eval_code & loop_code);
+    }
+
+    //## IMPROVE THE TYPECHECKER!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    <0..1> nat_01(Nat n) = if n :: <0..1> then n else {fail;};
+    <0..2> nat_02(Nat n) = if n :: <0..2> then n else {fail;};
   }
 
 
-  Instr+ gen_rel_tuple_clause_code(StdVar+ vars, AnyRelVar rel_var, Maybe[Expr]+ relvar_args, [StdVar] loc_bound_vars, MatchAction action)
+
+  Instr+ gen_relvar_clause_code(StdVar+ vars, AnyRelVar rel_var, Maybe[Expr]+ relvar_args, [StdVar] loc_bound_vars, MatchAction action)
   {
     args_perm = relvar_cols_perm(rel_var);
     table_args = (relvar_args(i) | i <- args_perm);
@@ -145,7 +164,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
     filtered_idxs = idxs_into_filtered_seq((a != nil | a <- table_args));
     unfiltered_idxs = (i | a @ i <- table_args, a != nil);
     blank_idxs = (i | a @ i <- table_args, a == nil);
-    set_args = (value(a) | a <- table_args, a != nil);
+    set_args = values(table_args);
     info = gen_eval_info(set_args);
 
     surr_vars, var_gen = next_int_vars(info.next_var_gen, length(set_args));
@@ -158,7 +177,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
     if surr_args :: Just[IntVar]+:
       plain_surr_args = (value(a) | a <- surr_args);
       vars_setup_code = (lookup_surrogate(v, table_col_store_id(rel_var, i), plain_surr_args(i)) | v @ i <- perm_vars);
-      code = (do_if(contains(rel_var, plain_surr_args), vars_setup_code & action_code));
+      code = (do_if(table_contains(rel_var, plain_surr_args), vars_setup_code & action_code));
     else
       lookup_exprs = (
         lookup_surrogate(table_col_store_id(rel_var, i), get_tuple_field(it_var, i))
@@ -185,7 +204,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_seq_elem_clause_code(StdVar var, Expr src, [StdVar] loc_bound_vars, MatchAction action)
+  Instr+ gen_seq_clause_code(StdVar var, Expr src, [StdVar] loc_bound_vars, MatchAction action)
   {
     fail;
   }

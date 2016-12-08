@@ -10,6 +10,8 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
     seq_tail_expr()     = gen_eval_code_for_seq_tail_expr(expr.seq, expr.tail, res_var),
     tuple_expr(es?)     = gen_eval_code_for_tuple_expr(es, res_var),
     map_expr(es?)       = gen_eval_code_for_map_expr(es, res_var),
+    bin_rel_expr(es?)   = gen_eval_code_for_bin_rel_expr(es, res_var),
+    tern_rel_expr(es?)  = gen_eval_code_for_tern_rel_expr(es, res_var),
     tag_obj_expr()      = gen_eval_code_for_tag_obj_expr(expr.tag, expr.obj, res_var),
 
     fn_call()           = gen_eval_code_for_fn_call_expr(expr.name, expr.args, expr.named_args, res_var),
@@ -17,11 +19,11 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
     builtin_call()      = gen_eval_code_for_builtin_call(expr.name, expr.args, res_var),
 
     unary_pseudo_call() = gen_eval_code_for_unary_pseudo_call_expr(expr.target, expr.arg, res_var),
-    map_search()        = gen_eval_code_for_map_search_expr(expr.map, expr.key, expr.value, res_var),
-    key_search()        = gen_eval_code_for_key_search_expr(expr.map, expr.key, res_var),
 
-    rel_memb_test_expr()  = gen_eval_code_for_rel_memb_test_expr(expr.rel_var, expr.args, res_var),
-    rel_lookup_expr()   = gen_eval_code_for_rel_lookup_expr(expr.rel_var, expr.set_args, expr.unknown_arg_idx, res_var),
+    rel_memb_test()     = gen_eval_code_for_rel_memb_test(expr.rel, expr.args, res_var),
+
+    relvar_memb_test()  = gen_eval_code_for_relvar_memb_test(expr.rel_var, expr.args, res_var),
+    relvar_lookup()     = gen_eval_code_for_relvar_lookup(expr.rel_var, expr.set_args, expr.unknown_arg_idx, res_var),
 
     singl_only_elem()   = gen_eval_code_for_singl_only_elem(expr.set, res_var),
 
@@ -38,8 +40,8 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
 
     output_is_def()     = (set_var(res_var, bool_obj(is_not_null(qual_auto_memb_var(expr.var, memb_var(expr.output)))))),
 
-    auto_method_call_expr() = get_eval_code_for_auto_method_call_expr(expr, res_var),
-    db_method_call_expr()   = get_eval_code_for_db_method_call_expr(expr, res_var),
+    auto_method_call()  = get_eval_code_for_auto_method_call(expr, res_var),
+    db_method_call()    = get_eval_code_for_db_method_call(expr, res_var),
 
     if_expr()           = gen_eval_code_for_if_expr(expr.cond, expr.then, expr.else, res_var),
     match_expr()        = gen_eval_code_for_match_expr(expr.exprs, expr.cases, res_var),
@@ -48,6 +50,8 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
     ex_qual()           = gen_eval_code_for_ex_qual_expr(expr.source, expr.cond, res_var),
     set_comp()          = gen_eval_code_for_set_comp_expr(expr.expr, expr.source, res_var),
     map_comp()          = gen_eval_code_for_map_comp_expr(expr.key_expr, expr.value_expr, expr.source, res_var),
+    bin_rel_comp()      = gen_eval_code_for_bin_rel_comp(expr.exprs, expr.source, res_var),
+    tern_rel_comp()     = gen_eval_code_for_tern_rel_comp(expr.exprs, expr.source, res_var),
 
     seq_comp(ei?)       = gen_eval_code_for_seq_comp_expr(ei, res_var),
     range_comp(ei?)     = gen_eval_code_for_range_comp_expr(ei, res_var),
@@ -103,38 +107,158 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_eval_code_for_map_expr([(key: Expr, value: Expr, cond: Expr?)] entries, EvalDestVar res_var)
+  // Instr+ gen_eval_code_for_map_expr([(key: Expr, value: Expr, cond: Expr?)] entries, EvalDestVar res_var)
+  // {
+  //   return (set_var(res_var, empty_bin_rel)) if entries == [];
+
+  //   count = nz_nat(size(entries));
+
+  //   keys_var, var_gen = next_vector_var(next_var_gen, count);
+  //   values_var, var_gen = next_vector_var(var_gen, count);
+  //   count_var, var_gen = next_int_var(var_gen);
+  //   cond_var, cond_var_gen = next_obj_var(var_gen);
+
+  //   curr_key_slot_var   = evar(keys_var.id, count_var);
+  //   curr_value_slot_var = evar(values_var.id, count_var);
+
+  //   code = (set_ivar(count_var, 0));
+
+  //   let next_var_gen = var_gen:
+  //     for e <- rand_sort(entries):
+  //       key_code   = gen_eval_code(e.key, curr_key_slot_var);
+  //       value_code = gen_eval_code(e.value, curr_value_slot_var);
+  //       entry_code = key_code & value_code & (increment(count_var));
+
+  //       if e.cond?:
+  //         cond_info = gen_eval_info(e.cond, cond_var, next_var_gen = cond_var_gen);
+  //         entry_code = cond_info.eval_code & (do_if(is_true(cond_info.expr), entry_code));
+  //       ;
+
+  //       code = code & entry_code;
+  //     ;
+  //   ;
+
+  //   return nonempty(code & (mk_map(res_var, keys_var, values_var, count_var)));
+  // }
+
+
+  Instr+ gen_eval_code_for_map_expr([(key: Expr, value: Expr, cond: Expr?)] entries, EvalDestVar res_var) =
+    gen_eval_code_for_map_or_bin_rel_expr(
+      mk_map($a, $b, $c, $d),
+      [(args: (e.key, e.value), cond: e.cond if e.cond?) | e <- entries],
+      res_var
+    );
+
+
+  Instr+ gen_eval_code_for_bin_rel_expr([(args: (Expr, Expr), cond: Expr?)] entries, EvalDestVar res_var) =
+    // gen_eval_code_for_map_or_bin_rel_expr(mk_rel, entries, res_var);
+    gen_eval_code_for_map_or_bin_rel_expr(mk_rel($a, $b, $c, $d), entries, res_var);
+
+
+  Instr+ gen_eval_code_for_map_or_bin_rel_expr((EvalDestVar VecVar VecVar IntExpr -> Instr) mk_coll, [(args: (Expr, Expr), cond: Expr?)] entries, EvalDestVar res_var)
   {
-    return (set_var(res_var, empty_map)) if entries == [];
+    return (set_var(res_var, empty_bin_rel)) if entries == [];
+
+    non_cond_entries = rand_sort([e | e <- entries, not e.cond?]);
+    cond_entries = rand_sort([e | e <- entries, e.cond?]);
 
     count = nz_nat(size(entries));
 
-    keys_var, var_gen = next_vector_var(next_var_gen, count);
-    values_var, var_gen = next_vector_var(var_gen, count);
-    count_var, var_gen = next_int_var(var_gen);
-    cond_var, cond_var_gen = next_obj_var(var_gen);
+    col1_var, var_gen = next_vector_var(next_var_gen, count);
+    col2_var, var_gen = next_vector_var(var_gen, count);
 
-    curr_key_slot_var   = evar(keys_var.id, count_var);
-    curr_value_slot_var = evar(values_var.id, count_var);
-
-    code = (set_ivar(count_var, 0));
+    code = ();
 
     let next_var_gen = var_gen:
-      for e <- rand_sort(entries):
-        key_code   = gen_eval_code(e.key, curr_key_slot_var);
-        value_code = gen_eval_code(e.value, curr_value_slot_var);
-        entry_code = key_code & value_code & (increment(count_var));
-
-        if e.cond?:
-          cond_info = gen_eval_info(e.cond, cond_var, next_var_gen = cond_var_gen);
-          entry_code = cond_info.eval_code & (do_if(is_true(cond_info.expr), entry_code));
-        ;
-
-        code = code & entry_code;
+      for e @ i <- non_cond_entries:
+        arg1, arg2 = e.args;
+        code = code & gen_eval_code(arg1, evar(col1_var.id, i)) & gen_eval_code(arg2, evar(col2_var.id, i));
       ;
     ;
 
-    return nonempty(code & (mk_map(res_var, keys_var, values_var, count_var)));
+    if cond_entries != ():
+      count_var, var_gen = next_int_var(var_gen);
+      cond_var, cond_var_gen = next_obj_var(var_gen);
+
+      curr_arg1_slot_var = evar(col1_var.id, count_var);
+      curr_arg2_slot_var = evar(col2_var.id, count_var);
+
+      count_expr = count_var;
+      code = (code || set_ivar(count_var, length(non_cond_entries)));
+
+      let next_var_gen = var_gen:
+        for e @ i <- cond_entries:
+          arg1, arg2 = e.args;
+          arg1_code = gen_eval_code(arg1, curr_arg1_slot_var);
+          arg2_code = gen_eval_code(arg2, curr_arg2_slot_var);
+          body_code = (arg1_code & arg2_code || increment(count_var));
+          cond_info = gen_eval_info(e.cond, cond_var, next_var_gen=cond_var_gen);
+          code = code & (cond_info.eval_code || do_if(is_true(cond_info.expr), body_code));
+        ;
+      ;
+    else
+      count_expr = count;
+    ;
+
+    return (code || mk_coll(res_var, col1_var, col2_var, count_expr));
+  }
+
+
+  //## BAD BAD BAD: THIS CODE IS ALMOST IDENTICAL TO THE CODE ABOVE
+  //## HOW COULD IT BE WRITTEN JUST ONCE, WHILE MAINTANING TYPE SAFETY?
+  Instr+ gen_eval_code_for_tern_rel_expr([(args: (Expr, Expr, Expr), cond: Expr?)] entries, EvalDestVar res_var)
+  {
+    return (set_var(res_var, empty_tern_rel)) if entries == [];
+
+    non_cond_entries = rand_sort([e | e <- entries, not e.cond?]);
+    cond_entries = rand_sort([e | e <- entries, e.cond?]);
+
+    count = nz_nat(size(entries));
+
+    col1_var, var_gen = next_vector_var(next_var_gen, count);
+    col2_var, var_gen = next_vector_var(var_gen, count);
+    col3_var, var_gen = next_vector_var(var_gen, count);
+
+    code = ();
+
+    let next_var_gen = var_gen:
+      for e @ i <- non_cond_entries:
+        arg1, arg2, arg3 = e.args;
+        arg1_code = gen_eval_code(arg1, evar(col1_var.id, i));
+        arg2_code = gen_eval_code(arg2, evar(col2_var.id, i));
+        arg3_code = gen_eval_code(arg3, evar(col3_var.id, i));
+        code = code & arg1_code & arg2_code & arg3_code;
+      ;
+    ;
+
+    if cond_entries != ():
+      count_var, var_gen = next_int_var(var_gen);
+      cond_var, cond_var_gen = next_obj_var(var_gen);
+
+      curr_arg1_slot_var = evar(col1_var.id, count_var);
+      curr_arg2_slot_var = evar(col2_var.id, count_var);
+      curr_arg3_slot_var = evar(col3_var.id, count_var);
+
+      count_expr = count_var;
+
+      code = (code || set_ivar(count_var, length(non_cond_entries)));
+
+      let next_var_gen = var_gen:
+        for e @ i <- cond_entries:
+          arg1, arg2, arg3 = e.args;
+          arg1_code = gen_eval_code(arg1, curr_arg1_slot_var);
+          arg2_code = gen_eval_code(arg2, curr_arg2_slot_var);
+          arg3_code = gen_eval_code(arg3, curr_arg3_slot_var);
+          body_code = (arg1_code & arg2_code & arg3_code || increment(count_var));
+          cond_info = gen_eval_info(e.cond, cond_var, next_var_gen=cond_var_gen);
+          code = code & (cond_info.eval_code || do_if(is_true(cond_info.expr), body_code));
+        ;
+      ;
+    else
+      count_expr = count;
+    ;
+
+    return (code || mk_rel(res_var, col1_var, col2_var, col3_var, count_expr));
   }
 
 
@@ -169,11 +293,11 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
 
     else
       pars_are_first_order = (is_expr(p) | p <- params);
-      par_packed_idxs = packed_indexes(pars_are_first_order);
-      pars_info = gen_eval_info((cast_as_expr(p) | p @ i <- params, pars_are_first_order[i]));
+      par_packed_idxs = packed_seq_idxs(pars_are_first_order);
+      pars_info = gen_eval_info((cast_as_expr(p) | p @ i <- params, pars_are_first_order(i)));
       all_params = (
-        if pars_are_first_order[i]
-          then pars_info.exprs[value(par_packed_idxs[i])]
+        if pars_are_first_order(i)
+          then pars_info.exprs(par_packed_idxs(i))
           else gen_non_scalar_par_code(cast_as_cls_expr(p))
       | p @ i <- params);
       core_call_code = (call_proc(res_var, name, all_params));
@@ -204,7 +328,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
                       if map_par :: StdObjVar:
                         return (lookup(bvar, res_var, map_par, params[1]), set_var(res_var, bool_obj(bvar)));
                       else
-                        assert map_par == empty_map;
+                        assert map_par == empty_bin_rel;
                         return (set_var(res_var, obj_false));
                       ;
                     },
@@ -255,8 +379,9 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
       gt          = bool_obj(is_gt(get_int_val(ps[0]), get_int_val(ps[1]))),
       ge          = bool_obj(is_ge(get_int_val(ps[0]), get_int_val(ps[1]))),
       len         = int_obj(get_seq_len(ps[0])),
+      size        = int_obj(get_size(ps[0])),
       tag         = get_tag(ps[0]),
-      in          = bool_obj(has_elem(ps[1], ps[0])),
+      in          = bool_obj(contains(ps[1], (ps[0]))),
       mantissa    = int_obj(mantissa(ps[0])),
       dec_exp     = int_obj(dec_exp(ps[0])),
       rand_nat    = int_obj(rand_nat(ps[0])),
@@ -279,42 +404,37 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_eval_code_for_map_search_expr(Expr map, Expr key, Expr value, EvalDestVar res_var)
+  Instr+ gen_eval_code_for_rel_memb_test(Expr rel, Maybe[Expr]+ args, EvalDestVar res_var)
   {
-    info = gen_eval_info((map, key, value));
-    map_expr = info.exprs[0];
-    key_expr = info.exprs[1];
-    value_expr = info.exprs[2];
-    found_var, var_gen = next_bool_var(info.next_var_gen);
-    tmp_var, var_gen = next_obj_var(info.next_var_gen);
-    return (set_var(res_var, obj_false)) if map_expr == empty_map;
-    fail if not map_expr :: StdObjVar;
-    return (
-      info.eval_code ||
-      lookup(found_var, tmp_var, map_expr, key_expr),
-      branch(
-        found_var,
-        (set_var(res_var, bool_obj(is_eq(tmp_var, value_expr)))),
-        (set_var(res_var, obj_false))
-      )
-    );
+    assert length(args) == 2 or length(args) == 3;
+
+    rel_info = gen_eval_info(rel);
+    args_info = gen_eval_info((value(a) | a <- args, a != nil), next_var_gen = rel_info.next_var_gen);
+
+    if all((a != nil | a <- args)):
+      code = (set_var(res_var, bool_obj(contains(rel_info.expr, nonempty(args_info.exprs)))));
+
+    else
+      args_idxs = packed_seq_idxs((a != nil | a <- args));
+      low_level_args = (if a != nil then just(args_info.exprs(args_idxs(i))) else nil | a @ i <- args);
+
+      if low_level_args :: (Maybe[AtomicExpr], Maybe[AtomicExpr]):
+        it_var, unused_var = next_bin_rel_it_var(args_info.next_var_gen);
+        get_iter_instr = get_iter(it_var, rel_info.expr, low_level_args);
+      else
+        fail if not low_level_args :: (Maybe[AtomicExpr], Maybe[AtomicExpr], Maybe[AtomicExpr]);
+        it_var, unused_var = next_tern_rel_it_var(args_info.next_var_gen);
+        get_iter_instr = get_iter(it_var, rel_info.expr, low_level_args);
+      ;
+
+      code = (get_iter_instr, set_var(res_var, bool_obj(neg(is_out_of_range(it_var)))));
+    ;
+
+    return nonempty(rel_info.eval_code & args_info.eval_code & code);
   }
 
 
-  Instr+ gen_eval_code_for_key_search_expr(Expr map, Expr key, EvalDestVar res_var)
-  {
-    info = gen_eval_info((map, key));
-    map_expr = info.exprs[0];
-    key_expr = info.exprs[1];
-    found_var, var_gen = next_bool_var(info.next_var_gen);
-    unused_tmp_var, var_gen = next_obj_var(var_gen);
-    return (set_var(res_var, obj_false)) if map_expr == empty_map;
-    fail if not map_expr :: StdObjVar;
-    return (info.eval_code || lookup(found_var, unused_tmp_var, map_expr, key_expr), set_var(res_var, bool_obj(found_var)));
-  }
-
-
-  Instr+ gen_eval_code_for_rel_memb_test_expr(AnyRelVar rel_var, Maybe[Expr]+ relvar_args, EvalDestVar res_var)
+  Instr+ gen_eval_code_for_relvar_memb_test(AnyRelVar rel_var, Maybe[Expr]+ relvar_args, EvalDestVar res_var)
   {
     args_perm = relvar_cols_perm(rel_var);
     table_args = (relvar_args(i) | i <- args_perm);
@@ -330,7 +450,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
     surr_args = (apply(mi, surr_vars($)) | mi <- filtered_idxs);
 
     if all((a != nil | a <- table_args)):
-      code = (set_var(res_var, bool_obj(contains(rel_var, nonempty(surr_vars)))));
+      code = (set_var(res_var, bool_obj(table_contains(rel_var, nonempty(surr_vars)))));
     else
       code = (
         get_table_iter(it_var, rel_var, nonempty(surr_args)),
@@ -351,7 +471,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_eval_code_for_rel_lookup_expr(AnyRelVar rel_var, Expr+ set_args, Nat unknown_arg_idx, EvalDestVar res_var)
+  Instr+ gen_eval_code_for_relvar_lookup(AnyRelVar rel_var, Expr+ set_args, Nat unknown_arg_idx, EvalDestVar res_var)
   {
     args_perm = relvar_cols_perm(rel_var);
     args_rev_perm = reverse_perm(args_perm);
@@ -375,11 +495,11 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
       return set_table_args == set_table_args_2;
     };
 
-    return gen_eval_code_for_rel_lookup_expr_after_perm(rel_var, nonempty(set_table_args), unknown_table_arg_idx, res_var);
+    return gen_eval_code_for_relvar_lookup_after_perm(rel_var, nonempty(set_table_args), unknown_table_arg_idx, res_var);
   }
 
 
-  Instr+ gen_eval_code_for_rel_lookup_expr_after_perm(AnyRelVar rel_var, Expr+ set_args, Nat unknown_arg_idx, EvalDestVar res_var)
+  Instr+ gen_eval_code_for_relvar_lookup_after_perm(AnyRelVar rel_var, Expr+ set_args, Nat unknown_arg_idx, EvalDestVar res_var)
   {
     arity = length(set_args) + 1;
 
@@ -424,7 +544,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   Instr+ gen_eval_code_for_singl_only_elem(Expr set, EvalDestVar res_var)
   {
     info = gen_eval_info(set);
-    return (info.eval_code || check(is_eq(get_set_size(info.expr), 1)), set_var(res_var, rand_elem(info.expr)));
+    return (info.eval_code || check(is_eq(get_size(info.expr), 1)), set_var(res_var, rand_elem(info.expr)));
   }
 
 
@@ -498,7 +618,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ get_eval_code_for_auto_method_call_expr(AutoMethodCallExpr expr, EvalDestVar res_var)
+  Instr+ get_eval_code_for_auto_method_call(AutoMethodCall expr, EvalDestVar res_var)
   {
     args_eval_info = gen_eval_info(expr.args);
     invoke_method_instr = invoke_auto_method(
@@ -512,7 +632,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ get_eval_code_for_db_method_call_expr(DBMethodCallExpr expr, EvalDestVar res_var)
+  Instr+ get_eval_code_for_db_method_call(DBMethodCall expr, EvalDestVar res_var)
   {
     args_eval_info = gen_eval_info(expr.args);
     invoke_method_instr = invoke_db_method(
@@ -556,9 +676,9 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   Instr+ gen_eval_code_for_set_comp_expr(Expr expr, Clause source, EvalDestVar res_var)
   {
     strm_var, var_gen = next_stream_var(next_var_gen);
-    action = eval_expr_and_add_to_set(expr, strm_var);
+    action = eval_and_store(((expr, strm_var)));
     code = gen_clause_code(source, [], action, next_var_gen = var_gen);
-    return nonempty((init_stream(strm_var)) & code & (mk_set_from_stream(res_var, strm_var)));
+    return nonempty((init_stream(strm_var)) & code & (mk_set(res_var, strm_var)));
   }
 
 
@@ -567,12 +687,45 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
     key_strm_var, var_gen = next_stream_var(next_var_gen);
     value_strm_var, var_gen = next_stream_var(var_gen);
 
-    action = eval_exprs_and_add_to_map(key_expr, value_expr, key_strm_var, value_strm_var);
+    action = eval_and_store(((key_expr, key_strm_var), (value_expr, value_strm_var)));
     code = gen_clause_code(source, [], action, next_var_gen = var_gen);
 
     return nonempty(
       (init_stream(key_strm_var), init_stream(value_strm_var)) & code &
-      (mk_map_from_streams(res_var, key_strm_var, value_strm_var))
+      (mk_map(res_var, key_strm_var, value_strm_var))
+    );
+  }
+
+
+  Instr+ gen_eval_code_for_bin_rel_comp((Expr, Expr) exprs, Clause source, EvalDestVar res_var)
+  {
+    strm_var_1, var_gen = next_stream_var(next_var_gen);
+    strm_var_2, var_gen = next_stream_var(var_gen);
+
+    expr_1, expr_2 = exprs;
+    action = eval_and_store(((expr_1, strm_var_1), (expr_2, strm_var_2)));
+    code = gen_clause_code(source, [], action, next_var_gen = var_gen);
+
+    return nonempty(
+      (init_stream(strm_var_1), init_stream(strm_var_2)) & code &
+      (mk_rel(res_var, strm_var_1, strm_var_2))
+    );
+  }
+
+
+  Instr+ gen_eval_code_for_tern_rel_comp((Expr, Expr, Expr) exprs, Clause source, EvalDestVar res_var)
+  {
+    strm_var_1, var_gen = next_stream_var(next_var_gen);
+    strm_var_2, var_gen = next_stream_var(var_gen);
+    strm_var_3, var_gen = next_stream_var(var_gen);
+
+    expr_1, expr_2, expr_3 = exprs;
+    action = eval_and_store(((expr_1, strm_var_1), (expr_2, strm_var_2), (expr_3, strm_var_3)));
+    code = gen_clause_code(source, [], action, next_var_gen = var_gen);
+
+    return nonempty(
+      (init_stream(strm_var_1), init_stream(strm_var_2), init_stream(strm_var_3)) & code &
+      (mk_rel(res_var, strm_var_1, strm_var_2, strm_var_3))
     );
   }
 
@@ -631,7 +784,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
           (move_forward(it_var), maybe_op(increment(idx_var), needs_idx_var))
         )
       ),
-      maybe_op(mk_seq_from_stream(res_var, strm_var), not knows_size)
+      maybe_op(mk_seq(res_var, strm_var), not knows_size)
     );
 
     return nonempty(src_info.eval_code & loop_code);
@@ -682,7 +835,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
           (increment(idx_var))
         )
       ),
-      maybe_op(mk_seq_from_stream(res_var, strm_var), not knows_size)
+      maybe_op(mk_seq(res_var, strm_var), not knows_size)
     );
 
     return nonempty(bound_info.eval_code & loop_code);

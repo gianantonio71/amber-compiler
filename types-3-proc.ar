@@ -58,13 +58,14 @@ type IntVar         = ivar(Nat), update_time, curr_time, MembIntVar, IntArgVar;
 
 type StreamVar      = svar(Nat); //## DOES THIS NEED CLEANUP?
 
-type SetItVar       = set_it_var(Nat); //## MUST WORK WITHOUT THE NEED FOR EXPLICIT CLEANUP
-type SeqItVar       = seq_it_var(Nat); //## DITTO
-type MapItVar       = map_it_var(Nat); //## DITTO
+type SetItVar       = set_it_var(Nat);      //## MUST WORK WITHOUT THE NEED FOR EXPLICIT CLEANUP
+type SeqItVar       = seq_it_var(Nat);      //## DITTO
+type BinRelItVar    = bin_rel_it_var(Nat);  //## DITTO
+type TernRelItVar   = tern_rel_it_var(Nat); //## DITTO
 
 type TableItVar     = table_it_var(id: Nat, arity: NzNat); //## DITTO
 
-type ItVar          = SetItVar, SeqItVar, MapItVar, TableItVar;
+type ItVar          = SeqItVar, SetItVar, BinRelItVar, TernRelItVar, TableItVar;
 
 type AnyVar         = ObjVar, VecVar, BoolVar, IntVar, ItVar, StreamVar;
 
@@ -72,7 +73,7 @@ type ObjFnName      = FnSymbol, ProcSymbol;
 
 type BoolFnName     = memb_test(TypeSymbol);
 
-type InlineObj      = LeafObj, empty_set, empty_seq, empty_map;
+type InlineObj      = LeafObj, empty_seq, empty_set, empty_bin_rel, empty_tern_rel;
 
 type AtomicExpr     = InlineObj, StdObjVar;
 
@@ -84,10 +85,9 @@ type NatBoolOp      = is_symb(ObjExpr),
                       is_ne_set(ObjExpr),
                       is_ne_seq(ObjExpr),
                       is_ne_map(ObjExpr),
+                      is_ne_bin_rel(ObjExpr),
+                      is_ne_tern_rel(ObjExpr),
                       is_tagged_obj(ObjExpr),
-                      has_elem(set: ObjExpr, elem: ObjExpr),
-                      //has_key(map: ObjExpr, key: ObjExpr),
-                      //comes_before(expr1: ObjExpr, expr2: ObjExpr),
                       is_eq_bool(expr1: BoolExpr, expr2: BoolExpr),
                       is_eq_int(expr1: IntExpr, expr2: IntExpr),
                       is_eq(expr1: ObjExpr, expr2: ObjExpr),
@@ -99,12 +99,12 @@ type NatBoolOp      = is_symb(ObjExpr),
                       is_out_of_range(ItVar),
                       is_blank(<MembVar, QualAutoMembVar, LocVar>),
                       is_null(AnyNullableVar),
-                      contains(table: AnyRelVar, tuple: IntVar+);
+                      contains(coll: ObjExpr, entry: ObjExpr+),
+                      table_contains(table: AnyRelVar, tuple: IntVar+);
 
 type NatIntOp       = get_int_val(ObjExpr),
-                      get_set_size(ObjExpr),
                       get_seq_len(ObjExpr),
-                      get_map_size(ObjExpr),
+                      get_size(ObjExpr),
                       minus(IntExpr),
                       add(val1: IntExpr, val2: IntExpr),
                       sub(val1: IntExpr, val2: IntExpr),
@@ -121,7 +121,6 @@ type NatIntOp       = get_int_val(ObjExpr),
                       ticks;              // Impure
 
 type NatObjOp       = at(seq: ObjExpr, idx: IntExpr),
-                      //lookup(map: ObjExpr, key: ObjExpr),
                       search_or_lookup(collection: ObjExpr, value: ObjExpr),
                       get_tag(ObjExpr),
                       get_inner_obj(ObjExpr), //## RENAME?
@@ -130,8 +129,8 @@ type NatObjOp       = at(seq: ObjExpr, idx: IntExpr),
                       obj_neg(ObjExpr),
                       to_symb(ObjExpr),
                       get_curr_obj(<SetItVar, SeqItVar>),
-                      get_curr_key(MapItVar),
-                      get_curr_value(MapItVar),
+                      get_curr_arg(var: BinRelItVar,  arg: <0..1>),
+                      get_curr_arg(var: TernRelItVar, arg: <0..2>),
                       rand_elem(ObjExpr); // Non-deterministic (unless applied to a singleton)
 
 type BoolExpr       = AtomicBoolExpr,
@@ -167,6 +166,10 @@ type RefObjExpr     = mk_set_from_stream(stream: StreamVar),
                       build_const_int_seq(seq_id: Nat),
                       mk_map_from_streams(key_stream: StreamVar, value_stream: StreamVar),
                       mk_map(keys: VecVar, values: VecVar, size: IntExpr),
+                      mk_bin_rel_from_streams(streams: (StreamVar, StreamVar)),
+                      mk_bin_rel(cols: (VecVar, VecVar), size: IntExpr),
+                      mk_tern_rel_from_streams(streams: (StreamVar, StreamVar, StreamVar)),
+                      mk_tern_rel(cols: (VecVar, VecVar, VecVar), size: IntExpr),
                       mk_tagged_obj(tag: AtomicExpr, obj: AtomicExpr),      // Ownership transfer: <obj>
                       mk_array(size: IntExpr), //## CURRENTLY ONLY USED WITH <value> = object(nil)
                       get_seq_slice(seq: AtomicExpr, idx_first: IntExpr, len: IntExpr),
@@ -190,7 +193,6 @@ type RefObjExpr     = mk_set_from_stream(stream: StreamVar),
 type BasicInstr     = init_stream(StreamVar),
                       append(stream: StreamVar, obj: AtomicExpr),  // Ownership transfer: <obj>
 
-                      // get_at(var: ObjVar, seq: ObjExpr, idx: IntExpr),
                       //## BUG BUG BUG: IF ObjExpr CONTAINS A NON-COUNTED REFERENCE TO THE ARRAY,
                       //## I COULD END UP WITH A CYCLE IN THE OBJECT GRAPH AND MAYBE OTHER PROBLEMS
                       set_at(var: WriteObjVar, idx: IntExpr, value: AtomicExpr),  // Ownership transfer: <value>
@@ -203,7 +205,8 @@ type BasicInstr     = init_stream(StreamVar),
 
                       get_set_iter(var: SetItVar, src: AtomicExpr),
                       get_seq_iter(var: SeqItVar, src: AtomicExpr),
-                      get_map_iter(var: MapItVar, src: AtomicExpr),
+                      get_bin_rel_iter(var: BinRelItVar, src: AtomicExpr, args: (Maybe[AtomicExpr], Maybe[AtomicExpr])),
+                      get_tern_rel_iter(var: TernRelItVar, src: AtomicExpr, args: (Maybe[AtomicExpr], Maybe[AtomicExpr], Maybe[AtomicExpr])),
 
                       move_forward(ItVar),
 
