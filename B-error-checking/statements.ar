@@ -40,7 +40,7 @@ implicit
   {
     errs = stmt_local_wf_errors(stmt, ro_vars, rw_vars);
     errs = stmt_nested_wf_errors(stmt, ro_vars, rw_vars) if errs == ();
-    return (attach_anchor_obj_if_needed(e, stmt) | e <- errs);
+    return (attach_anchor_obj_if_needed(e, stmt) : e <- errs);
   }
 
 
@@ -62,13 +62,13 @@ implicit
       print_stmt(e?)          = expr_wf_errors(e, all_vars),
       imp_update_stmt()       = expr_wf_errors(stmt.idx, all_vars) & expr_wf_errors(stmt.value, all_vars),
       return_stmt             = (),
-      proc_call_stmt()        = join((expr_wf_errors(e, all_vars) | e <- stmt.args)),
+      proc_call_stmt()        = join((expr_wf_errors(e, all_vars) : e <- stmt.args)),
 
       send_msg_stmt()         = expr_wf_errors(stmt.msg, all_vars),
-      try_update_stmt()       = join((expr_wf_errors(e, all_vars) | e <- stmt.args)),
+      try_update_stmt()       = join((expr_wf_errors(e, all_vars) : e <- stmt.args)),
       set_memb_var_stmt()     = expr_wf_errors(stmt.value, all_vars),
-      delete_stmt()           = join((join((expr_wf_errors(value(a), all_vars) | a <- e.args, a != nil)) | e <- stmt.entries)),
-      insert_stmt()           = join((join((expr_wf_errors(a, all_vars) | a <- e.args)) | e <- stmt.entries)),
+      delete_stmt()           = join((join((expr_wf_errors(value(a), all_vars) : a <- e.args; a != nil)) : e <- stmt.entries)),
+      insert_stmt()           = join((join((expr_wf_errors(a, all_vars) : a <- e.args)) : e <- stmt.entries)),
 
       set_input_ctrl_stmt()   = expr_wf_errors(stmt.value, all_vars),
       clear_input_ctrl_stmt() = (),
@@ -80,7 +80,7 @@ implicit
 
     ExprWFError* if_stmt_wf_errors(SynIfStmt[SynStmt] stmt, [DefVar] ro_vars, [StdVar] rw_vars, [DefVar] all_vars)
     {
-      branches_errs = join((expr_wf_errors(b.cond, all_vars) & stmts_wf_errors(b.body, ro_vars, rw_vars) | b <- stmt.branches));
+      branches_errs = join((expr_wf_errors(b.cond, all_vars) & stmts_wf_errors(b.body, ro_vars, rw_vars) : b <- stmt.branches));
       else_body = stmt.else;
       else_errs = if else_body != () then stmts_wf_errors(else_body, ro_vars, rw_vars) else ();
       return branches_errs & else_errs;
@@ -122,8 +122,8 @@ implicit
     send_msg_stmt()           = send_msg_stmt_local_wf_errors(stmt.var, stmt.msg, ro_vars, rw_vars),
     try_update_stmt()         = try_update_stmt_local_wf_errors(stmt.name, stmt.args, ro_vars, rw_vars),
     set_memb_var_stmt()       = set_memb_var_stmt_local_wf_errors(stmt.var, stmt.value, ro_vars, rw_vars),
-    delete_stmt()             = join((delete_or_insert_stmt_local_wf_errors(e.var, length(e.args)) | e <- stmt.entries)),
-    insert_stmt()             = join((delete_or_insert_stmt_local_wf_errors(e.var, length(e.args)) | e <- stmt.entries)),
+    delete_stmt()             = join((delete_or_insert_stmt_local_wf_errors(e.var, length(e.args)) : e <- stmt.entries)),
+    insert_stmt()             = join((delete_or_insert_stmt_local_wf_errors(e.var, length(e.args)) : e <- stmt.entries)),
 
     set_input_ctrl_stmt()     |
     clear_input_ctrl_stmt()   = set_or_clear_input_ctrl_stmt_local_wf_errors(stmt.var, stmt.input, ro_vars, rw_vars),
@@ -159,8 +159,8 @@ implicit
     // The target database must have an update with the specified name and arity
     updates = updates_by_db[curr_db_def.name];
     arity = length(args);
-    return () if (u <- updates | u.name == name and length(u.args) == arity);
-    arities = [length(u.args) | u <- updates, u.name == name];
+    return () if (u <- updates : u.name == name and length(u.args) == arity);
+    arities = [length(u.args) : u <- updates; u.name == name];
     return if arities == []
       then (unknown_update(name, curr_db_def.name))
       else (invalid_update_arity(name, arity, arities));
@@ -200,10 +200,10 @@ implicit
   ExprWFError* asgn_stmt_local_wf_errors(SynAsgnStmt stmt, [DefVar] ro_vars, [StdVar] rw_vars)
   {
     vars = set(stmt.vars);
-    bad_vars = already_def_vars(vars, ro_vars) & [v | v <- vars, is_already_def_as_auto_or_db_var(bare_id(v))];
+    bad_vars = already_def_vars(vars, ro_vars) & [v : v <- vars; is_already_def_as_auto_or_db_var(bare_id(v))];
     dupl_vars = dupl_elems(stmt.vars);
     //## BAD BAD: HERE I'M TREATING AUTOMATON VARIABLES AS IF THEY WERE READ-ONLY SCALAR ONES
-    return (ro_vars_asgnm(stmt, bad_vars) if bad_vars != []) & (dupl_var_mult_asgnm(v) | v <- rand_sort(dupl_vars));
+    return (ro_vars_asgnm(stmt, bad_vars) if bad_vars != []) & (dupl_var_mult_asgnm(v) : v <- rand_sort(dupl_vars));
 
     Bool is_already_def_as_auto_or_db_var(Atom var_id) =
       loc_auto_vars(loc_auto_var(var_id), ?)    or
@@ -225,10 +225,10 @@ implicit
       dupl_vars = match (it)
         seq_iter()    = dupl_elems(it.vars & (it.idx_var if it.idx_var?)),
         range_iter()  = [];
-      errs = errs & (dupl_var_mult_asgnm(v) | v <- rand_sort(dupl_vars));
+      errs = errs & (dupl_var_mult_asgnm(v) : v <- rand_sort(dupl_vars));
       it_vars = syn_new_vars(it);
-      bad_vars = already_def_vars(it_vars, union([ro_vars, rw_vars, new_vars]));
-      errs = (errs || vars_redef(stmt, bad_vars)) if bad_vars != [];
+      bad_vars = already_def_vars(it_vars, union([ro_vars; rw_vars; new_vars]));
+      errs = (errs | vars_redef(stmt, bad_vars)) if bad_vars != [];
       new_vars = new_vars & it_vars;
     ;
     return errs;
@@ -237,8 +237,8 @@ implicit
 
   ExprWFError* let_stmt_local_wf_errors(SynLetStmt[SynStmt] stmt, [DefVar] ro_vars, [StdVar] rw_vars)
   {
-    exprs_errs = join((expr_wf_errors(right(a), ro_vars & rw_vars) | a <- stmt.asgnms));
-    new_impl_args = update(impl_args, [left(a) -> 0 | a <- set(stmt.asgnms)]);
+    exprs_errs = join((expr_wf_errors(right(a), ro_vars & rw_vars) : a <- stmt.asgnms));
+    new_impl_args = update(impl_args, [left(a) -> 0 : a <- set(stmt.asgnms)]);
     body_errs = stmts_wf_errors(stmt.body, ro_vars, rw_vars, impl_args=new_impl_args);
     return exprs_errs & body_errs;
   }
@@ -263,7 +263,7 @@ implicit
     proc_name = stmt.proc_name;
     if not builtin_procs_map(proc_name, ?):
       if not proc_defs_by_id(proc_name, ?):
-        return (var_errs || undef_proc(stmt));
+        return (var_errs | undef_proc(stmt));
       else
         proc_def = proc_defs_by_id[proc_name];
         arity = length(proc_def.args);

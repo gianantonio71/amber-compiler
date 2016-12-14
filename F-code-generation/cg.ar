@@ -5,10 +5,10 @@ implicit program : Program, options : CompilationOptions
 {
   CompiledPrg compiled_program
   {
-    fndefs        = [gen_fn_code(fd) | fd <- program.fndefs];
-    proc_defs     = [gen_proc_code(pd) | pd <- program.proc_defs];
-    blocks        = [gen_auto_code(automaton=a) | a <- program.auto_defs];
-    trans_blocks  = [compiled_database(database=db) | db <- program.data_bases];
+    fndefs        = [gen_fn_code(fd) : fd <- program.fndefs];
+    proc_defs     = [gen_proc_code(pd) : pd <- program.proc_defs];
+    blocks        = [gen_auto_code(automaton=a) : a <- program.auto_defs];
+    trans_blocks  = [compiled_database(database=db) : db <- program.data_bases];
 
     return compiled_prg(
       bool_procs:   memb_test_fns,
@@ -22,18 +22,18 @@ implicit program : Program, options : CompilationOptions
 
   [BoolProcDef] memb_test_fns
   {
-    init_types = union([retrieve_types(fd.expr) | fd <- program.fndefs]) &
-                 union([retrieve_from_nested_exprs(pd.body, retrieve_types) | pd <- program.proc_defs]);
+    init_types = union([retrieve_types(fd.expr) : fd <- program.fndefs]) &
+                 union([retrieve_from_nested_exprs(pd.body, retrieve_types) : pd <- program.proc_defs]);
 
-    type_symbs = union([retrieve_type_symbs(t) | t <- init_types]);
+    type_symbs = union([retrieve_type_symbs(t) : t <- init_types]);
     new_type_symbs = type_symbs;
     while new_type_symbs != []:
-      new_types = [expand_type_ref(ts, program.typedefs) | ts <- new_type_symbs];
-      new_type_symbs = union([retrieve_type_symbs(t) | t <- new_types]) - type_symbs;
+      new_types = [expand_type_ref(ts, program.typedefs) : ts <- new_type_symbs];
+      new_type_symbs = union([retrieve_type_symbs(t) : t <- new_types]) - type_symbs;
       type_symbs = type_symbs & new_type_symbs;
     ;
 
-    return [mk_named_type_memb_test_fn(ts, program.typedefs) | ts <- type_symbs];
+    return [mk_named_type_memb_test_fn(ts, program.typedefs) : ts <- type_symbs];
   }
 
 
@@ -42,9 +42,9 @@ implicit program : Program, options : CompilationOptions
     fn_res_var, var_gen = next_obj_var(blank_var_gen);
     tmp_bvar, var_gen = next_bool_var(var_gen);
 
-    body = rand_sort([auto_pre_init(v, t) | v : t <- procedure.auto_vars]) &
-           rand_sort([init_db(v, t) | v : t <- procedure.db_vars]) &
-           (set_var(a.var, fn_par(i)) | a @ i <- procedure.args);
+    body = rand_sort([auto_pre_init(v, t) : v, t <- procedure.auto_vars]) &
+           rand_sort([init_db(v, t) : v, t <- procedure.db_vars]) &
+           (set_var(a.var, fn_par(i)) : a @ i <- procedure.args);
 
     // Evaluating the expression
     proc_body = procedure.body;
@@ -53,10 +53,10 @@ implicit program : Program, options : CompilationOptions
       body = body & (execute_block(code));
     ;
 
-    body = body & rand_sort([auto_cleanup(v, t) | v : t <- procedure.auto_vars]);
-    body = body & rand_sort([cleanup_db(v, t) | v : t <- procedure.db_vars]);
+    body = body & rand_sort([auto_cleanup(v, t) : v, t <- procedure.auto_vars]);
+    body = body & rand_sort([cleanup_db(v, t) : v, t <- procedure.db_vars]);
 
-    debug_code = (push_call_info(procedure.name, (just(fn_par(i)) | p @ i <- procedure.args)));
+    debug_code = (push_call_info(procedure.name, (just(fn_par(i)) : p @ i <- procedure.args)));
 
     val = if procedure.res_type != nil then fn_res_var else object(nil); //## BAD: HERE I'M CHEATING...
     body = debug_code & body & (pop_call_info, ret_val(val));
@@ -79,21 +79,21 @@ implicit program : Program, options : CompilationOptions
     tmp_bvar,   var_gen = next_bool_var(var_gen);
 
     // Setting named variables for parameters
-    body = (set_var(a.var, fn_par(i)) | a @ i <- func.args, a :: FormalObjArg and a.var?);
+    body = (set_var(a.var, fn_par(i)) : a @ i <- func.args; a :: FormalObjArg and a.var?);
 
     // Evaluating the expression
     body = body & gen_eval_code(func.expr, fn_res_var, artifact = func, next_var_gen = var_gen);
 
-    body = (push_call_info(func.name, (maybe(fn_par(i), a :: FormalObjArg) | a @ i <- func.args))) & body & (pop_call_info, ret_val(fn_res_var));
+    body = (push_call_info(func.name, (maybe(fn_par(i), a :: FormalObjArg) : a @ i <- func.args))) & body & (pop_call_info, ret_val(fn_res_var));
 
     args = (
       match (a)
         formal_obj_arg()  = :obj,
         formal_cls_arg()  = cls(a.var, arity(a.type))
-      | a <- func.args
+      : a <- func.args
     );
 
-    impl_args = [v -> arity(t) | v : t <- func.impl_args];
+    impl_args = [v -> arity(t) : v, t <- func.impl_args];
 
     cached = func.args == () and not is_too_simple_to_be_worth_caching(func.expr);
 
@@ -126,16 +126,16 @@ implicit program : Program, options : CompilationOptions
   [ObjProcDef] dispatch_functions
   {
     fns_by_name_and_arity = group_by(program.fndefs, (family_id($.name), arity($)));
-    overloaded_fns = [fns | unused_var : fns <- fns_by_name_and_arity, size(fns) > 1];
-    return [dispatch_function(fns) | fns <- overloaded_fns];
+    overloaded_fns = [fns : unused_var, fns <- fns_by_name_and_arity; size(fns) > 1];
+    return [dispatch_function(fns) : fns <- overloaded_fns];
   }
 
 
   ObjProcDef dispatch_function([+Function] fns)
   {
     assert size(fns) > 1;
-    assert size([family_id(f.name) | f <- fns]) == 1;
-    assert size([length(fn.args) | fn <- fns]) == 1; // All functions have the same arity
+    assert size([family_id(f.name) : f <- fns]) == 1;
+    assert size([length(fn.args) : fn <- fns]) == 1; // All functions have the same arity
     assert length(an_elem(fns).args) > 0;
 
     l0 = lvar(0);
@@ -145,30 +145,30 @@ implicit program : Program, options : CompilationOptions
     rand_fn         = an_elem(fns);
     name            = rand_fn.name;
     rand_args       = nonempty(rand_fn.args);
-    obj_args        = (i | a @ i <- rand_args, a :: FormalObjArg);
+    obj_args        = (i : a @ i <- rand_args; a :: FormalObjArg);
     rand_impl_args  = rand_fn.impl_args;
 
-    disp_args = choose_disp_args(((a.type | a <- nonempty(fn.args)) | fn <- rand_sort(fns)), program.typedefs);
-    call_args = (if a :: FormalObjArg then fn_par(i) else cls_var(i) | a @ i <- rand_args);
+    disp_args = choose_disp_args(((a.type : a <- nonempty(fn.args)) : fn <- rand_sort(fns)), program.typedefs);
+    call_args = (if a :: FormalObjArg then fn_par(i) else cls_var(i) : a @ i <- rand_args);
 
     //## HERE WE SHOULD LEAVE THE FUNCTION WITH THE MOST EXPENSIVE CHECKING LAST
     //## SO THAT IT CAN BE MATCHED BY THE CHEAP "ANY" PATTERN.
     cases = ({
         ptrns = if i < count-1
-          then (type_to_pseudotype_pattern(cast_as_type(fn.args[j].type), program.typedefs) | j <- disp_args)
-          else (ptrn_any | unused_var <- disp_args);
+          then (type_to_pseudotype_pattern(cast_as_type(fn.args[j].type), program.typedefs) : j <- disp_args)
+          else (ptrn_any : unused_var <- disp_args);
         code = (call_proc(l0, fn.name, call_args), exit_block);
         return (ptrns: ptrns, code: code);
-      } | fn @ i <- rand_sort(fns)
+      } : fn @ i <- rand_sort(fns)
     );
 
-    code = gen_switch_code((fn_par(i) | i <- disp_args), cases, next_var_gen = blank_var_gen);
+    code = gen_switch_code((fn_par(i) : i <- disp_args), cases, next_var_gen = blank_var_gen);
 
     args = (
       match (a)
         formal_obj_arg()  = obj,
         formal_cls_arg()  = cls(arity(a.type))
-      | a <- rand_args
+      : a <- rand_args
     );
 
     return obj_proc_def(
@@ -177,7 +177,7 @@ implicit program : Program, options : CompilationOptions
       named_args:     [:], //## THIS IS WRONG, BUT IT SHOULDN'T MATTER FOR NOW
       loc_auto_vars:  [:],
       loc_db_vars:    [:],
-      body:           (code || ret_val(lvar(0))),
+      body:           (code | ret_val(lvar(0))),
       cached:         false
     );
   }

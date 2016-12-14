@@ -8,8 +8,8 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
     object()            = expr,
     float_lit()         = expr,
     seq_expr(ses?)      = desugar_seq_expr(ses, def_vars),
-    seq_tail_expr()     = seq_tail_expr(desugar_expr(expr.seq, def_vars), (desugar_expr(e, def_vars) | e <- expr.tail)),
-    set_expr(es?)       = set_expr([desugar_expr(e, def_vars) | e <- set(es)]),
+    seq_tail_expr()     = seq_tail_expr(desugar_expr(expr.seq, def_vars), (desugar_expr(e, def_vars) : e <- expr.tail)),
+    set_expr(es?)       = set_expr([desugar_expr(e, def_vars) : e <- set(es)]),
     map_expr(es?)       = desugar_map_expr(set(es), def_vars),
     bin_rel_expr(es?)   = desugar_bin_rel_expr(set(es), def_vars),
     tern_rel_expr(es?)  = desugar_tern_rel_expr(set(es), def_vars),
@@ -21,7 +21,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
     named_args_call()   = desugar_named_args_call_expr(expr.name, expr.args, nonempty(expr.named_args), def_vars),
     unary_op_call()     = fn_call(op_symbol(expr.op), (desugar_expr(expr.expr, def_vars))),
     binary_op_call()    = fn_call(op_symbol(expr.op), (desugar_expr(expr.left_arg, def_vars), desugar_expr(expr.right_arg, def_vars))),
-    builtin_call()      = builtin_call(expr.name, (desugar_expr(e, def_vars) | e <- expr.args)),
+    builtin_call()      = builtin_call(expr.name, (desugar_expr(e, def_vars) : e <- expr.args)),
 
     call_lookalike()    = desugar_call_lookalike(expr.target, expr.args, def_vars),
     rel_memb_test()     = desugar_rel_memb_test(expr.target, expr.args, def_vars),
@@ -58,7 +58,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
     assert arity :: <1..3>;
     return if arity == 1
       then unary_pseudo_call(var, args(0))
-      else rel_memb_test(var, (just(a) | a <- args));
+      else rel_memb_test(var, (just(a) : a <- args));
   }
 
   Expr desugar_call_lookalike(NamedArg var, Expr+ args)
@@ -71,7 +71,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
     elif actual_arity == 1:
       return unary_pseudo_call(var, args(0));
     else
-      return rel_memb_test(var, (just(a) | a <- args));
+      return rel_memb_test(var, (just(a) : a <- args));
     ;
   }
 
@@ -82,7 +82,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
     arity = length(args);
     rel_var_arity = rel_vars_arities[var];
     if arity == rel_var_arity:
-      return relvar_memb_test(var, (just(a) | a <- args));
+      return relvar_memb_test(var, (just(a) : a <- args));
     else
       assert arity == rel_var_arity - 1;
       return relvar_lookup(var, args, nat(rel_var_arity-1));
@@ -107,20 +107,20 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
       target = only(resolve_by_priority_as_call_lookalike_target(symbols, arity, def_vars));
       if target :: FnFamilyId:
         arg_arities = arg_arities(target, arity);
-        args = (desugar_fn_arg(a, ea, def_vars) | a, ea <- zip(syn_args, arg_arities));
+        args = (desugar_fn_arg(a, ea, def_vars) : a, ea <- zip(syn_args, arg_arities));
         return fn_call(target, args, [:]);
       else
-        args = (desugar_expr(a, def_vars) | a <- syn_args);
+        args = (desugar_expr(a, def_vars) : a <- syn_args);
         return desugar_call_lookalike(target, args);
       ;
     else
-      args = (desugar_expr(e, def_vars) | e <- syn_args);
+      args = (desugar_expr(e, def_vars) : e <- syn_args);
       target = desugar_expr(syn_target, def_vars);
       if arity == 1:
         return unary_pseudo_call(target, only(args));
       else
         assert arity == 2;
-        return rel_memb_test(target, (just(a) | a <- args));
+        return rel_memb_test(target, (just(a) : a <- args));
       ;
     ;
   }
@@ -128,10 +128,10 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
 
   Expr desugar_rel_memb_test(SynExpr syn_target, Maybe[SynExpr]+ syn_args, [StdVar] def_vars)
   {
-    assert at_least_one((a == nil | a <- syn_args));
-    assert at_least_one((a != nil | a <- syn_args));
+    assert at_least_one((a == nil : a <- syn_args));
+    assert at_least_one((a != nil : a <- syn_args));
 
-    args = (apply(a, desugar_expr($, def_vars)) | a <- syn_args);
+    args = (apply(a, desugar_expr($, def_vars)) : a <- syn_args);
     if syn_target :: IdChain:
       target = only(resolve_by_priority_as_memb_test_target(destructure_id_chain(syn_target), def_vars));
     else
@@ -154,15 +154,15 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
   Expr desugar_rel_lookup(Atom+ symbols, Maybe[SynExpr]+ syn_args, [StdVar] def_vars)
   {
     rel_var = only(resolve_by_priority_as_rel_var(symbols, def_vars));
-    args = (desugar_expr(value(a), def_vars) | a <- syn_args, a != nil);
-    unknown_arg_idx = only((i | a @ i <- syn_args, a == nil));
+    args = (desugar_expr(value(a), def_vars) : a <- syn_args; a != nil);
+    unknown_arg_idx = only((i : a @ i <- syn_args; a == nil));
     return relvar_lookup(rel_var, nonempty(args), unknown_arg_idx);
   }
 
 
   Expr desugar_seq_expr(SynSubExpr* entries, [StdVar] def_vars)
   {
-    es = (desugar_expr(e, def_vars) | e <- entries);
+    es = (desugar_expr(e, def_vars) : e <- entries);
     return if es :: Expr+ then tuple_expr(es) else seq_expr(es);
   }
 
@@ -172,7 +172,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
         key:   desugar_expr(e.key, def_vars),
         value: desugar_expr(e.value, def_vars),
         cond:  desugar_expr(e.cond, def_vars) if e.cond?
-      ) | e <- entries
+      ) : e <- entries
     ]);
 
 
@@ -180,7 +180,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
     bin_rel_expr([(
         args: (desugar_expr(e.args(0), def_vars), desugar_expr(e.args(1), def_vars)),
         cond: desugar_expr(e.cond, def_vars) if e.cond?
-      ) | e <- entries
+      ) : e <- entries
     ]);
 
 
@@ -188,7 +188,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
     tern_rel_expr([(
         args: (desugar_expr(e.args(0), def_vars), desugar_expr(e.args(1), def_vars), desugar_expr(e.args(2), def_vars)),
         cond: desugar_expr(e.cond, def_vars) if e.cond?
-      ) | e <- entries
+      ) : e <- entries
     ]);
 
 
@@ -216,8 +216,8 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
     arity = length(syn_args);
     res_name = only(resolve_by_priority_as_fn_name(name, arity, def_vars));
     arg_arities = arg_arities(res_name, arity);
-    args = (desugar_fn_arg(a, ea, def_vars) | a, ea <- zip(syn_args, arg_arities));
-    named_args = merge(([n -> desugar_named_arg_expr(e, def_vars, as)] | n, as, e <- syn_named_args));
+    args = (desugar_fn_arg(a, ea, def_vars) : a, ea <- zip(syn_args, arg_arities));
+    named_args = merge(([n -> desugar_named_arg_expr(e, def_vars, as)] : n, as, e <- syn_named_args));
     return fn_call(res_name, args, named_args);
 
 
@@ -263,7 +263,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
   Expr desugar_rel_comp_expr(SynExpr+ syn_exprs, SynClause+ syn_source, [StdVar] def_vars)
   {
     vs = def_vars & syn_new_vars(syn_source);
-    exprs = (desugar_expr(e, vs) | e <- syn_exprs);
+    exprs = (desugar_expr(e, vs) : e <- syn_exprs);
     source = mk_and_clause(syn_source, def_vars);
     return match (exprs)
       (_, _)    = bin_rel_comp(exprs, source),
@@ -310,12 +310,12 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
   Expr desugar_match_expr(SynExpr+ exprs, SynCase+ cases, [StdVar] def_vars)
   {
     n  = length(cases[0].patterns);
-    es = nonempty((desugar_expr(e, def_vars) | e <- subseq(exprs, 0, n)));
+    es = nonempty((desugar_expr(e, def_vars) : e <- subseq(exprs, 0, n)));
     cs = ({
-      ps = (desugar_ptrn(p) | p <- c.patterns);
-      vs = def_vars & seq_union((new_vars(p) | p <- ps));
+      ps = (desugar_ptrn(p) : p <- c.patterns);
+      vs = def_vars & seq_union((new_vars(p) : p <- ps));
       return (ptrns: ps, expr: desugar_expr(c.expr, vs));
-    } | c <- cases);
+    } : c <- cases);
     return match_expr(es, cs);
   }
 
@@ -349,17 +349,18 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
       vs = vs & syn_new_vars(c);
     ;
 
-    rev_cs = reverse(cs);
-    clause = rev_cs[0];
-    for i = 1..length(clauses):
-      clause = and_clause(rev_cs[i], clause);
-    ;
+    assert {
+      rev_cs = reverse(cs);
+      ref_clause = rev_cs[0];
+      for i = 1..length(clauses):
+        ref_clause = and_clause(rev_cs[i], ref_clause);
+      ;
+      foldr_clause = foldr(nonempty(cs), and_clause);
+      return foldr_clause == ref_clause;
+    };
 
-    return clause;
+    return foldr(nonempty(cs), and_clause);
   }
-
-  //## REMEMBER TO CHECK THAT ALL VAR_PTRN() WITH A "BOUND" VARIABLE
-  //## DON'T HAVE A PATTERN ASSOCIATED WITH THAT VARIABLE
 
 
   Clause desugar_clause(SynClause cls, [StdVar] def_vars)
@@ -370,7 +371,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
     Clause desugar(SynClause cls, [StdVar] def_vars):
       iter_clause()       = desugar_iter_clause(cls.vars, cls.src, def_vars),
       and_clause(cs?)     = mk_and_clause(cs, def_vars),
-      or_clause()         = or_clause(desugar_clause(cls.left, def_vars), desugar_clause(cls.right, def_vars)),
+      or_clause(cs?)      = foldr((desugar_clause(c, def_vars) : c <- cs), or_clause),
       match_clause()      = match_clause(desugar_ptrn(cls.ptrn), desugar_expr(cls.expr, def_vars)),
       asgnm_clause()      = asgnm_clause(cls.var, desugar_expr(cls.expr, def_vars)),
       filter_clause()     = filter_clause(desugar_expr(cls.cond, def_vars));
@@ -378,11 +379,11 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
 
     Clause desugar_iter_clause(StdVar+ vars, SynExpr syn_src_expr, [StdVar] def_vars)
     {
-      if syn_src_expr :: SynRelMembTest and at_least_one((a == nil | a <- syn_src_expr.args)):
-        if all((a == nil | a <- syn_src_expr.args)):
+      if syn_src_expr :: SynRelMembTest and at_least_one((a == nil : a <- syn_src_expr.args)):
+        if all((a == nil : a <- syn_src_expr.args)):
           return desugar_iter_clause(vars, syn_src_expr.target, def_vars);
         ;
-        args = (apply(a, desugar_expr($, def_vars)) | a <- syn_src_expr.args);
+        args = (apply(a, desugar_expr($, def_vars)) : a <- syn_src_expr.args);
         syn_target = syn_src_expr.target;
         if syn_target :: IdChain:
           symbols = destructure_id_chain(syn_target);
@@ -401,7 +402,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
         if size(resols) == 1:
           resol = only(resols);
           if resol :: AnyRelVar:
-            return relvar_clause(vars, resol, (nil | unused_var <- vars)); //## UGLY UGLY UGLY
+            return relvar_clause(vars, resol, (nil : unused_var <- vars)); //## UGLY UGLY UGLY
           ;
         ;
       ;
@@ -409,7 +410,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
       src_expr = desugar_expr(syn_src_expr, def_vars);
       return if length(vars) == 1
         then set_clause(only(vars), src_expr)
-        else rel_clause(vars, src_expr, (nil | unused_var <- vars)); //## UGLY UGLY UGLY
+        else rel_clause(vars, src_expr, (nil : unused_var <- vars)); //## UGLY UGLY UGLY
     }
   }
 
@@ -433,11 +434,11 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
   Statement+ desugar_stmt(SynStmt stmt, [StdVar] def_vars)
   {
     stmts = match (stmt)
-      delete_stmt() = (desugar_delete_entry(e, def_vars) | e <- stmt.entries),
-      insert_stmt() = (desugar_insert_entry(e, stmt.force, def_vars) | e <- stmt.entries),
+      delete_stmt() = (desugar_delete_entry(e, def_vars) : e <- stmt.entries),
+      insert_stmt() = (desugar_insert_entry(e, stmt.force, def_vars) : e <- stmt.entries),
       _             = (desugar_stmt_plain(stmt, def_vars));
 
-    return (transfer_attachments(s, stmt) | s <- stmts);
+    return (transfer_attachments(s, stmt) : s <- stmts);
   }
 
 
@@ -458,11 +459,11 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
     proc_call_stmt()          = proc_call_stmt(
                                   res_var:    stmt.res_var if stmt.res_var?,
                                   proc_name:  stmt.proc_name,
-                                  params:     (desugar_expr(p, def_vars) | p <- stmt.args)
+                                  params:     (desugar_expr(p, def_vars) : p <- stmt.args)
                                 ),
 
     send_msg_stmt()           = send_msg_stmt(memb_db_var(stmt.var), desugar_expr(stmt.msg, def_vars)),
-    try_update_stmt()         = try_update_stmt(update_symbol(stmt.name), (desugar_expr(e, def_vars) | e <- stmt.args)),
+    try_update_stmt()         = try_update_stmt(update_symbol(stmt.name), (desugar_expr(e, def_vars) : e <- stmt.args)),
     set_memb_var_stmt()       = set_memb_var_stmt(pending_state_var(stmt.var), desugar_expr(stmt.value, def_vars)),
 
     set_input_ctrl_stmt()     = set_input_ctrl_stmt(loc_auto_var(stmt.var), stmt.input, desugar_expr(stmt.value, def_vars)),
@@ -474,11 +475,11 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
 
 
   Statement desugar_delete_entry((var: Atom, args: Maybe[SynExpr]+) entry, [StdVar] def_vars) =
-    delete_stmt(rel_var(entry.var), (apply(a, desugar_expr($, def_vars)) | a <- entry.args));
+    delete_stmt(rel_var(entry.var), (apply(a, desugar_expr($, def_vars)) : a <- entry.args));
 
 
   Statement desugar_insert_entry((var: Atom, args: SynExpr+) entry, Bool force, [StdVar] def_vars) =
-    insert_stmt(rel_var(entry.var), (desugar_expr(e, def_vars) | e <- entry.args), force);
+    insert_stmt(rel_var(entry.var), (desugar_expr(e, def_vars) : e <- entry.args), force);
 
 
   Statement desugar_if_stmt(SynIfStmt[SynStmt] stmt, [StdVar] def_vars)
@@ -498,8 +499,8 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
 
   Statement desugar_let_stmt(SynLetStmt[SynStmt] stmt, [StdVar] def_vars)
   {
-    asgnms = merge(([var -> desugar_expr(val, def_vars)] | var, val <- stmt.asgnms));
-    new_impl_args = update(impl_args, [v -> 0 | v : unused_var <- asgnms]);
+    asgnms = merge(([var -> desugar_expr(val, def_vars)] : var, val <- stmt.asgnms));
+    new_impl_args = update(impl_args, [v -> 0 : v, unused_var <- asgnms]);
     body   = desugar_stmts(stmt.body, def_vars, impl_args=new_impl_args);
     return let_stmt(asgnms, body);
   }
@@ -555,8 +556,8 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
   Statement desugar_assert_stmt(SynAssertStmt stmt, [StdVar] def_vars)
   {
     expr = desugar_expr(stmt.cond, def_vars);
-    loc_vars = [v | v <- def_vars, v :: StdVar];
-    scalar_impl_args = [arg | arg : arity <- impl_args, arity == 0];
+    loc_vars = [v : v <- def_vars; v :: StdVar];
+    scalar_impl_args = [arg : arg, arity <- impl_args; arity == 0];
     return assert_stmt(expr, loc_vars & scalar_impl_args, stmt.file, stmt.line, stmt.text);
   }
 
@@ -578,11 +579,11 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
       ptrn_symbol()           = ptrn,
       ptrn_integer(integer)   = ptrn_integer,
       ptrn_integer(int_obj?)  = ptrn_integer(int_obj),
-      ptrn_tuple(ps?)         = ptrn_tuple((desugar_ptrn(p) | p <- ps)),
+      ptrn_tuple(ps?)         = ptrn_tuple((desugar_ptrn(p) : p <- ps)),
       ptrn_tag_obj            = ptrn_tag_obj(ptrn_symbol, ptrn_any),
       ptrn_tag_obj()          = ptrn_tag_obj(ptrn.tag, desugar_ptrn(ptrn.obj)),
       ptrn_var()              = ptrn_var(ptrn.var, desugar_ptrn(ptrn.ptrn)),
       ptrn_type(type?)        = type_to_pattern(syn_type_to_type(type, nil), typedefs),
-      ptrn_union(ps?)         = ptrn_union(set((desugar_ptrn(p) | p <- ps)));
+      ptrn_union(ps?)         = ptrn_union(set((desugar_ptrn(p) : p <- ps)));
   }
 }

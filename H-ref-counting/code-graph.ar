@@ -86,7 +86,7 @@ RCNodeInfo set_cls_par_node(NamedArg v, BoundCls c, Instr* is)  = set_cls_par_no
   for c <- cases:
     case_leaf_nodes, case_code_trees = build_code_graph(c, nat(offset + length(leaf_nodes)));
     leaf_nodes = leaf_nodes & case_leaf_nodes;
-    code_trees = (code_trees || case_code_trees);
+    code_trees = (code_trees | case_code_trees);
   ;
   return (nonempty(leaf_nodes), nat_switch_node(offset, nonempty(code_trees)));
 }
@@ -100,7 +100,7 @@ RCNodeInfo set_cls_par_node(NamedArg v, BoundCls c, Instr* is)  = set_cls_par_no
   for is <- case_instrs:
     curr_leaf_nodes, curr_code_trees = build_code_graph(is, nat(offset + length(leaf_nodes)));
     leaf_nodes = leaf_nodes & curr_leaf_nodes;
-    case_code_trees = (case_code_trees || curr_code_trees);
+    case_code_trees = (case_code_trees | curr_code_trees);
   ;
   else_leaf_nodes, else_code_trees = build_code_graph(else, nat(offset + length(leaf_nodes)));
   leaf_nodes = nonempty(leaf_nodes & else_leaf_nodes);
@@ -147,8 +147,8 @@ RCNodeInfo set_cls_par_node(NamedArg v, BoundCls c, Instr* is)  = set_cls_par_no
   for instr @ i <- instrs:
     leaf_nodes, code_tree = build_code_graph(instr, offset);
     offset = nat(offset + length(leaf_nodes));
-    leaf_subnodes = (leaf_subnodes || leaf_nodes);
-    code_trees = (code_trees || code_tree);
+    leaf_subnodes = (leaf_subnodes | leaf_nodes);
+    code_trees = (code_trees | code_tree);
   ;
   return (nonempty(join(leaf_subnodes)), nonempty(code_trees));
 }
@@ -182,7 +182,7 @@ Instr reconstruct_branch(Nat idx, CodeTree+ if_code_trees, CodeTree* else_code_t
 Instr reconstruct_nat_switch(Nat idx, CodeTree*+ case_code_trees, RCNodeInfo+ rc_nodes)
 {
   index, instrs = match (rc_nodes[idx]) nat_switch_node() n? = (n.index, n.cases_instrs); //## UGLY UGLY UGLY
-  cases_code = (instrs[i] & reconstruct(ct, rc_nodes) | ct @ i <- case_code_trees);
+  cases_code = (instrs[i] & reconstruct(ct, rc_nodes) : ct @ i <- case_code_trees);
   return switch_on_nat(index, cases_code);
 }
 
@@ -190,7 +190,7 @@ Instr reconstruct_nat_switch(Nat idx, CodeTree*+ case_code_trees, RCNodeInfo+ rc
 Instr* reconstruct_symb_switch(Nat idx, CodeTree++ cases, CodeTree* else, RCNodeInfo+ rc_nodes)
 {
   expr, cases_values, cases_instrs, else_instrs = match (rc_nodes[idx]) symb_switch_node() n? = (n.value, n.cases, n.cases_instrs, n.else_instrs); //## UGLY UGLY UGLY
-  cases_code = (nonempty(cases_instrs[i] & reconstruct(ct, rc_nodes)) | ct @ i <- cases);
+  cases_code = (nonempty(cases_instrs[i] & reconstruct(ct, rc_nodes)) : ct @ i <- cases);
   else_code = else_instrs & reconstruct(else, rc_nodes);
   return (symb_switch(expr, set(nonempty(zip(cases_values, cases_code))), else_code));
 }
@@ -202,4 +202,4 @@ Instr reconstruct_cls_scope(Nat idx, CodeTree+ body, RCNodeInfo+ rc_nodes)
 }
 
 
-Instr* reconstruct(CodeTree* code_trees, RCNodeInfo+ rc_nodes) = join((reconstruct(t, rc_nodes) | t <- code_trees));
+Instr* reconstruct(CodeTree* code_trees, RCNodeInfo+ rc_nodes) = join((reconstruct(t, rc_nodes) : t <- code_trees));

@@ -7,20 +7,20 @@ CCodeOutput compile_to_c(CompiledPrg prg)
   symbs = used_symbols(prg);
   assert length(symbs) <= 64 * 1024; //## IMPLEMENT PROPERLY
 
-  symb_names = ("symb_idx_" & printed(match (s) object(a?) = a) | s <- symbs);
+  symb_names = ("symb_idx_" & printed(match (s) object(a?) = a) : s <- symbs);
 
   //## WHY IS PASSING THE typesymb2name() FUNCTION AT ALL NECESSARY? THERE ARE NO TYPES INVOLVED HERE...
-  symb_strs = (to_c_expr(s, typesymb2name(ts) = typesymb2str(ts, ptss)) | s <- symbs);
+  symb_strs = (to_c_expr(s, typesymb2name(ts) = typesymb2str(ts, ptss)) : s <- symbs);
   //## REPLACING THE LINE ABOVE WITH THE FOLLOWING ONE CRASHES THE COMPILER. INVESTIGATE
   // symb_strs = (to_c_expr(s, typesymb2name(ts) = {fail;}) : s <- symbs);
 
-  c_code = ("const uint16 " & symb_names[i] & " = " & printed(i) & ";" | i < length(symbs)) & 4 * ("") &
-           ("const OBJ " & symb_strs[i] & " = make_symb(" & symb_names[i] & ");" | i < length(symbs)) & 4 * ("");
+  c_code = ("const uint16 " & symb_names[i] & " = " & printed(i) & ";" : i < length(symbs)) & 4 * ("") &
+           ("const OBJ " & symb_strs[i] & " = make_symb(" & symb_names[i] & ");" : i < length(symbs)) & 4 * ("");
 
   symb_decls = ("const uint32 EMB_SYMB_COUNT = " & printed(length(symbs)) & ";") & 4 * ("");
   c_code = c_code & symb_decls;
 
-  symb_strs  = ("  \"" & _str_(_obj_(s)) & "\"," | s <- symbs);
+  symb_strs  = ("  \"" & _str_(_obj_(s)) & "\"," : s <- symbs);
   c_code     = c_code & ("const char *map_symb_to_str[EMB_SYMB_COUNT] = {") & symb_strs & ("};") & 4 * ("");
   symb_decls = symb_decls & ("extern const char *map_symb_to_str[EMB_SYMB_COUNT];") & 4 * ("");
 
@@ -30,13 +30,13 @@ CCodeOutput compile_to_c(CompiledPrg prg)
 
   c_code = c_code & env_decl;
 
-  all_cls_arities = [p.arity | pd <- prg.procs, p <- set(pd.params), p != :obj]; //## MAYBE HERE IT WOULD BE BETTER TO DO A NORMAL SORT
+  all_cls_arities = [p.arity : pd <- prg.procs; p <- set(pd.params); p != :obj]; //## MAYBE HERE IT WOULD BE BETTER TO DO A NORMAL SORT
 
-  cls_obj_typedefs = join(intermix((generate_cls_obj_typedef(a) | a <- rand_sort(all_cls_arities)), 2 * (""))) & 4 * ("");
+  cls_obj_typedefs = join(intermix((generate_cls_obj_typedef(a) : a <- rand_sort(all_cls_arities)), 2 * (""))) & 4 * ("");
   c_code = c_code & cls_obj_typedefs;
 
-  all_fn_arities = set((in_arity(d) | d <- rand_sort(prg.procs)));
-  c_code = c_code & join(intermix((generate_push_call_info_wrapper(a) | a <- rand_sort(all_fn_arities)), 2 * (""))) & 4 * ("");
+  all_fn_arities = set((in_arity(d) : d <- rand_sort(prg.procs)));
+  c_code = c_code & join(intermix((generate_push_call_info_wrapper(a) : a <- rand_sort(all_fn_arities)), 2 * (""))) & 4 * ("");
 
   int_seqs_decls, int_seqs_defs = gen_int_seqs_decl_and_def(prg.int_seqs);
 
@@ -44,7 +44,7 @@ CCodeOutput compile_to_c(CompiledPrg prg)
 
   sorted_cls_defs = rand_sort(cls_defs);
 
-  int_seqs_types_and_lengths = ((int_type_c_name(min(s), max(s)), length(s)) | s <- prg.int_seqs);
+  int_seqs_types_and_lengths = ((int_type_c_name(min(s), max(s)), length(s)) : s <- prg.int_seqs);
 
   proc_code = compile_to_c(
     rand_sort(prg.procs),
@@ -88,8 +88,8 @@ CCodeOutput compile_to_c(CompiledPrg prg)
 
 String* gen_env_decl(CompiledPrg prg)
 {
-  all_named_args = merge_values(set((p.named_args | p <- rand_sort(prg.procs))));
-  all_param_arity_pairs = rand_sort([(var: v, arity: a) | v : ars <- all_named_args, a <- ars]);
+  all_named_args = merge_values(set((p.named_args : p <- rand_sort(prg.procs))));
+  all_param_arity_pairs = rand_sort([(var: v, arity: a) : v, ars <- all_named_args; a <- ars]);
 
   env_decl = ("struct ENV {");
 
@@ -101,7 +101,7 @@ String* gen_env_decl(CompiledPrg prg)
 
     if arity > 0:
       ls = (
-        "  OBJ (*n" & printed(arity) & "_" & name & ")(" & append(("OBJ p" & printed(j) & ", " | j < na.arity)) & "const OBJ *C, ENV &env);",
+        "  OBJ (*n" & printed(arity) & "_" & name & ")(" & append(("OBJ p" & printed(j) & ", " : j < na.arity)) & "const OBJ *C, ENV &env);",
         "  const OBJ *C" & printed(arity) & "_" & name & ";"
       );
     else
@@ -112,9 +112,9 @@ String* gen_env_decl(CompiledPrg prg)
     env_decl = env_decl & ls;
   ;
 
-  semi_consts_cache_vars = rand_sort([p.name | p <- prg.procs, p.cached and p.named_args != [:]]);
-  semi_consts_cache_vars_decls = ("  OBJ " & to_c_semi_const_memo_var_name(v) & ";" | v <- semi_consts_cache_vars);
-  env_decl = (env_decl || "") & semi_consts_cache_vars_decls if semi_consts_cache_vars_decls != ();
+  semi_consts_cache_vars = rand_sort([p.name : p <- prg.procs; p.cached and p.named_args != [:]]);
+  semi_consts_cache_vars_decls = ("  OBJ " & to_c_semi_const_memo_var_name(v) & ";" : v <- semi_consts_cache_vars);
+  env_decl = (env_decl | "") & semi_consts_cache_vars_decls if semi_consts_cache_vars_decls != ();
 
   env_decl = env_decl & ("};");
 
@@ -154,7 +154,7 @@ Int pow(Int b, Nat e)
 
 (String*, String*) gen_int_seqs_decl_and_def(Int+* int_seqs)
 {
-  decls, defs = unzip((gen_int_seq_decl_and_def(s, i) | s @ i <- int_seqs));
+  decls, defs = unzip((gen_int_seq_decl_and_def(s, i) : s @ i <- int_seqs));
   return (decls, join(intermix(defs, 2 * (""))));
 }
 
@@ -170,15 +170,15 @@ Int pow(Int b, Nat e)
 
   decl = "extern " & sgn & ";";
 
-  strs = (printed(n) | n <- int_seq);
-  total_len = sum((length(s) | s <- strs)) + 2 * length(strs);
+  strs = (printed(n) : n <- int_seq);
+  total_len = sum((length(s) : s <- strs)) + 2 * length(strs);
   if total_len < 60:
     def = (sgn & " = {" & append(strs, ", ") & "};");
   else
-    max_len = nat(max((length(printed(n)) | n <- (min_elem, max_elem))));
+    max_len = nat(max((length(printed(n)) : n <- (min_elem, max_elem))));
     last_idx = length(int_seq) - 1;
-    strs = (align_text(s, max_len, ascii_space) & if i != last_idx then ", " else "" | s @ i <- strs);
-    cont_lines = ("  " & append(ss) | ss <- split_into_groups(strs, nz_nat(100 / {max_len + 2})));
+    strs = (align_text(s, max_len, ascii_space) & if i != last_idx then ", " else "" : s @ i <- strs);
+    cont_lines = ("  " & append(ss) : ss <- split_into_groups(strs, nz_nat(100 / {max_len + 2})));
     def = (sgn & " = {") & cont_lines & ("};");
   ;
 
@@ -191,8 +191,8 @@ Int pow(Int b, Nat e)
     num_of_comp_groups = len / max_group_size;
     comp_groups_total_size = num_of_comp_groups * max_group_size;
     last_group_size = len - comp_groups_total_size;
-    groups = (nonempty(subseq(items, i * max_group_size, max_group_size)) | i < num_of_comp_groups);
-    groups = (groups || nonempty(subseq(items, comp_groups_total_size, last_group_size))) if last_group_size > 0;
+    groups = (nonempty(subseq(items, i * max_group_size, max_group_size)) : i < num_of_comp_groups);
+    groups = (groups | nonempty(subseq(items, comp_groups_total_size, last_group_size))) if last_group_size > 0;
     return groups;
   }
 
@@ -207,7 +207,7 @@ Int pow(Int b, Nat e)
 
 String+ generate_push_call_info_wrapper(Nat arity)
 {
-  signature = "void push_call_info_wrapper(const char *fn_name" & append((", OBJ p" & printed(i) | i < arity)) & ")";
+  signature = "void push_call_info_wrapper(const char *fn_name" & append((", OBJ p" & printed(i) : i < arity)) & ")";
   code = (signature, "{", "#ifndef NDEBUG");
   if arity == 0:
     code = code & ("  push_call_info(fn_name, 0, (OBJ *)0);");
@@ -237,31 +237,31 @@ implicit
 
   CCodeOutput compile_to_c(ObjProcDef* obj_proc_defs, BoolProcDef* bool_proc_defs, ClsDef* cls_defs, Block* blocks, TransBlock* trans_blocks, Int+* int_seqs)
   {
-    type_checking_fn_decls = (gen_c_decl(pd) | pd <- bool_proc_defs) & 4 * ("");
+    type_checking_fn_decls = (gen_c_decl(pd) : pd <- bool_proc_defs) & 4 * ("");
     // print "Type checking function declarations generated";
 
-    closure_decls = (gen_c_decl(d, i) | d @ i <- cls_defs) & 4 * ("");
+    closure_decls = (gen_c_decl(d, i) : d @ i <- cls_defs) & 4 * ("");
     // print "Closure declarations generated";
 
-    fn_decls = (gen_c_decl(pd) | pd <- obj_proc_defs) & 4 * ("");
+    fn_decls = (gen_c_decl(pd) : pd <- obj_proc_defs) & 4 * ("");
     // print "Function declarations generated";
 
-    type_checking_fns = join((compile_to_c(d) & ("", "") | d <- bool_proc_defs)) & 4 * ("");
+    type_checking_fns = join((compile_to_c(d) & ("", "") : d <- bool_proc_defs)) & 4 * ("");
     // print "Type checking functions generated";
 
-    closures = join((compile_to_c(d, i) & ("", "") | d @ i <- cls_defs)) & 4 * ("");
+    closures = join((compile_to_c(d, i) & ("", "") : d @ i <- cls_defs)) & 4 * ("");
     // print "Closures generated";
 
-    functions = join((compile_to_c(d) & ("", "") | d <- obj_proc_defs));
+    functions = join((compile_to_c(d) & ("", "") : d <- obj_proc_defs));
     // print "Functions generated";
 
-    trans_blocks_code = (compile_trans_block_to_c(b) | b <- trans_blocks);
-    trans_blocks_decls = join((b.header & ("", "") | b <- trans_blocks_code));
-    trans_blocks_bodies = join(intermix((b.body | b <- trans_blocks_code), ("", "")));
+    trans_blocks_code = (compile_trans_block_to_c(b) : b <- trans_blocks);
+    trans_blocks_decls = join((b.header & ("", "") : b <- trans_blocks_code));
+    trans_blocks_bodies = join(intermix((b.body : b <- trans_blocks_code), ("", "")));
 
-    blocks_code = (compile_block_to_c(b) | b <- blocks);
-    blocks_decls = join((b.header & ("", "") | b <- blocks_code));
-    blocks_bodies = join(intermix((b.body | b <- blocks_code), ("", "")));
+    blocks_code = (compile_block_to_c(b) : b <- blocks);
+    blocks_decls = join((b.header & ("", "") : b <- blocks_code));
+    blocks_bodies = join(intermix((b.body : b <- blocks_code), ("", "")));
 
     header = join(intermix((fn_decls, trans_blocks_decls, blocks_decls), ("", "")));
 
@@ -284,7 +284,7 @@ implicit
 
   String gen_c_decl(ObjProcDef pd)
   {
-    par_types = (if p == :obj then "OBJ" else "CLS" & printed(p.arity) & " &" | p <- pd.params);
+    par_types = (if p == :obj then "OBJ" else "CLS" & printed(p.arity) & " &" : p <- pd.params);
     par_list = append(par_types & ("ENV &"), ", ");
     return "OBJ " & to_c_fn_name(pd.name, in_arity(pd)) & "(" & par_list & ");";
   }
@@ -324,10 +324,10 @@ implicit
     var_decls = gen_vars_decls(body);
 
     auto_vars = rand_sort(keys(auto_vars_types));
-    auto_var_decls = (to_c_name(auto_vars_types[v]) & " " & to_c_var_decl_name(v) & ";" | v <- auto_vars);
+    auto_var_decls = (to_c_name(auto_vars_types[v]) & " " & to_c_var_decl_name(v) & ";" : v <- auto_vars);
 
     db_vars = rand_sort(keys(db_vars_types));
-    db_vars_decls = (to_c_name(db_vars_types[v]) & " " & to_c_var_decl_name(v) & ";" | v <- db_vars);
+    db_vars_decls = (to_c_name(db_vars_types[v]) & " " & to_c_var_decl_name(v) & ";" : v <- db_vars);
 
     comp_body = compile_to_c(body, nil);
 
@@ -381,36 +381,36 @@ implicit
       cls() = "CLS" & printed(par.arity) & " &" & to_c_var_decl_name(if par.name? then par.name else cls_var(pos));
 
     String* gen_fn_pars(ProcDef pd):
-      ObjProcDef  = (gen_fn_par(p, i) | p @ i <- pd.params) & ("ENV &env"),
-      BoolProcDef = ("OBJ p" & printed(n) | n < arity(pd));
+      ObjProcDef  = (gen_fn_par(p, i) : p @ i <- pd.params) & ("ENV &env"),
+      BoolProcDef = ("OBJ p" & printed(n) : n < arity(pd));
   }
 
 
   String* gen_vars_decls(Instr* body)
   {
-    vars_to_decl = [v | v <- vars_to_declare(body), not v :: AuxVar];
+    vars_to_decl = [v : v <- vars_to_declare(body); not v :: AuxVar];
 
-    vector_vars = [v | v <- vars_to_decl, v :: VecVar];
+    vector_vars = [v : v <- vars_to_decl; v :: VecVar];
     scalar_vars = vars_to_decl - vector_vars;
 
     vec_vars_by_id = group_by(vector_vars, $.id);
-    new_vec_vars = [vvar(id, nz_nat(max([v.size | v <- vs]))) | id : vs <- vec_vars_by_id];
+    new_vec_vars = [vvar(id, nz_nat(max([v.size : v <- vs]))) : id, vs <- vec_vars_by_id];
 
     assert {
-      vec_var_ids  = [v.id | v <- vector_vars];
-      ref_new_vec_vars = [vvar(id, nz_nat(max(nonempty([v.size | v <- vector_vars, v.id == id])))) | id <- vec_var_ids];
+      vec_var_ids  = [v.id : v <- vector_vars];
+      ref_new_vec_vars = [vvar(id, nz_nat(max(nonempty([v.size : v <- vector_vars; v.id == id])))) : id <- vec_var_ids];
       return new_vec_vars == ref_new_vec_vars;
     };
 
     vars_to_decl = scalar_vars & new_vec_vars;
-    return (var_decl(v) | v <- rand_sort(vars_to_decl));
+    return (var_decl(v) : v <- rand_sort(vars_to_decl));
   }
 
 
   //## DUPLICATED CODE
   String* compile_to_c(ClsDef cd, Nat id)
   {
-    par_list  = ("OBJ p" & printed(n) | n < cd.arity) & ("const OBJ C[]", "ENV &env"); //## BAD
+    par_list  = ("OBJ p" & printed(n) : n < cd.arity) & ("const OBJ C[]", "ENV &env"); //## BAD
     signature = "OBJ cls_" & printed(id) & "(" & append(par_list, ", ") & ")";
 
     vars_decls = gen_vars_decls(cd.body);
@@ -420,7 +420,7 @@ implicit
   }
 
 
-  String* compile_to_c(Instr* instrs, <Nat, nil> block_id) = join((compile_to_c(instr, block_id) | instr <- instrs));
+  String* compile_to_c(Instr* instrs, <Nat, nil> block_id) = join((compile_to_c(instr, block_id) : instr <- instrs));
 
   String* compile_to_c(Instr instr, <Nat, nil> block_id):
 
@@ -500,7 +500,7 @@ implicit
     call_cls()            = mk_cls_call(instr.cls_var, instr.var, instr.params), //## INLINE THE FUNCTION
 
     push_call_info()      = { fn_name = (printed(fn_name_to_str(instr.fn_name)));
-                              params = (if p == nil then :blank_obj else value(p) | p <- instr.params);
+                              params = (if p == nil then :blank_obj else value(p) : p <- instr.params);
                               return (mk_gen_call("push_call_info_wrapper", fn_name, params, ()));
                             },
 
@@ -608,8 +608,8 @@ implicit
     return mk_call(fn_name, (rel_var));
 
     [NzNat -> String] fn_names_by_arity = [
-      1 -> "unary_table_init",
-      2 -> "binary_table_init",
+      1 -> "unary_table_init";
+      2 -> "binary_table_init";
       3 -> "ternary_table_init"
     ];
   }
@@ -621,8 +621,8 @@ implicit
     return mk_call(fn_name, (rel_var));
 
     [NzNat -> String] fn_names_by_arity = [
-      1 -> "unary_table_cleanup",
-      2 -> "binary_table_cleanup",
+      1 -> "unary_table_cleanup";
+      2 -> "binary_table_cleanup";
       3 -> "ternary_table_cleanup"
     ];
   }
@@ -638,8 +638,8 @@ implicit
     return mk_call(fn_name, (var));
 
     [NzNat -> String] fn_names_by_arity = [
-      1 -> "unary_table_iter_next",
-      2 -> "binary_table_iter_next",
+      1 -> "unary_table_iter_next";
+      2 -> "binary_table_iter_next";
       3 -> "ternary_table_iter_next"
     ];
   }
@@ -647,25 +647,25 @@ implicit
 
   String* compile_queue_deletes_to_c(RelVar rel_var, Maybe[IntVar]+ args)
   {
-    fn_name = fn_names_by_args[(a != nil | a <- args)];
+    fn_name = fn_names_by_args[(a != nil : a <- args)];
     table_arg_str = "&" & to_c_var_ref_name(rel_var);
     updates_arg_str = "&" & pending_updates_var_ref_name(rel_var);
-    return (mk_gen_call(fn_name, (table_arg_str, updates_arg_str), (value(a) | a <- args, a != nil), ()));
+    return (mk_gen_call(fn_name, (table_arg_str, updates_arg_str), (value(a) : a <- args; a != nil), ()));
 
     [Bool+ -> String] fn_names_by_args = [
-      (true)                  -> "unary_table_delete",
-      (false)                 -> "unary_table_clear",
-      (true,  true)           -> "binary_table_delete",
-      (true,  false)          -> "binary_table_delete_by_col_0",
-      (false, true)           -> "binary_table_delete_by_col_1",
-      (false, false)          -> "binary_table_clear",
-      (true,  true,  true)    -> "ternary_table_delete",
-      (true,  true,  false)   -> "ternary_table_delete_by_cols_01",
-      (true,  false, true)    -> "ternary_table_delete_by_cols_02",
-      (false, true,  true)    -> "ternary_table_delete_by_cols_12",
-      (true,  false, false)   -> "ternary_table_delete_by_col_0",
-      (false, true,  false)   -> "ternary_table_delete_by_col_1",
-      (false, false, true)    -> "ternary_table_delete_by_col_2",
+      (true)                  -> "unary_table_delete";
+      (false)                 -> "unary_table_clear";
+      (true,  true)           -> "binary_table_delete";
+      (true,  false)          -> "binary_table_delete_by_col_0";
+      (false, true)           -> "binary_table_delete_by_col_1";
+      (false, false)          -> "binary_table_clear";
+      (true,  true,  true)    -> "ternary_table_delete";
+      (true,  true,  false)   -> "ternary_table_delete_by_cols_01";
+      (true,  false, true)    -> "ternary_table_delete_by_cols_02";
+      (false, true,  true)    -> "ternary_table_delete_by_cols_12";
+      (true,  false, false)   -> "ternary_table_delete_by_col_0";
+      (false, true,  false)   -> "ternary_table_delete_by_col_1";
+      (false, false, true)    -> "ternary_table_delete_by_col_2";
       (false, false, false)   -> "ternary_table_clear"
     ];
   }
@@ -677,8 +677,8 @@ implicit
     return (mk_gen_call(fn_name, ("&" & pending_updates_var_ref_name(rel_var)), tuple, ()));
 
     [NzNat -> String] fn_names_by_arity = [
-      1 -> "unary_table_insert",
-      2 -> "binary_table_insert",
+      1 -> "unary_table_insert";
+      2 -> "binary_table_insert";
       3 -> "ternary_table_insert"
     ];
   }
@@ -686,20 +686,20 @@ implicit
 
   String* compile_get_table_iter_to_c(TableItVar it_var, AnyRelVar table, Maybe[IntVar]+ args)
   {
-    fn_name = fn_names_by_args[(a != nil | a <- args)];
-    return mk_call(fn_name, (table, it_var) & (value(a) | a <- args, a != nil));
+    fn_name = fn_names_by_args[(a != nil : a <- args)];
+    return mk_call(fn_name, (table, it_var) & (value(a) : a <- args; a != nil));
 
     [Bool+ -> String] fn_names_by_args = [
-      (false)                 -> "unary_table_get_iter",
-      (true,  false)          -> "binary_table_get_iter_by_col_0",
-      (false, true)           -> "binary_table_get_iter_by_col_1",
-      (false, false)          -> "binary_table_get_iter",
-      (true,  true,  false)   -> "ternary_table_get_iter_by_cols_01",
-      (true,  false, true)    -> "ternary_table_get_iter_by_cols_02",
-      (false, true,  true)    -> "ternary_table_get_iter_by_cols_12",
-      (true,  false, false)   -> "ternary_table_get_iter_by_col_0",
-      (false, true,  false)   -> "ternary_table_get_iter_by_col_1",
-      (false, false, true)    -> "ternary_table_get_iter_by_col_2",
+      (false)                 -> "unary_table_get_iter";
+      (true,  false)          -> "binary_table_get_iter_by_col_0";
+      (false, true)           -> "binary_table_get_iter_by_col_1";
+      (false, false)          -> "binary_table_get_iter";
+      (true,  true,  false)   -> "ternary_table_get_iter_by_cols_01";
+      (true,  false, true)    -> "ternary_table_get_iter_by_cols_02";
+      (false, true,  true)    -> "ternary_table_get_iter_by_cols_12";
+      (true,  false, false)   -> "ternary_table_get_iter_by_col_0";
+      (false, true,  false)   -> "ternary_table_get_iter_by_col_1";
+      (false, false, true)    -> "ternary_table_get_iter_by_col_2";
       (false, false, false)   -> "ternary_table_get_iter"
     ];
   }
@@ -765,7 +765,7 @@ implicit
     code = ();
     for fn_symb <- rand_sort(lookup(cached_semi_consts_by_named_arg, (narg, arity), [])):
       cache_var_name = to_c_semi_const_memo_var_name(fn_symb);
-      code = (code || "release(env." & cache_var_name & ");", "env." & cache_var_name & " = make_blank_obj();");
+      code = (code | "release(env." & cache_var_name & ");", "env." & cache_var_name & " = make_blank_obj();");
     ;
     return code;
   }
@@ -789,8 +789,8 @@ implicit
   String* compile_switch_on_nat_to_c(IntExpr value, Instr*+ cases, <Nat, nil> block_id)
   {
     cases_code = (
-      ("case " & printed(i) & ":") & indent_lines((compile_to_c(c, block_id) || "break;", ""))
-      | c @ i <- cases
+      ("case " & printed(i) & ":") & indent_lines((compile_to_c(c, block_id) | "break;", ""))
+      : c @ i <- cases
     );
     return ("switch (" & to_c_expr(value) & ")", "{") & indent_lines(join(cases_code)) & ("}");
   }
@@ -806,11 +806,11 @@ implicit
 
     body_code = (
       ("" if i > 0) &
-      ("case symb_idx_" & _str_(a) & ":" | a <- rand_sort(as)) &
-      indent_lines((compile_to_c(is, block_id) || "break;"))
-      | as, is @ i <- rand_sort(cases)
+      ("case symb_idx_" & _str_(a) & ":" : a <- rand_sort(as)) &
+      indent_lines((compile_to_c(is, block_id) | "break;"))
+      : as, is @ i <- rand_sort(cases)
     );
-    body_code = (body_code || ("", "default:") & indent_lines(compile_to_c(else, block_id))) if else != ();
+    body_code = (body_code | ("", "default:") & indent_lines(compile_to_c(else, block_id))) if else != ();
 
     return ("switch (" & value_str & ")", "{") & indent_lines(join(body_code)) & ("}");
   }
@@ -847,9 +847,9 @@ implicit
     mk_map_from_streams()       = mk_call(var, "build_map",           (expr.key_stream, expr.value_stream)),
     mk_map()                    = mk_call(var, "build_map",           (expr.keys, expr.values, expr.size)),
     mk_bin_rel_from_streams()   = mk_call(var, "build_bin_rel",       expr.streams),
-    mk_bin_rel()                = mk_call(var, "build_bin_rel",       (expr.cols || expr.size)),
+    mk_bin_rel()                = mk_call(var, "build_bin_rel",       (expr.cols | expr.size)),
     mk_tern_rel_from_streams()  = mk_call(var, "build_tern_rel",      expr.streams),
-    mk_tern_rel()               = mk_call(var, "build_tern_rel",      (expr.cols || expr.size)),
+    mk_tern_rel()               = mk_call(var, "build_tern_rel",      (expr.cols | expr.size)),
     mk_tagged_obj()             = mk_call(var, "build_tagged_obj",    (expr.tag, expr.obj)),
     mk_array()                  = mk_call(var, "blank_array",         (expr.size)),
     get_seq_slice()             = mk_call(var, "get_seq_slice",       (expr.seq, expr.idx_first, expr.len)),
@@ -883,7 +883,7 @@ implicit
 
   String* compile_call_proc_to_c(Maybe[ObjVar] var, ObjFnName name, <ObjExpr, BoundCls>* params, <Nat, nil> block_id)
   {
-    pars_info = (gen_par_info(p) | p <- params);
+    pars_info = (gen_par_info(p) : p <- params);
     code_frags, args = unzip(pars_info);
     call_code = if var != nil
       then mk_fn_call(value(var), to_c_fn_name(name, length(params)), args)
@@ -1009,7 +1009,7 @@ implicit
       "{",
       "  print_assertion_failed_msg(" & printed(file) & ", " & printed(line) & ", " & text_arg & ");"
     );
-    vars_content = ("  dump_var(" & printed(_str_(bare_id(v))) & ", " & to_c_var_ref_name(v) & ");" | v <- vars);
+    vars_content = ("  dump_var(" & printed(_str_(bare_id(v))) & ", " & to_c_var_ref_name(v) & ");" : v <- vars);
     footer = (
       "  soft_fail(0);",
       "}"
@@ -1027,7 +1027,7 @@ implicit
   }
 
   String mk_gen_call(String fn_name, String* leading_params, FnCallParam* params, String* trailing_params) =
-    fn_name & "(" & append(leading_params & (to_c_arg(p) | p <- params) & trailing_params, ", ") & ");";
+    fn_name & "(" & append(leading_params & (to_c_arg(p) : p <- params) & trailing_params, ", ") & ");";
 
   String mk_gen_call(AnyVar var, String fn_name, String* leading_params, FnCallParam* params, String* trailing_params) =
     to_c_var_ref_name(var) & " = " & mk_gen_call(fn_name, leading_params, params, trailing_params);
@@ -1089,7 +1089,7 @@ implicit typesymb2name : TypeSymbol -> String
     assert arg != 2;
     return fn_names[arg] & "(" & to_c_var_ref_name(var) & ")";
 
-    [<0..1> -> String] fn_names = [0 -> "get_curr_left_arg", 1 -> "get_curr_right_arg"];
+    [<0..1> -> String] fn_names = [0 -> "get_curr_left_arg"; 1 -> "get_curr_right_arg"];
 
   }
 
@@ -1172,8 +1172,8 @@ implicit typesymb2name : TypeSymbol -> String
     return fn_name & "(&" & to_c_var_ref_name(var) & ")";
 
     [NzNat -> String] fn_names_by_arity = [
-      1 -> "unary_table_iter_is_out_of_range",
-      2 -> "binary_table_iter_is_out_of_range",
+      1 -> "unary_table_iter_is_out_of_range";
+      2 -> "binary_table_iter_is_out_of_range";
       3 -> "ternary_table_iter_is_out_of_range"
     ];
   }
@@ -1182,11 +1182,11 @@ implicit typesymb2name : TypeSymbol -> String
   String contains_to_c_expr(ObjExpr rel, ObjExpr+ tuple)
   {
     fn_name = fn_names_by_arity[length(tuple)];
-    return fn_name & "(" & append((to_c_expr(a) | a <- (rel) & tuple), ", ") & ")";
+    return fn_name & "(" & append((to_c_expr(a) : a <- (rel) & tuple), ", ") & ")";
 
     [NzNat -> String] fn_names_by_arity = [
-      1 -> "has_elem",
-      2 -> "has_pair",
+      1 -> "has_elem";
+      2 -> "has_pair";
       3 -> "has_triple"
     ];
   }
@@ -1195,11 +1195,11 @@ implicit typesymb2name : TypeSymbol -> String
   String table_contains_to_c_expr(AnyRelVar table, IntVar+ tuple)
   {
     fn_name = fn_names_by_arity[length(tuple)];
-    return fn_name & "(&" & append((to_c_var_ref_name(v) | v <- (table) & tuple), ", ") & ")";
+    return fn_name & "(&" & append((to_c_var_ref_name(v) : v <- (table) & tuple), ", ") & ")";
 
     [NzNat -> String] fn_names_by_arity = [
-      1 -> "unary_table_contains",
-      2 -> "binary_table_contains",
+      1 -> "unary_table_contains";
+      2 -> "binary_table_contains";
       3 -> "ternary_table_contains"
     ];
   }
@@ -1251,11 +1251,11 @@ implicit typesymb2name : TypeSymbol -> String
     return fn_name & "(&" & to_c_var_ref_name(var) & ")";
 
     [(NzNat, Nat) -> String] fn_names_by_arity_and_field = [
-      (1, 0) -> "unary_table_iter_get_field",
-      (2, 0) -> "binary_table_iter_get_left_field",
-      (2, 1) -> "binary_table_iter_get_right_field",
-      (3, 0) -> "ternary_table_iter_get_left_field",
-      (3, 1) -> "ternary_table_iter_get_middle_field",
+      (1, 0) -> "unary_table_iter_get_field";
+      (2, 0) -> "binary_table_iter_get_left_field";
+      (2, 1) -> "binary_table_iter_get_right_field";
+      (3, 0) -> "ternary_table_iter_get_left_field";
+      (3, 1) -> "ternary_table_iter_get_middle_field";
       (3, 2) -> "ternary_table_iter_get_right_field"
     ];
   }
@@ -1270,7 +1270,7 @@ implicit typesymb2name : TypeSymbol -> String
 
   String to_nary_op(String op, AnyTypeExpr+ exprs, Bool parentesised)
   {
-    expr = append((to_c_expr(e, true) | e <- exprs), op);
+    expr = append((to_c_expr(e, true) : e <- exprs), op);
     expr = "(" & expr & ")" if length(exprs) > 1 and parentesised;
     return expr;
   }

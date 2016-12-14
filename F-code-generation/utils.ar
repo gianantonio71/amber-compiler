@@ -3,13 +3,13 @@ Nat+ choose_disp_args(AnyType++ types, [TypeName -> Type] typedefs)
   //## IF THERE'S MORE THAN ONE CHOICE OF DISPATCH ARGUMENTS,
   //## WE SHOULD CHOOSE THE ONE THAT IS THE MOST EFFICIENT
   some_types = types(0);
-  obj_args = nonempty((i | t @ i <- some_types, t :: NeType));
-  ptypes = ((pseudotype(cast_as_type(ts[i]), typedefs) | i <- obj_args) | ts <- types);
+  obj_args = nonempty((i : t @ i <- some_types; t :: NeType));
+  ptypes = ((pseudotype(cast_as_type(ts[i]), typedefs) : i <- obj_args) : ts <- types);
   count = length(obj_args);
   for n = 1...count:
     for idxs <- ordered_combinations(n, count):
       if are_sufficient(idxs, ptypes, typedefs):
-        return (obj_args[i] | i <- idxs);
+        return (obj_args[i] : i <- idxs);
       ;
     ;
   ;
@@ -22,7 +22,7 @@ Nat+ choose_disp_args(AnyType++ types, [TypeName -> Type] typedefs)
     for i1 < count-1; i2 = i1+1..count:
       pts1 = ptypes[i1];
       pts2 = ptypes[i2];
-      disjoint = at_least_one((are_disjoint(pts1(j), pts2(j)) | j <- arg_idxs));
+      disjoint = at_least_one((are_disjoint(pts1(j), pts2(j)) : j <- arg_idxs));
       return false if not disjoint;
     ;
     return true;
@@ -34,13 +34,13 @@ Nat+ choose_disp_args(AnyType++ types, [TypeName -> Type] typedefs)
 
 [Int+] retrieve_nested_int_seqs(Expr expr):
   tuple_expr(es?)   = if es :: IntObj+
-                        then [(match (e) object(n?) = n | e <- es)]
-                        else seq_union((retrieve_nested_int_seqs(e) | e <- es)),
+                        then [(match (e) object(n?) = n : e <- es)]
+                        else seq_union((retrieve_nested_int_seqs(e) : e <- es)),
   _                 = retrieve_from_nested_exprs(expr, retrieve_nested_int_seqs($)); //## BAD BAD: THE ($) PART IS A WORKAROUND FOR A BUG IN THE TYPECHECKER
 
 
 [Int+] retrieve_nested_int_seqs(Statement* stmts) =
-  seq_union((retrieve_from_nested_exprs(s, retrieve_nested_int_seqs($)) | s <- stmts)); //## BAD BAD: THE ($) PART IS A WORKAROUND FOR A BUG IN THE TYPECHECKER
+  seq_union((retrieve_from_nested_exprs(s, retrieve_nested_int_seqs($)) : s <- stmts)); //## BAD BAD: THE ($) PART IS A WORKAROUND FOR A BUG IN THE TYPECHECKER
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -64,12 +64,12 @@ Nat+ choose_disp_args(AnyType++ types, [TypeName -> Type] typedefs)
 
 [Int+] retrieve_nested_int_seqs(AutoCondAction action) =
   retrieve_nested_int_seqs(action.cond) &
-  union([retrieve_nested_int_seqs(a) | a <- action.body & action.else]);
+  union([retrieve_nested_int_seqs(a) : a <- action.body & action.else]);
 
 
 [Int+] retrieve_nested_int_seqs(AutoRepAction action) =
   retrieve_nested_int_seqs(action.cond) &
-  union([retrieve_nested_int_seqs(a) | a <- action.body & action.else]);
+  union([retrieve_nested_int_seqs(a) : a <- action.body & action.else]);
 
 
 [Int+] retrieve_nested_int_seqs(Method method) = retrieve_nested_int_seqs(method.expr);
@@ -82,27 +82,27 @@ Nat+ choose_disp_args(AnyType++ types, [TypeName -> Type] typedefs)
 
 
 [Int+] retrieve_nested_int_seqs(Automaton auto) =
-  union([retrieve_nested_int_seqs(sv.init_value) | unused_var : sv <- auto.state]) &
-  union([retrieve_nested_int_seqs(p.value) | unused_var : p <- auto.params]) &
-  union([retrieve_nested_int_seqs(e) | unused_var : e <- auto.rules]) &
-  union([retrieve_nested_int_seqs(c) | unused_var : c <- auto.time_rules]) &
-  union([retrieve_nested_int_seqs(a) | a <- auto.actions]) &
-  union([retrieve_nested_int_seqs(a) | a <- auto.rep_actions]) &
-  union([retrieve_nested_int_seqs(e) | unused_var_1 : na <- auto.nested_autos, unused_var_2 : e <- na.args]) &
-  union([retrieve_nested_int_seqs(m) | m <- auto.methods]);
+  union([retrieve_nested_int_seqs(sv.init_value) : unused_var, sv <- auto.state]) &
+  union([retrieve_nested_int_seqs(p.value) : unused_var, p <- auto.params]) &
+  union([retrieve_nested_int_seqs(e) : unused_var, e <- auto.rules]) &
+  union([retrieve_nested_int_seqs(c) : unused_var, c <- auto.time_rules]) &
+  union([retrieve_nested_int_seqs(a) : a <- auto.actions]) &
+  union([retrieve_nested_int_seqs(a) : a <- auto.rep_actions]) &
+  union([retrieve_nested_int_seqs(e) : unused_var_1, na <- auto.nested_autos; unused_var_2, e <- na.args]) &
+  union([retrieve_nested_int_seqs(m) : m <- auto.methods]);
 
 
 [Int+] retrieve_nested_int_seqs(DataBase db) =
-  union([retrieve_nested_int_seqs(m) | m <- db.methods]) &
-  union([retrieve_nested_int_seqs(u) | u <- db.updates]) &
-  union([retrieve_nested_int_seqs(h) | h <- db.handlers]);
+  union([retrieve_nested_int_seqs(m) : m <- db.methods]) &
+  union([retrieve_nested_int_seqs(u) : u <- db.updates]) &
+  union([retrieve_nested_int_seqs(h) : h <- db.handlers]);
 
 
 [Int+] retrieve_nested_int_seqs(Program prg) =
-  union([retrieve_nested_int_seqs(fd) | fd <- prg.fndefs]) &
-  union([retrieve_nested_int_seqs(pd) | pd <- prg.proc_defs]) &
-  union([retrieve_nested_int_seqs(a)  | a  <- prg.auto_defs]) &
-  union([retrieve_nested_int_seqs(db) | db <- prg.data_bases]);
+  union([retrieve_nested_int_seqs(fd) : fd <- prg.fndefs]) &
+  union([retrieve_nested_int_seqs(pd) : pd <- prg.proc_defs]) &
+  union([retrieve_nested_int_seqs(a)  : a  <- prg.auto_defs]) &
+  union([retrieve_nested_int_seqs(db) : db <- prg.data_bases]);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -117,7 +117,7 @@ CounterSet[T] increment(CounterSet[T] ctr_set, T ctr)
 {
   nz_ctrs = ctr_set.nz_ctrs;
   new_nz_ctrs = if nz_ctrs(ctr, ?)
-    then [c -> nz_nat(n + bit(c == ctr)) | c : n <- nz_ctrs]
+    then [c -> nz_nat(n + bit(c == ctr)) : c, n <- nz_ctrs]
     else nz_ctrs & [ctr -> 1];
   return counter_set(nz_ctrs: new_nz_ctrs);
 }
@@ -164,7 +164,7 @@ VarGen blank_var_gen = counter_set(nz_ctrs: [:]);
   vs = ();
   for i < count:
     v, g = next_int_var(g);
-    vs = (vs || v);
+    vs = (vs | v);
   ;
   return (vs, g);
 }
@@ -176,7 +176,7 @@ VarGen blank_var_gen = counter_set(nz_ctrs: [:]);
   vs = ();
   for i < count:
     v, g = next_bool_var(g);
-    vs = (vs || v);
+    vs = (vs | v);
   ;
   return (vs, g);
 }

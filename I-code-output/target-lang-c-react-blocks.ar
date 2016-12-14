@@ -12,9 +12,9 @@ implicit
 
     name_str = to_c_name(block.name);
 
-    memb_vars_decl = (var_c_type(v) & " " & to_c_var_decl_name(v) & ";" | v <- rand_sort(block.memb_vars));
-    auto_vars_decl = (to_c_name(t) & " " & to_c_var_decl_name(v) & ";" | v, t <- rand_sort_pairs(block.nested_auto_vars));
-    db_vars_decl = (to_c_name(t) & " " & to_c_var_decl_name(v) & ";" | v, t <- rand_sort_pairs(block.nested_trans_blocks));
+    memb_vars_decl = (var_c_type(v) & " " & to_c_var_decl_name(v) & ";" : v <- rand_sort(block.memb_vars));
+    auto_vars_decl = (to_c_name(t) & " " & to_c_var_decl_name(v) & ";" : v, t <- rand_sort_pairs(block.nested_auto_vars));
+    db_vars_decl = (to_c_name(t) & " " & to_c_var_decl_name(v) & ";" : v, t <- rand_sort_pairs(block.nested_trans_blocks));
     vars_decl = memb_vars_decl & auto_vars_decl & db_vars_decl;
 
     if block.time_rules_count != 0:
@@ -39,17 +39,17 @@ implicit
     cleanup_decl = (cleanup_sgn & ";");
     cleanup_proc = (cleanup_sgn, "{") & indent_lines(cleanup_body) & ("}");
 
-    all_loc_vars = vars_to_declare(block.apply_code) & union([vars_to_declare(c) | id : c <- block.nodes_update_code]);
-    aux_vars = [v | v <- all_loc_vars, v :: AuxVar] & [curr_time if has_time_rules];
+    all_loc_vars = vars_to_declare(block.apply_code) & union([vars_to_declare(c) : id, c <- block.nodes_update_code]);
+    aux_vars = [v : v <- all_loc_vars; v :: AuxVar] & [curr_time if has_time_rules];
     aux_name_str = aux_struct_c_name(block.name);
-    aux_decls = ("struct " & aux_name_str, "{") & indent_lines((var_decl(v) | v <- rand_sort(aux_vars))) & ("};");
+    aux_decls = ("struct " & aux_name_str, "{") & indent_lines((var_decl(v) : v <- rand_sort(aux_vars))) & ("};");
 
     apply_method_vars_decls = (
-      gen_vars_decls(block.apply_code) ||
+      gen_vars_decls(block.apply_code) |
       aux_name_str & " self_aux_;",
       aux_name_str & " *self_aux = &self_aux_;"
     );
-    apply_method_vars_decls = (apply_method_vars_decls || "") if apply_method_vars_decls != ();
+    apply_method_vars_decls = (apply_method_vars_decls | "") if apply_method_vars_decls != ();
 
     apply_body = apply_method_vars_decls & compile_to_c(block.apply_code, nil);
     // time_arg = if block.time_rules_count != 0 then ", int64 " & to_c_var_decl_name(elapsed_time) else "";
@@ -61,24 +61,24 @@ implicit
     update_node_bodies = [
       id -> {
         lines = gen_vars_decls(c);
-        lines = (lines || "") if lines != ();
+        lines = (lines | "") if lines != ();
         return lines & compile_to_c(c, nil);
-      } | id : c <- block.nodes_update_code
+      } : id, c <- block.nodes_update_code
     ];
     time_arg = if has_time_rules then ", int64 " & to_c_var_decl_name(curr_time) else "";
     update_node_sngs = [
       id -> "void " & node_update_method_name(block.name, id) &
             "(" & name_str & " *self" & time_arg & ", " & aux_name_str & " *self_aux, ENV &env)"
-      | id : unused_var <- block.nodes_update_code
+      : id, unused_var <- block.nodes_update_code
     ];
-    update_node_decls = rand_sort([s & ";" | unused_var : s <- update_node_sngs]);
+    update_node_decls = rand_sort([s & ";" : unused_var, s <- update_node_sngs]);
     update_node_procs_unsorted = [
       (update_node_sngs[id], "{") & indent_lines(update_node_bodies[id]) & ("}")
-      | id : unused_var <- block.nodes_update_code
+      : id, unused_var <- block.nodes_update_code
     ];
     update_node_procs = join(intermix(rand_sort(update_node_procs_unsorted), ("", "")));
 
-    queue_methods_decls_and_impls = [gen_queue_update_method(block.name, id, method.body, method.two_level_update) | id : method <- block.queue_update_code];
+    queue_methods_decls_and_impls = [gen_queue_update_method(block.name, id, method.body, method.two_level_update) : id, method <- block.queue_update_code];
     queue_methods_decls, queue_methods_impls = unzip(rand_sort(queue_methods_decls_and_impls));
     queue_methods_impls = join(intermix(queue_methods_impls, ("", "")));
 
@@ -86,13 +86,13 @@ implicit
     clear_timer_method_decl, clear_timer_method_impl = gen_clear_timer_method(block.name);
 
     queue_input_updates = length(block.inputs) > 2; //## BAD BAD BAD: THE NUMBER 2 IS REPEATED IN THE CODE GENERATION PHASE
-    input_decls, input_impls = unzip((gen_input_setter(block.name, id, i, queue_input_updates) | id @ i <- block.inputs));
+    input_decls, input_impls = unzip((gen_input_setter(block.name, id, i, queue_input_updates) : id @ i <- block.inputs));
     input_impls = join(intermix(input_impls, ("", "")));
 
-    method_decls, method_impls = unzip(rand_sort([gen_user_def_method(block.name, id, b) | id : b <- block.methods_code]));
+    method_decls, method_impls = unzip(rand_sort([gen_user_def_method(block.name, id, b) : id, b <- block.methods_code]));
     method_impls = join(intermix(method_impls, ("", "")));
 
-    const_data = rand_sort([gen_const_data(block.name, c) | c <- block.const_data]);
+    const_data = rand_sort([gen_const_data(block.name, c) : c <- block.const_data]);
 
     header = join(
                intermix(
@@ -121,12 +121,12 @@ implicit
 
   String gen_const_data(AutoSymbol block_name, ConstBlockData const) =
     "const int64 " & to_c_time_slots_table_name(block_name, const.expr_id) & "[] = {" &
-    append((printed(l) & "LL" | l <- const.lengths), ", ") & "};";
+    append((printed(l) & "LL" : l <- const.lengths), ", ") & "};";
 
 
   (String, String*) gen_user_def_method(AutoSymbol block_name, MethodId name, Instr* body)
   {
-    args_str = append((to_c_name(block_name) & " *self") & ("OBJ p" & printed(i) | i < name.arity), ", ");
+    args_str = append((to_c_name(block_name) & " *self") & ("OBJ p" & printed(i) : i < name.arity), ", ");
     sgn = "OBJ " & user_def_method_name(block_name, name) & "(" & args_str & ", ENV &env)";
     vars_decls = gen_vars_decls(body);
     body_text = vars_decls & ("" if vars_decls != ()) & compile_to_c(body, nil);
@@ -167,7 +167,7 @@ implicit
     other_arg = if two_level_update then ", bool " & to_c_var_decl_name(invalidate_cond_expr_cache) else "";
     sgn = "void " & method_name & "(" & to_c_name(block_name) & " *self" & other_arg & ")";
     vars_decl_text = gen_vars_decls(body);
-    vars_decl_text = (vars_decl_text || "") if vars_decl_text != ();
+    vars_decl_text = (vars_decl_text | "") if vars_decl_text != ();
     body_text = vars_decl_text & compile_to_c(body, nil);
     return (sgn & ";", (sgn, "{") & indent_lines(body_text) & ("}"));
   }
@@ -179,7 +179,7 @@ implicit
     inval_cache_var_name = to_c_var_decl_name(invalidate_cond_expr_cache);
     sgn = "void " & method_name & "(" & to_c_name(block_name) & " *self, bool " & inval_cache_var_name & ")";
     vars_decl_text = gen_vars_decls(body);
-    vars_decl_text = (vars_decl_text || "") if vars_decl_text != ();
+    vars_decl_text = (vars_decl_text | "") if vars_decl_text != ();
     body_text = vars_decl_text & compile_to_c(body, nil);
     return (sgn & ";", (sgn, "{") & indent_lines(body_text) & ("}"));
   }
@@ -190,7 +190,7 @@ implicit
     method_name = queue_update_method_name(input_id, block_name);
     sgn = "void " & method_name & "(" & to_c_name(block_name) & " *self)";
     vars_decl_text = gen_vars_decls(body);
-    vars_decl_text = (vars_decl_text || "") if vars_decl_text != ();
+    vars_decl_text = (vars_decl_text | "") if vars_decl_text != ();
     body_text = vars_decl_text & compile_to_c(body, nil);
     return (sgn & ";", (sgn, "{") & indent_lines(body_text) & ("}"));
   }

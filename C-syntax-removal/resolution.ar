@@ -49,7 +49,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
       else self_auto_type;
     methods = all_methods_by_automaton[auto_type];
     method_bare_name = bare_id(precall.method);
-    arities = [length(m.args) | m <- methods, m.name == method_bare_name];
+    arities = [length(m.args) : m <- methods; m.name == method_bare_name];
     return arities(arity);
   }
 
@@ -60,7 +60,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
       else self_db_type;
     methods = methods_by_db[bare_id(db_type)];
     name = bare_id(precall.method);
-    arities = [length(m.args) | m <- methods, m.name == name];
+    arities = [length(m.args) : m <- methods; m.name == name];
     return arities(arity);
   }
 
@@ -96,7 +96,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
   [FnFamilyId] resolve_by_priority_as_fn_name(Atom symbol, Nat arity, [Var] def_vars)
   {
     raw_resols = resolve_symbol(symbol, def_vars);
-    resols = [r | r <- raw_resols, r :: FnFamilyId, arity_is_compatible(r, arity)];
+    resols = [r : r <- raw_resols; r :: FnFamilyId; arity_is_compatible(r, arity)];
     res = min_by(resols, resol_priority($));
     assert size(res) <= 1;
     return res;
@@ -107,7 +107,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
   resolve_by_priority_as_call_lookalike_target(Atom target, Nat arity, [Var] def_vars)
   {
     raw_resols = resolve_symbol(target, def_vars);
-    resols = [r | r <- raw_resols, arity_is_compatible(r, arity)];
+    resols = [r : r <- raw_resols; arity_is_compatible(r, arity)];
     fail if not resols :: [<StdVar, NamedArg, MembVar, QualAutoMembVar, ClsVar, RelVar, FnFamilyId, PreCall>];
     return min_by(resols, resol_priority($)); //## BAD BAD: WORKAROUND FOR TYPECHECKING BUG
   }
@@ -117,7 +117,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
   resolve_by_priority_as_call_lookalike_target(Atom+ symbols, Nat arity, [Var] def_vars)
   {
     raw_resols = resolve_symbol_chain(symbols, def_vars);
-    resols = [r | r <- raw_resols, arity_is_compatible(r, arity)];
+    resols = [r : r <- raw_resols; arity_is_compatible(r, arity)];
     fail if not resols :: [<SymbChainExpr, ClsVar, AnyRelVar, FnFamilyId, PreCall>];
     return min_by(resols, resol_priority($));
   }
@@ -126,7 +126,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
   [<AnyAutoVar, LocDBVar, MembDBVar>] resolve_by_priority_as_auto_or_db_var(Atom symbol, [Var] def_vars)
   {
     raw_resols = resolve_symbol(symbol, def_vars);
-    resols = [r | r <- raw_resols, r :: <AnyAutoVar, LocDBVar, MembDBVar>];
+    resols = [r : r <- raw_resols; r :: <AnyAutoVar, LocDBVar, MembDBVar>];
     assert size(resols) <= 1;
     return min_by(resols, resol_priority($)); //## BAD BAD: WORKAROUND FOR TYPECHECKING BUG
   }
@@ -143,8 +143,8 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
   resolve_by_priority_as_memb_test_target(Atom+ symbols, [Var] def_vars)
   {
     pre_resols = resolve_symbol_chain(symbols, def_vars);
-    relvar_resols = [r | r <- pre_resols, r :: AnyRelVar];
-    expr_resols = [value(er) | r <- pre_resols, er = try_resolve_as_expr(r), er != nil];
+    relvar_resols = [r : r <- pre_resols; r :: AnyRelVar];
+    expr_resols = [value(er) : r <- pre_resols; er = try_resolve_as_expr(r); er != nil];
     return min_by(relvar_resols & expr_resols, resol_priority($));
   }
 
@@ -152,7 +152,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
   [AnyRelVar] resolve_by_priority_as_rel_var(Atom+ symbols, [Var] def_vars)
   {
     pre_resols = resolve_symbol_chain(symbols, def_vars);
-    resols = [r | r <- pre_resols, r :: AnyRelVar];
+    resols = [r : r <- pre_resols; r :: AnyRelVar];
     assert size(resols) <= 1;
     return min_by(resols, resol_priority($)); //## BAD BAD: WORKAROUND FOR TYPECHECKING BUG
   }
@@ -162,7 +162,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
   resolve_by_priority_as_expr(Atom+ symbols, [Var] def_vars)
   {
     resols = resolve_symbol_chain(symbols, def_vars);
-    expr_resols = [value(er) | r <- resols, er = try_resolve_as_expr(r), er != nil];
+    expr_resols = [value(er) : r <- resols; er = try_resolve_as_expr(r); er != nil];
     return min_by(expr_resols, resol_priority($)); //## BAD BAD: WORKAROUND FOR TYPECHECKING BUG
   }
 
@@ -170,16 +170,16 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
   [ClsExpr] resolve_by_priority_as_cls_expr(Atom symbol, NzNat exp_arity, [StdVar] def_vars)
   {
     raw_resols = resolve_symbol(symbol, def_vars);
-    resols_priorities = [r -> resol_priority(rr) | rr <- raw_resols, r <- resolve(rr, exp_arity)];
+    resols_priorities = [r -> resol_priority(rr) : rr <- raw_resols; r <- resolve(rr, exp_arity)];
     return min_by(keys(resols_priorities), resols_priorities($));
 
 
     [ClsExpr] resolve(FnFamilyId fn_symb, NzNat exp_arity)
     {
       //## BUG BUG BUG: HERE I MUST ALSO CHECK THAT IT HAS NO NAMED ARGUMENTS...
-      has_exp_arity = function_exists(fn_symb, exp_arity) and all((a == 0 | a <- arg_arities(fn_symb, exp_arity)));
+      has_exp_arity = function_exists(fn_symb, exp_arity) and all((a == 0 : a <- arg_arities(fn_symb, exp_arity)));
       return [
-        fn_ptr(fn_symb, exp_arity) if has_exp_arity,
+        fn_ptr(fn_symb, exp_arity) if has_exp_arity;
         no_args_cls_expr(exp_arity, fn_call(fn_symb, ())) if function_exists(fn_symb, 0)
       ];
     }
@@ -214,7 +214,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
     auto_type = if precall.var? then auto_var_type(precall.var) else self_auto_type;
     if methods_by_automaton(bare_id(auto_type), ?):
       methods = methods_by_automaton[bare_id(auto_type)];
-      if (m <- methods | m.name == bare_id(precall.method) and m.args == ()):
+      if (m <- methods : m.name == bare_id(precall.method) and m.args == ()):
         return just(auto_method_call(var: precall.var if precall.var?, name: precall.method, args: ()));
       ;
     ;
@@ -227,7 +227,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
     db_type = if precall.var? then db_var_type(precall.var) else self_db_type;
     if methods_by_db(bare_id(db_type), ?):
       methods = methods_by_db[bare_id(db_type)];
-      if (m <- methods | m.name == bare_id(precall.method) and m.args == ()):
+      if (m <- methods : m.name == bare_id(precall.method) and m.args == ()):
         return just(db_method_call(var: precall.var if precall.var?, name: precall.method, args: ()));
       ;
     ;
@@ -242,7 +242,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
   {
     resols = resolve_symbol(head(symbols), def_vars);
     for s <- tail(symbols):
-      resols = [value(nr) | r <- resols, nr = try_resolve_accessor(r, s), nr != nil];
+      resols = [value(nr) : r <- resols; nr = try_resolve_accessor(r, s); nr != nil];
     ;
     return resols;
 
@@ -314,8 +314,8 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
     named_arg = named_arg(symbol);
     fn_symb = fn_symbol(symbol);
     gen_resols = [
-      std_var if def_vars(std_var),
-      named_arg if impl_args(named_arg, ?),
+      std_var if def_vars(std_var);
+      named_arg if impl_args(named_arg, ?);
       fn_symb if top_level_fndefs_by_name_arity(fn_symb, ?)
     ];
     ctx_resols = resolve_symbol(syn_artifact, symbol);
@@ -330,7 +330,7 @@ implicit syn_prg : SynPrg
 {
   [<LocAutoVar, LocDBVar, QualAutoMembVar>] resolve_symbol(SynProcDef artifact, Atom symbol)
   {
-    resols = set((loc_db_var(symbol) | v <- artifact.db_vars, v.var == symbol));
+    resols = set((loc_db_var(symbol) : v <- artifact.db_vars; v.var == symbol));
     for v <- artifact.auto_vars:
       if v.var == symbol:
         interface = auto_interfaces[auto_symbol(v.type)];
@@ -348,7 +348,7 @@ implicit syn_prg : SynPrg
   {
     internals = auto_internals[artifact.name];
     resols = [
-      memb_var(symbol)      if in(symbol, internals.memb_vars),
+      memb_var(symbol)      if in(symbol, internals.memb_vars);
       memb_db_var(symbol)   if internals.nested_dbs(symbol, ?)
     ];
 
@@ -369,9 +369,9 @@ implicit syn_prg : SynPrg
   {
     interface = db_interfaces[db_symbol(artifact.name)];
     return [
-      memb_var(symbol)                          if in(symbol, interface.memb_vars),
-      rel_var(symbol)                           if has_key(interface.rel_vars, symbol),
-      memb_db_var(symbol)                       if has_key(interface.nested_dbs, symbol),
+      memb_var(symbol)                          if in(symbol, interface.memb_vars);
+      rel_var(symbol)                           if has_key(interface.rel_vars, symbol);
+      memb_db_var(symbol)                       if has_key(interface.nested_dbs, symbol);
       pre_db_method_call(method_symbol(symbol)) if method_ids_by_db_id[artifact.name](symbol)
     ];
   }
@@ -402,8 +402,8 @@ implicit syn_prg : SynPrg
     nested_fn_symb = nested_fn_symbol(artifact.unique_name, fn_symb);
 
     return [
-      cls_var         if (a <- set(artifact.fndef.args), cls_arg() <~ a | a.name == symbol),
-      nested_fn_symb  if at_least_one((fn.name == fn_symb | fn <- artifact.fndef.local_fns))
+      cls_var         if (a <- set(artifact.fndef.args); cls_arg() <~ a : a.name == symbol);
+      nested_fn_symb  if at_least_one((fn.name == fn_symb : fn <- artifact.fndef.local_fns))
     ];
   }
 
@@ -415,8 +415,8 @@ implicit syn_prg : SynPrg
     nested_fn_symb = nested_fn_symbol(artifact.parent_unique_name, fn_symb);
 
     return [
-      cls_var         if (a <- set(artifact.fndef.args), cls_arg() <~ a | a.name == symbol),
-      nested_fn_symb  if at_least_one((fn.name == fn_symb | fn <- artifact.parent_fndef.local_fns))
+      cls_var         if (a <- set(artifact.fndef.args); cls_arg() <~ a : a.name == symbol);
+      nested_fn_symb  if at_least_one((fn.name == fn_symb : fn <- artifact.parent_fndef.local_fns))
     ];
   }
 

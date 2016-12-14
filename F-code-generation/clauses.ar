@@ -28,7 +28,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
     cond_info = gen_eval_info(cond, cond_var, next_var_gen = var_gen);
     action_code = gen_code(action, loc_bound_vars);
 
-    return (cond_info.eval_code || do_if(is_true(cond_info.expr), action_code));
+    return (cond_info.eval_code | do_if(is_true(cond_info.expr), action_code));
   }
 
 
@@ -90,8 +90,8 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
       // so it should be safe to reuse the corresponding variables downstream
       //## I'M NOT TOTALLY SURE THOUGH
       args_info = gen_eval_info(values(args), next_var_gen = var_gen);
-      args_idxs = packed_seq_idxs((a != nil | a <- args));
-      low_level_args = (if a != nil then just(args_info.exprs(args_idxs(i))) else nil | a @ i <- args);
+      args_idxs = packed_seq_idxs((a != nil : a <- args));
+      low_level_args = (if a != nil then just(args_info.exprs(args_idxs(i))) else nil : a @ i <- args);
       //## IMPROVE THE TYPECHECKER!!!!!!!!!!!!!!!!!!!!!!!
       fail if not low_level_args :: (Maybe[ExprEvalRes], Maybe[ExprEvalRes]);
 
@@ -99,7 +99,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
       // Variables to avoid: src_var, it_var
       next_step_code = gen_code(action, loc_bound_vars & set(vars), next_var_gen = var_gen);
 
-      set_vars_code = (set_var(v, get_curr_arg(it_var, nat_01(i))) | v, i <- zip(vars, (j | a @ j <- args, a == nil)));
+      set_vars_code = (set_var(v, get_curr_arg(it_var, nat_01(i))) : v, i <- zip(vars, (j : a @ j <- args; a == nil)));
       body_code =(break_if(is_out_of_range(it_var))) & set_vars_code & next_step_code & (move_forward(it_var));
       loop_code = (get_iter(it_var, src_info.expr, low_level_args), repeat(nonempty(body_code)));
 
@@ -117,8 +117,8 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
       // so it should be safe to reuse the corresponding variables downstream
       //## I'M NOT TOTALLY SURE THOUGH
       args_info = gen_eval_info(values(args), next_var_gen = var_gen);
-      args_idxs = packed_seq_idxs((a != nil | a <- args));
-      low_level_args = (if a != nil then just(args_info.exprs(args_idxs(i))) else nil | a @ i <- args);
+      args_idxs = packed_seq_idxs((a != nil : a <- args));
+      low_level_args = (if a != nil then just(args_info.exprs(args_idxs(i))) else nil : a @ i <- args);
       //## IMPROVE THE TYPECHECKER!!!!!!!!!!!!!!!!!!!!!!!
       fail if not low_level_args :: (Maybe[ExprEvalRes], Maybe[ExprEvalRes], Maybe[ExprEvalRes]);
 
@@ -126,7 +126,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
       // Variables to avoid: src_var, it_var
       next_step_code = gen_code(action, loc_bound_vars & set(vars), next_var_gen = var_gen);
 
-      set_vars_code = (set_var(v, get_curr_arg(it_var, nat_02(i))) | v, i <- zip(vars, (j | a @ j <- args, a == nil)));
+      set_vars_code = (set_var(v, get_curr_arg(it_var, nat_02(i))) : v, i <- zip(vars, (j : a @ j <- args; a == nil)));
       body_code = (break_if(is_out_of_range(it_var))) & set_vars_code & next_step_code & (move_forward(it_var));
       loop_code = (get_iter(it_var, src_info.expr, low_level_args), repeat(nonempty(body_code)));
 
@@ -143,47 +143,47 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   Instr+ gen_relvar_clause_code(StdVar+ vars, AnyRelVar rel_var, Maybe[Expr]+ relvar_args, [StdVar] loc_bound_vars, MatchAction action)
   {
     args_perm = relvar_cols_perm(rel_var);
-    table_args = (relvar_args(i) | i <- args_perm);
+    table_args = (relvar_args(i) : i <- args_perm);
 
     //## INVALID ARGS SHOULD BE NULL...
-    arg_to_var_before_perm = (i-1 | i <- partial_sums((bit(a == nil) | a <- relvar_args)));
-    var_to_arg_after_perm = (i | a @ i <- table_args, a == nil);
-    vars_perm = (arg_to_var_before_perm(args_perm(var_to_arg_after_perm(i))) | unused_var @ i <- vars); //## UGLY UGLY UGLY
-    perm_vars = (vars(vars_perm(i)) | unused_var @ i <- vars); //## UGLY UGLY UGLY
+    arg_to_var_before_perm = (i-1 : i <- partial_sums((bit(a == nil) : a <- relvar_args)));
+    var_to_arg_after_perm = (i : a @ i <- table_args; a == nil);
+    vars_perm = (arg_to_var_before_perm(args_perm(var_to_arg_after_perm(i))) : unused_var @ i <- vars); //## UGLY UGLY UGLY
+    perm_vars = (vars(vars_perm(i)) : unused_var @ i <- vars); //## UGLY UGLY UGLY
 
     assert {
-      if all((a == nil | a <- relvar_args)):
+      if all((a == nil : a <- relvar_args)):
         return false if length(vars) != length(relvar_args);
-        return perm_vars == (vars(i) | i <- args_perm);
+        return perm_vars == (vars(i) : i <- args_perm);
       else
         //## ADD SOME CHECK HERE TOO...
         return true;
       ;
     };
 
-    filtered_idxs = idxs_into_filtered_seq((a != nil | a <- table_args));
-    unfiltered_idxs = (i | a @ i <- table_args, a != nil);
-    blank_idxs = (i | a @ i <- table_args, a == nil);
+    filtered_idxs = idxs_into_filtered_seq((a != nil : a <- table_args));
+    unfiltered_idxs = (i : a @ i <- table_args; a != nil);
+    blank_idxs = (i : a @ i <- table_args; a == nil);
     set_args = values(table_args);
     info = gen_eval_info(set_args);
 
     surr_vars, var_gen = next_int_vars(info.next_var_gen, length(set_args));
     it_var, var_gen = next_table_it_var(var_gen, length(table_args));
 
-    surr_args = (apply(mi, surr_vars($)) | mi <- filtered_idxs);
+    surr_args = (apply(mi, surr_vars($)) : mi <- filtered_idxs);
 
     action_code = gen_code(action, loc_bound_vars & set(vars), next_var_gen = var_gen);
 
     if surr_args :: Just[IntVar]+:
-      plain_surr_args = (value(a) | a <- surr_args);
-      vars_setup_code = (lookup_surrogate(v, table_col_store_id(rel_var, i), plain_surr_args(i)) | v @ i <- perm_vars);
+      plain_surr_args = (value(a) : a <- surr_args);
+      vars_setup_code = (lookup_surrogate(v, table_col_store_id(rel_var, i), plain_surr_args(i)) : v @ i <- perm_vars);
       code = (do_if(table_contains(rel_var, plain_surr_args), vars_setup_code & action_code));
     else
       lookup_exprs = (
         lookup_surrogate(table_col_store_id(rel_var, i), get_tuple_field(it_var, i))
-        | i <- blank_idxs
+        : i <- blank_idxs
       );
-      vars_setup_code = (set_var(v, lookup_exprs(i)) | v @ i <- perm_vars);
+      vars_setup_code = (set_var(v, lookup_exprs(i)) : v @ i <- perm_vars);
       loop_code = (break_if(is_out_of_range(it_var))) & vars_setup_code & action_code & (move_forward(it_var));
       code = (
         get_table_iter(it_var, rel_var, nonempty(surr_args)),

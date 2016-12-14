@@ -90,7 +90,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
       var_id = elems_var.id;
       cond_var, var_gen = next_obj_var(next_var_gen);
 
-      has_cond_exprs = at_least_one((e :: CondExpr | e <- exprs));
+      has_cond_exprs = at_least_one((e :: CondExpr : e <- exprs));
 
       code = (set_ivar(count_var, 0) if has_cond_exprs);
 
@@ -109,7 +109,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
           // No need to change next_var_gen, as cond_var is not used anymore when running this code
           expr_eval_code = gen_eval_code(e.expr, target_var);
           cond_instr = do_if(is_true(cond_eval_info.expr), expr_eval_code & (increment(count_var)));
-          new_code = (cond_eval_info.eval_code || cond_instr);
+          new_code = (cond_eval_info.eval_code | cond_instr);
           no_cond_expr_yet = false;
         else
           fail;
@@ -134,7 +134,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
     ClsVar      = expr,
     fn_ptr()    = {
       var = lvar(0);
-      ps = (fn_par(i) | i < expr.arity);
+      ps = (fn_par(i) : i < expr.arity);
       body = (call_proc(var, expr.name, ps), ret_val(var));
       cls = cls_def(expr.arity, body);
       return bound_cls(cls, ());
@@ -143,13 +143,13 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
       //###################################################################################
       //## BUG BUG BUG: WHAT HAPPENS HERE IF THE CLOSURE ITSELF USES A CLOSURE VARIABLE? ##
       //###################################################################################
-      loc_vs = seq_union(([value(v) if v != nil, fn_par(i)] | v @ i <- expr.args));
+      loc_vs = seq_union(([value(v) if v != nil; fn_par(i)] : v @ i <- expr.args));
       ext_vs = rand_sort(extern_vars(expr.expr) - loc_vs);
 
-      subst_map = merge(([v -> cls_ext_par(i)] | v @ i <- ext_vs));
+      subst_map = merge(([v -> cls_ext_par(i)] : v @ i <- ext_vs));
       new_expr = replace_external_vars(expr.expr, subst_map);
 
-      cls_body = (set_var(value(v), fn_par(i)) | v @ i <- expr.args, v != nil) & gen_fn_body(new_expr);
+      cls_body = (set_var(value(v), fn_par(i)) : v @ i <- expr.args; v != nil) & gen_fn_body(new_expr);
 
       return bound_cls(cls_def(nz_nat(length(expr.args)), nonempty(cls_body)), ext_vs);
     };

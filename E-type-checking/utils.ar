@@ -1,4 +1,4 @@
-Type union_superset(Type t1, Type t2) = union_superset([t1, t2]);
+Type union_superset(Type t1, Type t2) = union_superset([t1; t2]);
 
 Type union_superset([Type] types) = union_type(types);
 
@@ -58,7 +58,7 @@ implicit typedefs : [TypeName -> Type]
 
     _,                  ptrn_any          = type,
     _,                  ptrn_var()        = type_pattern_intersection_superset(type, ptrn.ptrn),
-    _,                  ptrn_union(ps?)   = union_type([type_pattern_intersection_superset(type, p) | p <- ps]),
+    _,                  ptrn_union(ps?)   = union_type([type_pattern_intersection_superset(type, p) : p <- ps]),
 
     type_var(),         _                 = type_pattern_intersection_superset(type_any, ptrn),
 
@@ -83,12 +83,12 @@ implicit typedefs : [TypeName -> Type]
     empty_tern_rel_type,_                 = if ptrn == ptrn_empty_tern_rel then empty_tern_rel_type else empty_type,
 
     ne_seq_type(),      ptrn_ne_seq       = type,
-    ne_seq_type(),      ptrn_tuple(ps?)   = tuple_type((type_pattern_intersection_superset(type.elem_type, p) | p <- ps)),
+    ne_seq_type(),      ptrn_tuple(ps?)   = tuple_type((type_pattern_intersection_superset(type.elem_type, p) : p <- ps)),
     ne_seq_type(),      _                 = empty_type,
 
     tuple_type(ts?),    ptrn_ne_seq       = type,
     tuple_type(ts?),    ptrn_tuple(ps?)   = if length(ts) == length(ps)
-                                            then tuple_type((type_pattern_intersection_superset(t, p) | t, p <- nonempty(zip(ts, ps))))
+                                            then tuple_type((type_pattern_intersection_superset(t, p) : t, p <- nonempty(zip(ts, ps))))
                                             else empty_type,
     tuple_type(ts?),    _                 = empty_type,
 
@@ -120,7 +120,7 @@ implicit typedefs : [TypeName -> Type]
 
     tag_obj_type(),     _                 = empty_type,
 
-    union_type(ts?),    _                 = { int_types = [it | t <- ts, it = type_pattern_intersection_superset(t, ptrn), it != empty_type];
+    union_type(ts?),    _                 = { int_types = [it : t <- ts; it = type_pattern_intersection_superset(t, ptrn); it != empty_type];
                                               return empty_type if int_types == [];
                                               // return only(int_types) if size(int_types) == 1;
                                               // The types here are all union-compatible, since they are all
@@ -165,15 +165,15 @@ implicit typedefs : [TypeName -> Type]
     empty_bin_rel_type,   _       = obj == [:],
     empty_tern_rel_type,  _       = obj == [::],
 
-    ne_seq_type(),        ()      = obj != () and all((type_contains_obj(type.elem_type, e) | e <- obj)),
+    ne_seq_type(),        ()      = obj != () and all((type_contains_obj(type.elem_type, e) : e <- obj)),
     ne_seq_type(),        _       = false,
 
-    ne_set_type(),        []      = obj != [] and not (e <- obj | not type_contains_obj(type.elem_type, e)),
+    ne_set_type(),        []      = obj != [] and not (e <- obj : not type_contains_obj(type.elem_type, e)),
     ne_set_type(),        _       = false,
 
     ne_map_type(),        [->]    = obj != [:] and
                                     not (
-                                      k : v <- obj |
+                                      k, v <- obj :
                                         not type_contains_obj(type.key_type, k) or
                                         not type_contains_obj(type.value_type, v)
                                     ),
@@ -181,7 +181,7 @@ implicit typedefs : [TypeName -> Type]
 
     ne_bin_rel_type(),    [:]     = obj != [:] and
                                     not (
-                                      l : r <- obj |
+                                      l, r <- obj :
                                         not type_contains_obj(type.args_types(0), l) or
                                         not type_contains_obj(type.args_types(1), r)
                                     ),
@@ -189,22 +189,22 @@ implicit typedefs : [TypeName -> Type]
 
     ne_tern_rel_type(),   [::]    = obj != [::] and
                                     not (
-                                      l : m : r <- obj |
-                                        not all((type_contains_obj(t, x) | t, x <- zip(type.args_types, (l, m, r))))
+                                      l, m, r <- obj :
+                                        not all((type_contains_obj(t, x) : t, x <- zip(type.args_types, (l, m, r))))
                                     ),
     ne_tern_rel_type(),   _       = false,
 
-    ne_record_type(fs?),  [->]    = obj != [:] and subset([l | l : f <- fs, not f.optional], keys(obj)) and
-                                    not (k : v <- obj | not has_key(fs, k) or not type_contains_obj(fs[k].type, v)),
+    ne_record_type(fs?),  [->]    = obj != [:] and subset([l : l, f <- fs; not f.optional], keys(obj)) and
+                                    not (k, v <- obj : not has_key(fs, k) or not type_contains_obj(fs[k].type, v)),
     ne_record_type(fs?),  _       = false,
 
-    tuple_type(ts?),      ()      = length(ts) == length(obj) and all((type_contains_obj(t, e) | t, e <- zip(ts, obj))),
+    tuple_type(ts?),      ()      = length(ts) == length(obj) and all((type_contains_obj(t, e) : t, e <- zip(ts, obj))),
     tuple_type(ts?),      _       = false,
 
     tag_obj_type(),       t?(o?)  = type_contains_obj(type.tag_type, t) and type_contains_obj(type.obj_type, o),
     tag_obj_type(),       _       = false,
 
-    union_type(ts?),      _       = (t <- ts | type_contains_obj(t, obj));
+    union_type(ts?),      _       = (t <- ts : type_contains_obj(t, obj));
 
   ////////////////////////////////////////////////////////////////////////////////
   ////////////////////////////////////////////////////////////////////////////////
@@ -231,7 +231,7 @@ implicit typedefs : [TypeName -> Type]
     empty_set_type          = if obj == [] then empty_type else type,
     empty_bin_rel_type      = if obj == [:] then empty_type else type,
 
-    union_type(ts?)         = { nts = [nt | t <- ts, nt = subtract_obj_from_type(t, obj), nt != empty_type];
+    union_type(ts?)         = { nts = [nt : t <- ts; nt = subtract_obj_from_type(t, obj); nt != empty_type];
                                 return if nts == [] then empty_type else union_type(nts);
                               },
 
@@ -243,7 +243,7 @@ implicit typedefs : [TypeName -> Type]
 
 FnType signature(Function fn) =
   fn_type(
-    params:       (a.type | a <- fn.args),
+    params:       (a.type : a <- fn.args),
     named_args:   fn.impl_args,
     ret_type:     fn.res_type
   );
@@ -323,7 +323,7 @@ Type type_map_t1_t2         = type_map(type_var(:t1), type_var(:t2));
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-Type type_bool = union_type([symb_type(true), symb_type(false)]);
+Type type_bool = union_type([symb_type(true); symb_type(false)]);
 
 IntType type_nat = high_ints(0);
 IntType type_nz_nat = high_ints(1);
@@ -334,9 +334,9 @@ Type type_map = type_map(type_any, type_any);
 Type type_bin_rel = type_bin_rel(type_any, type_any);
 Type type_tern_rel = type_tern_rel(type_any, type_any, type_any);
 
-Type type_set_rel = union_type([type_set, type_bin_rel, type_tern_rel]);
+Type type_set_rel = union_type([type_set; type_bin_rel; type_tern_rel]);
 
-Type type_unary_pseudocall_target = union_type([atom_type, type_seq, type_set, type_map]);
+Type type_unary_pseudocall_target = union_type([atom_type; type_seq; type_set; type_map]);
 
 Type type_ne_seq      = ne_seq_type(type_any);
 Type type_ne_set      = ne_set_type(type_any);
@@ -361,26 +361,26 @@ Type type_tern_rel(Type arg_1_type, Type arg_2_type, Type arg_3_type, Bool nonem
     then ne_tern_rel_type(arg_1_type, arg_2_type, arg_3_type)
     else type_tern_rel(arg_1_type, arg_2_type, arg_3_type);
 
-Type type_seq(Type elem_type)  = union_type([empty_seq_type, ne_seq_type(elem_type)]);
-Type type_set(Type elem_type)  = union_type([empty_set_type, ne_set_type(elem_type)]);
-Type type_mset(Type elem_type) = union_type([empty_bin_rel_type, ne_map_type(elem_type, high_ints(1))]);
+Type type_seq(Type elem_type)  = union_type([empty_seq_type; ne_seq_type(elem_type)]);
+Type type_set(Type elem_type)  = union_type([empty_set_type; ne_set_type(elem_type)]);
+Type type_mset(Type elem_type) = union_type([empty_bin_rel_type; ne_map_type(elem_type, high_ints(1))]);
 
 Type type_tuple(<2..*> size)  = tuple_type(nonempty(size * (type_any)));
 
-Type type_map(Type key_type, Type value_type)  = union_type([empty_bin_rel_type, ne_map_type(key_type, value_type)]);
+Type type_map(Type key_type, Type value_type)  = union_type([empty_bin_rel_type; ne_map_type(key_type, value_type)]);
 
 Type type_bin_rel(Type arg_1_type, Type arg_2_type) =
-  union_type([empty_bin_rel_type, ne_bin_rel_type(arg_1_type, arg_2_type)]);
+  union_type([empty_bin_rel_type; ne_bin_rel_type(arg_1_type, arg_2_type)]);
 
 Type type_tern_rel(Type arg_1_type, Type arg_2_type, Type arg_3_type) =
-  union_type([empty_tern_rel_type, ne_tern_rel_type(arg_1_type, arg_2_type, arg_3_type)]);
+  union_type([empty_tern_rel_type; ne_tern_rel_type(arg_1_type, arg_2_type, arg_3_type)]);
 
-Type type_string = tag_obj_type(symb_type(:string), union_type([empty_seq_type, ne_seq_type(type_nat)]));
+Type type_string = tag_obj_type(symb_type(:string), union_type([empty_seq_type; ne_seq_type(type_nat)]));
 
 Type type_any = type_ref(builtin_type_symbol(:any));
 
 Type type_dot_access_target =
   union_type([
-    type_map(atom_type, type_any),
+    type_map(atom_type, type_any);
     tag_obj_type(atom_type, type_map(atom_type, type_any))
   ]);

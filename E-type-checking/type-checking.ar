@@ -6,12 +6,12 @@
 [Function -> [+TypeCheckingError]] typecheck(Program prg, Bool verbose)
 {
   typedefs = prg.typedefs;
-  signatures = merge_values([[(family_id(fd.name), arity(fd)) -> signature(fd)] | fd <- prg.fndefs]);
-  sgn_sets = [n -> preprocess_signatures(ss, typedefs) | n : ss <- signatures];
+  signatures = merge_values([[(family_id(fd.name), arity(fd)) -> signature(fd)] : fd <- prg.fndefs]);
+  sgn_sets = [n -> preprocess_signatures(ss, typedefs) : n, ss <- signatures];
   let typedefs = typedefs, signatures = sgn_sets, verbose = verbose:
-    errors = [fd -> typecheck_function(fd) | fd <- prg.fndefs];
+    errors = [fd -> typecheck_function(fd) : fd <- prg.fndefs];
   ;
-  return [fd -> es | fd : es <- errors, es != []];
+  return [fd -> es : fd, es <- errors; es != []];
 }
 
 
@@ -20,14 +20,14 @@ implicit typedefs : [TypeName -> Type], signatures : [(FnFamilyId, Nat) -> SgnSe
   [TypeCheckingError] typecheck_function(Function func)
   {
     args = func.args;
-    var_aliases = set(([fn_par(i), a.var] | a @ i <- args, a :: FormalObjArg and a.var?));
+    var_aliases = set(([fn_par(i); a.var] : a @ i <- args; a :: FormalObjArg and a.var?));
 
-    obj_vars = [a.var -> a.type | a <- set(args), formal_obj_arg() <~ a, a.var?] &
-               [fn_par(i) -> a.type | i <- index_set(args), a = args[i], formal_obj_arg() <~ a] &
-               [v -> t | v : t <- func.impl_args, t :: Type];
+    obj_vars = [a.var -> a.type : a <- set(args); formal_obj_arg() <~ a; a.var?] &
+               [fn_par(i) -> a.type : i <- index_set(args); a = args[i]; formal_obj_arg() <~ a] &
+               [v -> t : v, t <- func.impl_args; t :: Type];
 
-    cls_vars = [a.var -> a.type | a <- set(args), formal_cls_arg() <~ a] &
-               [v -> t | v : t <- func.impl_args, t :: ClsType];
+    cls_vars = [a.var -> a.type : a <- set(args); formal_cls_arg() <~ a] &
+               [v -> t : v, t <- func.impl_args; t :: ClsType];
 
     //## THE FOLLOWING LINE WAS PRODUCING A COMPLETELY WRONG ERROR MESSAGE
     // errs = typecheck(func.expr, nonexistent_function(func), environment=obj_vars, closures=cls_vars);
@@ -69,24 +69,24 @@ implicit
       assert size(sgns) == 1;
       sgn = only(sgns);
       assert sgn.named_args == [:]; //## BUG BUG BUG: THIS IS NOT CHECKED IN THE WELL-FORMEDNESS CHECKING LAYER
-      assert not (p <- set(sgn.params) | not p :: Type);
+      assert not (p <- set(sgn.params) : not p :: Type);
       sgn_cls = cls_type(cast_as_type_ne_seq(sgn.params), sgn.ret_type);
       return [invalid_cls_param_type(sgn_cls, exp_type) if not is_subset(sgn_cls, exp_type)];
     },
     cls_expr() = {
-      delta_env = merge(([fn_par(i) -> t, value(v) -> t if v != nil] | v, t @ i <- zip(expr.args, exp_type.in_types)));
+      delta_env = merge(([fn_par(i) -> t; value(v) -> t if v != nil] : v, t @ i <- zip(expr.args, exp_type.in_types)));
       new_env = update(environment, delta_env);
       return typecheck(expr.expr, exp_type.out_type, environment=new_env); //## BAD: HERE I SHOULD PROVIDE MORE INFORMATION
     };
 
-  Type+ cast_as_type_ne_seq(AnyType* ts) = (cast_as_type(t) | t <- nonempty(ts));
+  Type+ cast_as_type_ne_seq(AnyType* ts) = (cast_as_type(t) : t <- nonempty(ts));
 
   //////////////////////////////////////////////////////////////////////////////
 
   [TypeCheckingError] typecheck(Clause cls)
   {
     errs = typecheck_without_annotations(cls);
-    return [add_anchor_if_needed(e, cls) | e <- errs];
+    return [add_anchor_if_needed(e, cls) : e <- errs];
 
 
     [TypeCheckingError] typecheck_without_annotations(Clause cls):
@@ -116,7 +116,7 @@ implicit
       errs = typecheck(src, type_bin_rel);
       return errs if errs != [];
       args_types = bin_rel_args_supertypes(expr_type(src));
-      return seq_union((if a != nil then typecheck(value(a), t) else [] | a, t <- zip(args, args_types)));
+      return seq_union((if a != nil then typecheck(value(a), t) else [] : a, t <- zip(args, args_types)));
     }
 
 
@@ -125,7 +125,7 @@ implicit
       errs = typecheck(src, type_tern_rel);
       return errs if errs != [];
       args_types = tern_rel_args_supertypes(expr_type(src));
-      return seq_union((if a != nil then typecheck(value(a), t) else [] | a, t <- zip(args, args_types)));
+      return seq_union((if a != nil then typecheck(value(a), t) else [] : a, t <- zip(args, args_types)));
     }
   }
 

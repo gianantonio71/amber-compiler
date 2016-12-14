@@ -27,7 +27,7 @@ implicit
         errs = [unexpected_actual_type(actual_type, exp_type)] if errs == [];
       ;
     ;
-    return [add_anchor_if_needed(err, expr) | err <- errs];
+    return [add_anchor_if_needed(err, expr) : err <- errs];
 
 
     Bool needs_res_type_check(Expr):
@@ -48,18 +48,18 @@ implicit
   [TypeCheckingError] pre_typecheck(Expr expr, Type exp_type):
     object(obj?)        = [],
     float_lit()         = [],
-    seq_expr(ses?)      = seq_union((typecheck(se, type_any) | se <- ses)),
-    tuple_expr(es?)     = seq_union((typecheck(e, type_any) | e <- es)),
-    seq_tail_expr()     = typecheck(expr.seq, type_seq) & seq_union((typecheck(e, type_any) | e <- expr.tail)),
-    set_expr(ses?)      = union([typecheck(se, type_any) | se <- ses]),
-    map_expr(es?)       = union([pre_typecheck_map_entry(e) | e <- es]),
+    seq_expr(ses?)      = seq_union((typecheck(se, type_any) : se <- ses)),
+    tuple_expr(es?)     = seq_union((typecheck(e, type_any) : e <- es)),
+    seq_tail_expr()     = typecheck(expr.seq, type_seq) & seq_union((typecheck(e, type_any) : e <- expr.tail)),
+    set_expr(ses?)      = union([typecheck(se, type_any) : se <- ses]),
+    map_expr(es?)       = union([pre_typecheck_map_entry(e) : e <- es]),
     bin_rel_expr(es?)   |
-    tern_rel_expr(es?)  = union([pre_typecheck_rel_entry(e) | e <- es]),
+    tern_rel_expr(es?)  = union([pre_typecheck_rel_entry(e) : e <- es]),
     tag_obj_expr()      = typecheck(expr.tag, atom_type) & typecheck(expr.obj, type_any),
     Var                 = [],
     fn_call()           = fully_typecheck_fn_call(expr.name, expr.args, expr.named_args, exp_type),
-    cls_call()          = seq_union((typecheck(e, t) | e, t <- zip(expr.args, closures[expr.name].in_types))),
-    builtin_call()      = seq_union((typecheck(p, t) | p, t <- zip(expr.args, builtin_signature(expr.name).param_types))),
+    cls_call()          = seq_union((typecheck(e, t) : e, t <- zip(expr.args, closures[expr.name].in_types))),
+    builtin_call()      = seq_union((typecheck(p, t) : p, t <- zip(expr.args, builtin_signature(expr.name).param_types))),
     unary_pseudo_call() = pre_typecheck_unary_pseudo_call(expr.target, expr.arg),
     rel_memb_test()     = pre_typecheck_rel_memb_test(expr.rel, expr.args),
     singl_only_elem()   = typecheck(expr.set, type_set),
@@ -93,7 +93,7 @@ implicit
       new_env = environment;
     ;
     let environment = new_env:
-      errs = seq_union((typecheck(a, type_any) | a <- entry.args));
+      errs = seq_union((typecheck(a, type_any) : a <- entry.args));
     ;
     return errs;
   }
@@ -176,8 +176,8 @@ implicit
       errs = typecheck(rel, type_tern_rel);
       return errs if errs != [];
       rel_type = expr_type(rel);
-      exp_args_types = if rel_type != empty_type then tern_rel_args_supertypes(rel_type) else (type_any | i < 3);
-      return seq_union((typecheck(value(a), t) | a, t <- zip(args, exp_args_types), a != nil));
+      exp_args_types = if rel_type != empty_type then tern_rel_args_supertypes(rel_type) else (type_any : i < 3);
+      return seq_union((typecheck(value(a), t) : a, t <- zip(args, exp_args_types); a != nil));
     }
   }
 
@@ -272,15 +272,15 @@ implicit
 
   [TypeCheckingError] fully_typecheck_match_expr(Expr+ exprs, (ptrns: Pattern+, expr: Expr)+ cases, Type exp_type)
   {
-    errs = seq_union((typecheck(e, type_any) | e <- exprs));
+    errs = seq_union((typecheck(e, type_any) : e <- exprs));
     return errs if errs != [];
-    types = (expr_type(e) | e <- exprs);
-    return seq_union((fully_typecheck_case(exprs, types, c.ptrns, c.expr, exp_type) | c <- cases));
+    types = (expr_type(e) : e <- exprs);
+    return seq_union((fully_typecheck_case(exprs, types, c.ptrns, c.expr, exp_type) : c <- cases));
 
 
     [TypeCheckingError] fully_typecheck_case(Expr+ exprs, Type+ types, Pattern+ ptrns, Expr expr, Type exp_type)
     {
-      errs = (ptrn_cannot_match_type(p, t) | p, t <- zip(ptrns, types), t != empty_type and not may_match(p, t));
+      errs = (ptrn_cannot_match_type(p, t) : p, t <- zip(ptrns, types); t != empty_type and not may_match(p, t));
       return set(errs) if errs != ();
       case_expr_env = update_environment(exprs, ptrns);
       return typecheck(expr, exp_type, environment=case_expr_env);
@@ -302,7 +302,7 @@ implicit
     errs = typecheck(source);
     return errs if errs != [];
     new_env = generate_env(source);
-    return seq_union((typecheck(e, type_any, environment=new_env) | e <- exprs));
+    return seq_union((typecheck(e, type_any, environment=new_env) : e <- exprs));
   }
 
 

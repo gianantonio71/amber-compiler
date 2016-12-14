@@ -32,7 +32,7 @@ implicit program : Program, automaton : Automaton, next_var_gen : VarGen, option
     for e <- exprs:
       info = gen_safe_eval_info(e, next_var_gen=var_gen);
       eval_code = eval_code & info.eval_code;
-      res_exprs = (res_exprs || info.expr);
+      res_exprs = (res_exprs | info.expr);
       var_gen   = info.next_var_gen;
     ;
 
@@ -62,9 +62,9 @@ implicit program : Program, automaton : Automaton, next_var_gen : VarGen, option
     // If the left term is undefined, then we need to check the value of the right term
     if_undef_code = (branch(is_false(right_tmp_var), (set_var(res_var, obj_false)), (make_var_undef(res_var))));
     // true + undefined cases, they both require the evaluation of the right term
-    if_not_false_code = (right_eval_code || branch(is_true(left_tmp_var), if_true_code, if_undef_code));
+    if_not_false_code = (right_eval_code | branch(is_true(left_tmp_var), if_true_code, if_undef_code));
     // Putting it all together
-    return (left_eval_code || branch(is_false(left_tmp_var), if_false_code, if_not_false_code));
+    return (left_eval_code | branch(is_false(left_tmp_var), if_false_code, if_not_false_code));
   }
 
 
@@ -83,9 +83,9 @@ implicit program : Program, automaton : Automaton, next_var_gen : VarGen, option
     // If the left term is undefined, then we need to check the value of the right term
     if_undef_code = (branch(is_true(right_tmp_var), (set_var(res_var, obj_true)), (make_var_undef(res_var))));
     // false + undefined cases, they both require the evaluation of the right term
-    if_not_true_code = (right_eval_code || branch(is_false(left_tmp_var), if_false_code, if_undef_code));
+    if_not_true_code = (right_eval_code | branch(is_false(left_tmp_var), if_false_code, if_undef_code));
     // Putting it all together
-    return (left_eval_code || branch(is_true(left_tmp_var), if_true_code, if_not_true_code));
+    return (left_eval_code | branch(is_true(left_tmp_var), if_true_code, if_not_true_code));
   }
 
 
@@ -94,7 +94,7 @@ implicit program : Program, automaton : Automaton, next_var_gen : VarGen, option
     eval_code = gen_eval_code(expr, res_var, artifact=automaton);
     vars_to_safeguard = non_nullable_vars(expr);
     if vars_to_safeguard != []:
-      cond = and((is_not_null(v) | v <- rand_sort(vars_to_safeguard)));
+      cond = and((is_not_null(v) : v <- rand_sort(vars_to_safeguard)));
       eval_code = (branch(cond, eval_code, (make_var_undef(res_var))));
     ;
     return eval_code;
@@ -108,8 +108,8 @@ Nat* trigger_times_table(BasicTimeExpr time_expr)
 {
   trigger_times = trigger_times(time_expr);
   assert trigger_times != ();
-  interval_lengths = (nz_nat(t - if i == 0 then 0 else trigger_times[i-1]) | t @ i <- trigger_times);
-  return (interval_lengths || 0); //## DO I REALLY NEED TO ADD THAT 0 AT THE END?
+  interval_lengths = (nz_nat(t - if i == 0 then 0 else trigger_times[i-1]) : t @ i <- trigger_times);
+  return (interval_lengths | 0); //## DO I REALLY NEED TO ADD THAT 0 AT THE END?
 }
 
 
@@ -117,7 +117,7 @@ Nat* trigger_times_table(CyclicTimeExpr time_expr)
 {
   trigger_times = trigger_times(time_expr);
   return () if trigger_times == ();
-  interval_lengths = (nz_nat(t - if i == 0 then 0 else trigger_times[i-1]) | t @ i <- trigger_times);
+  interval_lengths = (nz_nat(t - if i == 0 then 0 else trigger_times[i-1]) : t @ i <- trigger_times);
   count = length(trigger_times);
   if mod(count, 2) != 0:
     head_seq = interval_lengths;
@@ -126,7 +126,7 @@ Nat* trigger_times_table(CyclicTimeExpr time_expr)
     head_seq = tail(interval_lengths);
     tail_elem = nat(time_expr.nanosecs - last(trigger_times) + head(interval_lengths));
   ;
-  return (head_seq || tail_elem);
+  return (head_seq | tail_elem);
 }
 
 
@@ -156,5 +156,5 @@ IntConst time_slot_length(CyclicTimeExpr time_expr, AutoSymbol auto_name, Atom e
 {
   //## BUG BUG BUG: THIS IS WRONG. VARIABLES IN is-def EXPRESSIONS SHOULD NOT BE COUNTED HERE
   vs = extern_vars(expr);
-  return [v | v <- vs, v :: <MembVar, MembCopyVar>];
+  return [v : v <- vs; v :: <MembVar, MembCopyVar>];
 }

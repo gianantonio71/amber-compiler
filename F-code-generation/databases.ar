@@ -27,16 +27,16 @@ implicit program : Program, database : DataBase, options : CompilationOptions
     state_vars = database.state_vars;
     nested_dbs = database.nested_dbs;
 
-    vars_pre_init_code = rand_sort([init_memb_var(v, :blank) | v : unused_var <- state_vars]);
+    vars_pre_init_code = rand_sort([init_memb_var(v, :blank) : v, unused_var <- state_vars]);
     let artifact = database, next_var_gen = blank_var_gen:
-      vars_init_code = join(rand_sort([gen_eval_code(d.init_value, v) | v : d <- state_vars]));
+      vars_init_code = join(rand_sort([gen_eval_code(d.init_value, v) : v, d <- state_vars]));
     ;
-    nested_dbs_init_code = rand_sort([init_db(v, t) | v : t <- nested_dbs]);
+    nested_dbs_init_code = rand_sort([init_db(v, t) : v, t <- nested_dbs]);
 
     value_stores, tables = value_stores_and_tables;
 
-    value_stores_init_code = (init_value_store(vs) | vs <- rand_sort(value_stores));
-    tables_init_code = rand_sort([init_table(v, t) | v : t <- tables]);
+    value_stores_init_code = (init_value_store(vs) : vs <- rand_sort(value_stores));
+    tables_init_code = rand_sort([init_table(v, t) : v, t <- tables]);
 
     return vars_pre_init_code & vars_init_code & nested_dbs_init_code & value_stores_init_code & tables_init_code;
   }
@@ -47,13 +47,13 @@ implicit program : Program, database : DataBase, options : CompilationOptions
     state_vars = database.state_vars;
     nested_dbs = database.nested_dbs;
 
-    vars_cleanup_code = rand_sort([reset_memb_var(v, :blank) | v : unused_var <- state_vars]);
-    nested_dbs_cleanup_code = rand_sort([cleanup_db(v, t) | v : t <- nested_dbs]);
+    vars_cleanup_code = rand_sort([reset_memb_var(v, :blank) : v, unused_var <- state_vars]);
+    nested_dbs_cleanup_code = rand_sort([cleanup_db(v, t) : v, t <- nested_dbs]);
 
     value_stores, tables = value_stores_and_tables;
 
-    value_stores_cleanup_code = (cleanup_value_store(vs) | vs <- rand_sort(value_stores));
-    tables_cleanup_code = rand_sort([cleanup_table(v, t) | v : t <- tables]);
+    value_stores_cleanup_code = (cleanup_value_store(vs) : vs <- rand_sort(value_stores));
+    tables_cleanup_code = rand_sort([cleanup_table(v, t) : v, t <- tables]);
 
     return vars_cleanup_code & nested_dbs_cleanup_code & value_stores_cleanup_code & tables_cleanup_code;
   }
@@ -61,7 +61,7 @@ implicit program : Program, database : DataBase, options : CompilationOptions
 
   [MethodId -> Instr*]  compiled_database_methods([Method] methods)
   {
-    return merge([gen_code(ms) | unused_var : ms <- group_by(methods, ($.name, length($.args)))]);
+    return merge([gen_code(ms) : unused_var, ms <- group_by(methods, ($.name, length($.args)))]);
 
 
     [MethodId -> Instr*] gen_code([+Method] methods)
@@ -71,7 +71,7 @@ implicit program : Program, database : DataBase, options : CompilationOptions
       arity = length(a_method.args);
       return [method_id(name, arity) -> gen_code(a_method)] if size(methods) == 1;
       sorted_methods = rand_sort(methods);
-      comp_methods = merge(([method_id(m.name, arity, i) -> gen_code(m)] | m @ i <- sorted_methods));
+      comp_methods = merge(([method_id(m.name, arity, i) -> gen_code(m)] : m @ i <- sorted_methods));
       disp_method_code = gen_db_dispatch_method_body(database.name, sorted_methods, program.typedefs);
       return comp_methods & [method_id(name, arity) -> disp_method_code];
     }
@@ -80,18 +80,18 @@ implicit program : Program, database : DataBase, options : CompilationOptions
     Instr* gen_code(Method method)
     {
       res_var, var_gen = next_obj_var(blank_var_gen);
-      code = (set_var(value(v), fn_par(i)) | unused_var, v @ i <- method.args, v != nil) &
+      code = (set_var(value(v), fn_par(i)) : unused_var, v @ i <- method.args; v != nil) &
              gen_eval_code(method.expr, res_var, artifact = database, next_var_gen = var_gen);
       // entry_code = [push_call_info(fndef.name, fn_par(i)) : p @ i <- fndef.params])];
       // exit_code = [pop_call_info];
-      return (code || ret_val(res_var));
+      return (code | ret_val(res_var));
     }
   }
 
 
   [UpdateId -> Instr*] compiled_database_updates([Update] updates)
   {
-    return merge([gen_updates_code(ms) | unused_var : ms <- group_by(updates, ($.name, length($.args)))]);
+    return merge([gen_updates_code(ms) : unused_var, ms <- group_by(updates, ($.name, length($.args)))]);
 
 
     [UpdateId -> Instr*] gen_updates_code([+Update] updates)
@@ -101,7 +101,7 @@ implicit program : Program, database : DataBase, options : CompilationOptions
       arity = length(a_method.args);
       return [update_id(name, arity) -> gen_update_code(a_method)] if size(updates) == 1;
       sorted_updates = rand_sort(updates);
-      comp_updates = merge(([update_id(m.name, arity, i) -> gen_update_code(m)] | m @ i <- sorted_updates));
+      comp_updates = merge(([update_id(m.name, arity, i) -> gen_update_code(m)] : m @ i <- sorted_updates));
       disp_method_code = update_dispatch_code(database.name, sorted_updates, program.typedefs);
       return comp_updates & [update_id(name, arity) -> disp_method_code];
     }
@@ -113,7 +113,7 @@ implicit program : Program, database : DataBase, options : CompilationOptions
       update_body = update.body;
       return () if update_body == ();
       return (
-        (set_var(v, fn_par(i)) | unused_var, v @ i <- update.args) ||
+        (set_var(v, fn_par(i)) : unused_var, v @ i <- update.args) |
         execute_block(gen_code(update_body, never_used_lvar, artifact = database, next_var_gen = blank_var_gen))
       );
     }
@@ -125,7 +125,7 @@ implicit program : Program, database : DataBase, options : CompilationOptions
     return [:] if handlers == [];
     return [main_handler -> gen_handler_code(only(handlers))] if size(handlers) == 1;
     sorted_handlers = rand_sort(handlers);
-    comp_handlers = merge(([handler_id(i) -> gen_handler_code(h)] | h @ i <- sorted_handlers));
+    comp_handlers = merge(([handler_id(i) -> gen_handler_code(h)] : h @ i <- sorted_handlers));
     disp_method_code = update_dispatch_code(database.name, sorted_handlers, program.typedefs);
     return comp_handlers & [main_handler -> disp_method_code];
 
@@ -150,27 +150,27 @@ implicit program : Program, database : DataBase //## program IS NOT REALLY NEEDE
 {
   ([ValueStoreId], [RelVar -> Table]) value_stores_and_tables
   {
-    sorted_cols = rand_sort([(v, i) | v : info <- database.rel_vars, i <- range(arity(info.signatures))]);
-    col_to_id_map = merge(([c -> i] | c @ i <- sorted_cols));
+    sorted_cols = rand_sort([(v, i) : v, info <- database.rel_vars; i <- range(arity(info.signatures))]);
+    col_to_id_map = merge(([c -> i] : c @ i <- sorted_cols));
 
-    value_stores = set((value_store_id(i) | i < length(sorted_cols)));
+    value_stores = set((value_store_id(i) : i < length(sorted_cols)));
 
     let artifact = database:
       tables = [
         v -> table(
-          (value_store_id(col_to_id_map((v, i))) | i < arity(info.signatures)),
+          (value_store_id(col_to_id_map((v, i))) : i < arity(info.signatures)),
           table_keys(v)
         )
-        | v : info <- database.rel_vars
+        : v, info <- database.rel_vars
       ];
     ;
 
     return (value_stores, tables);
 
 
-    [Nat] range(Nat n) = set((i | i < n));
+    [Nat] range(Nat n) = set((i : i < n));
 
-    NzNat arity([+NeType+] signatures) = only([length(s) | s <- signatures]); //## BAD BAD BAD: THIS THING IS PRETTY UGLY AND UNSAFE...
+    NzNat arity([+NeType+] signatures) = only([length(s) : s <- signatures]); //## BAD BAD BAD: THIS THING IS PRETTY UGLY AND UNSAFE...
   }
 }
 
@@ -181,8 +181,8 @@ implicit program : Program, database : DataBase //## program IS NOT REALLY NEEDE
 Instr* gen_db_dispatch_method_body(DBSymbol db_type, Method+ methods, [TypeName -> Type] typedefs)
 {
   assert length(methods) > 1;
-  assert size(set((m.name | m <- methods))) == 1;         // All methods must have the same name
-  assert size(set((length(m.args) | m <- methods))) == 1; // All methods have the same arity
+  assert size(set((m.name : m <- methods))) == 1;         // All methods must have the same name
+  assert size(set((length(m.args) : m <- methods))) == 1; // All methods have the same arity
   assert length(head(methods).args) > 0;                  // No-argument methods cannot be polymorphic
 
   l0 = lvar(0);
@@ -193,36 +193,36 @@ Instr* gen_db_dispatch_method_body(DBSymbol db_type, Method+ methods, [TypeName 
   name      = a_method.name;
   arity     = length(a_method.args);
 
-  disp_args = choose_disp_args(((t | t, unused_var <- nonempty(m.args)) | m <- methods), typedefs);
+  disp_args = choose_disp_args(((t : t, unused_var <- nonempty(m.args)) : m <- methods), typedefs);
 
   cases = ({
       ptrns = if i < count-1
-        then (type_to_pseudotype_pattern(m.args[j](0), typedefs) | j <- disp_args)
-        else (ptrn_any | unused_var <- disp_args);
+        then (type_to_pseudotype_pattern(m.args[j](0), typedefs) : j <- disp_args)
+        else (ptrn_any : unused_var <- disp_args);
       code = (
         invoke_db_method(
           l0,
           db_type,
           method_id(name, arity, i),
-          (fn_par(j) | j < arity)
+          (fn_par(j) : j < arity)
         ),
         exit_block
       );
       return (ptrns: ptrns, code: code);
-    } | m @ i <- methods
+    } : m @ i <- methods
   );
 
   // expr = match_expr((fn_par(i) | i <- disp_args), nonempty(cases));
-  code = gen_switch_code((fn_par(i) | i <- disp_args), cases, next_var_gen = blank_var_gen);
-  return (code || ret_val(l0));
+  code = gen_switch_code((fn_par(i) : i <- disp_args), cases, next_var_gen = blank_var_gen);
+  return (code | ret_val(l0));
 }
 
 
 Instr* update_dispatch_code(DBSymbol db_type, <Update+, Handler+> updates, [TypeName -> Type] typedefs)
 {
   assert length(updates) > 1;
-  assert size(set((name(u) | u <- updates))) == 1;    // All updates must have the same name
-  assert size(set((arity(u) | u <- updates))) == 1;   // All updates have the same arity
+  assert size(set((name(u) : u <- updates))) == 1;    // All updates must have the same name
+  assert size(set((arity(u) : u <- updates))) == 1;   // All updates have the same arity
   assert arity(head(updates)) > 0;                    // No-argument updates cannot be polymorphic
 
   count = length(updates);
@@ -233,25 +233,25 @@ Instr* update_dispatch_code(DBSymbol db_type, <Update+, Handler+> updates, [Type
 
   arg_types = (
     match (u)
-      update()  = (t | t, unused_var <- nonempty(u.args)),
+      update()  = (t : t, unused_var <- nonempty(u.args)),
       handler() = (u.type)
-    | u <- updates
+    : u <- updates
   );
 
   disp_args = choose_disp_args(arg_types, typedefs);
 
   cases = ({
       ptrns = if i < count-1
-        then (type_to_pseudotype_pattern(arg_types(i)(j), typedefs) | j <- disp_args)
-        else (ptrn_any | unused_var <- disp_args);
-      code = (try_update(db_type, polymorphic_update_id(u, i), (fn_par(j) | j < arity)), exit_block);
+        then (type_to_pseudotype_pattern(arg_types(i)(j), typedefs) : j <- disp_args)
+        else (ptrn_any : unused_var <- disp_args);
+      code = (try_update(db_type, polymorphic_update_id(u, i), (fn_par(j) : j < arity)), exit_block);
       return (ptrns: ptrns, code: code);
-    } | u @ i <- updates
+    } : u @ i <- updates
   );
 
   // expr = match_expr((fn_par(i) | i <- disp_args), nonempty(cases));
-  code = gen_switch_code((fn_par(i) | i <- disp_args), cases, next_var_gen = blank_var_gen);
-  return (code || ret_val(object(nil)));
+  code = gen_switch_code((fn_par(i) : i <- disp_args), cases, next_var_gen = blank_var_gen);
+  return (code | ret_val(object(nil)));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -266,7 +266,7 @@ NzNat arity(<Update, Handler>):
   handler()     = 1;
 
 NeType+ arg_types(<Update, Handler>):
-  update() u?   = (t | t, unused_var <- nonempty(u.args)),
+  update() u?   = (t : t, unused_var <- nonempty(u.args)),
   handler() h?  = (h.type);
 
 UpdateId polymorphic_update_id(<Update, Handler>, Nat idx):

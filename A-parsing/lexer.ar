@@ -60,13 +60,13 @@ Bool looks_like_a_memb_copy_var(Nat* bytes, Nat offset)          = is_char(bytes
 
 LexerResult lex_src_file(Nat* chars)
 {
-  lines = (remove_line_comment(l) | l <- split_lines(chars));
+  lines = (remove_line_comment(l) : l <- split_lines(chars));
   tokens = ();
   for l @ i <- lines:
     res = split_line_into_tokens(l);
     if is_success(res):
       start_idx = length(tokens);
-      tokens = tokens & (annotated_token(ti, nz_nat(i+1), nz_nat(start_idx+j+1)) | ti @ j <- get_result(res));
+      tokens = tokens & (annotated_token(ti, nz_nat(i+1), nz_nat(start_idx+j+1)) : ti @ j <- get_result(res));
     else
       return failure(lexer_error(nz_nat(i+1), nz_nat(get_error(res)+1)));
     ;
@@ -137,7 +137,7 @@ ParseTokenResult read_mixedcase_id(Nat* bytes, Nat offset)
   len = alphanum_length(bytes, offset);
   fail if len == 0; //## SHUTTING UP THE TYPECHECKER. AN ASSERT WOULD BE NICER
   return failure(nat(offset+len)) if is_char(bytes, nat(offset+len), ascii_underscore);
-  return failure(offset) if none((is_lower(bytes, nat(offset+i)) | i < len));
+  return failure(offset) if none((is_lower(bytes, nat(offset+i)) : i < len));
   symbol = symb(to_lower_with_underscores(nonempty(subseq(bytes, offset, len))));
   return success(token_line_info(mixedcase_id(symbol), offset, len));
 }
@@ -150,7 +150,7 @@ ParseTokenResult read_uppercase_id(Nat* bytes, Nat offset)
   next_idx = offset + len;
   next_ch = at(bytes, next_idx, 0);
   return failure(nat(next_idx)) if is_lower(next_ch) or next_ch == ascii_underscore;
-  symbol = symb((lower(ch) | ch <- subseq(bytes, offset, len)));
+  symbol = symb((lower(ch) : ch <- subseq(bytes, offset, len)));
   return success(token_line_info(uppercase_id(symbol), offset, len));
 }
 
@@ -311,7 +311,7 @@ Nat identifier_length(Nat* bytes, Nat offset, <upper, lower> case)
 //## REENABLE THE COMMENTED OUT IMPLEMENTATION AS SOON AS POSSIBLE
 // [Nat^] to_lower_with_underscores([Nat^] bytes) = join([[ascii_underscore if i > 0 and is_upper(b), lower(b)] : b @ i <- bytes]);
 Nat+ to_lower_with_underscores(Nat+ bytes) =
-  nonempty(join((if i > 0 and is_upper(b) then (ascii_underscore, lower(b)) else (lower(b)) | b @ i <- bytes)));
+  nonempty(join((if i > 0 and is_upper(b) then (ascii_underscore, lower(b)) else (lower(b)) : b @ i <- bytes)));
 
 //## THINK OF A BETTER WAY TO WRITE ALL THESE FUNCTIONS. THERE MUST BE ONE
 
@@ -338,74 +338,72 @@ Nat digit_length(Nat* bytes, Nat offset)
 
 Trie[Nat, PlainToken] string_to_symbol_trie
 {
-  raw_str_to_symb = [nonempty(raw_str(str)) -> symb | str : symb <- string_to_symbol];
+  raw_str_to_symb = [nonempty(raw_str(str)) -> symb : str, symb <- string_to_symbol];
   return trie(raw_str_to_symb);
 }
 
 
 [String -> PlainToken] string_to_symbol = [
-  "("     ->  left_parenthesis,
-  ")"     ->  right_parenthesis,
-  "["     ->  left_bracket,
-  "]"     ->  right_bracket,
-  "{"     ->  left_brace,
-  "}"     ->  right_brace,
-  ","     ->  comma,
-  ";"     ->  semicolon,
+  "("     ->  left_parenthesis;
+  ")"     ->  right_parenthesis;
+  "["     ->  left_bracket;
+  "]"     ->  right_bracket;
+  "{"     ->  left_brace;
+  "}"     ->  right_brace;
+  ","     ->  comma;
+  ";"     ->  semicolon;
 
-  "?"     ->  question_mark,
-  "="     ->  equals,
-  "|"     ->  pipe,
-  ":"     ->  colon,
-  "_"     ->  underscore,
-  "^"     ->  circumflex,
-  "."     ->  dot,
-  "~"     ->  tilde,
-  "@"     ->  at,
-  "&"     ->  ampersand,
-  "!"     ->  bang,
-  "#"     ->  hash,
-  "$"     ->  dollar,
+  "?"     ->  question_mark;
+  "="     ->  equals;
+  "|"     ->  pipe;
+  ":"     ->  colon;
+  "_"     ->  underscore;
+  "^"     ->  circumflex;
+  "."     ->  dot;
+  "~"     ->  tilde;
+  "@"     ->  at;
+  "&"     ->  ampersand;
+  "!"     ->  bang;
+  "#"     ->  hash;
+  "$"     ->  dollar;
 
-  "<"     ->  lower,
-  ">"     ->  greater,
-  "+"     ->  plus,
-  "-"     ->  minus,
-  "*"     ->  asterisk,
-  "/"     ->  slash,
+  "<"     ->  lower;
+  ">"     ->  greater;
+  "+"     ->  plus;
+  "-"     ->  minus;
+  "*"     ->  asterisk;
+  "/"     ->  slash;
 
-  ".."    ->  double_dot,
+  ".."    ->  double_dot;
 
-  "=="    ->  double_equals,
-  "!="    ->  not_equal,
-  "<="    ->  lower_eq,
-  ">="    ->  greater_eq,
+  "=="    ->  double_equals;
+  "!="    ->  not_equal;
+  "<="    ->  lower_eq;
+  ">="    ->  greater_eq;
 
-  ":="    ->  assign,
-  "->"    ->  right_arrow,
-  "=>"    ->  double_right_arrow,
-  "<-"    ->  left_arrow,
-  "<~"    ->  wavy_left_arrow,
-  //"<="    =>  double_left_arrow,
-  "\\/"   ->  logical_or_operator,
+  ":="    ->  assign;
+  "->"    ->  right_arrow;
+  "=>"    ->  double_right_arrow;
+  "<-"    ->  left_arrow;
+  "<~"    ->  wavy_left_arrow;
 
-  "..."   ->  triple_dot,
+  "..."   ->  triple_dot;
 
-  "::"    ->  double_colon,
-  "||"    ->  double_pipe,
-  "<<"    ->  double_lower,
-  ">>"    ->  double_greater,
+  "::"    ->  double_colon;
+  "||"    ->  double_pipe;
+  "<<"    ->  double_lower;
+  ">>"    ->  double_greater;
 
-  "(-_)"    -> operator(:unary_minus),
-  "(_+_)"   -> operator(:plus),
-  "(_-_)"   -> operator(:minus),
-  "(_*_)"   -> operator(:star),     //## RENAME
-  "(_/_)"   -> operator(:slash),    //## RENAME
-  "(_^_)"   -> operator(:exp),      //## RENAME
-  "(_&_)"   -> operator(:amp),      //## RENAME
-  "(_<_)"   -> operator(:lower),
-  "(_>_)"   -> operator(:greater),
-  "(_<=_)"  -> operator(:lower_eq),
-  "(_>=_)"  -> operator(:greater_eq),
+  "(-_)"    -> operator(:unary_minus);
+  "(_+_)"   -> operator(:plus);
+  "(_-_)"   -> operator(:minus);
+  "(_*_)"   -> operator(:star);     //## RENAME
+  "(_/_)"   -> operator(:slash);    //## RENAME
+  "(_^_)"   -> operator(:exp);      //## RENAME
+  "(_&_)"   -> operator(:amp);      //## RENAME
+  "(_<_)"   -> operator(:lower);
+  "(_>_)"   -> operator(:greater);
+  "(_<=_)"  -> operator(:lower_eq);
+  "(_>=_)"  -> operator(:greater_eq);
   "(_[_])"  -> operator(:brackets)
 ];

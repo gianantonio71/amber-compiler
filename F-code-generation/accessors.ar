@@ -7,7 +7,7 @@ implicit program : Program
 {
   Int+* int_seqs = rand_sort(retrieve_nested_int_seqs(program));
 
-  [Int+ -> Nat] int_seqs_ids = merge(([s -> i] | s @ i <- int_seqs));
+  [Int+ -> Nat] int_seqs_ids = merge(([s -> i] : s @ i <- int_seqs));
 
   Bool input_is_discrete(AutoSymbol auto, Atom input) = auto_input_is_discrete_map[auto][input];
 
@@ -18,31 +18,31 @@ implicit program : Program
   //////////////////////////////////////////////////////////////////////////////
 
   [AutoSymbol -> [Atom -> Bool]] auto_input_is_discrete_map =
-    [a.name -> [id -> input.discrete  | id : input <- a.inputs]  | a <- program.auto_defs];
+    [a.name -> [id -> input.discrete  : id, input <- a.inputs]  : a <- program.auto_defs];
 
 
   [AutoSymbol -> [Atom -> Bool]] auto_output_is_discrete_map =
-    [a.name -> [id -> output.discrete | id : output <- a.outputs] | a <- program.auto_defs];
+    [a.name -> [id -> output.discrete : id, output <- a.outputs] : a <- program.auto_defs];
 
 
   [AutoSymbol] time_sensitive_autos
   {
     automata = program.auto_defs;
-    autos_with_time_rules = [a.name | a <- automata, a.time_rules != [:]];
-    auto_shallow_deps = [a.name -> [na.type | unused_var : na <- a.nested_autos] | a <- automata];
+    autos_with_time_rules = [a.name : a <- automata; a.time_rules != [:]];
+    auto_shallow_deps = [a.name -> [na.type : unused_var, na <- a.nested_autos] : a <- automata];
     auto_deep_deps = transitive_closure(auto_shallow_deps);
-    autos_with_time_sensitive_nested_autos =  [a.name | a <- automata, not disjoint(auto_deep_deps[a.name], autos_with_time_rules)];
+    autos_with_time_sensitive_nested_autos =  [a.name : a <- automata; not disjoint(auto_deep_deps[a.name], autos_with_time_rules)];
     return autos_with_time_rules & autos_with_time_sensitive_nested_autos;
   }
 
   //////////////////////////////////////////////////////////////////////////////
 
   [DBSymbol -> [RelVar -> Table]] tables_by_db = [
-    db.name -> value_stores_and_tables(database=db)(1) | db <- program.data_bases
+    db.name -> value_stores_and_tables(database=db)(1) : db <- program.data_bases
   ];
 
 
-  [DBSymbol -> DataBase] data_bases_by_id = [db.name -> db | db <- program.data_bases];
+  [DBSymbol -> DataBase] data_bases_by_id = [db.name -> db : db <- program.data_bases];
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -112,7 +112,7 @@ implicit program : Program, artifact : Artifact
     rv_info = match (rel_var)
       rel_var()       = {match (artifact) data_base() = artifact.rel_vars(rel_var)},
       qual_rel_var()  = data_bases_by_id[var_type(rel_var.db_var)].rel_vars(rel_var.rel_var);
-    arity = only([length(s) | s <- rv_info.signatures]);
+    arity = only([length(s) : s <- rv_info.signatures]);
     return table_cols_perm(arity, rv_info.keys);
   }
 

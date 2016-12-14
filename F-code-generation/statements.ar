@@ -43,7 +43,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   Instr+ gen_code_for_send_msg_stmt(MembDBVar target, Expr msg)
   {
     eval_info = gen_eval_info(msg);
-    return (eval_info.eval_code || send_msg(target, var_type(target), eval_info.expr, false));
+    return (eval_info.eval_code | send_msg(target, var_type(target), eval_info.expr, false));
   }
 
 
@@ -51,29 +51,29 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   {
     eval_info = gen_eval_info(args);
     call_instr = try_update(this_db_symbol, update_id(name, length(args)), eval_info.exprs);
-    return (eval_info.eval_code || call_instr);
+    return (eval_info.eval_code | call_instr);
   }
 
 
   Instr+ gen_code_for_set_memb_var_stmt(PendingStateVar var, Expr value)
   {
     eval_info = gen_eval_info(value);
-    return (eval_info.eval_code || set_var(var, eval_info.expr));
+    return (eval_info.eval_code | set_var(var, eval_info.expr));
   }
 
 
   Instr+ gen_code_for_delete_stmt(RelVar rel_var, Maybe[Expr]+ relvar_args)
   {
     args_perm = relvar_cols_perm(rel_var);
-    table_args = (relvar_args(i) | i <- args_perm);
+    table_args = (relvar_args(i) : i <- args_perm);
 
-    filtered_idxs = idxs_into_filtered_seq((a != nil | a <- table_args));
-    unfiltered_idxs = (i | a @ i <- table_args, a != nil);
-    set_args = (value(a) | a <- table_args, a != nil);
+    filtered_idxs = idxs_into_filtered_seq((a != nil : a <- table_args));
+    unfiltered_idxs = (i : a @ i <- table_args; a != nil);
+    set_args = (value(a) : a <- table_args; a != nil);
     info = gen_eval_info(set_args);
 
     surr_vars, var_gen = next_int_vars(info.next_var_gen, length(set_args));
-    surr_args = (apply(mi, surr_vars($)) | mi <- filtered_idxs);
+    surr_args = (apply(mi, surr_vars($)) : mi <- filtered_idxs);
 
     code = (queue_deletes(rel_var, nonempty(surr_args)));
 
@@ -93,7 +93,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   Instr+ gen_code_for_insert_stmt(RelVar rel_var, Expr+ relvar_args, Bool force)
   {
     args_perm = relvar_cols_perm(rel_var);
-    table_args = (relvar_args(i) | i <- args_perm);
+    table_args = (relvar_args(i) : i <- args_perm);
 
     info = gen_eval_info(table_args);
 
@@ -113,15 +113,15 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
           set_bvar(is_new_val_var, is_eq(surr_var, -1)) if col_is_tracked(i),
           do_if(if col_is_tracked(i) then is_new_val_var else is_eq(surr_var, -1), queue_insert(surr_var, store_id, e))
         );
-      } | e @ i <- info.exprs
+      } : e @ i <- info.exprs
     ));
 
     if force:
       deletion_code = ({
-          value_cond = and([neg(is_new_val_vars(i)) | i <- as]);
-          surr_args = (if as(i) then just(surr_vars(i)) else nil | i < arity);
+          value_cond = and([neg(is_new_val_vars(i)) : i <- as]);
+          surr_args = (if as(i) then just(surr_vars(i)) else nil : i < arity);
           return do_if(value_cond, queue_deletes(rel_var, surr_args));
-        } | as <- rand_sort(keys)
+        } : as <- rand_sort(keys)
       );
     else
       deletion_code = ();
@@ -159,7 +159,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
       code = ();
       time = 0;
     ;
-    return (code || auto_apply(var, type, time));
+    return (code | auto_apply(var, type, time));
   }
 
 
@@ -168,7 +168,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
     eval_info = gen_eval_info(msg);
     type = var_type(db_var);
     send_msg_instr = send_msg(db_var, type, eval_info.expr, true, res_var);
-    return (eval_info.eval_code || send_msg_instr);
+    return (eval_info.eval_code | send_msg_instr);
   }
 
 
@@ -178,8 +178,8 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
     info = gen_eval_info(cond);
     // vs = [v : v <- extern_vars(cond), v :: <StdVar, NamedArg>]; //## BUG BUG BUG: WHAT HAPPENS IF THE ASSERTION CONTAINS A NAMED ARGUMENT THAT IS ALSO A CLOSURE?
     expr_vars = extern_vars(cond);
-    vars = rand_sort([v | v <- env, in(v, expr_vars)]) & rand_sort([v | v <- env, not in(v, expr_vars)]);
-    return (info.eval_code || runtime_check(info.expr, file, line, text, vars));
+    vars = rand_sort([v : v <- env; in(v, expr_vars)]) & rand_sort([v : v <- env; not in(v, expr_vars)]);
+    return (info.eval_code | runtime_check(info.expr, file, line, text, vars));
   }
 
 
@@ -187,13 +187,13 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   {
     //## THIS SHOULD BE CHECKED IN THE PROPER PLACE, BOTH IN LAYER 1 AND 2
     //## IT'S A TEMPORARY LIMITATION THAT SHOULD BE REMOVED
-    assert subset(outcomes(body), [:fails, :falls_through]);
+    assert subset(outcomes(body), [:fails; :falls_through]);
 
     if asgnms != [:]:
       //## BUG BUG BUG. THE ASSIGNMENTS ARE DONE IN RANDOM ORDER. FIX THIS
       var = an_elem(nonempty(keys(asgnms)));
       expr = asgnms[var];
-      rem_asgnms = [v -> e | v : e <- asgnms, v != var];
+      rem_asgnms = [v -> e : v, e <- asgnms; v != var];
 
       backup_var, var_gen = next_obj_var(next_var_gen);
 
@@ -216,14 +216,14 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
       var = vars[0];
       if in(var, extern_vars(value)):
         tmp_var, var_gen = next_obj_var(next_var_gen);
-        code = (gen_eval_code(value, tmp_var, next_var_gen = var_gen) || set_var(var, tmp_var));
+        code = (gen_eval_code(value, tmp_var, next_var_gen = var_gen) | set_var(var, tmp_var));
       else
         code = gen_eval_code(value, var);
       ;
     else
       tmp_var, var_gen = next_obj_var(next_var_gen);
       code = gen_eval_code(value, tmp_var, next_var_gen = var_gen);
-      code = code & join(((set_var(v, at(tmp_var, i))) | v @ i <- vars));
+      code = code & join(((set_var(v, at(tmp_var, i))) : v @ i <- vars));
     ;
     return nonempty(code);
   }
@@ -301,12 +301,12 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
       // tmp_var is used only for destructuring and remains free for the body to use
       tmp_var, unused_var = next_obj_var(var_gen);
       var_set_code = (set_var(tmp_var, get_curr_obj(it_var)));
-      var_set_code = var_set_code & (set_var(v, at(tmp_var, i)) | v @ i <- vars);
+      var_set_code = var_set_code & (set_var(v, at(tmp_var, i)) : v @ i <- vars);
     ;
 
     if maybe_idx_var != nil:
       idx_var, var_gen = next_int_var(var_gen);
-      var_set_code = (var_set_code || set_var(value(maybe_idx_var), int_obj(idx_var)));
+      var_set_code = (var_set_code | set_var(value(maybe_idx_var), int_obj(idx_var)));
       idx_var_init_instr = set_ivar(idx_var, 0);
       idx_var_incr_instr = increment(idx_var);
     else

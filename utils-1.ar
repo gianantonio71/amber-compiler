@@ -1,29 +1,29 @@
 [StdVar] syn_new_vars(SynPtrn ptrn):
     ptrn_var()      = [ptrn.var] & syn_new_vars(ptrn.ptrn),
-    ptrn_tuple(ps?) = seq_union((syn_new_vars(p) | p <- ps)),
+    ptrn_tuple(ps?) = seq_union((syn_new_vars(p) : p <- ps)),
     ptrn_tag_obj()  = syn_new_vars(ptrn.tag) & syn_new_vars(ptrn.obj),
-    ptrn_union(ps?) = intersection(set((syn_new_vars(p) | p <- ps))),
+    ptrn_union(ps?) = intersection(set((syn_new_vars(p) : p <- ps))),
     _               = [];
 
 
 [StdVar] syn_new_vars(SynStmt stmt):
   assignment_stmt() = set(stmt.vars),
   if_stmt()         = {
-    bodies = [b.body | b <- set(stmt.branches)] & [stmt.else];
-    return intersection([syn_new_vars(ss) | ss <- bodies, syn_may_fall_through(ss)]);
+    bodies = [b.body : b <- set(stmt.branches)] & [stmt.else];
+    return intersection([syn_new_vars(ss) : ss <- bodies; syn_may_fall_through(ss)]);
   },
   let_stmt()        = syn_new_vars(stmt.body),
   proc_call_stmt()  = [stmt.res_var if stmt.res_var?],
   _                 = [];
 
 
-[StdVar] syn_new_vars(<SynStmt, SynClause>* objs) = seq_union((syn_new_vars(obj) | obj <- objs));
+[StdVar] syn_new_vars(<SynStmt, SynClause>* objs) = seq_union((syn_new_vars(obj) : obj <- objs));
 
 
 [StdVar] syn_new_vars(SynClause clause):
   iter_clause()         = set(clause.vars),
-  and_clause(cs?)       = seq_union((syn_new_vars(c) | c <- cs)),
-  or_clause()           = intersection(syn_new_vars(clause.left), syn_new_vars(clause.right)),
+  and_clause(cs?)       = seq_union((syn_new_vars(c) : c <- cs)),
+  or_clause(cs?)        = intersection(set((syn_new_vars(c) : c <- cs))),
   match_clause()        = syn_new_vars(clause.ptrn),
   asgnm_clause()        = [clause.var],
   filter_clause()       = [];
@@ -36,7 +36,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-[TypeVar] syn_type_vars(SynClsType type) = seq_union((syn_type_vars(t) | t <- type.in_types)) & syn_type_vars(type.out_type);
+[TypeVar] syn_type_vars(SynClsType type) = seq_union((syn_type_vars(t) : t <- type.in_types)) & syn_type_vars(type.out_type);
 
 [TypeVar] syn_type_vars(SynType type):
   SynLeafType         = [],
@@ -45,22 +45,22 @@
   ne_seq_type()       = syn_type_vars(type.elem_type),
   ne_set_type()       = syn_type_vars(type.elem_type),
   ne_map_type()       = syn_type_vars(type.key_type) & syn_type_vars(type.value_type),
-  ne_rel_type()       = seq_union((syn_type_vars(t) | t <- type.args_types)),
-  record_type(fs?)    = seq_union((syn_type_vars(f.type) | f <- fs)),
-  tuple_type(ts?)     = seq_union((syn_type_vars(t) | t <- ts)),
+  ne_rel_type()       = seq_union((syn_type_vars(t) : t <- type.args_types)),
+  record_type(fs?)    = seq_union((syn_type_vars(f.type) : f <- fs)),
+  tuple_type(ts?)     = seq_union((syn_type_vars(t) : t <- ts)),
   tag_obj_type()      = syn_type_vars(type.tag_type) & syn_type_vars(type.obj_type),
-  union_type(ts?)     = seq_union((syn_type_vars(t) | t <- ts));
+  union_type(ts?)     = seq_union((syn_type_vars(t) : t <- ts));
 
 [TypeVar] syn_type_vars(SynTypeSymbol type_symb):
   BasicTypeSymbol   = [],
-  par_type_symbol() = seq_union((syn_type_vars(t) | t <- type_symb.params));
+  par_type_symbol() = seq_union((syn_type_vars(t) : t <- type_symb.params));
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
 TypeSymbol syn_type_symbol_to_type_symbol(SynTypeSymbol ts, Maybe[TypeVar*] type_vars):
   BasicTypeSymbol   = ts,
-  par_type_symbol() = par_type_symbol(ts.symbol, (syn_type_to_type(p, type_vars) | p <- ts.params));
+  par_type_symbol() = par_type_symbol(ts.symbol, (syn_type_to_type(p, type_vars) : p <- ts.params));
 
 
 NeType syn_type_to_type(SynType type, Maybe[TypeVar*] type_vars):
@@ -72,30 +72,30 @@ NeType syn_type_to_type(SynType type, Maybe[TypeVar*] type_vars):
   ne_seq_type()       = ne_seq_type(syn_type_to_type(type.elem_type, type_vars)),
   ne_set_type()       = ne_set_type(syn_type_to_type(type.elem_type, type_vars)),
   ne_map_type()       = ne_map_type(syn_type_to_type(type.key_type, type_vars), syn_type_to_type(type.value_type, type_vars)),
-  ne_rel_type()       = { match ((syn_type_to_type(t, type_vars) | t <- type.args_types))
+  ne_rel_type()       = { match ((syn_type_to_type(t, type_vars) : t <- type.args_types))
                             (_, _)    ts? = ne_bin_rel_type(args_types: ts),
                             (_, _, _) ts? = ne_tern_rel_type(args_types: ts)
                         },
-  record_type(fs?)    = record_type_nonempty([f.label -> (type: syn_type_to_type(f.type, type_vars), optional: f.optional) | f <- set(fs)]),
-  tuple_type(ts?)     = tuple_type_nonempty((syn_type_to_type(t, type_vars) | t <- ts)),
+  record_type(fs?)    = record_type_nonempty([f.label -> (type: syn_type_to_type(f.type, type_vars), optional: f.optional) : f <- set(fs)]),
+  tuple_type(ts?)     = tuple_type_nonempty((syn_type_to_type(t, type_vars) : t <- ts)),
   tag_obj_type()      = { tag_type = type.tag_type;
                           fail if not tag_type :: TagType; //## BAD: HANDLE THE ERROR
                           return tag_obj_type(tag_type, syn_type_to_type(type.obj_type, type_vars));
                         },
-  union_type(ts?)     = union_type_nonempty([syn_type_to_type(t, type_vars) | t <- set(ts)]);
+  union_type(ts?)     = union_type_nonempty([syn_type_to_type(t, type_vars) : t <- set(ts)]);
 
 
 ClsType syn_type_to_type(SynClsType type, Maybe[TypeVar*] type_vars) =
   cls_type(
-    (syn_type_to_type(t, type_vars) | t <- type.in_types),
+    (syn_type_to_type(t, type_vars) : t <- type.in_types),
     syn_type_to_type(type.out_type, type_vars)
   );
 
 
 [TypeName -> Type] create_type_map([SynTypedef] tdefs, [SynParTypedef] par_tdefs)
 {
-  type_map = [type_name(td.name, 0) -> syn_type_to_type(td.type, just(())) | td <- tdefs];
-  par_type_map = [type_name(td.name, length(td.params)) -> syn_type_to_type(td.type, just(td.params)) | td <- par_tdefs];
+  type_map = [type_name(td.name, 0) -> syn_type_to_type(td.type, just(())) : td <- tdefs];
+  par_type_map = [type_name(td.name, length(td.params)) -> syn_type_to_type(td.type, just(td.params)) : td <- par_tdefs];
   return type_map & par_type_map;
 }
 
@@ -123,13 +123,13 @@ PseudoType syn_pseudotype(SynType type, [TypeName -> Type] typedefs) = pseudotyp
 
 [+StmtOutcome] syn_outcomes(SynStmt stmt):
   return_stmt             = [:returns],
-  return_stmt()           = [:fails, :returns],
+  return_stmt()           = [:fails; :returns],
   if_stmt()               = nonempty(
-                              [:fails] & syn_outcomes(stmt.else) & seq_union((syn_outcomes(b.body) | b <- stmt.branches))
+                              [:fails] & syn_outcomes(stmt.else) & seq_union((syn_outcomes(b.body) : b <- stmt.branches))
                             ),
   loop_stmt(body?)        = loop_stmt_syn_outcomes(stmt.skip_first, stmt.body),
   inf_loop_stmt(ss?)      = inf_loop_stmt_syn_outcomes(ss),
-  for_stmt()              = [:fails, :falls_through, :returns if in(:returns, syn_outcomes(stmt.body))],
+  for_stmt()              = [:fails; :falls_through; :returns if in(:returns, syn_outcomes(stmt.body))],
   let_stmt()              = nonempty([:fails] & syn_outcomes(stmt.body)),
   break_stmt              = [:breaks],
   fail_stmt               = [:fails],
@@ -146,15 +146,15 @@ PseudoType syn_pseudotype(SynType type, [TypeName -> Type] typedefs) = pseudotyp
   set_input_ctrl_stmt()   |
   clear_input_ctrl_stmt() |
   apply_ctrl_stmt()       |
-  send_msg_ctrl_stmt()    = [:falls_through, :fails];
+  send_msg_ctrl_stmt()    = [:falls_through; :fails];
 
 
 [+StmtOutcome] loop_stmt_syn_outcomes(Bool skip_first, SynStmt+ body)
 {
   os = syn_outcomes(body);
   return [
-    :falls_through  if in(:falls_through, os) or in(:breaks, os) or not skip_first,
-    :returns        if in(:returns, os),
+    :falls_through  if in(:falls_through, os) or in(:breaks, os) or not skip_first;
+    :returns        if in(:returns, os);
     :fails
   ];
 }
@@ -164,8 +164,8 @@ PseudoType syn_pseudotype(SynType type, [TypeName -> Type] typedefs) = pseudotyp
 {
   os = syn_outcomes(body);
   return nonempty([
-    :falls_through  if in(:breaks, os),
-    :returns        if in(:returns, os),
+    :falls_through  if in(:breaks, os);
+    :returns        if in(:returns, os);
     :fails          if in(:fails, os) or in(:falls_through, os)
   ]);
 }
@@ -179,7 +179,7 @@ Bool syn_may_fall_through(SynStmt* stmts) = in(:falls_through, syn_outcomes(stmt
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-[Var] already_def_vars([Var] new_vars, [Var] curr_vars) = [v | v <- new_vars, already_def(v, curr_vars)];
+[Var] already_def_vars([Var] new_vars, [Var] curr_vars) = [v : v <- new_vars; already_def(v, curr_vars)];
 
 Bool already_def(Var var, [Var] vars):
   var(n?)         = already_def(n, vars),
@@ -214,14 +214,14 @@ Atom rule_id(RuleDecl decl):
 //## THIS IS CALLED TWICE IN THE SYNTAX REMOVAL STAGE. CONSIDER USING AN IMPLICIT PARAMETER
 [SynAutoDef] resolve_inheritance([SynAutoDef] automata)
 {
-  autos_by_id = [a.name -> a | a <- automata];
+  autos_by_id = [a.name -> a : a <- automata];
 
-  parent_child_rels = [a.name -> [auto_symbol(a.parent) if a.parent?] | a <- automata];
+  parent_child_rels = [a.name -> [auto_symbol(a.parent) if a.parent?] : a <- automata];
   sorted_auto_ids = topological_sort(parent_child_rels);
 
   resolved_autos_by_id = [:];
   for ids <- sorted_auto_ids:
-    layer_autos_by_id = [id -> resolve_inheritance(autos_by_id[id], resolved_autos_by_id) | id <- ids];
+    layer_autos_by_id = [id -> resolve_inheritance(autos_by_id[id], resolved_autos_by_id) : id <- ids];
     resolved_autos_by_id = resolved_autos_by_id & layer_autos_by_id;
   ;
 
@@ -233,11 +233,11 @@ Atom rule_id(RuleDecl decl):
     return child if not child.parent?;
     parent = resolved_autos_by_id[auto_symbol(child.parent)];
 
-    overriding_ids = [rule_id(d) | d <- set(child.rules & child.consts)];
+    overriding_ids = [rule_id(d) : d <- set(child.rules & child.consts)];
 
-    inherited_inputs = (i | i <- parent.inputs, not in(i.name, overriding_ids));
-    inherited_consts = (c | c <- parent.consts, not in(c.name, overriding_ids));
-    inherited_rules  = (r | r <- parent.rules,  not in(rule_id(r), overriding_ids));
+    inherited_inputs = (i : i <- parent.inputs; not in(i.name, overriding_ids));
+    inherited_consts = (c : c <- parent.consts; not in(c.name, overriding_ids));
+    inherited_rules  = (r : r <- parent.rules;  not in(rule_id(r), overriding_ids));
 
     return syn_auto_def(
       name:       child.name,
@@ -268,4 +268,4 @@ type IdChain = ConstOrVar, AccessorChain;
 Atom+ destructure_id_chain(AccessorChain expr) =
   match (expr.expr)
     const_or_var(a?)  = (a, expr.field),
-    accessor()        = (destructure_id_chain(expr.expr) || expr.field);
+    accessor()        = (destructure_id_chain(expr.expr) | expr.field);

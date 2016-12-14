@@ -10,7 +10,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
     pending_input_var = pending_input_var(id);
 
     body = (set_var(memb_var, l0), set_bvar(memb_has_changed(id), true) if in(id, memb_copy_vars_ids)) &
-           (mark_for_update(n) | n <- rand_sort(node.downstream_nodes));
+           (mark_for_update(n) : n <- rand_sort(node.downstream_nodes));
 
     return nonempty((read_pending_var(l0, pending_input_var), init_memb_var(pending_input_var, :blank)) & body) if node.discrete;
 
@@ -33,8 +33,8 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
     eval_code = (try_block(nv_var, eval_code)) if not is_total(node.expr);
     cond = neg(is_eq(var, nv_var));
     body = (set_var(var, nv_var), set_bvar(memb_has_changed(id), true) if in(id, memb_copy_vars_ids)) &
-           (mark_for_update(n) | n <- rand_sort(node.downstream_nodes));
-    return (eval_code || do_if(cond, body));
+           (mark_for_update(n) : n <- rand_sort(node.downstream_nodes));
+    return (eval_code | do_if(cond, body));
   }
 
 
@@ -45,13 +45,13 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
     var = memb_var(id);
     nv_var, var_gen = next_obj_var(blank_var_gen);
     let next_var_gen = var_gen:
-      cases = nonempty((gen_safe_eval_code(e, nv_var) | e <- node.exprs) & ((clear_loc_var(nv_var))));
+      cases = nonempty((gen_safe_eval_code(e, nv_var) : e <- node.exprs) & ((clear_loc_var(nv_var))));
       eval_instr = switch_on_nat(update_source_var(id), cases);
     ;
-    eval_instr = try_block(nv_var, (eval_instr)) if at_least_one((not is_total(e) | e <- node.exprs));
+    eval_instr = try_block(nv_var, (eval_instr)) if at_least_one((not is_total(e) : e <- node.exprs));
     cond = neg(is_eq(var, nv_var));
     body = (set_var(var, nv_var), set_bvar(memb_has_changed(id), true) if in(id, memb_copy_vars_ids)) &
-           (mark_for_update(n) | n <- rand_sort(node.downstream_nodes));
+           (mark_for_update(n) : n <- rand_sort(node.downstream_nodes));
     return (eval_instr, do_if(cond, body));
   }
 
@@ -63,11 +63,11 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
     var = memb_var(id);
     nv_var, var_gen = next_obj_var(blank_var_gen);
     let next_var_gen = var_gen:
-      cases = nonempty((gen_safe_eval_code(e, nv_var) | e <- node.exprs) & ((clear_loc_var(nv_var))));
+      cases = nonempty((gen_safe_eval_code(e, nv_var) : e <- node.exprs) & ((clear_loc_var(nv_var))));
       eval_instr = switch_on_nat(update_source_var(id), cases);
     ;
-    eval_instr = try_block(nv_var, (eval_instr)) if at_least_one((not is_total(e) | e <- node.exprs));
-    return nonempty((eval_instr, set_var(var, nv_var)) & (mark_for_update(n) | n <- rand_sort(node.downstream_nodes)));
+    eval_instr = try_block(nv_var, (eval_instr)) if at_least_one((not is_total(e) : e <- node.exprs));
+    return nonempty((eval_instr, set_var(var, nv_var)) & (mark_for_update(n) : n <- rand_sort(node.downstream_nodes)));
   }
 
 
@@ -89,7 +89,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
     cond_eval_code = gen_cond_eval_code(id, node.cond, node.parent);
 
     // Propagating the update to dependent conditions
-    dep_conds_update_prop_code = (mark_for_update_from_parent_cond(n) | n <- rand_sort(all_subcond_ids));
+    dep_conds_update_prop_code = (mark_for_update_from_parent_cond(n) : n <- rand_sort(all_subcond_ids));
 
     // Base case, the condition stays defined. b1 holds the value of the condition, b0 whether it has changed
     // If the condition has changed, we queue the updates for the appropriate branch
@@ -101,8 +101,8 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
         and((b0, neg(is_new))),
         ( branch_or_no_op(
             b1,
-            join(rand_sort([gen_update_code(a) | a <- then_actions])),
-            join(rand_sort([gen_update_code(a) | a <- else_actions]))
+            join(rand_sort([gen_update_code(a) : a <- then_actions])),
+            join(rand_sort([gen_update_code(a) : a <- else_actions]))
           )
         )
       )
@@ -128,7 +128,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
       do_if(
         cond_is_def_var,
         ( set_bvar(cond_is_def_var, false),
-          do_if_not(is_new, join((gen_clear_code(a) | a <- rand_sort(all_actions))))
+          do_if_not(is_new, join((gen_clear_code(a) : a <- rand_sort(all_actions))))
         ) & dep_conds_update_prop_code
       )
     );
@@ -156,18 +156,18 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
         is_null(l0),
 
         // The condition is not defined, we execute all assignments with a null value
-        join(rand_sort([gen_clear_code(a) | a <- all_actions])) &
-        (mark_for_update_from_parent_cond(n) | n <- rand_sort(all_subcond_ids)),
+        join(rand_sort([gen_clear_code(a) : a <- all_actions])) &
+        (mark_for_update_from_parent_cond(n) : n <- rand_sort(all_subcond_ids)),
 
         // The condition is defined, we run the normal actions
         ( branch_or_no_op(
             inline_is_eq(l0, obj_true),
             // The condition is true, running the 'then' branch
-            join(rand_sort([gen_update_code(a) | a <- then_actions])) &
-            (mark_for_update_from_parent_cond(n) | n <- rand_sort(then_subcond_ids)),
+            join(rand_sort([gen_update_code(a) : a <- then_actions])) &
+            (mark_for_update_from_parent_cond(n) : n <- rand_sort(then_subcond_ids)),
             // The condition is false, running the 'else' branch
-            join(rand_sort([gen_update_code(a) | a <- else_actions])) &
-            (mark_for_update_from_parent_cond(n) | n <- rand_sort(else_subcond_ids))
+            join(rand_sort([gen_update_code(a) : a <- else_actions])) &
+            (mark_for_update_from_parent_cond(n) : n <- rand_sort(else_subcond_ids))
           )
         )
       )
@@ -390,7 +390,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
       // If the condition has changed, we update it and we add the downstream nodes to the update queue
       do_if_not(
         is_eq(cond_var, l0),
-        (set_var(cond_var, l0)) & (mark_for_update(n) | n <- rand_sort(node.downstream_nodes))
+        (set_var(cond_var, l0)) & (mark_for_update(n) : n <- rand_sort(node.downstream_nodes))
       )
     );
   }
@@ -473,11 +473,11 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
     //      C2) A timer has just expired
     //          We advance to the next time slot
 
-    restart_timer_conds = (is_neither_blank_nor_null(s) | s <- signals);
-    restart_timer_conds = (restart_timer_conds || is_new) if node.starts_at_time_0;
+    restart_timer_conds = (is_neither_blank_nor_null(s) : s <- signals);
+    restart_timer_conds = (restart_timer_conds | is_new) if node.starts_at_time_0;
     restart_timer_cond = or(restart_timer_conds);
 
-    advance_to_next_time_slot_cond = and((is_blank(s) | s <- signals));
+    advance_to_next_time_slot_cond = and((is_blank(s) : s <- signals));
 
     code = (
       branch(
@@ -497,10 +497,10 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
     update_memb_var_instr =
       do_if_not(
         is_eq(cond_var, l0),
-        (set_var(cond_var, l0)) & (mark_for_update(n) | n <- rand_sort(node.downstream_nodes))
+        (set_var(cond_var, l0)) & (mark_for_update(n) : n <- rand_sort(node.downstream_nodes))
       );
 
-    return (code || update_memb_var_instr);
+    return (code | update_memb_var_instr);
   }
 
   Instr* gen_node_update_code(AutoNestedAutoInputNode node)
@@ -523,7 +523,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
 
     disc_vars = rand_sort(node.discrete_signals);
     if disc_vars != ():
-      cond = and((is_not_blank(v) | v <- disc_vars));
+      cond = and((is_not_blank(v) : v <- disc_vars));
       code = (do_if(cond, code));
     ;
 
@@ -546,7 +546,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
     update_code = (auto_apply(auto_var, auto_type, elapsed_time_expr));
 
     //## CURRENTLY WE PROPAGATE THE UPDATE WITHOUT CHECKING WHAT INPUTS (IF ANY) HAVE CHANGED. FIX
-    prop_code = (mark_for_update(id) | id <- rand_sort(union(values(node.downstream_nodes_by_output))));
+    prop_code = (mark_for_update(id) : id <- rand_sort(union(values(node.downstream_nodes_by_output))));
 
     triggers_count_var = nested_auto_int_var(auto_var, time_triggers_count_var);
     first_trigger_var  = nested_auto_int_var(auto_var, trigger_times_heap_var(0));
@@ -581,7 +581,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
     msg_send_instr = send_msg(db_var, db_type, atomic_msg_expr, true);
 
     //## CURRENTLY WE PROPAGATE THE UPDATE WITHOUT CHECKING WHAT INPUTS (IF ANY) HAVE CHANGED. FIX
-    prop_code = (mark_for_update(id) | id <- rand_sort(union(values(node.downstream_nodes_by_state_var))));
+    prop_code = (mark_for_update(id) : id <- rand_sort(union(values(node.downstream_nodes_by_state_var))));
 
     msg_send_code = (msg_send_instr) & prop_code;
     msg_send_code = (do_if_not(is_null(atomic_msg_expr), msg_send_code)) if atomic_msg_expr :: NullableVar;
@@ -671,7 +671,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
           // Otherwise, we first calculate the local condition,
           // which is the same as the overall condition unless the
           // parent is undefined and the local condition is true
-          ( cond_eval_code ||
+          ( cond_eval_code |
             do_if(
               and((neg(pcd_var), is_eq(l0, obj_true))),
               clear_loc_var(l0)
@@ -688,7 +688,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
       cd_var = rep_cond_is_def_var(id);
 
       cond_eval_code = (
-        cond_eval_code ||
+        cond_eval_code |
         set_bvar(cv_var, is_eq(l0, obj_true)),
         set_bvar(cd_var, is_not_null(l0))
       );
@@ -770,7 +770,7 @@ implicit program : Program, automaton : Automaton
   if node.parent != nil:
     cond_expr_up_to_date_var = cond_expr_up_to_date_var(get_inner_id(node.id));
     inval_cache_instr = do_if(invalidate_cond_expr_cache, set_bvar(cond_expr_up_to_date_var, false));
-    return (body: (code || inval_cache_instr), two_level_update: true);
+    return (body: (code | inval_cache_instr), two_level_update: true);
   else
     return (body: code, two_level_update: false);
   ;
@@ -787,7 +787,7 @@ implicit program : Program, automaton : Automaton
 {
   watched_signal_up_to_date_var = watched_signal_up_to_date_var(get_inner_id(node.id));
   inval_cache_instr = do_if(invalidate_cond_expr_cache, set_bvar(watched_signal_up_to_date_var, false));
-  code = (gen_std_queue_update_code(node.id, node.level, index, level_size) || inval_cache_instr);
+  code = (gen_std_queue_update_code(node.id, node.level, index, level_size) | inval_cache_instr);
   return (body: code, two_level_update: true);
 }
 
