@@ -545,6 +545,7 @@ implicit
     cleanup_db()          = (compile_cleanup_db_to_c(instr.db_var, instr.type)),
     send_msg()            = (compile_send_msg_to_c(instr.db_var, instr.type, instr.msg, instr.is_root, if instr.res_var? then just(instr.res_var) else nil)),
     try_update()          = (compile_try_update_to_c(instr.type, instr.update_id, instr.args)),
+    set_state()           = (compile_set_state_to_c(instr.state, instr.db_var, instr.type, if instr.res_var? then just(instr.res_var) else nil)),
 
     invoke_auto_method()  = (compile_invoke_method_to_c(instr.res_var, if instr.auto_var? then just(instr.auto_var) else nil, instr.type, instr.method_id, instr.args)),
     invoke_db_method()    = (compile_invoke_method_to_c(instr.res_var, if instr.db_var? then just(instr.db_var) else nil, instr.type, instr.method_id, instr.args)),
@@ -554,10 +555,33 @@ implicit
     init_table()          = compile_init_table_to_c(instr.rel_var, instr.table),
     cleanup_table()       = compile_cleanup_table_to_c(instr.rel_var, instr.table),
 
+    set_table()           = compile_set_table_to_c(instr.relvar, instr.table, instr.state, instr.perm),
+
     get_table_iter()      = compile_get_table_iter_to_c(instr.it_var, instr.table, instr.args),
     queue_deletes()       = compile_queue_deletes_to_c(instr.rel_var, instr.args),
     queue_insert_value()  = (mk_gen_call(instr.res_var, "value_store_insert", (aux_struct_var_ref_name(instr.store)), (instr.value), ())),
     queue_insert_tuple()  = compile_queue_insert_tuple_to_c(instr.rel_var, instr.tuple);
+
+
+  String* compile_set_table_to_c(RelVar relvar, Table table, AtomicExpr state, Nat+ perm)
+  {
+    fn_name = fn_names[arity(table)];
+    perm_args = match (perm)
+      (_)       = (),
+      (0, 1)    = (false),
+      (1, 0)    = (true),
+      (_, _, _) = perm;
+    str_args = ("&" & to_c_var_ref_name(relvar), "&" & pending_updates_var_ref_name(relvar)) &
+               (to_c_var_ref_name(vs) : vs <- table.value_stores) &
+               (aux_struct_var_ref_name(vs) : vs <- table.value_stores);
+    return (mk_gen_call(fn_name, str_args, (state) & perm_args, ()));
+
+    [NzNat -> String] fn_names = [
+      1 -> "set_unary_table";
+      2 -> "set_binary_table";
+      3 -> "set_ternary_table"
+    ];
+  }
 
 
   String* compile_get_bin_rel_iter_to_c(BinRelItVar var, AtomicExpr src, (Maybe[AtomicExpr], Maybe[AtomicExpr]) args) =
@@ -751,6 +775,21 @@ implicit
     mk_gen_call(update_name(type, id), ("self, self_aux"), args, ("env"));
 
 
+  String compile_set_state_to_c(AtomicExpr state, AnyDBVar db_var, DBSymbol type, Maybe[StdVar] maybe_res_var)
+  {
+    if maybe_res_var != nil:
+      proc_name_str = set_state_entry_point_name(type);
+      db_var_str = "&" & to_c_var_ref_name(db_var);
+      return mk_gen_call(value(maybe_res_var), proc_name_str, (db_var_str), (state), ("env"));
+    else
+      fail if not db_var :: MembDBVar; //## BAD BAD BAD: CHANGE THE DEFINITION OF set_state()
+      proc_name_str = set_state_proc_name(type);
+      self_and_aux_vars = ("&" & to_c_var_ref_name(db_var), aux_struct_var_ref_name(db_var));
+      return mk_gen_call(proc_name_str, self_and_aux_vars, (state), ("env"));
+    ;
+  }
+
+
   String compile_invoke_method_to_c(WriteObjVar res_var, Maybe[<AnyAutoVar, AnyDBVar>] maybe_target_var,
     <AutoSymbol, DBSymbol> type, MethodId id, AtomicExpr* args)
   {
@@ -825,7 +864,7 @@ implicit
   }
 
 
-  String* compile_to_c(FloatExpr expr, ObjVar var):
+  String* compile_to_c(FloatExpr expr, WriteObjVar var):
     mk_float()            = (mk_gen_call(var, "make_float", (printed(expr.mantissa) & "e" & printed(expr.dec_exp)), (), ())),
     neg_float()           = mk_call(var, "neg_float",     (expr.value)),
     add_floats()          = mk_call(var, "add_floats",    expr.values),
@@ -838,7 +877,7 @@ implicit
     int_to_float()        = mk_call(var, "int_to_float",  (expr.value));
 
 
-  String* compile_to_c(RefObjExpr expr, ObjVar var):
+  String* compile_to_c(RefObjExpr expr, WriteObjVar var):
     mk_set_from_stream()        = mk_call(var, "build_set",           (expr.stream)),
     mk_set()                    = mk_call(var, "build_set",           (expr.elems, expr.size)),
     mk_seq_from_stream()        = mk_call(var, "build_seq",           (expr.stream)),
@@ -863,13 +902,41 @@ implicit
     seq_to_mset()               = mk_call(var, "seq_to_mset",         (expr.seq)),
     internal_sort()             = mk_call(var, "internal_sort",       (expr.set)),
     symb_to_str(e?)             = mk_call(var, "to_str",              (e)),
+
+    copy_state()                = (compile_copy_state_to_c(var, expr.db_var, expr.type)),
+    copy_table()                = compile_copy_table_to_c(var, expr.relvar, expr.table, expr.perm),
+
     lookup_surrogate()          = mk_call(var, "lookup_surrogate",    (expr.store, expr.surrogate)),
     read_pending_var(v?)        = (to_c_var_ref_name(var) & " = " & to_c_var_ref_name(v) & ";"),
     add_attachment()            = mk_call(var, "add_attachment",      (expr.target, expr.data)),
     fetch_attachments(e?)       = mk_call(var, "fetch_attachments",   (e));
 
 
+  String compile_copy_state_to_c(WriteObjVar res_var, AnyDBVar db_var, DBSymbol type)
+  {
+    proc_name_str = copy_state_proc_name(type);
+    db_var_str = "&" & to_c_var_ref_name(db_var);
+    return mk_gen_call(res_var, proc_name_str, (db_var_str), (), ());
+  }
 
+
+  String* compile_copy_table_to_c(WriteObjVar res_var, RelVar relvar, Table table, Nat+ perm)
+  {
+    fn_name = fn_names[arity(table)];
+    perm_args = match (perm)
+      (_)       = (),
+      (0, 1)    = (false),
+      (1, 0)    = (true),
+      (_, _, _) = perm;
+    args = (relvar) & table.value_stores & perm_args;
+    return mk_call(res_var, fn_name, args);
+
+    [NzNat -> String] fn_names = [
+      1 -> "copy_unary_table";
+      2 -> "copy_binary_table";
+      3 -> "copy_ternary_table"
+    ];
+  }
 
 
   String* compile_build_const_int_seq_to_c(Nat seq_id, ObjVar var)

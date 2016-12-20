@@ -37,7 +37,9 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
     set_input_ctrl_stmt()     = gen_code_for_set_input_ctrl_stmt(stmt.var, stmt.input, stmt.value),
     clear_input_ctrl_stmt()   = gen_code_for_clear_input_ctrl_stmt(stmt.var, stmt.input),
     apply_ctrl_stmt()         = gen_code_for_apply_ctrl_stmt(stmt.var, if stmt.elapsed_time? then just(stmt.elapsed_time) else nil),
-    send_msg_ctrl_stmt()      = gen_code_for_send_msg_ctrl_stmt(stmt.res_var, stmt.db_var, stmt.msg);
+    send_msg_ctrl_stmt()      = gen_code_for_send_msg_ctrl_stmt(stmt.res_var, stmt.db_var, stmt.msg),
+    read_state_ctrl_stmt()    = (copy_state(stmt.res_var, stmt.db_var, var_type(stmt.db_var))),
+    restore_state_ctrl_stmt() = gen_code_for_restore_state_ctrl_stmt(stmt.res_var, stmt.db_var, stmt.state);
 
 
   Instr+ gen_code_for_send_msg_stmt(MembDBVar target, Expr msg)
@@ -169,6 +171,14 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
     type = var_type(db_var);
     send_msg_instr = send_msg(db_var, type, eval_info.expr, true, res_var);
     return (eval_info.eval_code | send_msg_instr);
+  }
+
+
+  Instr+ gen_code_for_restore_state_ctrl_stmt(StdVar res_var, LocDBVar db_var, Expr state)
+  {
+    eval_info = gen_eval_info(state);
+    set_state_instr = set_state(res_var, eval_info.expr, db_var, var_type(db_var));
+    return (eval_info.eval_code | set_state_instr);
   }
 
 

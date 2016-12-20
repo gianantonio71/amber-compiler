@@ -30,12 +30,17 @@ implicit
     init_decl, init_impl = compile_init_code_to_c(block.name, block.init_code);
     cleanup_decl, cleanup_impl = compile_cleanup_code_to_c(block.name, block.cleanup_code);
 
+    copy_state_decl, copy_state_impl = compile_copy_state_code_to_c(block.name, block.copy_state_code);
+    set_state_decl, set_state_impl = compile_set_state_code_to_c(block.name, block.set_state_code);
+
     if block.updates_code(main_handler, ?):
       entry_point_decl, entry_point_impl = update_entry_point(block.name);
     else
       entry_point_decl = "";
       entry_point_impl = ();
     ;
+
+    set_state_entry_point_decl, set_state_entry_point_impl = set_state_entry_point(block.name);
 
     check_decl, check_impl = updates_check_code(block);
 
@@ -53,11 +58,11 @@ implicit
     updates_decls, updates_impls = unzip(rand_sort([gen_update(block.name, id, b) : id, b <- block.updates_code]));
     updates_impls = join(intermix(updates_impls, ("", "")));
 
-    all_decls = (struct_decl, aux_struct_decl, (init_decl, cleanup_decl, aux_init_decl, aux_cleanup_decl,
-                check_decl, copy_decl, apply_decl, entry_point_decl), methods_decls, updates_decls);
+    all_decls = (struct_decl, aux_struct_decl, (init_decl, cleanup_decl, copy_state_decl, set_state_decl, aux_init_decl, aux_cleanup_decl,
+                check_decl, copy_decl, apply_decl, entry_point_decl, set_state_entry_point_decl), methods_decls, updates_decls);
 
-    all_impls = (init_impl, cleanup_impl, aux_init_impl, aux_cleanup_impl, check_impl, copy_impl, apply_impl,
-                entry_point_impl, methods_impls, updates_impls);
+    all_impls = (init_impl, cleanup_impl, copy_state_impl, set_state_impl, aux_init_impl, aux_cleanup_impl, check_impl, copy_impl, apply_impl,
+                entry_point_impl, set_state_entry_point_impl, methods_impls, updates_impls);
 
     header = join(intermix(all_decls, ("", "")));
     body   = join(intermix(all_impls, ("", "")));
@@ -85,6 +90,25 @@ implicit
     cleanup_decl = cleanup_sgn & ";";
     cleanup_proc = (cleanup_sgn, "{") & indent_lines(cleanup_body) & ("}");
     return (cleanup_decl, cleanup_proc);
+  }
+
+
+  (String, String*) compile_copy_state_code_to_c(DBSymbol name, Instr* code)
+  {
+    vars_decls = gen_vars_decls(code);
+    body = vars_decls & ("" if vars_decls != ()) & compile_to_c(code, nil);
+    sgn = "OBJ " & copy_state_proc_name(name) & "(" & to_c_name(name) & " *self)";
+    return (sgn & ";", (sgn, "{") & indent_lines(body) & ("}"));
+  }
+
+
+  (String, String*) compile_set_state_code_to_c(DBSymbol name, Instr* code)
+  {
+    vars_decls = gen_vars_decls(code);
+    body = vars_decls & ("" if vars_decls != ()) & compile_to_c(code, nil);
+    sgn = "OBJ " & set_state_proc_name(name) & "(" & to_c_name(name) & " *self," &
+          aux_struct_c_name(name) & " *self_aux, OBJ p0, ENV &env)";
+    return (sgn & ";", (sgn, "{") & indent_lines(body) & ("}"));
   }
 
 
@@ -123,6 +147,32 @@ implicit
       "  pop_try_mode_call_info(depth);",
       "  abort_try_state();",
       "}",
+      aux_struct_cleanup_call,
+      "return make_bool(ok);"
+    );
+
+    return (sgn & ";", (sgn, "{") & indent_lines(body) & ("}"));
+  }
+
+
+  (String, String*) set_state_entry_point(DBSymbol block_name)
+  {
+    sgn = "OBJ " & set_state_entry_point_name(block_name) & "(" & to_c_name(block_name) & " *self, OBJ p0, ENV &env)";
+
+    aux_var_decl = aux_struct_c_name(block_name) & " self_aux;";
+    aux_struct_init_call = mk_gen_call(aux_struct_init_proc_name(block_name), ("self", "&self_aux"), (), ());
+    set_state_call = mk_gen_call(set_state_proc_name(block_name), ("self", "&self_aux"), (fn_par(0)), ("env"));
+    updates_check_call = mk_gen_call(updates_check_proc_name(block_name), ("self", "&self_aux"), (), ());
+    updates_apply_call = mk_gen_call(updates_apply_proc_name(block_name), ("self", "&self_aux"), (), ());
+    aux_struct_cleanup_call = mk_gen_call(aux_struct_cleanup_proc_name(block_name), ("&self_aux"), (), ());
+
+    body = (
+      aux_var_decl,
+      aux_struct_init_call,
+      set_state_call,
+      "bool ok = " & updates_check_call,
+      "if (ok)",
+      "  " & updates_apply_call,
       aux_struct_cleanup_call,
       "return make_bool(ok);"
     );

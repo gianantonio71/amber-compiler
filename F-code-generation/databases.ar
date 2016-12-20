@@ -9,15 +9,17 @@ implicit program : Program, database : DataBase, options : CompilationOptions
     handlers_code = compiled_database_handlers(database.handlers);
 
     return trans_block(
-      name:           database.name,
-      state_vars:     keys(database.state_vars),
-      value_stores:   value_stores,
-      tables:         tables,
-      nested_blocks:  database.nested_dbs,
-      init_code:      database_init_code,
-      cleanup_code:   database_cleanup_code,
-      methods_code:   methods_code,
-      updates_code:   handlers_code & updates_code
+      name:             database.name,
+      state_vars:       keys(database.state_vars),
+      value_stores:     value_stores,
+      tables:           tables,
+      nested_blocks:    database.nested_dbs,
+      init_code:        database_init_code,
+      cleanup_code:     database_cleanup_code,
+      copy_state_code:  database_copy_state_code,
+      set_state_code:   database_set_state_code,
+      methods_code:     methods_code,
+      updates_code:     handlers_code & updates_code
     );
   }
 
@@ -56,6 +58,96 @@ implicit program : Program, database : DataBase, options : CompilationOptions
     tables_cleanup_code = rand_sort([cleanup_table(v, t) : v, t <- tables]);
 
     return vars_cleanup_code & nested_dbs_cleanup_code & value_stores_cleanup_code & tables_cleanup_code;
+  }
+
+
+  // type DataBase   = data_base(
+  //                     name:       DBSymbol,
+  //                     state_vars: [MembVar -> (type: NeType, init_value: Expr)],
+  //                     rel_vars:   [RelVar -> (signatures: [+NeType+], keys: [[+Nat]])], //## HOW TO ENFORCE THE FACT THAT ALL SIGNATURE MUST HAVE THE SAME ARITY?
+  //                     nested_dbs: [MembDBVar -> DBSymbol],
+  //                     methods:    [Method],
+  //                     updates:    [Update],
+  //                     handlers:   [Handler]
+  //                   );
+
+  Instr* database_copy_state_code
+  {
+    count = nat(size(database.state_vars) + size(database.rel_vars) + size(database.nested_dbs));
+    return () if count == 0;
+
+    res_var, var_gen = next_obj_var(blank_var_gen);
+    keys_var, var_gen = next_vector_var(var_gen, count);
+    values_var, var_gen = next_vector_var(var_gen, count);
+
+    state_vars = rand_sort(keys(database.state_vars));
+    rel_vars = rand_sort(keys(database.rel_vars));
+    nested_dbs = rand_sort(keys(database.nested_dbs));
+    all_vars = state_vars & rel_vars & nested_dbs;
+
+    unused_var, tables = value_stores_and_tables;
+
+    let artifact = database:
+      code = join(({
+          set_label_instr = set_var(evar(keys_var.id, i), object(bare_id(v)));
+          value_var = evar(values_var.id, i);
+          set_value_instr = match (v)
+            memb_var()    = set_var(value_var, v),
+            rel_var()     = copy_table(value_var, v, tables(v), relvar_cols_perm(v)),
+            memb_db_var() = copy_state(value_var, v, var_type(v));
+          return (set_label_instr, set_value_instr);
+        } : v @ i <- all_vars
+      ));
+    ;
+
+    return (code | mk_map(res_var, keys_var, values_var, count), ret_val(res_var));
+  }
+
+
+  Instr* database_set_state_code
+  {
+    count = nat(size(database.state_vars) + size(database.rel_vars) + size(database.nested_dbs));
+    return () if count == 0;
+
+    state_var = fn_par(0);
+    tmp_var = lvar(0);
+
+    unused_var, tables = value_stores_and_tables;
+
+    code = ();
+
+    state_vars = rand_sort(keys(database.state_vars));
+    for v <- state_vars:
+      code = (code |
+        //## REFERENCE COUNTING BUG HERE...
+        // ext_lookup(pending_state_var(bare_id(v)), state_var, object(bare_id(v)))
+        ext_lookup(tmp_var, state_var, object(bare_id(v))),
+        set_var(pending_state_var(bare_id(v)), tmp_var)
+      );
+    ;
+
+    rel_vars = rand_sort(keys(database.rel_vars));
+    let artifact = database:
+      for v <- rel_vars:
+        arity = nz_nat(length(an_elem(database.rel_vars(v).signatures)));
+        code = (code |
+          queue_deletes(v, (nil : i < arity)),
+          ext_lookup(tmp_var, state_var, object(bare_id(v))),
+          set_table(v, tables(v), tmp_var, relvar_cols_perm(v))
+        );
+      ;
+    ;
+
+    nested_dbs = rand_sort(keys(database.nested_dbs));
+    for db <- nested_dbs:
+      db_type = database.nested_dbs(db);
+      code = (code |
+        ext_lookup(tmp_var, state_var, object(bare_id(db))),
+        set_state(tmp_var, db, db_type)
+      );
+    ;
+
+    return code;
   }
 
 

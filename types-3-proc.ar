@@ -183,6 +183,10 @@ type RefObjExpr     = mk_set_from_stream(stream: StreamVar),
                       seq_to_mset(seq: AtomicExpr),
                       internal_sort(set: AtomicExpr),
                       symb_to_str(AtomicExpr),
+
+                      copy_state(db_var: AnyDBVar, type: DBSymbol),
+                      copy_table(relvar: RelVar, table: Table, perm: Nat+),
+
                       // Can be used only once per pending variable, and does not automatically clear it,
                       // it has to be manually cleared with init_memb_var(...)
                       read_pending_var(<PendingStateVar, PendingInputVar>),
@@ -257,6 +261,7 @@ type BasicInstr     = init_stream(StreamVar),
                       cleanup_db(db_var: AnyDBVar, type: DBSymbol),
                       send_msg(db_var: AnyDBVar, type: DBSymbol, msg: AtomicExpr, is_root: Bool, res_var: StdVar?),
                       try_update(type: DBSymbol, update_id: UpdateId, args: AtomicExpr*),
+                      set_state(res_var: StdVar?, db_var: AnyDBVar, state: AtomicExpr, type: DBSymbol),
 
                       invoke_auto_method(
                         res_var:    WriteObjVar,
@@ -280,6 +285,8 @@ type BasicInstr     = init_stream(StreamVar),
                       init_table(rel_var: RelVar, table: Table),
                       cleanup_table(rel_var: RelVar, table: Table),
 
+                      set_table(relvar: RelVar, table: Table, state: AtomicExpr, perm: Nat+),
+
                       get_table_iter(it_var: TableItVar, table: AnyRelVar, args: Maybe[IntVar]+),
                       queue_deletes(rel_var: RelVar, args: Maybe[IntVar]+),
                       queue_insert_value(res_var: IntVar, store: ValueStoreId, value: AtomicExpr), // Ownership transfer: <value>
@@ -288,7 +295,7 @@ type BasicInstr     = init_stream(StreamVar),
 type JumpInstr      = break_loop,
                       exit_block,
                       //## MAYBE IT WOULD BE A GOOD IDEA TO SEPARATE THE BOOLEAN FROM THE OBJECT VERSION
-                      //## ALSO, THE BOOLEAN VERSION DOESN'T NEED TO USE AND ATOMIC EXPRESSION, IT CAN USE THE FULL ONE, CAN'T IT?
+                      //## ALSO, THE BOOLEAN VERSION DOESN'T NEED TO USE AN ATOMIC EXPRESSION, IT CAN USE THE FULL ONE, CAN'T IT?
                       ret_val(<AtomicExpr, AtomicBoolExpr>),
                       terminate;
 
@@ -362,15 +369,17 @@ type Block  = block(
               );
 
 type TransBlock = trans_block(
-                    name:           DBSymbol,
-                    state_vars:     [MembVar],
-                    value_stores:   [ValueStoreId],
-                    tables:         [RelVar -> Table],
-                    nested_blocks:  [MembDBVar -> DBSymbol],
-                    init_code:      Instr*,
-                    cleanup_code:   Instr*,
-                    methods_code:   [MethodId -> Instr*],
-                    updates_code:   [UpdateId -> Instr*]
+                    name:             DBSymbol,
+                    state_vars:       [MembVar],
+                    value_stores:     [ValueStoreId],
+                    tables:           [RelVar -> Table],
+                    nested_blocks:    [MembDBVar -> DBSymbol],
+                    init_code:        Instr*,
+                    cleanup_code:     Instr*,
+                    copy_state_code:  Instr*,
+                    set_state_code:   Instr*,
+                    methods_code:     [MethodId -> Instr*],
+                    updates_code:     [UpdateId -> Instr*]
                   );
 
 type CompiledPrg  = compiled_prg(

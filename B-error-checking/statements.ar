@@ -70,10 +70,12 @@ implicit
       delete_stmt()           = join((join((expr_wf_errors(value(a), all_vars) : a <- e.args; a != nil)) : e <- stmt.entries)),
       insert_stmt()           = join((join((expr_wf_errors(a, all_vars) : a <- e.args)) : e <- stmt.entries)),
 
-      set_input_ctrl_stmt()   = expr_wf_errors(stmt.value, all_vars),
-      clear_input_ctrl_stmt() = (),
-      apply_ctrl_stmt()       = if stmt.elapsed_time? then expr_wf_errors(stmt.elapsed_time, all_vars) else (),
-      send_msg_ctrl_stmt()    = expr_wf_errors(stmt.msg, all_vars),
+      set_input_ctrl_stmt()     = expr_wf_errors(stmt.value, all_vars),
+      clear_input_ctrl_stmt()   = (),
+      apply_ctrl_stmt()         = if stmt.elapsed_time? then expr_wf_errors(stmt.elapsed_time, all_vars) else (),
+      send_msg_ctrl_stmt()      = expr_wf_errors(stmt.msg, all_vars),
+      read_state_ctrl_stmt()    = (),
+      restore_state_ctrl_stmt() = expr_wf_errors(stmt.state, all_vars),
 
       fn_def_stmt()           = {fail;};
 
@@ -129,6 +131,8 @@ implicit
     clear_input_ctrl_stmt()   = set_or_clear_input_ctrl_stmt_local_wf_errors(stmt.var, stmt.input, ro_vars, rw_vars),
     apply_ctrl_stmt()         = auto_var_errors(loc_auto_var(stmt.var), ro_vars, rw_vars),
     send_msg_ctrl_stmt()      = send_msg_ctrl_stmt_local_wf_errors(stmt.res_var, stmt.db_var, ro_vars, rw_vars),
+    read_state_ctrl_stmt()    = read_state_ctrl_stmt_local_wf_errors(stmt.res_var, stmt.db_var, ro_vars, rw_vars),
+    restore_state_ctrl_stmt() = restore_state_ctrl_stmt_local_wf_errors(stmt.res_var, stmt.db_var, ro_vars, rw_vars),
 
     fn_def_stmt()             = {fail;},
     assert_stmt(e?)           = (),
@@ -203,13 +207,7 @@ implicit
     bad_vars = already_def_vars(vars, ro_vars) & [v : v <- vars; is_already_def_as_auto_or_db_var(bare_id(v))];
     dupl_vars = dupl_elems(stmt.vars);
     //## BAD BAD: HERE I'M TREATING AUTOMATON VARIABLES AS IF THEY WERE READ-ONLY SCALAR ONES
-    return (ro_vars_asgnm(stmt, bad_vars) if bad_vars != []) & (dupl_var_mult_asgnm(v) : v <- rand_sort(dupl_vars));
-
-    Bool is_already_def_as_auto_or_db_var(Atom var_id) =
-      loc_auto_vars(loc_auto_var(var_id), ?)    or
-      memb_auto_vars(memb_auto_var(var_id), ?)  or
-      loc_db_vars(loc_db_var(var_id), ?)        or
-      memb_db_vars(memb_db_var(var_id), ?);
+    return (ro_vars_asgnm(bad_vars) if bad_vars != []) & (dupl_var_mult_asgnm(v) : v <- rand_sort(dupl_vars));
   }
 
 
@@ -258,7 +256,7 @@ implicit
   ExprWFError* proc_call_stmt_local_wf_errors(SynProcCallStmt stmt, [DefVar] ro_vars, [StdVar] rw_vars)
   {
     return (proc_call_not_allowed(stmt)) if not allow_proc_calls;
-    var_errs = (ro_vars_asgnm(stmt, [stmt.res_var]) if stmt.res_var? and already_def(stmt.res_var, ro_vars));
+    var_errs = (ro_vars_asgnm([stmt.res_var]) if stmt.res_var? and already_def(stmt.res_var, ro_vars));
 
     proc_name = stmt.proc_name;
     if not builtin_procs_map(proc_name, ?):
@@ -293,14 +291,33 @@ implicit
   }
 
 
-  ExprWFError* send_msg_ctrl_stmt_local_wf_errors(Atom res_var_id, Atom db_var_id, [DefVar] ro_vars, [StdVar] rw_vars)
-  {
-    //## IMPLEMENT IMPLEMENT IMPLEMENT
-    // return match (var)
-    //   loc_auto_var()  = auto_var_errors(var, ro_vars, rw_vars),
-    //   memb_auto_var() = [];
-    return ();
-  }
+  ExprWFError* send_msg_ctrl_stmt_local_wf_errors(Atom res_var, Atom db_var, [DefVar] ro_vars, [StdVar] rw_vars) = (
+      ro_vars_asgnm([var(res_var)]) if already_def(res_var, ro_vars) or is_already_def_as_auto_or_db_var(res_var),
+      not_a_db_var(db_var, loc_auto_vars(loc_auto_var(db_var), ?), ro_vars(var(db_var)) or rw_vars(var(db_var)))
+        if not loc_db_vars(loc_db_var(db_var), ?)
+    );
+
+
+  ExprWFError* read_state_ctrl_stmt_local_wf_errors(Atom res_var, Atom db_var, [DefVar] ro_vars, [StdVar] rw_vars) = (
+      ro_vars_asgnm([var(res_var)]) if already_def(res_var, ro_vars) or is_already_def_as_auto_or_db_var(res_var),
+      not_a_db_var(db_var, loc_auto_vars(loc_auto_var(db_var), ?), ro_vars(var(db_var)) or rw_vars(var(db_var)))
+        if not loc_db_vars(loc_db_var(db_var), ?)
+    );
+
+
+  ExprWFError* restore_state_ctrl_stmt_local_wf_errors(Atom res_var, Atom db_var, [DefVar] ro_vars, [StdVar] rw_vars) = (
+      ro_vars_asgnm([var(res_var)]) if already_def(res_var, ro_vars) or is_already_def_as_auto_or_db_var(res_var),
+      not_a_db_var(db_var, loc_auto_vars(loc_auto_var(db_var), ?), ro_vars(var(db_var)) or rw_vars(var(db_var)))
+        if not loc_db_vars(loc_db_var(db_var), ?)
+    );
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  Bool is_already_def_as_auto_or_db_var(Atom var_id) =
+    loc_auto_vars(loc_auto_var(var_id), ?)    or
+    memb_auto_vars(memb_auto_var(var_id), ?)  or
+    loc_db_vars(loc_db_var(var_id), ?)        or
+    memb_db_vars(memb_db_var(var_id), ?);
 
 
   ExprWFError* auto_var_errors(LocAutoVar var, [DefVar] ro_vars, [StdVar] rw_vars) =
