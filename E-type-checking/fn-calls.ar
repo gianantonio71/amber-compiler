@@ -81,7 +81,7 @@ SgnSet preprocess_signatures([+FnType] signatures, [TypeName -> Type] tdefs)
     merged_ret_type = union_superset([s.ret_type : s <- signatures]);
     a_sgn = an_elem(signatures);
     params = (if i == par_idx then merged_par_type else p : p @ i <- an_elem(signatures).params);
-    return fn_type(params, a_sgn.named_args, merged_ret_type);
+    return fn_type(params, a_sgn.impl_args, merged_ret_type);
   }
 
   Bool other_params_are_eq(FnType sgn1, FnType sgn2, Nat par_idx, [TypeName -> Type] tdefs)
@@ -89,11 +89,11 @@ SgnSet preprocess_signatures([+FnType] signatures, [TypeName -> Type] tdefs)
     for p1, p2 @ i <- zip(sgn1.params, sgn2.params):
       return false if i != par_idx and not types_or_cls_types_are_eq(p1, p2, tdefs);
     ;
-    nargs = keys(sgn1.named_args);
-    return false if nargs != keys(sgn2.named_args);
+    nargs = keys(sgn1.impl_args);
+    return false if nargs != keys(sgn2.impl_args);
     for a <- rand_sort(nargs):
-      t1 = sgn1.named_args[a];
-      t2 = sgn2.named_args[a];
+      t1 = sgn1.impl_args[a];
+      t2 = sgn2.impl_args[a];
       return false if not types_or_cls_types_are_eq(t1, t2, tdefs);
     ;
     return true;
@@ -110,11 +110,11 @@ implicit
   typedefs    : [TypeName -> Type],
   signatures  : [(FnFamilyId, Nat) -> SgnSet],
   environment : [Var -> Type],
-  closures    : [<ClsVar, NamedArg> -> ClsType],
+  closures    : [ClsVar -> ClsType],
   var_aliases : [[Var]];
 
 
-  Type fn_call_expr_type(FnSymbol name, AnyExpr* args, [NamedArg -> AnyExpr] named_args)
+  Type fn_call_expr_type(FnSymbol name, AnyExpr* args, [ImplArg -> Expr] impl_args)
   {
     // If all the functions have the same, non-parametric return type we just return that
     fn_key = (name, length(args));
@@ -151,7 +151,7 @@ implicit
     ;
 
     // If we are here, it means at least one of the functions is parametric...
-    return fn_call_expr_type_old_implementation(name, args, named_args);
+    return fn_call_expr_type_old_implementation(name, args, impl_args);
 
 
     Bool may_match(AnyType+ types, PseudoType+ ptypes)
@@ -169,7 +169,7 @@ implicit
       Type  = not are_disjoint(pseudotype(type, typedefs), ptype);
 
 
-    Type fn_call_expr_type_old_implementation(FnSymbol name, AnyExpr* args, [NamedArg -> AnyExpr] named_args)
+    Type fn_call_expr_type_old_implementation(FnSymbol name, AnyExpr* args, [ImplArg -> Expr] impl_args)
     {
       //## THIS IS THE OLD IMPLEMENTATION, STILL USED FOR PARAMETRIC FUNCTIONS.
       //## IT STILL HAS THE POLYMORPHIC RETURN VALUE BUG
@@ -185,7 +185,7 @@ implicit
 
       return empty_type if size(candidate_signatures) > 1;
       signature = only(candidate_signatures);
-      return fn_call_type(signature, args, named_args);
+      return fn_call_type(signature, args, impl_args);
     }
   }
 }
@@ -195,11 +195,11 @@ implicit
   typedefs    : [TypeName -> Type],
   signatures  : [(FnFamilyId, Nat) -> SgnSet],
   environment : [Var -> Type],
-  closures    : [<ClsVar, NamedArg> -> ClsType],
+  closures    : [ClsVar -> ClsType],
   var_aliases : [[Var]],
   verbose     : Bool;
 
-  [TypeCheckingError] fully_typecheck_fn_call(FnSymbol name, AnyExpr* args, [NamedArg -> AnyExpr] named_args, Type exp_type)
+  [TypeCheckingError] fully_typecheck_fn_call(FnSymbol name, AnyExpr* args, [ImplArg -> Expr] impl_args, Type exp_type)
   {
     // Making sure the arguments typecheck, when the result can be any object
     arg_errs = [];
@@ -212,14 +212,14 @@ implicit
     fn_key = (name, length(args));
     sgn_set = signatures[fn_key];
     all_sgns = sgn_set.sgns;
-    // return typecheck_fn_call(name, only(all_sgns), args, named_args, exp_type) if size(all_sgns) == 1;
+    // return typecheck_fn_call(name, only(all_sgns), args, impl_args, exp_type) if size(all_sgns) == 1;
     for s <- rand_sort(all_sgns):
-      errs = fully_typecheck_fn_call(name, s, args, named_args, exp_type);
+      errs = fully_typecheck_fn_call(name, s, args, impl_args, exp_type);
       return [] if errs == [];
     ;
     all_agg_sgns = sgn_set.agg_sgns;
     for s <- rand_sort(all_agg_sgns):
-      errs = fully_typecheck_fn_call(name, s, args, named_args, exp_type);
+      errs = fully_typecheck_fn_call(name, s, args, impl_args, exp_type);
       return [] if errs == [];
     ;
 
@@ -245,13 +245,13 @@ implicit
 
     // There might be more than one candidate signature
     // if the type of one or more parameters is the empty type
-    err_sets = [fully_typecheck_fn_call(name, s, args, named_args, exp_type) : s <- candidate_signatures];
+    err_sets = [fully_typecheck_fn_call(name, s, args, impl_args, exp_type) : s <- candidate_signatures];
 
     return if in([], err_sets) then [] else an_elem(err_sets);
   }
 
 
-  [TypeCheckingError] fully_typecheck_fn_call(FnSymbol name, FnType signature, AnyExpr* params, [NamedArg -> AnyExpr] named_args, Type exp_type)
+  [TypeCheckingError] fully_typecheck_fn_call(FnSymbol name, FnType signature, AnyExpr* params, [ImplArg -> Expr] impl_args, Type exp_type)
   {
     // We first check that all scalar positional parameters (and those parameters only) match
     // the type of the corresponding formal parameter (we already know they typecheck)
@@ -286,52 +286,46 @@ implicit
       ;
     ;
 
-    // Now named parameters
-    named_arg_errs = [];
-    // Going through all the named params in the signature
-    for n, t <- rand_sort_pairs(signature.named_args):
+    // Now implicit parameters
+    impl_arg_errs = [];
+    // Going through all the implicit params in the signature
+    for n, t <- rand_sort_pairs(signature.impl_args):
       // Instantiating type variables in the formal type
       inst_type = replace_type_vars(t, type_var_insts);
-      if has_key(named_args, n):
-        // The named argument has been specified as part of the function call
-        // Here the parameter could be either a scalar or a closure
-        par_expr = named_args[n];
-        //## THIS IS REALLY BAD, BUT HOW CAN WE AVOID IT?
-        errs = match (par_expr, inst_type)
-          Expr,     Type      = typecheck(par_expr, inst_type),
-          ClsExpr,  ClsType   = typecheck(par_expr, inst_type);
-        named_arg_errs = named_arg_errs & errs;
+      if has_key(impl_args, n):
+        // The implicit argument has been specified as part of the function call
+        impl_arg_errs = impl_arg_errs & typecheck(impl_args(n), inst_type);
       elif has_key(environment, n):
         // The argument has been specified implicitly, as a scalar object
         // The actual parameter is an object, and the formal parameter must be an object too
         // (unless there's a bug in the well-formedness checking code)
         actual_type = environment[n];
         if not is_subset(actual_type, cast_as_type(inst_type)):
-          named_arg_errs = named_arg_errs & [invalid_implicit_par_type(signature, n, t, inst_type, actual_type)];
+          impl_arg_errs = impl_arg_errs & [invalid_implicit_par_type(signature, n, t, inst_type, actual_type)];
         ;
       elif has_key(closures, n):
         // Implicitly specified again, this time as a closure.
         // The formal parameter must be a closure as well
         actual_cls_type = closures[n];
         if not is_subset(actual_cls_type, cast_as_cls_type(inst_type)):
-          named_arg_errs = named_arg_errs & [invalid_implicit_par_type(signature, n, t, inst_type, actual_cls_type)];
+          impl_arg_errs = impl_arg_errs & [invalid_implicit_par_type(signature, n, t, inst_type, actual_cls_type)];
         ;
       else
-        // The named argument has not been provided, either implicitly or explicitly
-        named_arg_errs = named_arg_errs & [missing_named_argument(name, n)];
+        // The implicit argument has not been provided, either implicitly or explicitly
+        impl_arg_errs = impl_arg_errs & [missing_impl_argument(name, n)];
       ;
     ;
 
-    // Now making sure all the function actually has all the provided named arguments
-    invalid_nargs = keys(named_args) - keys(signature.named_args);
-    named_arg_errs = named_arg_errs & [invalid_named_argument(a) : a <- invalid_nargs];
+    // Now making sure all the function actually has all the provided implicit arguments
+    invalid_nargs = keys(impl_args) - keys(signature.impl_args);
+    impl_arg_errs = impl_arg_errs & [invalid_impl_argument(a) : a <- invalid_nargs];
 
     // Now let's see if the type of the result is OK.
     actual_ret_type = replace_type_vars(signature.ret_type, type_var_insts);
     ret_type_errs = [invalid_return_type(actual_ret_type, exp_type) if not is_subset(actual_ret_type, exp_type)];
 
     //## BAD: HERE I SHOULD PROVIDE MORE INFORMATION ABOUT THESE ERRORS
-    return cls_errs & named_arg_errs & ret_type_errs;
+    return cls_errs & impl_arg_errs & ret_type_errs;
   }
 
   //////////////////////////////////////////////////////////////////////////////

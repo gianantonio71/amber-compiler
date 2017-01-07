@@ -182,18 +182,17 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_code_for_assert_stmt(Expr cond, [<StdVar, NamedArg>] env, String file, NzNat line, Maybe[String] text)
+  Instr+ gen_code_for_assert_stmt(Expr cond, [<StdVar, ImplArg>] env, String file, NzNat line, Maybe[String] text)
   {
     return (no_op) if options.ignore_assertions; //## WHY RETURNING (no_op) INSTEAD OF JUST []?
     info = gen_eval_info(cond);
-    // vs = [v : v <- extern_vars(cond), v :: <StdVar, NamedArg>]; //## BUG BUG BUG: WHAT HAPPENS IF THE ASSERTION CONTAINS A NAMED ARGUMENT THAT IS ALSO A CLOSURE?
     expr_vars = extern_vars(cond);
     vars = rand_sort([v : v <- env; in(v, expr_vars)]) & rand_sort([v : v <- env; not in(v, expr_vars)]);
     return (info.eval_code | runtime_check(info.expr, file, line, text, vars));
   }
 
 
-  Instr+ gen_code_for_let_stmt([NamedArg -> Expr] asgnms, Statement+ body, EvalDestVar res_var)
+  Instr+ gen_code_for_let_stmt([ImplArg -> Expr] asgnms, Statement+ body, EvalDestVar res_var)
   {
     //## THIS SHOULD BE CHECKED IN THE PROPER PLACE, BOTH IN LAYER 1 AND 2
     //## IT'S A TEMPORARY LIMITATION THAT SHOULD BE REMOVED
@@ -346,7 +345,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   Instr+ gen_code_for_proc_call_stmt(Maybe[StdVar] maybe_res_var, ProcSymbol proc_name, Expr* params)
   {
     pars_info = gen_eval_info(params);
-    call_code = (call_proc(var: value(maybe_res_var) if maybe_res_var != nil, name: proc_name, params: pars_info.exprs));
+    call_code = (call_proc(var: value(maybe_res_var) if maybe_res_var != nil, name: proc_name, args: pars_info.exprs));
     return nonempty(pars_info.eval_code & call_code);
   }
 }

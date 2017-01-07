@@ -1,6 +1,6 @@
-implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> Nat], actual_arg_arity : Nat
+implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg], actual_arg_arity : Nat
 {
-  ExprWFError* named_args_call_local_wf_errors(SynNamedArgsCall expr, [DefVar] def_vars)
+  ExprWFError* impl_args_call_local_wf_errors(SynImplArgsCall expr, [DefVar] def_vars)
   {
     arity = length(expr.args);
     resols = resolve_by_priority_as_fn_name(expr.name, arity, def_vars);
@@ -9,24 +9,24 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
       //## CHECK HERE IF THERE ARE OTHER FUNCTIONS WITH THE SAME NAME BUT DIFFERENT ARITIES
       return (unknown_function(expr));
     else
-      return fn_call_wf_errors(only(resols), expr.args, expr.named_args, def_vars);
+      return fn_call_wf_errors(only(resols), expr.args, expr.impl_args, def_vars);
     ;
   }
 
 
-  ExprWFError* fn_call_wf_errors(FnFamilyId fn_name, SynExpr* args, (NamedArg, StdVar*, SynExpr)* named_args, [DefVar] def_vars)
+  ExprWFError* fn_call_wf_errors(FnFamilyId fn_name, SynExpr* args, (ImplArg, SynExpr)* redef_impl_args, [DefVar] def_vars)
   {
     arity = length(args);
 
     exp_arg_arities = arg_arities(fn_name, arity);
-    exp_named_args_arities = named_args_arities(fn_name, arity);
+    exp_impl_args = fn_impl_args(fn_name, arity);
 
     pos_arg_errs = join((actual_arg_wf_errors(a, exp_arg_arities(i), def_vars) : a @ i <- args));
-    all_named_arg_errs = [named_args_wf_errors(named_args, enps, def_vars) : enps <- exp_named_args_arities];
+    all_impl_arg_errs = [impl_args_wf_errors(redef_impl_args, enps, def_vars) : enps <- exp_impl_args];
 
-    named_arg_errs = if in((), all_named_arg_errs) then () else join(rand_sort(all_named_arg_errs));
+    impl_arg_errs = if in((), all_impl_arg_errs) then () else join(rand_sort(all_impl_arg_errs));
 
-    return pos_arg_errs & named_arg_errs;
+    return pos_arg_errs & impl_arg_errs;
 
 
     ExprWFError* actual_arg_wf_errors(SynExpr actual_arg, Nat exp_arity, [DefVar] def_vars)
@@ -47,7 +47,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
       return (invalid_expr(actual_arg) if size(resols) != 1) if resols != [];
 
       //## BAD BAD BAD: ENCODING THE MAXIMUM ARITY OF THE CLOSURES.
-      //## SHOULD ALSO CHECK THAT NO FUNCTION HAS BEEN DISCARDED BECAUSE IT HAS NAMED ARGUMENTS
+      //## SHOULD ALSO CHECK THAT NO FUNCTION HAS BEEN DISCARDED BECAUSE IT HAS IMPLICIT ARGUMENTS
       arities = [i : i <- set((nz_nat(i+1) : i < 20)); resolve_by_priority_as_cls_expr(symb, i, std_vars(def_vars)) != []];
       if arities == []:
         return (undef_var_or_const(symb));
@@ -57,22 +57,16 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
     }
 
 
-    ExprWFError* named_args_wf_errors((NamedArg, StdVar*, SynExpr)* redef_named_args, [NamedArg -> Nat] exp_named_args, [DefVar] def_vars)
+    ExprWFError* impl_args_wf_errors((ImplArg, SynExpr)* redef_impl_args, [ImplArg] exp_impl_args, [DefVar] def_vars)
     {
-      redef_named_args_arity_map = merge(set(([p -> length(vs)] : p, vs, unused_var <- redef_named_args)));
+      redef_impl_args_names = set((a : a, unused_var <- redef_impl_args));
       errs = ();
-      for p, a <- rand_sort_pairs(exp_named_args):
-        if has_key(redef_named_args_arity_map, p):
-          // Checking arguments explicitly passed arguments first
-          actual_arity = redef_named_args_arity_map[p];
-          errs = (errs | invalid_named_arg_arity(p, a, actual_arity)) if actual_arity != a;
-        else
-          errs = errs & exp_named_arg_errors(p, a, def_vars);
-        ;
+      for a <- rand_sort(exp_impl_args):
+        errs = (errs | missing_impl_arg(a)) if not redef_impl_args_names(a) and not impl_args(a);
       ;
-      for np, vs, e <- redef_named_args:
-        errs = (errs | invalid_named_arg(np)) if not has_key(exp_named_args, np);
-        errs = errs & expr_wf_errors(e, def_vars & set(vs));
+      for np, e <- redef_impl_args:
+        errs = (errs | invalid_impl_arg(np)) if not exp_impl_args(np);
+        errs = errs & expr_wf_errors(e, def_vars);
       ;
       return errs;
     }

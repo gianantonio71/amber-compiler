@@ -9,10 +9,7 @@ CCodeOutput compile_to_c(CompiledPrg prg)
 
   symb_names = ("symb_idx_" & printed(match (s) object(a?) = a) : s <- symbs);
 
-  //## WHY IS PASSING THE typesymb2name() FUNCTION AT ALL NECESSARY? THERE ARE NO TYPES INVOLVED HERE...
-  symb_strs = (to_c_expr(s, typesymb2name(ts) = typesymb2str(ts, ptss)) : s <- symbs);
-  //## REPLACING THE LINE ABOVE WITH THE FOLLOWING ONE CRASHES THE COMPILER. INVESTIGATE
-  // symb_strs = (to_c_expr(s, typesymb2name(ts) = {fail;}) : s <- symbs);
+  symb_strs = (to_c_expr(s, par_types = ptss) : s <- symbs);
 
   c_code = ("const uint16 " & symb_names[i] & " = " & printed(i) & ";" : i < length(symbs)) & 4 * ("") &
            ("const OBJ " & symb_strs[i] & " = make_symb(" & symb_names[i] & ");" : i < length(symbs)) & 4 * ("");
@@ -30,10 +27,10 @@ CCodeOutput compile_to_c(CompiledPrg prg)
 
   c_code = c_code & env_decl;
 
-  all_cls_arities = [p.arity : pd <- prg.procs; p <- set(pd.params); p != :obj]; //## MAYBE HERE IT WOULD BE BETTER TO DO A NORMAL SORT
+  all_cls_arities = [p.arity : pd <- prg.procs; p <- set(pd.args); p != :obj]; //## MAYBE HERE IT WOULD BE BETTER TO DO A NORMAL SORT
 
-  cls_obj_typedefs = join(intermix((generate_cls_obj_typedef(a) : a <- rand_sort(all_cls_arities)), 2 * (""))) & 4 * ("");
-  c_code = c_code & cls_obj_typedefs;
+  cls_obj_typedef = generate_cls_obj_typedef(all_cls_arities);
+  c_code = c_code & cls_obj_typedef & 4 * ("") if cls_obj_typedef != ();
 
   all_fn_arities = set((in_arity(d) : d <- rand_sort(prg.procs)));
   c_code = c_code & join(intermix((generate_push_call_info_wrapper(a) : a <- rand_sort(all_fn_arities)), 2 * (""))) & 4 * ("");
@@ -53,12 +50,11 @@ CCodeOutput compile_to_c(CompiledPrg prg)
     rand_sort(prg.blocks),
     rand_sort(prg.trans_blocks),
     prg.int_seqs,
-    typesymb2name(ts)               = typesymb2str(ts, ptss),
-    cls2id(cls)                     = index_first(cls, sorted_cls_defs),
+    par_types                       = ptss,
+    sorted_cls_defs                 = sorted_cls_defs,
     int_seqs_types_and_lengths      = int_seqs_types_and_lengths,
-    cached_semi_consts_by_named_arg = cached_semi_consts_by_named_arg(prg)
+    cached_semi_consts_by_impl_arg  = cached_semi_consts_by_impl_arg(prg)
   );
-
 
   body = (
     "#include \"lib.h\"\n\n",
@@ -68,51 +64,29 @@ CCodeOutput compile_to_c(CompiledPrg prg)
     "{"
   ) & indent_lines(c_code & proc_code.body & int_seqs_defs) & ("}");
 
-  header = ("namespace generated", "{") & indent_lines(symb_decls & env_decl & cls_obj_typedefs & proc_code.header) & ("}");
+  header = ("namespace generated", "{") & indent_lines(symb_decls & env_decl & cls_obj_typedef & proc_code.header) & ("}");
 
   return (body: body, header: header);
 
 
-  String* generate_cls_obj_typedef(NzNat arity) = (
-    "struct CLS" & printed(arity) & " {",
-    "  OBJ (*fn_ptr)(" & append(arity * ("OBJ"), ", ") & ", const OBJ *, ENV &env);",
-    "  const OBJ *data;",
-    "};"
-  );
+  () generate_cls_obj_typedef([]) = ();
 
-  String typesymb2str(TypeSymbol ts, ParTypeSymbol* par_types):
-    type_symbol(a?)     = upper_camel_case(a),
-    par_type_symbol()   = typesymb2str(ts.symbol, par_types) & "_" & printed(index_first(ts, par_types));
+  String* generate_cls_obj_typedef([+NzNat] arities) =
+    ("struct CLS {", "  union {") &
+    ( "    OBJ (*fn_ptr_" & printed(a) & ")(" & append(a * ("OBJ"), ", ") & ", const OBJ *, const CLS *, ENV &env);"
+      : a <- sort_set(arities, $a < $b)
+    ) &
+    ("  };", "  const OBJ *data;", "  const CLS *cls;", "};");
 }
 
 
 String* gen_env_decl(CompiledPrg prg)
 {
-  all_named_args = merge_values(set((p.named_args : p <- rand_sort(prg.procs))));
-  all_param_arity_pairs = rand_sort([(var: v, arity: a) : v, ars <- all_named_args; a <- ars]);
+  all_impl_args = union([p.impl_args : p <- prg.procs]);
 
-  env_decl = ("struct ENV {");
+  env_decl = ("struct ENV {") & ("  OBJ " & _str_(bare_id(a)) & "_V;" : a <- rand_sort(all_impl_args));
 
-  for na @ i <- all_param_arity_pairs:
-    var   = na.var;
-    arity = na.arity;
-
-    name = _str_(_obj_(var));
-
-    if arity > 0:
-      ls = (
-        "  OBJ (*n" & printed(arity) & "_" & name & ")(" & append(("OBJ p" & printed(j) & ", " : j < na.arity)) & "const OBJ *C, ENV &env);",
-        "  const OBJ *C" & printed(arity) & "_" & name & ";"
-      );
-    else
-      ls = ("  OBJ n_" & name & ";");
-    ;
-
-    ls = ("") & ls if i > 0;
-    env_decl = env_decl & ls;
-  ;
-
-  semi_consts_cache_vars = rand_sort([p.name : p <- prg.procs; p.cached and p.named_args != [:]]);
+  semi_consts_cache_vars = rand_sort([p.name : p <- prg.procs; p.cached and p.impl_args != []]);
   semi_consts_cache_vars_decls = ("  OBJ " & to_c_semi_const_memo_var_name(v) & ";" : v <- semi_consts_cache_vars);
   env_decl = (env_decl | "") & semi_consts_cache_vars_decls if semi_consts_cache_vars_decls != ();
 
@@ -224,15 +198,29 @@ String+ generate_push_call_info_wrapper(Nat arity)
 
 //## THIS SHOULD NOT GO HERE
 type FnCallParam  = blank_obj, ObjExpr, ElemVar, PendingInputVar, VecVar, BoolExpr, IntExpr,
-                    ItVar, StreamVar, ClsVar, AnyRelVar, AnyValueStoreId;
+                    ItVar, StreamVar, AnyClsVar, AnyRelVar, AnyValueStoreId;
+
+
+implicit par_types : ParTypeSymbol*
+{
+  String typesymb2name(TypeSymbol ts):
+    type_symbol(a?)     = upper_camel_case(a),
+    par_type_symbol()   = typesymb2name(ts.symbol) & "_" & printed(index_first(ts, par_types));
+}
+
+
+implicit sorted_cls_defs : ClsDef*
+{
+  Nat cls2id(ClsDef cls) = index_first(cls, sorted_cls_defs);
+}
 
 
 implicit
 {
-  typesymb2name                   : TypeSymbol -> String,
-  cls2id                          : ClsDef -> Nat,
+  par_types                       : ParTypeSymbol*,
+  sorted_cls_defs                 : ClsDef*,
   int_seqs_types_and_lengths      : (String, Nat)*,
-  cached_semi_consts_by_named_arg : [(NamedArg, Nat) -> [+FnSymbol]];
+  cached_semi_consts_by_impl_arg  : [ImplArg -> [+FnSymbol]];
 
 
   CCodeOutput compile_to_c(ObjProcDef* obj_proc_defs, BoolProcDef* bool_proc_defs, ClsDef* cls_defs, Block* blocks, TransBlock* trans_blocks, Int+* int_seqs)
@@ -284,9 +272,9 @@ implicit
 
   String gen_c_decl(ObjProcDef pd)
   {
-    par_types = (if p == :obj then "OBJ" else "CLS" & printed(p.arity) & " &" : p <- pd.params);
-    par_list = append(par_types & ("ENV &"), ", ");
-    return "OBJ " & to_c_fn_name(pd.name, in_arity(pd)) & "(" & par_list & ");";
+    args_types = (if p == :obj then "OBJ" else "const CLS &" : p <- pd.args);
+    args_list = append(args_types & ("ENV &"), ", ");
+    return "OBJ " & to_c_fn_name(pd.name, in_arity(pd)) & "(" & args_list & ");";
   }
 
 
@@ -299,7 +287,7 @@ implicit
 
   String gen_c_decl(ClsDef cd, Nat id)
   {
-    par_list = append(cd.arity * ("OBJ") & ("const OBJ *", "ENV &"), ", ");
+    par_list = append(cd.arity * ("OBJ") & ("const OBJ *", "const CLS *", "ENV &"), ", ");
     return "OBJ cls_" & printed(id) & "(" & par_list & ");";
   }
 
@@ -336,7 +324,7 @@ implicit
            indent_lines(db_vars_decls) & ("" if has_var_decls) & indent_lines(comp_body) & ("}");
 
     if cached:
-      is_real_const = pd.cached? and pd.named_args == [:];
+      is_real_const = pd.cached? and pd.impl_args == [];
       cache_var_name = if is_real_const then "cached_res" else "env." & to_c_semi_const_memo_var_name(pd.name);
 
       wrapper_code = (
@@ -378,10 +366,10 @@ implicit
 
     String gen_fn_par(ObjProcPar par, Nat pos):
       obj   = "OBJ p" & printed(pos),
-      cls() = "CLS" & printed(par.arity) & " &" & to_c_var_decl_name(if par.name? then par.name else cls_var(pos));
+      cls() = "const CLS &" & to_c_var_decl_name(if par.name? then par.name else cls_var(pos));
 
     String* gen_fn_pars(ProcDef pd):
-      ObjProcDef  = (gen_fn_par(p, i) : p @ i <- pd.params) & ("ENV &env"),
+      ObjProcDef  = (gen_fn_par(p, i) : p @ i <- pd.args) & ("ENV &env"),
       BoolProcDef = ("OBJ p" & printed(n) : n < arity(pd));
   }
 
@@ -410,7 +398,7 @@ implicit
   //## DUPLICATED CODE
   String* compile_to_c(ClsDef cd, Nat id)
   {
-    par_list  = ("OBJ p" & printed(n) : n < cd.arity) & ("const OBJ C[]", "ENV &env"); //## BAD
+    par_list  = ("OBJ p" & printed(n) : n < cd.arity) & ("const OBJ *D", "const CLS *C", "ENV &env"); //## BAD
     signature = "OBJ cls_" & printed(id) & "(" & append(par_list, ", ") & ")";
 
     vars_decls = gen_vars_decls(cd.body);
@@ -495,9 +483,9 @@ implicit
 
     symb_switch()         = compile_symb_switch_to_c(instr.value, instr.cases, instr.else, block_id),
 
-    call_proc()           = compile_call_proc_to_c(if instr.var? then just(instr.var) else nil, instr.name, instr.params, block_id),
+    call_proc()           = compile_call_proc_to_c(if instr.var? then just(instr.var) else nil, instr.name, instr.args, block_id),
 
-    call_cls()            = mk_cls_call(instr.cls_var, instr.var, instr.params), //## INLINE THE FUNCTION
+    call_cls()            = mk_cls_call(instr.cls_var, instr.var, instr.args), //## INLINE THE FUNCTION
 
     push_call_info()      = { fn_name = (printed(fn_name_to_str(instr.fn_name)));
                               params = (if p == nil then :blank_obj else value(p) : p <- instr.params);
@@ -509,12 +497,6 @@ implicit
     runtime_check()       = compile_runtime_check_to_c(instr.cond, instr.file, instr.line, instr.text, instr.vars),
 
     branch()              = compile_branch_to_c(instr.cond, instr.when_true, instr.when_false, block_id),
-
-    cls_scope()           = { bound_cls = instr.bound_cls;
-                              return match (bound_cls)
-                                ClsVar      = {fail;}, //## THIS SHOULD NOT BE POSSIBLE FOR NOW
-                                bound_cls() = compile_cls_scope_to_c(instr.var, bound_cls.cls, bound_cls.env, instr.body, block_id);
-                            },
 
     queue_update()        = (queue_update_method_name(instr.id, instr.type) & "(self);"),
 
@@ -799,10 +781,10 @@ implicit
   }
 
 
-  String* gen_cache_clearing_code(NamedArg narg, Nat arity)
+  String* gen_cache_clearing_code(ImplArg arg)
   {
     code = ();
-    for fn_symb <- rand_sort(lookup(cached_semi_consts_by_named_arg, (narg, arity), [])):
+    for fn_symb <- rand_sort(lookup(cached_semi_consts_by_impl_arg, arg, [])):
       cache_var_name = to_c_semi_const_memo_var_name(fn_symb);
       code = (code | "release(env." & cache_var_name & ");", "env." & cache_var_name & " = make_blank_obj();");
     ;
@@ -812,8 +794,8 @@ implicit
 
   String* compile_set_var_to_c(WriteObjVar var, ObjExpr value) = mk_assignment(var, value);
 
-  String* compile_set_var_to_c(NamedArg var, ObjExpr value) =
-    mk_assignment(var, value) & gen_cache_clearing_code(var, 0);
+  String* compile_set_var_to_c(ImplArg var, ObjExpr value) =
+    mk_assignment(var, value) & gen_cache_clearing_code(var);
 
 
   String* compile_auto_update_node_to_c(AutoSymbol type, BlockNodeId node, Maybe[IntVar] maybe_time_var)
@@ -961,13 +943,13 @@ implicit
     (String*, FnCallParam) gen_par_info(ObjExpr p) = ((), p);
 
     (String*, FnCallParam) gen_par_info(BoundCls p):
-      ClsVar      = ((), p),
+      AnyClsVar   = ((), p),
       // fn_ref()    = {
       //   par_id = _counter_(nil);
       //   par_var = cls_var(par_id);
       //   par_name = to_c_expr(par_var);
       //   code = [
-      //     "CLS" & printed(p.arity) & " " & par_name & ";",
+      //     "CLS " & par_name & ";",
       //     par_name & ".fn_ptr = " & to_c_fn_name(p.name) & ";",
       //     par_name & ".data = 0;"
       //   ];
@@ -979,19 +961,40 @@ implicit
         par_var = cls_var(par_id);
         par_name = to_c_expr(par_var);
         code = (
-          "CLS" & printed(p.cls.arity) & " " & par_name & ";",
-          par_name & ".fn_ptr = " & "cls_" & printed(cls2id(p.cls)) & ";"
+          "CLS " & par_name & ";",
+          par_name & ".fn_ptr_" & printed(p.cls.arity) & " = " & "cls_" & printed(cls2id(p.cls)) & ";"
         );
-        if p.env != ():
-          var_name = "cd_" & printed(par_id);
-          code = code & ("OBJ " & var_name & "[" & printed(length(p.env)) & "];");
-          for v @ i <- p.env:
-            code = code & (var_name & "[" & printed(i) & "] = " & to_c_expr(v) & ";");
+
+        if p.capt_vars != ():
+          if length(p.capt_vars) > 1:
+            var_name = "cd_" & printed(par_id);
+            code = code & ("OBJ " & var_name & "[" & printed(length(p.capt_vars)) & "];");
+            for v @ i <- p.capt_vars:
+              code = code & (var_name & "[" & printed(i) & "] = " & to_c_expr(v) & ";");
+            ;
+            code = code & (par_name & ".data = " & var_name & ";");
+          else
+            code = code & (par_name & ".data = &" & to_c_expr(only(p.capt_vars)) & ";");
           ;
-          code = code & (par_name & ".data = " & var_name & ";");
         else
           code = code & (par_name & ".data = 0;");
         ;
+
+        if p.capt_cls_vars != ():
+          if length(p.capt_cls_vars) > 1:
+            var_name = "cd_" & printed(par_id);
+            code = code & ("CLS " & var_name & "[" & printed(length(p.capt_cls_vars)) & "];");
+            for v @ i <- p.capt_cls_vars:
+              code = code & (var_name & "[" & printed(i) & "] = " & to_c_expr(v) & ";");
+            ;
+            code = code & (par_name & ".cls = " & var_name & ";");
+          else
+            code = code & (par_name & ".cls = &" & to_c_expr(only(p.capt_cls_vars)) & ";");
+          ;
+        else
+          code = code & (par_name & ".cls = 0;");
+        ;
+
         return (code, par_var);
       };
   }
@@ -1010,65 +1013,7 @@ implicit
   }
 
 
-  String* compile_cls_scope_to_c(NamedArg var, ClsDef cls, Var* env, Instr+ body, <Nat, nil> block_id)
-  {
-    scope_id = printed(_counter_(nil));
-
-    arity = cls.arity;
-    env_size = length(env);
-
-    var_str = _str_(_obj_(var)); //## BAD, DUPLICATED LOGIC
-    arity_str = printed(arity);
-    env_size_str = printed(env_size);
-
-    fn_var = "env.n" & arity_str & "_" & var_str;  //## BAD, DUPLICATED LOGIC
-    data_var = "env.C" & arity_str & "_" & var_str; //## BAD, DUPLICATED LOGIC
-    fn_bk_var = "BF" & scope_id;
-    data_bk_var = "BD" & scope_id;
-    new_data_var = "ND" & scope_id;
-
-    tmp = append(arity * ("OBJ") & ("const OBJ *", "ENV &"), ", ");
-
-    code = (
-      "OBJ (*" & fn_bk_var & ")(" & tmp & ") = " & fn_var & ";",
-      "const OBJ *BD" & scope_id & " = " & data_var & ";"
-    );
-
-    code = code & ("OBJ " & new_data_var & "[" & env_size_str & "];") if env_size > 0;
-
-    //## HERE I'M ADDING THE add_ref/release PAIRS IN THE WRONG LAYERS
-    for i < env_size:
-      code = code & (
-        new_data_var & "[" & printed(i) & "] = " & to_c_var_ref_name(env[i]) & ";",
-        "add_ref(" & new_data_var & "[" & printed(i) & "]);"
-      );
-    ;
-
-    code = code & (
-      fn_var & " = cls_" & printed(cls2id(cls)) & ";",
-      data_var & " = " & {if env_size > 0 then new_data_var else "0"} & ";"
-    );
-
-    cache_clearing_code = gen_cache_clearing_code(var, cls.arity);
-
-    code = code & cache_clearing_code & compile_to_c(body, block_id) & cache_clearing_code;
-
-    code = code & (
-      fn_var & " = " & fn_bk_var & ";",
-      data_var & " = " & data_bk_var & ";"
-    );
-
-    for i < env_size:
-      code = code & ("release(" & new_data_var & "[" & printed(i) & "]);");
-    ;
-
-    code = ("{") & indent_lines(code) & ("}");
-
-    return code;
-  }
-
-
-  String* compile_runtime_check_to_c(AtomicExpr cond, String file, NzNat line, Maybe[String] text, <StdVar, NamedArg>* vars)
+  String* compile_runtime_check_to_c(AtomicExpr cond, String file, NzNat line, Maybe[String] text, <StdVar, ImplArg>* vars)
   {
     text_arg = if text != nil then printed(value(text)) else "0";
     header = (
@@ -1113,21 +1058,18 @@ implicit
   String* mk_assignment(AnyVar var, AnyTypeExpr value) = (to_c_var_ref_name(var) & " = " & to_c_expr(value) & ";");
 
 
-  String* mk_cls_call(<ClsVar, NamedArg> cls_var, ObjVar var, ObjExpr* params):
-    cls_var(+ symb?) = { //## NO NEED FOR NOW TO HANDLE THE CASE cls_var(Nat), AS THOSE VARIABLES ARE NEVER "CALLED", ONLY PASSED ON
+  String* mk_cls_call(AnyClsVar cls_var, ObjVar var, ObjExpr+ args):
+    //## NO NEED FOR NOW TO HANDLE THE CASE cls_var(Nat), AS THOSE VARIABLES ARE NEVER "CALLED", ONLY PASSED ON
+    cls_var(+ symb?) | capt_cls_var(symb?) = {
       name = to_c_var_ref_name(cls_var);
-      return (mk_gen_call(var, name & ".fn_ptr", (), params, (name & ".data", "env")));
-    },
-    named_arg(symb?) = {
-      name = printed(length(params)) & "_" & _str_(_obj_(cls_var));
-      return (mk_gen_call(var, "env.n" & name, (), params, ("env.C" & name, "env")));
+      return (mk_gen_call(var, name & ".fn_ptr_" & printed(length(args)), (), args, (name & ".data", name & ".cls", "env")));
     };
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-implicit typesymb2name : TypeSymbol -> String
+implicit par_types : ParTypeSymbol*
 {
   //## IT WOULD MUCH BETTER IF WE COULD USE mk_call HERE...
   String to_c_expr(ObjExpr expr):
@@ -1328,7 +1270,7 @@ implicit typesymb2name : TypeSymbol -> String
   }
 
 
-  String to_c_expr(<ElemVar, VecVar, ItVar, StreamVar, ClsVar, AnyRelVar, AnyValueStoreId> var) = to_c_var_ref_name(var);
+  String to_c_expr(<ElemVar, VecVar, ItVar, StreamVar, AnyClsVar, AnyRelVar, AnyValueStoreId> var) = to_c_var_ref_name(var);
 
   String to_c_expr(<blank_obj>) = "make_blank_obj()";
   String to_c_expr(<null_obj>) = "make_null_obj()";

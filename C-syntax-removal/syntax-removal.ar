@@ -15,7 +15,7 @@ implicit syn_prg : SynPrg
   {
     args = ((var: p.var, type: syn_type_to_type(p.type, nil)) : p <- pd.args);
     maybe_ret_type = if pd.res_type != nil then just(syn_type_to_type(value(pd.res_type), nil)) else nil;
-    body = desugar_stmts(pd.body, set((p.var : p <- pd.args)), syn_artifact = pd, impl_args = [:]);
+    body = desugar_stmts(pd.body, set((p.var : p <- pd.args)), syn_artifact = pd, impl_args = []);
     auto_vars = merge(([loc_auto_var(v.var) -> auto_symbol(v.type)] : v <- pd.auto_vars));
     db_vars = merge(([loc_db_var(v.var) -> db_symbol(v.type)] : v <- pd.db_vars));
 
@@ -38,7 +38,7 @@ implicit syn_prg : SynPrg
     return union([desugar_fn_def_family(fds) : unused_var, fds <- fn_defs_by_name_arity]);
 
 
-    [Function] desugar_fn_def_family([+(SynFnDef, [SynSgn])] fn_defs)
+    [Function] desugar_fn_def_family([+(SynFnDef, [ImplArgDecl])] fn_defs)
     {
       multiple = size(fn_defs) > 1;
       return seq_union((
@@ -48,7 +48,7 @@ implicit syn_prg : SynPrg
     }
 
 
-    [Function] desugar_fn_def(SynFnDef fn_def, BasicFnSymb final_name, [SynSgn] impl_args)
+    [Function] desugar_fn_def(SynFnDef fn_def, BasicFnSymb final_name, [ImplArgDecl] impl_args)
     {
       // Grouping nested functions by name and arity
       nested_fn_def_groups = values(group_by(set(fn_def.local_fns), ($.name, length($.args))));
@@ -62,7 +62,7 @@ implicit syn_prg : SynPrg
     }
 
 
-    [Function] desugar_nested_fn_def_family([+SynFnDef] fn_defs, SynFnDef outer_fn_def, BasicFnSymb outer_fn_name, [SynSgn] impl_args)
+    [Function] desugar_nested_fn_def_family([+SynFnDef] fn_defs, SynFnDef outer_fn_def, BasicFnSymb outer_fn_name, [ImplArgDecl] impl_args)
     {
       multiple = size(fn_defs) > 1;
       return set((
@@ -72,7 +72,7 @@ implicit syn_prg : SynPrg
     }
 
 
-    Function desugar_nested_fn_def(SynFnDef fn_def, Maybe[Nat] maybe_idx, SynFnDef outer_fn_def, BasicFnSymb outer_fn_name, [SynSgn] impl_args)
+    Function desugar_nested_fn_def(SynFnDef fn_def, Maybe[Nat] maybe_idx, SynFnDef outer_fn_def, BasicFnSymb outer_fn_name, [ImplArgDecl] impl_args)
     {
       local_name = fn_def.name;
       local_name = unique_fn_symbol(local_name, value(maybe_idx)) if maybe_idx != nil;
@@ -89,14 +89,20 @@ implicit syn_prg : SynPrg
 
 implicit syn_prg : SynPrg, syn_artifact : SynArtifact
 {
-  Function make_fn_def(FnSymbol name, SynArg* syn_args, [SynSgn] syn_impl_args, SynType syn_res_type, SynExpr syn_expr)
+  Function make_fn_def(FnSymbol name, SynArg* syn_args, [ImplArgDecl] syn_impl_args, SynType syn_res_type, SynExpr syn_expr)
   {
     args = (desugar_formal_arg(a) : a <- syn_args);
-    impl_args = [a.name -> desugar_impl_arg(a) : a <- syn_impl_args];
+    impl_args = [a.name -> syn_type_to_type(a.type, nil) : a <- syn_impl_args];
     res_type = syn_type_to_type(syn_res_type, nil);
     def_vars = [var(a.name) : a <- set(syn_args); obj_arg() <~ a; a.name?];
-    expr = desugar_expr(syn_expr, def_vars, impl_args = [a.name -> arity(a) : a <- syn_impl_args]);
-    return function(name, args, impl_args, res_type, expr);
+    expr = desugar_expr(syn_expr, def_vars, impl_args = [a.name : a <- syn_impl_args]);
+    return function(
+      name:       name,
+      args:       args,
+      impl_args:  impl_args,
+      res_type:   res_type,
+      expr:       expr
+    );
 
 
     FormalObjArg desugar_formal_arg(SynObjArg arg) =
@@ -111,13 +117,5 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact
         var:  cls_var(arg.name),
         type: syn_type_to_type(arg.type, nil)
       );
-
-
-    AnyType desugar_impl_arg(SynSgn signature)
-    {
-      arg_types = (syn_type_to_type(p, nil) : p <- signature.args);
-      res_type = syn_type_to_type(signature.res_type, nil);
-      return if arg_types == () then res_type else cls_type(arg_types, res_type);
-    }
   }
 }

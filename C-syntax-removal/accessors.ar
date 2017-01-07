@@ -1,9 +1,9 @@
-type TopLevelFnDef        = top_level_fn_def(fndef: SynFnDef, unique_name: BasicFnSymb, impl_args: [SynSgn]);
+type TopLevelFnDef        = top_level_fn_def(fndef: SynFnDef, unique_name: BasicFnSymb, impl_args: [ImplArgDecl]);
 type NestedFnDef          = nested_fn_def(
                               fndef:              SynFnDef,
                               parent_fndef:       SynFnDef,
                               parent_unique_name: BasicFnSymb,
-                              impl_args:          [SynSgn]
+                              impl_args:          [ImplArgDecl]
                             );
 type UsingBlockFnDef      = using_block_method_def(target: Atom, fndef: DBMethodDef);
 type UsingBlockUpdateDef  = using_block_update_def(target: Atom, fndef: UpdateDef);
@@ -19,10 +19,10 @@ type PreCall      = PreAutoCall, PreDBCall;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-TopLevelFnDef top_level_fn_def(SynFnDef fd, BasicFnSymb un, [SynSgn] ias) =
+TopLevelFnDef top_level_fn_def(SynFnDef fd, BasicFnSymb un, [ImplArgDecl] ias) =
   top_level_fn_def(fndef: fd, unique_name: un, impl_args: ias);
 
-NestedFnDef nested_fn_def(SynFnDef fd, SynFnDef pfd, BasicFnSymb pun, [SynSgn] ias) =
+NestedFnDef nested_fn_def(SynFnDef fd, SynFnDef pfd, BasicFnSymb pun, [ImplArgDecl] ias) =
   nested_fn_def(fndef: fd, parent_fndef: pfd, parent_unique_name: pun, impl_args: ias);
 
 UsingBlockFnDef     using_block_method_def(Atom t, DBMethodDef fd)  = using_block_method_def(target: t, fndef: fd);
@@ -100,11 +100,11 @@ implicit syn_prg : SynPrg
     merge_values([[db -> d] : db, ubs <- using_blocks_by_db; ub <- ubs; d <- set(ub.decls); update_def() <~ d]);
 
 
-  [(SynFnDef, [SynSgn])] ext_syn_fn_defs  = [(fd, []) : fd <- syn_fn_defs] &
-                                            [(fd, set(b.signatures)) : b <- impl_blocks; fd <- set(b.fn_defs)];
+  [(SynFnDef, [ImplArgDecl])] ext_syn_fn_defs = [(fd, []) : fd <- syn_fn_defs] &
+                                                [(fd, set(b.args)) : b <- impl_blocks; fd <- set(b.fn_defs)];
 
 
-  [AtomicFnSymb -> [Nat -> [+(SynFnDef, [SynSgn])]]] top_level_fndefs_by_name_arity =
+  [AtomicFnSymb -> [Nat -> [+(SynFnDef, [ImplArgDecl])]]] top_level_fndefs_by_name_arity =
     [s -> group_by(fs, arity(left($))) : s, fs <- group_by(ext_syn_fn_defs, left($).name)];
 
 
@@ -499,14 +499,14 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact
     local_fn_defs_arg_arities[fn_symb.inner][arity];
 
 
-  [+[NamedArg -> Nat]] named_args_arities(AtomicFnSymb fn_symb, Nat arity)
+  [+[ImplArg]] fn_impl_args(AtomicFnSymb fn_symb, Nat arity)
   {
     ext_fds = top_level_fndefs_by_name_arity[fn_symb][arity];
-    return [[a.name -> length(a.args) : a <- ias] : efd <- ext_fds; ias = right(efd)];
+    return [[a.name : a <- ias] : efd <- ext_fds; ias = right(efd)];
   }
 
 
-  [+[NamedArg -> Nat]] named_args_arities(NestedFnFamilyId nested_fn_symb, Nat arity) =
+  [+[ImplArg]] fn_impl_args(NestedFnFamilyId nested_fn_symb, Nat arity) =
     match (syn_artifact)
-      top_level_fn_def() | nested_fn_def()  = [[a.name -> length(a.args) : a <- syn_artifact.impl_args]];
+      top_level_fn_def() | nested_fn_def()  = [[a.name : a <- syn_artifact.impl_args]];
 }

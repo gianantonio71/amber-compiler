@@ -1,5 +1,5 @@
 //## CHECK THAT TWO LOCAL FUNCTIONS CANNOT HAVE THE SAME NAME, EVEN IF THEY HAVE DIFFERENT ARITIES OR COMPATIBLE SIGNATURES
-//## CHECK THAT A POSITIONAL PARAMETER CANNOT HAVE THE SAME NAME AS A NAMED PARAMETER
+//## CHECK THAT A POSITIONAL PARAMETER CANNOT HAVE THE SAME NAME AS AN IMPLICIT PARAMETER
 
 implicit syn_prg : SynPrg
 {
@@ -17,10 +17,10 @@ implicit syn_prg : SynPrg
 
     //## INSERT HERE GLOBAL CHECKS FOR AUTOMATA AND SCHEMAS
 
-    args_errs = join(rand_sort([block_args_wf_errors(b.signatures) : b <- impl_blocks]));
+    args_errs = join(rand_sort([block_args_wf_errors(b.args) : b <- impl_blocks]));
     return args_errs if args_errs != ();
 
-    impl_block_full_fndefs = [(fd, b.signatures) : b <- impl_blocks; fd <- set(b.fn_defs)];
+    impl_block_full_fndefs = [(fd, b.args) : b <- impl_blocks; fd <- set(b.fn_defs)];
     full_fndefs = rand_sort([(fd, ()) : fd <- syn_fn_defs] & impl_block_full_fndefs);
 
     sgn_errs = function_group_signature_wf_errors(full_fndefs);
@@ -37,7 +37,7 @@ implicit syn_prg : SynPrg
 
     impl_block_fndef_errs = ();
     for b <- rand_sort(impl_blocks):
-      impl_args = set(b.signatures);
+      impl_args = set(b.args);
       for fd <- b.fn_defs:
         errs = fndef_wf_errors(fd, impl_args);
         impl_block_fndef_errs = (impl_block_fndef_errs | fndef_errors(fd, errs)) if errs != ();
@@ -65,7 +65,7 @@ implicit syn_prg : SynPrg
     errs = (errs | dupl_par_names([a : a <- dupl_args], [])) if dupl_args != [];
 
     artifact = using_block_method_def(db_name, method);
-    let syn_artifact = artifact, impl_args = [:], actual_arg_arity = 0:
+    let syn_artifact = artifact, impl_args = [], actual_arg_arity = 0:
       errs = errs & expr_wf_errors(method.expr, seq_union(([fn_par(i); var(n)] : n @ i <- arg_names)));
     ;
 
@@ -80,7 +80,7 @@ implicit syn_prg : SynPrg
     db_symb = db_symbol(handler_def.target);
     if db_defs_by_id(db_symb, ?):
       body = handler_def.body;
-      let syn_artifact = handler_def, impl_args = [:], actual_arg_arity = 0:
+      let syn_artifact = handler_def, impl_args = [], actual_arg_arity = 0:
         errs = errs & root_stmt_block_wf_errors(body, [var(:it)], false, false) if body != ();
       ;
     else
@@ -102,7 +102,7 @@ implicit syn_prg : SynPrg
     body = update_def.body;
     if body != ():
       artifact = using_block_update_def(db_name, update_def);
-      let syn_artifact = artifact, impl_args = [:], actual_arg_arity = 0:
+      let syn_artifact = artifact, impl_args = [], actual_arg_arity = 0:
         errs = errs & root_stmt_block_wf_errors(body, set(args), false, false);
       ;
     ;
@@ -127,7 +127,7 @@ implicit syn_prg : SynPrg
     ;
     auto_def = auto_defs_by_id[auto_symb];
 
-    let syn_artifact = method, impl_args = [:], actual_arg_arity = 0:
+    let syn_artifact = method, impl_args = [], actual_arg_arity = 0:
       errs = errs & expr_wf_errors(method.expr, seq_union(([fn_par(i); s] : s @ i <- arg_names)));
     ;
 
@@ -158,21 +158,21 @@ implicit syn_prg : SynPrg
   }
 
 
-  WFError* block_args_wf_errors(SynSgn* signatures)
+  WFError* block_args_wf_errors(ImplArgDecl* signatures)
   {
     errs = ();
     for s1 @ i1 <- signatures ; s2 <- right_subseq(signatures, i1+1):
       errs = (errs | dupl_impl_arg(s1, s2)) if s1.name == s2.name;
     ;
     for s <- signatures:
-      type_errs = join((type_wf_errors(t, type_arity_map, true) : t <- s.args)) & type_wf_errors(s.res_type, type_arity_map, true);
+      type_errs = type_wf_errors(s.type, type_arity_map, true);
       errs = (errs | signature_errors(s, type_errs)) if type_errs != ();
     ;
     return errs;
   }
 
 
-  WFError* function_group_signature_wf_errors((SynFnDef, SynSgn*)* full_fndefs)
+  WFError* function_group_signature_wf_errors((SynFnDef, ImplArgDecl*)* full_fndefs)
   {
     sgn_errs = values((fndef_signature_wf_errors(fd, nps) : fd, nps <- full_fndefs));
     return sgn_errs if sgn_errs != ();
@@ -183,17 +183,17 @@ implicit syn_prg : SynPrg
   }
 
 
-  Maybe[WFError] fndef_signature_wf_errors(SynFnDef fndef, SynSgn* named_args)
+  Maybe[WFError] fndef_signature_wf_errors(SynFnDef fndef, ImplArgDecl* impl_args)
   {
     errs = join((type_wf_errors(p.type, type_arity_map) : p <- fndef.args; p.type?));
     errs = errs & type_wf_errors(fndef.res_type, type_arity_map) if fndef.res_type?;
 
     pos_args = (a.name : a <- fndef.args; a.name?);
-    named_args_ids = (match (p.name) named_arg(n?) = n : p <- named_args);
+    impl_args_ids = (bare_id(p.name) : p <- impl_args);
 
     dupl_pos_pars = dupl_elems(pos_args);
-    dupl_named_args = dupl_elems(pos_args & named_args_ids) - dupl_pos_pars;
-    errs = (errs | dupl_par_names(dupl_pos_pars, dupl_named_args)) if dupl_pos_pars != [] or dupl_named_args != [];
+    dupl_impl_args = dupl_elems(pos_args & impl_args_ids) - dupl_pos_pars;
+    errs = (errs | dupl_par_names(dupl_pos_pars, dupl_impl_args)) if dupl_pos_pars != [] or dupl_impl_args != [];
 
     direct_type_vars = seq_union((syn_type_vars(p.type) : p <- fndef.args; p.type :: SynType));
     // indirect_type_vars = seq_union([syn_type_vars(p.type.out_type) : p <- fndef.args, p.type :: SynClsType]);
@@ -216,7 +216,7 @@ implicit syn_prg : SynPrg
   }
 
 
-  WFError* polymorphic_functions_errors((SynFnDef, SynSgn*)+ full_fndefs)
+  WFError* polymorphic_functions_errors((SynFnDef, ImplArgDecl*)+ full_fndefs)
   {
     for fd1, ss1 @ i1 <- full_fndefs ; fd2, ss2 <- right_subseq(full_fndefs, i1+1):
       assert fd1.name == fd2.name and arity(fd1) == arity(fd2);
@@ -268,7 +268,7 @@ implicit syn_prg : SynPrg
   }
 
 
-  FnDefWFError* fndef_wf_errors(SynFnDef fndef, [SynSgn] impl_args)
+  FnDefWFError* fndef_wf_errors(SynFnDef fndef, [ImplArgDecl] impl_args)
   {
     loc_fns_errs = function_group_signature_wf_errors(((fd, rand_sort(impl_args)) : fd <- fndef.local_fns));
     return (nested_functions_errors(loc_fns_errs)) if loc_fns_errs != ();
@@ -284,7 +284,7 @@ implicit syn_prg : SynPrg
     FnDefWFError* wf_errors(<TopLevelFnDef, NestedFnDef> artifact)
     {
       fndef = artifact.fndef;
-      impl_args = [s.name -> arity(s) : s <- artifact.impl_args];
+      impl_args = [s.name : s <- artifact.impl_args];
       args = seq_union(([fn_par(i); var(a.name) if a.name?] : a @ i <- fndef.args; a :: SynObjArg));
       let syn_artifact = artifact, impl_args = impl_args, actual_arg_arity = 0:
         errs = expr_wf_errors(fndef.expr, args);
@@ -300,7 +300,7 @@ implicit syn_prg : SynPrg
     return () if body == ();
     vars = set((p.var : p <- proc_def.args));
     has_ret_val = proc_def.res_type != nil;
-    let syn_artifact = proc_def, impl_args = [:], actual_arg_arity = 0:
+    let syn_artifact = proc_def, impl_args = [], actual_arg_arity = 0:
       errs = root_stmt_block_wf_errors(body, vars, has_ret_val, true);
     ;
     return errs;
@@ -309,13 +309,13 @@ implicit syn_prg : SynPrg
   ////////////////////////////////////////////////////////////////////////////////
   ////////////////////////////////////////////////////////////////////////////////
 
-  [FnSymbol -> [Nat -> (Nat*, [+[NamedArg -> Nat]])]] create_global_functions_map((SynFnDef, SynSgn*)* full_fndefs)
+  [FnSymbol -> [Nat -> (Nat*, [+[ImplArg]])]] create_global_functions_map((SynFnDef, ImplArgDecl*)* full_fndefs)
   {
     fndefs_by_name = group_by(full_fndefs, left($).name);
     return [n -> create_polymorphic_function_map(fds) : n, fds <- fndefs_by_name];
 
 
-    [Nat -> (Nat*, [+[NamedArg -> Nat]])] create_polymorphic_function_map([+(SynFnDef, SynSgn*)] full_fndefs)
+    [Nat -> (Nat*, [+[ImplArg]])] create_polymorphic_function_map([+(SynFnDef, ImplArgDecl*)] full_fndefs)
     {
       fndefs_by_arity = group_by(full_fndefs, arity(left($)));
       // return (a => {fndef_sgn_info(left(fd), right(fd)) : fd <- fds} : fds @ a <- fndefs_by_arity);
@@ -323,20 +323,20 @@ implicit syn_prg : SynPrg
     }
 
 
-    (Nat*, [+[NamedArg -> Nat]]) fndefs_sgn_info([+(SynFnDef, SynSgn*)] full_fndefs)
+    (Nat*, [+[ImplArg]]) fndefs_sgn_info([+(SynFnDef, ImplArgDecl*)] full_fndefs)
     {
       sgn_infos = [fndef_sgn_info(left(fd), right(fd)) : fd <- full_fndefs];
       pos_pars_info = [left(si) : si <- sgn_infos];
-      named_args_info = [right(si) : si <- sgn_infos];
-      return (only(pos_pars_info), named_args_info);
+      impl_args_info = [right(si) : si <- sgn_infos];
+      return (only(pos_pars_info), impl_args_info);
     }
 
 
-    (Nat*, [NamedArg -> Nat]) fndef_sgn_info(SynFnDef fndef, SynSgn* named_args)
+    (Nat*, [ImplArg]) fndef_sgn_info(SynFnDef fndef, ImplArgDecl* impl_args)
     {
       pos_pars_info = (arity(p) : p <- fndef.args);
-      named_args_info = merge(([p.name -> arity(p)] : p <- named_args));
-      return (pos_pars_info, named_args_info);
+      impl_args_info = set((a.name : a <- impl_args));
+      return (pos_pars_info, impl_args_info);
     }
   }
 

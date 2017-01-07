@@ -121,8 +121,8 @@ Type union_type([Type] ts)
 
 ClsType cls_type(Type+ its, Type ot) = cls_type(in_types: its, out_type: ot);
 
-FnType fn_type(AnyType* ps, Type rt) = fn_type(ps, [:], rt);
-FnType fn_type(AnyType* ps, [NamedArg -> AnyType] nps, Type rt) = fn_type(params: ps, named_args: nps, ret_type: rt);
+FnType fn_type(AnyType* as, Type rt) = fn_type(as, [:], rt);
+FnType fn_type(AnyType* as, [ImplArg -> NeType] nas, Type rt) = fn_type(params: as, impl_args: nas, ret_type: rt);
 
 BuiltInType builtin_type(Type+ pts, Type rt) = builtin_type(param_types: pts, ret_type: rt);
 
@@ -197,8 +197,8 @@ DBSymbol   db_symbol(Atom a)    = :db_symbol(a);
 
 StdVar          var(Atom a)                 = :var(a);
 FnPar           fn_par(Nat n)               = :fn_par(n);
-NamedArg        named_arg(Atom a)           = :named_arg(a);
-CaptVar         cls_ext_par(Nat n)          = :cls_ext_par(n);
+ImplArg         impl_arg(Atom a)            = :impl_arg(a);
+CaptVar         capt_var(Nat n)             = :capt_var(n);
 MembVar         memb_var(Atom a)            = :memb_var(a);
 MembCopyVar     memb_copy_var(Atom a)       = :memb_copy_var(a);
 PendingStateVar pending_state_var(Atom a)   = :pending_state_var(a);
@@ -219,6 +219,7 @@ RelVar rel_var(Atom a)  = :rel_var(a);
 QualRelVar qual_rel_var(AnyDBVar dbv, RelVar rv) = qual_rel_var(db_var: dbv, rel_var: rv);
 
 ClsVar cls_var(<Atom, Nat> a)     = :cls_var(a);
+CaptClsVar capt_cls_var(Nat n)    = :capt_cls_var(n);
 
 FloatLit float_lit(Int m, Int e)  = float_lit(mantissa: m, dec_exp: e);
 
@@ -237,10 +238,10 @@ TernRelExpr tern_rel_expr([(args: (Expr, Expr, Expr), cond: Expr?)] es) = :tern_
 Expr tag_obj_expr(Expr t, Expr o)   = tag_obj_expr(tag: t, obj: o);
 
 FnCallExpr fn_call(FnFamilyId n, AnyExpr* as) = fn_call(n, as, [:]);
-FnCallExpr fn_call(FnFamilyId n, AnyExpr* as, [NamedArg -> AnyExpr] nas) = fn_call(name: n, args: as, named_args: nas);
+FnCallExpr fn_call(FnFamilyId n, AnyExpr* as, [ImplArg -> Expr] nas) = fn_call(name: n, args: as, impl_args: nas);
 
-Expr builtin_call(BuiltIn n, Expr+ as) = builtin_call(name: n, args: as);
-Expr cls_call(<ClsVar, NamedArg> n, Expr+ as) = cls_call(name: n, args: as);
+Expr builtin_call(BuiltIn n, Expr+ as)  = builtin_call(name: n, args: as);
+Expr cls_call(AnyClsVar v, Expr+ as)    = cls_call(name: v, args: as);
 
 UnaryPseudoCall unary_pseudo_call(Expr c, Expr v) = unary_pseudo_call(target: c, arg: v);
 
@@ -316,7 +317,7 @@ CondExpr cond_expr(Expr e, Expr c) = cond_expr(expr: e, cond: c);
 ClsExpr fn_ptr(FnFamilyId s, NzNat a)           = fn_ptr(name: s, arity: a);
 ClsExpr cls_expr(Maybe[StdVar]+ as, Expr e)     = cls_expr(args: as, expr: e);
 ClsExpr no_args_cls_expr(NzNat a, Expr e)       = cls_expr((nil : unused_var < a), e);
-ClsExpr named_args_cls_expr(StdVar+ as, Expr e) = cls_expr(args: (just(a) : a <- as), expr: e);
+ClsExpr impl_args_cls_expr(StdVar+ as, Expr e)  = cls_expr(args: (just(a) : a <- as), expr: e);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -346,7 +347,7 @@ AtomicFnStmt assignment_stmt(StdVar+ vs, Expr v)        = assignment_stmt(vars: 
 AtomicFnStmt return_stmt(Expr e)                        = :return_stmt(e);
 AtomicFnStmt print_stmt(Expr e)                         = :print_stmt(e);
 AtomicFnStmt imp_update_stmt(StdVar o, Expr i, Expr v)  = imp_update_stmt(obj: o, idx: i, value: v);
-AtomicFnStmt assert_stmt(Expr c, [<StdVar, NamedArg>] vs, String f, NzNat l, Maybe[String] t) = assert_stmt(cond: c, env: vs, file: f, line: l, text: t);
+AtomicFnStmt assert_stmt(Expr c, [<StdVar, ImplArg>] vs, String f, NzNat l, Maybe[String] t) = assert_stmt(cond: c, env: vs, file: f, line: l, text: t);
 <break_stmt> break_stmt                                 = :break_stmt;
 <fail_stmt>  fail_stmt                                  = :fail_stmt;
 
@@ -368,7 +369,7 @@ AutoOrDBCtrlStmt restore_state_ctrl_stmt(StdVar rv, LocDBVar dv, Expr e)  = rest
 
 CompositeStmt[T] if_stmt(Expr c, T+ b, T* e)            = if_stmt(cond: c, body: b, else: e);
 CompositeStmt[T] loop_stmt(T+ ss)                       = :loop_stmt(ss);
-CompositeStmt[T] let_stmt([NamedArg -> Expr] as, T+ b)  = let_stmt(asgnms: as, body: b);
+CompositeStmt[T] let_stmt([ImplArg -> Expr] as, T+ b)   = let_stmt(asgnms: as, body: b);
 
 CompositeStmt[T] foreach_stmt(StdVar+ vs, Maybe[StdVar] iv, Expr svs, T+ b) =
   foreach_stmt(vars: vs, idx_var: value(iv) if iv != nil, values: svs, body: b);
@@ -385,11 +386,6 @@ ProcSymbol proc_symbol(Atom a) = :proc_symbol(a);
 FormalObjArg formal_obj_arg(Type t)               = formal_obj_arg(type: t);
 FormalObjArg formal_obj_arg(StdVar v, Type t)     = formal_obj_arg(var: v, type: t);
 FormalClsArg formal_cls_arg(ClsVar v, ClsType t)  = formal_cls_arg(var: v, type: t);
-
-////////////////////////////////////////////////////////////////////////////////
-
-Function function(FnSymbol n, FormalArg* as, [NamedArg -> AnyType] ias, Type rt, Expr e) =
-  function(name: n, args: as, impl_args: ias, res_type: rt, expr: e);
 
 ////////////////////////////////////////////////////////////////////////////////
 

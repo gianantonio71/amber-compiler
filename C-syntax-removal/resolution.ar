@@ -1,10 +1,10 @@
-type SymbObjVar     = StdVar, NamedArg, MembVar, QualAutoMembVar;
+type SymbObjVar     = StdVar, ImplArg, MembVar, QualAutoMembVar;
 type SymbChainAcc   = accessor(expr: <SymbChainExpr, FnCallExpr, AutoMethodCall, DBMethodCall>, field: SymbObj);
 type SymbChainExpr  = SymbObjVar, QualDBMembVar, SymbChainAcc;
 
 
 Nat resol_priority(StdVar)                    = 0;
-Nat resol_priority(NamedArg)                  = 0;
+Nat resol_priority(ImplArg)                   = 0;
 Nat resol_priority(MembVar)                   = 1;
 Nat resol_priority(QualAutoMembVar)           = 2;
 Nat resol_priority(QualDBMembVar)             = 2;
@@ -28,7 +28,7 @@ Nat resol_priority(MembDBVar)                 = 1;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> Nat]
+implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
 {
   Bool arity_is_compatible(AtomicFnSymb fn_symb, Nat arity)
   {
@@ -76,13 +76,8 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
     return arity == var_arity or arity == var_arity - 1;
   }
 
-  Bool arity_is_compatible(NamedArg var, Nat arity)
-  {
-    exp_arity = impl_args[var];
-    return (exp_arity == 0 and arity :: <1..3>) or impl_args[var] == arity;
-  }
-
   Bool arity_is_compatible(StdVar, Nat arity)           = arity :: <1..3>;
+  Bool arity_is_compatible(ImplArg, Nat arity)          = arity :: <1..3>;
   Bool arity_is_compatible(MembVar, Nat arity)          = arity :: <1..3>;
   Bool arity_is_compatible(QualAutoMembVar, Nat arity)  = arity :: <1..3>;
   Bool arity_is_compatible(QualDBMembVar, Nat arity)    = arity :: <1..3>;
@@ -108,7 +103,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
   {
     raw_resols = resolve_symbol(target, def_vars);
     resols = [r : r <- raw_resols; arity_is_compatible(r, arity)];
-    fail if not resols :: [<StdVar, NamedArg, MembVar, QualAutoMembVar, ClsVar, RelVar, FnFamilyId, PreCall>];
+    fail if not resols :: [<StdVar, ImplArg, MembVar, QualAutoMembVar, ClsVar, RelVar, FnFamilyId, PreCall>];
     return min_by(resols, resol_priority($)); //## BAD BAD: WORKAROUND FOR TYPECHECKING BUG
   }
 
@@ -176,7 +171,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
 
     [ClsExpr] resolve(FnFamilyId fn_symb, NzNat exp_arity)
     {
-      //## BUG BUG BUG: HERE I MUST ALSO CHECK THAT IT HAS NO NAMED ARGUMENTS...
+      //## BUG BUG BUG: HERE I MUST ALSO CHECK THAT IT HAS NO IMPLICIT ARGUMENTS...
       has_exp_arity = function_exists(fn_symb, exp_arity) and all((a == 0 : a <- arg_arities(fn_symb, exp_arity)));
       return [
         fn_ptr(fn_symb, exp_arity) if has_exp_arity;
@@ -311,11 +306,11 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
   resolve_symbol(Atom symbol, [Var] def_vars)
   {
     std_var = var(symbol);
-    named_arg = named_arg(symbol);
+    impl_arg = impl_arg(symbol);
     fn_symb = fn_symbol(symbol);
     gen_resols = [
       std_var if def_vars(std_var);
-      named_arg if impl_args(named_arg, ?);
+      impl_arg if impl_args(impl_arg);
       fn_symb if top_level_fndefs_by_name_arity(fn_symb, ?)
     ];
     ctx_resols = resolve_symbol(syn_artifact, symbol);

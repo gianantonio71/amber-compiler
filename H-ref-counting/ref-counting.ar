@@ -1,6 +1,6 @@
 //## REPLACE ALL THE unused_var, unused_var_X
 
-// RIGHT NOW NAMED PARAMETERS ARE INCLUDED IN THE LIST OF LIVE VAR.
+// RIGHT NOW IMPLICIT PARAMETERS ARE INCLUDED IN THE LIST OF LIVE VAR.
 // THAT'S WRONG, THEY ARE JUST LIKE EXTERNAL VARS, THEY ARE ALWAYS LIVE
 
 
@@ -10,8 +10,8 @@ BoolProcDef add_ref_counting(BoolProcDef proc_def) = proc_def;
 ObjProcDef add_ref_counting(ObjProcDef proc_def) =
   obj_proc_def(
     name:           proc_def.name,
-    params:         proc_def.params,
-    named_args:     proc_def.named_args,
+    args:           proc_def.args,
+    impl_args:      proc_def.impl_args,
     loc_auto_vars:  proc_def.loc_auto_vars,
     loc_db_vars:    proc_def.loc_db_vars,
     body:           nonempty(add_ref_counting(proc_def.body)),
@@ -275,7 +275,7 @@ implicit flow_map : NodeId**, live_vars_after_map : [TrkVar]*, entry_vars_states
   }
 
 
-  RCNodeInfo rc_set_cls_par_node(NamedArg var, BoundCls cls, NodeId next_node, VarsState exit_state)
+  RCNodeInfo rc_set_cls_par_node(ImplArg var, BoundCls cls, NodeId next_node, VarsState exit_state)
   {
     next_node_entry_state = entry_vars_state(next_node);
     post_instrs = gen_state_switch_code(exit_state, next_node_entry_state);
@@ -300,7 +300,11 @@ Instr+ ref_count_closures(Instr+ instrs)  = (ref_count_closures_single_instructi
 
 
 Instr ref_count_closures_single_instruction(Instr instr):
-  call_proc()         = call_proc(var: instr.var if instr.var?, name: instr.name, params: (ref_count_closure(p) : p <- instr.params)),
+  call_proc()         = call_proc(
+                          var:  instr.var if instr.var?,
+                          name: instr.name,
+                          args: (ref_count_closure(p) : p <- instr.args)
+                        ),
   branch()            = branch(
                           instr.cond,
                           ref_count_closures(instr.when_true),
@@ -309,7 +313,6 @@ Instr ref_count_closures_single_instruction(Instr instr):
   repeat(is?)         = repeat(ref_count_closures(is)),
   execute_block(is?)  = execute_block(ref_count_closures(is)),
   try_block()         = try_block(instr.var, ref_count_closures(instr.body)),
-  cls_scope()         = cls_scope(instr.var, ref_count_closure(instr.bound_cls), ref_count_closures(instr.body)),
   _                   = instr;
 
 
@@ -317,4 +320,4 @@ AtomicExpr ref_count_closure(AtomicExpr expr) = expr; //## NOT THE BEST NAME IN 
 
 BoundCls ref_count_closure(BoundCls cls):
   ClsVar        = cls,
-  bound_cls()   = bound_cls(cls_def(cls.cls.arity, add_ref_counting(cls.cls.body)), cls.env);
+  bound_cls()   = bound_cls(cls_def(cls.cls.arity, add_ref_counting(cls.cls.body)), cls.capt_vars, cls.capt_cls_vars);

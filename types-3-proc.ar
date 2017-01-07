@@ -6,10 +6,10 @@ type ReadOnlyObjVar = FnPar, CaptVar;
 type WriteObjVar    = RWObjVar, ElemVar;
 type RWObjVar       = StdVar, LocVar, MembVar, QualMembVar, MembObjVar, MembCopyVar, PendingStateVar;
 
-type StdObjVar      = RWObjVar, NamedArg, ReadOnlyObjVar;
+type StdObjVar      = RWObjVar, ImplArg, ReadOnlyObjVar;
 
 type NullableVar    = StdVar, MembVar, QualAutoMembVar, MembCopyVar, PendingStateVar, LocVar, MembObjVar;
-type NonNullableVar = FnPar, NamedArg, CaptVar, QualDBMembVar, ElemVar;
+type NonNullableVar = FnPar, ImplArg, CaptVar, QualDBMembVar, ElemVar;
 
 type ObjVar         = NonNullableVar, NullableVar;
 
@@ -214,7 +214,7 @@ type BasicInstr     = init_stream(StreamVar),
 
                       move_forward(ItVar),
 
-                      set_var(var: <WriteObjVar, NamedArg>, value: ObjExpr),
+                      set_var(var: <WriteObjVar, ImplArg>, value: ObjExpr),
                       set_bvar(var: BoolVar, value: BoolExpr),
                       set_ivar(var: IntVar, value: IntExpr),
 
@@ -231,13 +231,13 @@ type BasicInstr     = init_stream(StreamVar),
 
                       no_op,
 
-                      call_proc(var: WriteObjVar?, name: ObjFnName, params: <AtomicExpr, BoundCls>*),
-                      call_cls(var: WriteObjVar, cls_var: <ClsVar, NamedArg>, params: AtomicExpr*),
+                      call_proc(var: WriteObjVar?, name: ObjFnName, args: <AtomicExpr, BoundCls>*),
+                      call_cls(var: WriteObjVar, cls_var: AnyClsVar, args: AtomicExpr+),
 
                       push_call_info(fn_name: ObjFnName, params: Maybe[FnPar]*),
                       pop_call_info,
 
-                      runtime_check(cond: AtomicExpr, file: String, line: NzNat, text: Maybe[String], vars: <StdVar, NamedArg>*),
+                      runtime_check(cond: AtomicExpr, file: String, line: NzNat, text: Maybe[String], vars: <StdVar, ImplArg>*),
 
                       //## THESE TYPES SHOULD BE REFINED, BlockNodeId IS TOO GENERAL
                       queue_update(type: AutoSymbol, id: BlockNodeId),
@@ -304,21 +304,20 @@ type CompInstr      = branch(cond: BoolExpr, when_true: Instr+, when_false: Inst
                       symb_switch(value: ObjExpr, cases: [+([+Atom], Instr+)], else: Instr*),
                       repeat(Instr+),
                       execute_block(Instr+),
-                      try_block(var: LocVar, body: Instr+),
-                      cls_scope(var: NamedArg, bound_cls: BoundCls, body: Instr+); //## BAD: BoundCls IS TOO LOOSE A TYPE HERE, BECAUSE A ClsVar CANNOT APPEAR HERE
+                      try_block(var: LocVar, body: Instr+);
 
 type Instr          = BasicInstr, JumpInstr, CompInstr;
 
 type ClsDef         = cls_def(arity: NzNat, body: Instr+);
 
-type BoundCls       = ClsVar, bound_cls(cls: ClsDef, env: Var*); //## WHY IS THE .env FIELD OF TYPE [Var] INSTEAD OF [ObjVar]?
+type BoundCls       = AnyClsVar, bound_cls(cls: ClsDef, capt_vars: Var*, capt_cls_vars: ClsVar*); //## WHY IS THE capt_vars FIELD OF TYPE Var* INSTEAD OF ObjVar*?
 
 type ObjProcPar     = obj, cls(name: ClsVar?, arity: NzNat);
 
 type ObjProcDef     = obj_proc_def(
                         name:           ObjFnName,
-                        params:         ObjProcPar*,
-                        named_args:     [NamedArg -> Nat], //## SHOULD IT BE <named_var(name: Atom, arity: Nat)>* INSTEAD?
+                        args:           ObjProcPar*,
+                        impl_args:      [ImplArg],
                         loc_auto_vars:  [LocAutoVar -> AutoSymbol],
                         loc_db_vars:    [LocDBVar -> DBSymbol],
                         body:           Instr+,

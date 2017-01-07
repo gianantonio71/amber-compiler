@@ -140,7 +140,7 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef
     args = ((syn_type_to_type(t, nil), just(v)) : t, v <- method_def.args);
     ret_type = syn_type_to_type(method_def.ret_type, nil);
     arg_vars = set((v : unused_var, v <- method_def.args));
-    expr = desugar_expr(method_def.expr, arg_vars, syn_artifact = method_def, impl_args = [:]);
+    expr = desugar_expr(method_def.expr, arg_vars, syn_artifact = method_def, impl_args = []);
     return method(method_symbol(method_def.name), args, ret_type, expr);
   }
 
@@ -248,7 +248,7 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef
 
 
   Expr desugar_auto_expr(SynExpr expr, [StdVar] def_vars) =
-    desugar_expr(expr, def_vars, syn_artifact = auto_def, impl_args = [:]);
+    desugar_expr(expr, def_vars, syn_artifact = auto_def, impl_args = []);
 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
@@ -256,24 +256,24 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef
   SynNestedAuto rewrite_disguised_auto(SynPlainRule rule)
   {
     expr = rule.expr;
-    fail if not expr :: <SynNamedArgsCall, call_lookalike(target: ConstOrVar, args: SynExpr+)>;
+    fail if not expr :: <SynImplArgsCall, call_lookalike(target: ConstOrVar, args: SynExpr+)>;
 
     id = match (expr)
-      named_args_call() = expr.name,
+      impl_args_call()  = expr.name,
       call_lookalike()  = {match (expr.target) const_or_var(a?) = a};
 
     fn_name = fn_symbol(id);
     auto_name = auto_symbol(id);
 
     args = expr.args;
-    named_args = match (expr)
-      named_args_call() = expr.named_args,
+    impl_args = match (expr)
+      impl_args_call()  = expr.impl_args,
       call_lookalike()  = ();
 
     auto_interface = auto_interfaces[auto_name];
     assert args == () or length(auto_interface.pos_inputs) == length(args);
     pos_inputs = if args != () then zip(auto_interface.pos_inputs, args) else ();
-    named_inputs = ((bare_id(a), e) : a, unused_var, e <- named_args);
+    named_inputs = ((bare_id(a), e) : a, e <- impl_args);
     return syn_nested_auto(rule.name, id, pos_inputs & named_inputs);
   }
 
@@ -281,10 +281,10 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef
   Bool is_disguised_auto(SynPlainRule rule)
   {
     expr = rule.expr;
-    return false if not expr :: <SynNamedArgsCall, call_lookalike(target: ConstOrVar, args: SynExpr+)>;
+    return false if not expr :: <SynImplArgsCall, call_lookalike(target: ConstOrVar, args: SynExpr+)>;
 
     id = match (expr)
-      named_args_call() = expr.name,
+      impl_args_call()  = expr.name,
       call_lookalike()  = {match (expr.target) const_or_var(a?) = a};
 
     arity = length(expr.args);

@@ -1,4 +1,4 @@
-implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> Nat]
+implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
 {
   Expr desugar_expr(SynExpr syn_expr, [StdVar] def_vars) =
     transfer_attachments(desugar_expr_plain(syn_expr, def_vars), syn_expr);
@@ -18,7 +18,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
     memb_copy_var()     = expr,
     cls_par(n?)         = fn_par(n),
     const_or_var(a?)    = desugar_const_or_var_expr(a, def_vars),
-    named_args_call()   = desugar_named_args_call_expr(expr.name, expr.args, nonempty(expr.named_args), def_vars),
+    impl_args_call()    = desugar_impl_args_call_expr(expr.name, expr.args, nonempty(expr.impl_args), def_vars),
     unary_op_call()     = fn_call(op_symbol(expr.op), (desugar_expr(expr.expr, def_vars))),
     binary_op_call()    = fn_call(op_symbol(expr.op), (desugar_expr(expr.left_arg, def_vars), desugar_expr(expr.right_arg, def_vars))),
     builtin_call()      = builtin_call(expr.name, (desugar_expr(e, def_vars) : e <- expr.args)),
@@ -61,18 +61,12 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
       else rel_memb_test(var, (just(a) : a <- args));
   }
 
-  Expr desugar_call_lookalike(NamedArg var, Expr+ args)
+  Expr desugar_call_lookalike(ImplArg var, Expr+ args)
   {
-    exp_arity = impl_args(var);
-    actual_arity = length(args);
-    assert (exp_arity == 0 and actual_arity :: <1..3>) or exp_arity == actual_arity;
-    if exp_arity != 0:
-      return cls_call(var, args);
-    elif actual_arity == 1:
-      return unary_pseudo_call(var, args(0));
-    else
-      return rel_memb_test(var, (just(a) : a <- args));
-    ;
+    assert length(args) :: <1..3>;
+    return match (args)
+      (a?)  = unary_pseudo_call(var, a),
+      _     = rel_memb_test(var, (just(a) : a <- args));
   }
 
   Expr desugar_call_lookalike(ClsVar var, Expr+ args) = cls_call(var, args);
@@ -211,21 +205,14 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
   }
 
 
-  Expr desugar_named_args_call_expr(Atom name, SynExpr* syn_args, (NamedArg, StdVar*, SynExpr)+ syn_named_args, [StdVar] def_vars)
+  Expr desugar_impl_args_call_expr(Atom name, SynExpr* syn_args, (ImplArg, SynExpr)+ syn_impl_args, [StdVar] def_vars)
   {
     arity = length(syn_args);
     res_name = only(resolve_by_priority_as_fn_name(name, arity, def_vars));
     arg_arities = arg_arities(res_name, arity);
     args = (desugar_fn_arg(a, ea, def_vars) : a, ea <- zip(syn_args, arg_arities));
-    named_args = merge(([n -> desugar_named_arg_expr(e, def_vars, as)] : n, as, e <- syn_named_args));
-    return fn_call(res_name, args, named_args);
-
-
-    AnyExpr desugar_named_arg_expr(SynExpr syn_expr, [StdVar] outside_vars, StdVar* cls_pars)
-    {
-      expr = desugar_expr(syn_expr, outside_vars & set(cls_pars));
-      return if cls_pars == () then expr else named_args_cls_expr(cls_pars, expr);
-    }
+    redef_impl_args = merge(([n -> desugar_expr(e, def_vars)] : n, e <- syn_impl_args));
+    return fn_call(res_name, args, redef_impl_args);
   }
 
 
@@ -502,8 +489,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
   Statement desugar_let_stmt(SynLetStmt[SynStmt] stmt, [StdVar] def_vars)
   {
     asgnms = merge(([var -> desugar_expr(val, def_vars)] : var, val <- stmt.asgnms));
-    new_impl_args = update(impl_args, [v -> 0 : v, unused_var <- asgnms]);
-    body   = desugar_stmts(stmt.body, def_vars, impl_args=new_impl_args);
+    body = desugar_stmts(stmt.body, def_vars, impl_args = impl_args & keys(asgnms));
     return let_stmt(asgnms, body);
   }
 
@@ -559,8 +545,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [NamedArg -> 
   {
     expr = desugar_expr(stmt.cond, def_vars);
     loc_vars = [v : v <- def_vars; v :: StdVar];
-    scalar_impl_args = [arg : arg, arity <- impl_args; arity == 0];
-    return assert_stmt(expr, loc_vars & scalar_impl_args, stmt.file, stmt.line, stmt.text);
+    return assert_stmt(expr, loc_vars & impl_args, stmt.file, stmt.line, stmt.text);
   }
 
   ////////////////////////////////////////////////////////////////////////////////

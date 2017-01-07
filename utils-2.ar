@@ -130,7 +130,7 @@ Bool is_param_type(FnType type) = at_least_one((is_param_type(t) : t <- type.par
   tern_rel_expr(es?)      = union([seq_union((retrieve(e2) : e2 <- e1.args & (e1.cond if e1.cond?))) : e1 <- es]),
   tag_obj_expr()          = retrieve(expr.tag) & retrieve(expr.obj),
   Var                     = [],
-  fn_call()               = union([any_expr_retrieve_from_nested_exprs(p, retrieve) : p <- set(expr.args) & values(expr.named_args)]),
+  fn_call()               = union([any_expr_retrieve_from_nested_exprs(p, retrieve) : p <- set(expr.args) & values(expr.impl_args)]),
   cls_call()              = seq_union((retrieve(p) : p <- expr.args)),
   builtin_call()          = seq_union((retrieve(p) : p <- expr.args)),
   unary_pseudo_call()     = retrieve(expr.target) & retrieve(expr.arg),
@@ -266,7 +266,7 @@ Expr replace_nested_exprs(Expr expr, (Expr -> Expr) replace):
   fn_call()           = fn_call(
                           expr.name,
                           (replace_exprs_in_any_expr(p, replace) : p <- expr.args),
-                          [n -> replace_exprs_in_any_expr(e, replace) : n, e <- expr.named_args]
+                          [n -> replace(e) : n, e <- expr.impl_args]
                         ),
   cls_call()          = cls_call(expr.name, (replace(p) : p <- expr.args)),
   builtin_call()      = builtin_call(expr.name, (replace(p) : p <- expr.args)),
@@ -364,8 +364,8 @@ Statement replace_exprs_in_stmt(Statement stmt, (Expr -> Expr) replace):
   assert_stmt()       = assert_stmt(
                           replace(stmt.cond),
                           //## NEITHER OF THESE IS GOOD. BUT WHAT ALTERNATIVES DO WE HAVE?
-                          [if e :: <StdVar, NamedArg> then e else {fail;} : v <- stmt.env; e = replace(v)],
-                          // [e : v <- stmt.env, e = replace(v), e :: <StdVar, NamedArg>],
+                          [if e :: <StdVar, ImplArg> then e else {fail;} : v <- stmt.env; e = replace(v)],
+                          // [e : v <- stmt.env, e = replace(v), e :: <StdVar, ImplArg>],
                           stmt.file,
                           stmt.line,
                           stmt.text
@@ -419,7 +419,7 @@ Expr replace_external_vars_in_fn_call(FnCallExpr expr, [Var -> Var] subst_map) =
   fn_call(
     expr.name,
     (replace_external_vars(p, subst_map) : p <- expr.args),
-    [n -> replace_external_vars(e, subst_map) : n, e <- expr.named_args]
+    [n -> replace_external_vars(e, subst_map) : n, e <- expr.impl_args]
   );
 
 
@@ -697,7 +697,7 @@ Bool is_pattern_any(Pattern ptrn):
 //## THIS FUNCTION DOES NOT RETRIEVE QUALIFIED MEMBER VARIABLES LIKE auto_var.public_var OR db_var.var
 [Var] extern_vars(Expr expr):
   Var             = [expr],
-  fn_call()       = union([any_expr_extern_vars(e) : e <- set(expr.args) & values(expr.named_args)]),
+  fn_call()       = union([any_expr_extern_vars(e) : e <- set(expr.args) & values(expr.impl_args)]),
   ex_qual()       = comp_extern_vars((expr.cond), expr.source),
   set_comp()      = comp_extern_vars((expr.expr), expr.source),
   map_comp()      = comp_extern_vars((expr.key_expr, expr.value_expr), expr.source),
@@ -806,6 +806,53 @@ Bool is_pattern_any(Pattern ptrn):
   ClsVar      = [],
   fn_ptr()    = [],
   cls_expr()  = extern_vars(expr.expr) - set(values(expr.args) & (fn_par(i) : i < length(expr.args)));
+
+////////////////////////////////////////////////////////////////////////////////
+
+[ClsVar] cls_vars(Expr expr):
+  fn_call()   = union([cls_vars(e) : e <- set(expr.args) & values(expr.impl_args)]),
+  cls_call()  = { res = [expr.name] & seq_union((cls_vars(a) : a <- expr.args));
+                  return if res :: [ClsVar] then res else {fail;}; //## BAD BAD BAD
+                },
+  _           = retrieve_from_nested_exprs(expr, cls_vars($)); //## BAD BAD BAD: WORKAROUND FOR A BUG IN THE TYPECHECKER
+
+
+[ClsVar] cls_vars(ClsExpr expr):
+  ClsVar      = [expr],
+  fn_ptr()    = [],
+  cls_expr()  = cls_vars(expr.expr);
+
+////////////////////////////////////////////////////////////////////////////////
+
+Expr replace_cls_vars(Expr expr, [ClsVar -> CaptClsVar] subst_map):
+  fn_call()   = replace_cls_vars_in_fn_call(expr, subst_map),
+  cls_call()  = replace_cls_vars_in_cls_call(expr, subst_map),
+  _           = replace_nested_exprs(expr, replace_cls_vars($, subst_map));
+
+
+Expr replace_cls_vars_in_fn_call(FnCallExpr expr, [ClsVar -> CaptClsVar] subst_map) =
+  fn_call(
+    expr.name,
+    (replace_cls_vars(a, subst_map) : a <- expr.args),
+    [n -> replace_cls_vars(e, subst_map) : n, e <- expr.impl_args]
+  );
+
+
+Expr replace_cls_vars_in_cls_call(ClsCall expr, [ClsVar -> CaptClsVar] subst_map)
+{
+  //## BUG BUG BUG: WHAT HAPPENS WITH IMPLICIT CLOSURE ARGUMENTS?
+  name = expr.name; //## BAD: WORKAROUND FOR TYPECHECKER LIMITATION
+  new_name = if name :: ClsVar and subst_map(name, ?) then subst_map(name) else name;
+  new_args = (replace_cls_vars(a, subst_map) : a <- expr.args);
+  return cls_call(new_name, new_args);
+}
+
+
+ClsExpr replace_cls_vars(ClsExpr expr, [ClsVar -> CaptClsVar] subst_map):
+  cls_var()       = if subst_map(expr, ?) then subst_map(expr) else expr,
+  capt_cls_var()  = {fail;}, //## THIS IS NOT SUPPOSED TO HAPPEN. FIX IT ANYWAY...
+  fn_ptr()        = expr,
+  cls_expr()      = cls_expr(expr.args, replace_cls_vars(expr.expr, subst_map));
 
 ////////////////////////////////////////////////////////////////////////////////
 
