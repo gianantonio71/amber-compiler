@@ -438,7 +438,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
     assert_stmt()             = desugar_assert_stmt(stmt, def_vars),
     print_stmt(e?)            = print_stmt(desugar_expr(e, def_vars)),
     inf_loop_stmt(ss?)        = loop_stmt(desugar_stmts(ss, def_vars)),
-    if_stmt()                 = desugar_if_stmt(stmt, def_vars),
+    if_stmt()                 = desugar_if_stmt(stmt.branches, stmt.else, def_vars),
     let_stmt()                = desugar_let_stmt(stmt, def_vars),
     loop_stmt()               = desugar_loop_stmt(stmt, def_vars),
     for_stmt()                = desugar_for_stmt(stmt.loops, stmt.body, def_vars),
@@ -471,18 +471,15 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
     insert_stmt(rel_var(entry.var), (desugar_expr(e, def_vars) : e <- entry.args), force);
 
 
-  Statement desugar_if_stmt(SynIfStmt[SynStmt] stmt, [StdVar] def_vars)
+  Statement desugar_if_stmt((cond: SynExpr, body: SynStmt+)+ branches, SynStmt* syn_else_body, [StdVar] def_vars)
   {
-    else_stmts = stmt.else; //## THIS IS HERE JUST TO SHUT UP THE TYPECHECKER
-    res = if else_stmts != () then desugar_stmts(else_stmts, def_vars) else ();
-    for b <- reverse(stmt.branches):
-      cond = desugar_expr(b.cond, def_vars);
-      body = desugar_stmts(b.body, def_vars);
-      res  = (if_stmt(cond, body, res));
-      fail if not res :: (Statement); //## BAD BAD BAD: LOOP DOESN'T TYPECHECK ON ITS OWN
-    ;
-    assert res :: Seq and length(res) == 1;
-    return res[0]; //## BAD BAD BAD
+    branch = head(branches);
+    cond = desugar_expr(branch.cond, def_vars);
+    body = desugar_stmts(branch.body, def_vars);
+    else_body = if length(branches) > 1
+      then (desugar_if_stmt(nonempty(tail(branches)), syn_else_body, def_vars))
+      else desugar_stmts(syn_else_body, def_vars);
+    return if_stmt(cond, body, else_body);
   }
 
 
@@ -508,36 +505,31 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
   }
 
 
-  Statement desugar_for_stmt(SynIter+ loops, SynStmt+ body, [StdVar] def_vars)
+  Statement desugar_for_stmt(SynIter+ iters, SynStmt+ syn_body, [StdVar] def_vars)
   {
-    //## ALSO MAKE SURE SYNTAX CHECK GETS IT RIGHT
-    iters  = loops;
-    vs     = def_vars;
-    for_vs = ();
-    for it <- iters:
-      ivs  = match (it)
-        seq_iter()   = set(it.vars),
-        range_iter() = [it.var if it.var?];
-      vs     = vs & ivs & [it.idx_var if it.idx_var?];
-      for_vs = for_vs & (vs);
-    ;
-    res = desugar_stmts(body, vs);
-    for it @ i <- reverse(iters):
-      vs = rev_at(for_vs, i);
-      if it :: SynSeqIter: //## BAD BAD BAD
-        vals = desugar_expr(it.values, vs);
-        res  = (foreach_stmt(it.vars, if it.idx_var? then just(it.idx_var) else nil, vals, res));
-      elif it :: SynRangeIter: //## BAD BAD BAD
-        start_val = desugar_expr(it.start_val, vs);
-        end_val   = desugar_expr(it.end_val, vs);
-        res = (for_stmt(if it.var? then just(it.var) else nil, start_val, end_val, it.end_val_incl, res));
-      else
-        fail; // We should never get here
-      ;
-      fail if not res :: (Statement); //## BAD BAD BAD: LOOP DOESN'T TYPECHECK ON ITS OWN
-    ;
-    assert res :: Seq and length(res) == 1;
-    return res[0]; //## BAD BAD BAD
+    iter = head(iters);
+    body_vars = def_vars & syn_new_vars(iter);
+    body = if length(iters) == 1
+      then desugar_stmts(syn_body, body_vars)
+      else (desugar_for_stmt(nonempty(tail(iters)), syn_body, body_vars));
+    return desugar(iter, body, def_vars);
+
+
+    Statement desugar(SynSeqIter iter, Statement+ body, [StdVar] def_vars)
+    {
+      source = desugar_expr(iter.values, def_vars);
+      maybe_idx_var = if iter.idx_var? then just(iter.idx_var) else nil;
+      return foreach_stmt(iter.vars, maybe_idx_var, source, body);
+    }
+
+
+    Statement desugar(SynRangeIter iter, Statement+ body, [StdVar] def_vars)
+    {
+      start_val = desugar_expr(iter.start_val, def_vars);
+      end_val   = desugar_expr(iter.end_val, def_vars);
+      maybe_var = if iter.var? then just(iter.var) else nil;
+      return for_stmt(maybe_var, start_val, end_val, iter.end_val_incl, body);
+    }
   }
 
 

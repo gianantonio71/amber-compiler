@@ -30,7 +30,7 @@ implicit typedefs : [TypeName -> Type], signatures : [(FnFamilyId, Nat) -> SgnSe
 
     //## THE FOLLOWING LINE WAS PRODUCING A COMPLETELY WRONG ERROR MESSAGE
     // errs = typecheck(func.expr, nonexistent_function(func), environment=obj_vars, closures=cls_vars);
-    return typecheck(func.expr, func.res_type, var_aliases=var_aliases, environment=obj_vars, closures=cls_vars);
+    return typecheck(func.expr, func.res_type, obj_vars, var_aliases=var_aliases, closures=cls_vars);
   }
 }
 
@@ -41,23 +41,22 @@ implicit
 {
   typedefs    : [TypeName -> Type],
   signatures  : [(FnFamilyId, Nat) -> SgnSet],
-  environment : [Var -> Type],
   closures    : [ClsVar -> ClsType],
   var_aliases : [[Var]],
   verbose     : Bool;
 
 
-  [TypeCheckingError] typecheck(CondExpr expr, Type exp_type)
+  [TypeCheckingError] typecheck(CondExpr expr, Type exp_type, [Var -> Type] env)
   {
-    errs = typecheck(expr.cond, type_bool);
+    errs = typecheck(expr.cond, type_bool, env);
     return errs if errs != [];
-    new_env = left(refine_environment(expr.cond));
-    return typecheck(expr.expr, exp_type, environment=new_env);
+    new_env = left(refine_env(expr.cond, env));
+    return typecheck(expr.expr, exp_type, new_env);
   }
 
   //////////////////////////////////////////////////////////////////////////////
 
-  [TypeCheckingError] typecheck(ClsExpr expr, ClsType exp_type):
+  [TypeCheckingError] typecheck(ClsExpr expr, ClsType exp_type, [Var -> Type] env):
     ClsVar = {
       var_type = closures[expr];
       return [invalid_cls_param_type(var_type, exp_type) if not is_subset(var_type, exp_type)];
@@ -74,75 +73,75 @@ implicit
     },
     cls_expr() = {
       delta_env = merge(([fn_par(i) -> t; value(v) -> t if v != nil] : v, t @ i <- zip(expr.args, exp_type.in_types)));
-      new_env = update(environment, delta_env);
-      return typecheck(expr.expr, exp_type.out_type, environment=new_env); //## BAD: HERE I SHOULD PROVIDE MORE INFORMATION
+      new_env = update(env, delta_env);
+      return typecheck(expr.expr, exp_type.out_type, new_env); //## BAD: HERE I SHOULD PROVIDE MORE INFORMATION
     };
 
   Type+ cast_as_type_ne_seq(AnyType* ts) = (cast_as_type(t) : t <- nonempty(ts));
 
   //////////////////////////////////////////////////////////////////////////////
 
-  [TypeCheckingError] typecheck(Clause cls)
+  [TypeCheckingError] typecheck(Clause cls, [Var -> Type] env)
   {
-    errs = typecheck_without_annotations(cls);
+    errs = typecheck_without_annotations(cls, env);
     return [add_anchor_if_needed(e, cls) : e <- errs];
 
 
-    [TypeCheckingError] typecheck_without_annotations(Clause cls):
-      set_clause()      = typecheck(cls.src, type_set),
-      rel_clause()      = typecheck_rel_clause(cls.vars, cls.src, cls.args),
+    [TypeCheckingError] typecheck_without_annotations(Clause cls, [Var -> Type] env):
+      set_clause()      = typecheck(cls.src, type_set, env),
+      rel_clause()      = typecheck_rel_clause(cls.vars, cls.src, cls.args, env),
       relvar_clause()   = {fail;},
-      seq_clause()      = typecheck(cls.src, type_seq),
-      and_clause()      = typecheck_and_clause(cls.left, cls.right),
-      or_clause()       = typecheck(cls.left) & typecheck(cls.right),
-      match_clause()    = typecheck_match_clause(cls.ptrn, cls.expr),
-      asgnm_clause()    = typecheck(cls.expr, type_any),
-      filter_clause(e?) = typecheck(e, type_bool);
+      seq_clause()      = typecheck(cls.src, type_seq, env),
+      and_clause()      = typecheck_and_clause(cls.left, cls.right, env),
+      or_clause()       = typecheck(cls.left, env) & typecheck(cls.right, env),
+      match_clause()    = typecheck_match_clause(cls.ptrn, cls.expr, env),
+      asgnm_clause()    = typecheck(cls.expr, type_any, env),
+      filter_clause(e?) = typecheck(e, type_bool, env);
   }
 
 
-  [TypeCheckingError] typecheck_rel_clause(StdVar+ vars, Expr src, Maybe[Expr]+ args)
+  [TypeCheckingError] typecheck_rel_clause(StdVar+ vars, Expr src, Maybe[Expr]+ args, [Var -> Type] env)
   {
     assert length(vars) == count(args, $ == nil);
 
     return match (args)
-      (a1?, a2?)      = typecheck_bin_rel_clause(src, args),
-      (a1?, a2?, a3?) = typecheck_tern_rel_clause(src, args);
+      (a1?, a2?)      = typecheck_bin_rel_clause(src, args, env),
+      (a1?, a2?, a3?) = typecheck_tern_rel_clause(src, args, env);
 
 
-    [TypeCheckingError] typecheck_bin_rel_clause(Expr src, (Maybe[Expr], Maybe[Expr]) args)
+    [TypeCheckingError] typecheck_bin_rel_clause(Expr src, (Maybe[Expr], Maybe[Expr]) args, [Var -> Type] env)
     {
-      errs = typecheck(src, type_bin_rel);
+      errs = typecheck(src, type_bin_rel, env);
       return errs if errs != [];
-      args_types = bin_rel_args_supertypes(expr_type(src));
-      return seq_union((if a != nil then typecheck(value(a), t) else [] : a, t <- zip(args, args_types)));
+      args_types = bin_rel_args_supertypes(expr_type(src, env));
+      return seq_union((if a != nil then typecheck(value(a), t, env) else [] : a, t <- zip(args, args_types)));
     }
 
 
-    [TypeCheckingError] typecheck_tern_rel_clause(Expr src, (Maybe[Expr], Maybe[Expr], Maybe[Expr]) args)
+    [TypeCheckingError] typecheck_tern_rel_clause(Expr src, (Maybe[Expr], Maybe[Expr], Maybe[Expr]) args, [Var -> Type] env)
     {
-      errs = typecheck(src, type_tern_rel);
+      errs = typecheck(src, type_tern_rel, env);
       return errs if errs != [];
-      args_types = tern_rel_args_supertypes(expr_type(src));
-      return seq_union((if a != nil then typecheck(value(a), t) else [] : a, t <- zip(args, args_types)));
+      args_types = tern_rel_args_supertypes(expr_type(src, env));
+      return seq_union((if a != nil then typecheck(value(a), t, env) else [] : a, t <- zip(args, args_types)));
     }
   }
 
 
-  [TypeCheckingError] typecheck_and_clause(Clause left, Clause right)
+  [TypeCheckingError] typecheck_and_clause(Clause left, Clause right, [Var -> Type] env)
   {
-    errs = typecheck(left);
+    errs = typecheck(left, env);
     return errs if errs != [];
-    new_env = generate_env(left);
-    return typecheck(right, environment=new_env);
+    new_env = generate_env(left, env);
+    return typecheck(right, new_env);
   }
 
 
-  [TypeCheckingError] typecheck_match_clause(Pattern ptrn, Expr source)
+  [TypeCheckingError] typecheck_match_clause(Pattern ptrn, Expr source, [Var -> Type] env)
   {
-    errs = typecheck(source, type_any);
+    errs = typecheck(source, type_any, env);
     return errs if errs != [];
-    type = expr_type(source);
+    type = expr_type(source, env);
     return [ptrn_cannot_match_type(ptrn, type) if type != empty_type and not may_match(ptrn, type)];
   }
 }

@@ -2,6 +2,20 @@ implicit
 {
   typedefs    : [TypeName -> Type],
   signatures  : [(FnFamilyId, Nat) -> SgnSet],
+  closures    : [ClsVar -> ClsType],
+  var_aliases : [[Var]],
+  verbose     : Bool;
+
+
+  [TypeCheckingError] generate_typechecking_error_messages(Expr expr, Type actual_type, Type exp_type, [Var -> Type] env) =
+    generate_typechecking_error_messages(expr, actual_type, exp_type, environment=env);
+}
+
+
+implicit
+{
+  typedefs    : [TypeName -> Type],
+  signatures  : [(FnFamilyId, Nat) -> SgnSet],
   environment : [Var -> Type],
   closures    : [ClsVar -> ClsType],
   var_aliases : [[Var]],
@@ -32,7 +46,7 @@ implicit
     nonempty = at_least_one((is_cond_expr(se) : se <- subexprs));
     exp_elem_supertype = seq_elem_supertype(exp_type);
     return [exp_type_not_a_seq_type(exp_type)] if exp_elem_supertype == empty_type;
-    errs = seq_union((typecheck(se, exp_elem_supertype) : se <- subexprs));
+    errs = seq_union((typecheck(se, exp_elem_supertype, environment) : se <- subexprs));
     errs = errs & [obj_does_not_belong_to_type((), exp_type)] if not (nonempty or type_contains_obj(exp_type, ()));
     return errs;
   }
@@ -41,7 +55,7 @@ implicit
   [TypeCheckingError] generate_tuple_expr_typechecking_error_messages(Expr+ exprs, Type actual_type, Type exp_type)
   {
     exp_elem_supertypes = tuple_field_supertypes(exp_type, length(exprs));
-    return seq_union((typecheck(e, t) : e, t <- zip(exprs, exp_elem_supertypes); t != empty_type));
+    return seq_union((typecheck(e, t, environment) : e, t <- zip(exprs, exp_elem_supertypes); t != empty_type));
   }
 
 
@@ -49,7 +63,7 @@ implicit
   {
     exp_elem_supertype = seq_elem_supertype(exp_type);
     return if exp_elem_supertype != empty_type
-      then typecheck(seq, type_seq(exp_elem_supertype)) & seq_union((typecheck(e, exp_elem_supertype) : e <- tail))
+      then typecheck(seq, type_seq(exp_elem_supertype), environment) & seq_union((typecheck(e, exp_elem_supertype, environment) : e <- tail))
       else [exp_type_not_a_seq_type(exp_type)];
   }
 
@@ -59,7 +73,7 @@ implicit
     nonempty = (se <- subexprs : not is_cond_expr(se));
     exp_elem_supertype = set_elem_supertype(exp_type);
     return [exp_type_does_not_contain_sets(exp_type)] if exp_elem_supertype == empty_type;
-    errs = union([typecheck(se, exp_elem_supertype) : se <- subexprs]);
+    errs = union([typecheck(se, exp_elem_supertype, environment) : se <- subexprs]);
     errs = errs & [obj_does_not_belong_to_type([], exp_type)] if not (nonempty or type_contains_obj(exp_type, []));
     return errs;
   }
@@ -102,8 +116,8 @@ implicit
   {
     elem_supertype = set_elem_supertype(exp_type);
     return [exp_type_does_not_contain_sets(exp_type)] if elem_supertype == empty_type;
-    new_env = generate_env(source);
-    errs = typecheck(expr, elem_supertype, environment=new_env);
+    new_env = generate_env(source, environment);
+    errs = typecheck(expr, elem_supertype, new_env);
     nonempty = true; //## BUG BUG BUG: IMPLEMENT
     errs = errs & [obj_does_not_belong_to_type([], exp_type)] if not (nonempty or type_contains_obj(exp_type, []));
     return errs;
@@ -115,9 +129,9 @@ implicit
     key_supertype = bin_rel_arg_supertype(exp_type, 0);
     value_supertype = bin_rel_arg_supertype(exp_type, 1);
     return [exp_type_does_not_contain_maps(exp_type)] if key_supertype == empty_type or value_supertype == empty_type;
-    new_env = generate_env(source);
+    new_env = generate_env(source, environment);
     let environment = new_env:
-      errs = typecheck(key_expr, key_supertype) & typecheck(value_expr, value_supertype);
+      errs = typecheck(key_expr, key_supertype, environment) & typecheck(value_expr, value_supertype, environment);
     ;
     return errs if errs != [];
     nonempty = false; //## IMPLEMENT
@@ -129,13 +143,13 @@ implicit
   {
     elem_supertype = seq_elem_supertype(exp_type);
     return [exp_type_not_a_seq_type(exp_type)] if elem_supertype == empty_type;
-    src_type = expr_type(expr.src_expr);
+    src_type = expr_type(expr.src_expr, environment);
     elem_type = seq_elem_supertype(src_type);
     env_delta = asgnm_env_updates(expr.vars, elem_type) & [expr.idx_var -> type_nat if expr.idx_var?];
     new_env = update(environment, env_delta);
-    errs = typecheck(expr.expr, elem_supertype, environment=new_env);
+    errs = typecheck(expr.expr, elem_supertype, new_env);
     return errs if errs != [];
-    nonempty = not (type_contains_obj(expr_type(expr.src_expr), ()) or expr.sel_expr?);
+    nonempty = not (type_contains_obj(expr_type(expr.src_expr, environment), ()) or expr.sel_expr?);
     return [obj_does_not_belong_to_type((), exp_type) if not (nonempty and type_contains_obj(exp_type, ()))];
   }
 
@@ -145,9 +159,9 @@ implicit
     elem_supertype = seq_elem_supertype(exp_type);
     return [exp_type_not_a_seq_type(exp_type)] if elem_supertype == empty_type;
     new_env = update(environment, [expr.var -> type_nat]);
-    errs = typecheck(expr.expr, elem_supertype, environment=new_env);
+    errs = typecheck(expr.expr, elem_supertype, new_env);
     return errs if errs != [];
-    bound_expr_type = expr_type(expr.bound_expr);
+    bound_expr_type = expr_type(expr.bound_expr, environment);
     nonempty = not expr.sel_expr? and is_subset(bound_expr_type, if expr.inclusive then type_nat else type_nz_nat);
     return [obj_does_not_belong_to_type((), exp_type) if not (nonempty and type_contains_obj(exp_type, ()))];
   }
@@ -155,12 +169,12 @@ implicit
 
   [TypeCheckingError] generate_unary_pseudo_call_typechecking_error_messages(Expr target, Expr arg, Type exp_type)
   {
-    errs = typecheck(target, type_any);
+    errs = typecheck(target, type_any, environment);
     return errs if errs != [];
 
-    target_type = expr_type(target);
-    return if   target_type == empty_type         then typecheck(arg, type_any)
-           elif is_subset(target_type, atom_type) then typecheck(arg, type_any)
+    target_type = expr_type(target, environment);
+    return if   target_type == empty_type         then typecheck(arg, type_any, environment)
+           elif is_subset(target_type, atom_type) then typecheck(arg, type_any, environment)
            elif is_subset(target_type, type_seq)  then seq_lookup_err_msgs(target_type, arg, exp_type)
            elif is_subset(target_type, type_set)  then set_memb_test_err_msgs(target_type, arg, exp_type)
            elif is_subset(target_type, type_map)  then map_lookup_err_msg(target_type, arg, exp_type)
@@ -168,9 +182,9 @@ implicit
 
     [TypeCheckingError] seq_lookup_err_msgs(Type seq_type, Expr idx_expr, Type exp_type)
     {
-      errs = typecheck(idx_expr, integer);
+      errs = typecheck(idx_expr, integer, environment);
       return errs if errs != [];
-      res_type = restricted_seq_elem_supertype(seq_type, expr_type(idx_expr));
+      res_type = restricted_seq_elem_supertype(seq_type, expr_type(idx_expr, environment));
       return invalid_type_if_not_subset(res_type, exp_type);
     }
 
@@ -178,11 +192,11 @@ implicit
     [TypeCheckingError] set_memb_test_err_msgs(Type set_type, Expr value, Type exp_type)
     {
       exp_value_type = set_elem_supertype(set_type);
-      errs = typecheck(value, exp_value_type);
+      errs = typecheck(value, exp_value_type, environment);
       if errs != []:
-        loose_errs = typecheck(value, type_any);
+        loose_errs = typecheck(value, type_any, environment);
         return loose_errs if loose_errs != [];
-        return [invalid_set_memb_test_elem_type(exp_value_type, expr_type(value))];
+        return [invalid_set_memb_test_elem_type(exp_value_type, expr_type(value, environment))];
       ;
       return invalid_type_if_not_subset(type_bool, exp_type);
     }
@@ -191,13 +205,13 @@ implicit
     [TypeCheckingError] map_lookup_err_msg(Type map_type, Expr key_expr, Type exp_type)
     {
       exp_key_type = bin_rel_arg_supertype(map_type, 0);
-      errs = typecheck(key_expr, exp_key_type);
+      errs = typecheck(key_expr, exp_key_type, environment);
       if errs != []:
-        loose_errs = typecheck(key_expr, type_any);
+        loose_errs = typecheck(key_expr, type_any, environment);
         return loose_errs if loose_errs != [];
-        return [invalid_map_lookup_key_type(exp_key_type, expr_type(key_expr))];
+        return [invalid_map_lookup_key_type(exp_key_type, expr_type(key_expr, environment))];
       ;
-      res_type = restricted_bin_rel_arg1_supertype(map_type, expr_type(key_expr));
+      res_type = restricted_bin_rel_arg1_supertype(map_type, expr_type(key_expr, environment));
       return invalid_type_if_not_subset(res_type, exp_type);
     }
   }
@@ -212,24 +226,24 @@ implicit
     //   errs = typecheck(map, type_map);
     //   if errs != []:
     //     loose_errs = typecheck(map, type_any);
-    //     return if loose_errs != [] then loose_errs else [actual_type_not_a_map_type(expr_type(map))];
+    //     return if loose_errs != [] then loose_errs else [actual_type_not_a_map_type(expr_type(map, environment))];
     //   ;
 
-    //   map_type = expr_type(map);
+    //   map_type = expr_type(map, environment);
     //   if map_type != empty_type:
     //     exp_key_type = map_key_supertype(map_type);
     //     errs = typecheck(key, exp_key_type);
     //     if errs != []:
     //       loose_errs = typecheck(key, type_any);
     //       return loose_errs if loose_errs != [];
-    //       return [invalid_map_lookup_key_type(exp_key_type, expr_type(key))];
+    //       return [invalid_map_lookup_key_type(exp_key_type, expr_type(key, environment))];
     //     ;
-    //     exp_value_type = restricted_bin_rel_arg1_supertype(map_type, expr_type(key));
+    //     exp_value_type = restricted_bin_rel_arg1_supertype(map_type, expr_type(key, environment));
     //     errs = typecheck(value, exp_value_type);
     //     if errs != []:
     //       loose_errs = typecheck(value, type_any);
     //       return loose_errs if loose_errs != [];
-    //       return [invalid_map_lookup_value_type(exp_value_type, expr_type(value))];
+    //       return [invalid_map_lookup_value_type(exp_value_type, expr_type(value, environment))];
     //     ;
     //   else
     //     errs = typecheck(key, type_any) & typecheck(value, type_any);
@@ -245,16 +259,16 @@ implicit
     //   errs = typecheck(map, type_map);
     //   if errs != []:
     //     loose_errs = typecheck(map, type_any);
-    //     return if loose_errs != [] then loose_errs else [actual_type_not_a_map_type(expr_type(map))];
+    //     return if loose_errs != [] then loose_errs else [actual_type_not_a_map_type(expr_type(map, environment))];
     //   ;
-    //   map_type = expr_type(map);
+    //   map_type = expr_type(map, environment);
     //   if map_type != empty_type:
     //     exp_key_type = map_key_supertype(map_type);
     //     errs = typecheck(key, exp_key_type);
     //     if errs != []:
     //       loose_errs = typecheck(key, type_any);
     //       return loose_errs if loose_errs != [];
-    //       return [invalid_map_lookup_key_type(exp_key_type, expr_type(key))];
+    //       return [invalid_map_lookup_key_type(exp_key_type, expr_type(key, environment))];
     //     ;
     //   else
     //     errs = typecheck(key, type_any);
@@ -314,7 +328,7 @@ implicit
   // {
   //   errs = typecheck(source);
   //   return errs if errs != [];
-  //   new_env = generate_env(source);
+  //   new_env = generate_env(source, environment);
   //   exp_elem_types = set_elem_types(exp_type);
   //   return errs & if exp_elem_types != []
   //     then typecheck_any(expr, exp_elem_types, environment=new_env)
@@ -326,7 +340,7 @@ implicit
   // {
   //   errs = typecheck(source);
   //   return errs if errs != [];
-  //   new_env = generate_env(source);
+  //   new_env = generate_env(source, environment);
   //   exp_key_value_type_pairs = map_key_value_type_pairs(exp_type);
   //   errs = errs & if exp_key_value_type_pairs != []
   //     then typecheck_key_value_any(key_expr, value_expr, exp_key_value_type_pairs, environment=new_env)
@@ -341,7 +355,7 @@ implicit
   //   exp_src_type = type_seq(if nvars == 1 then type_any else type_tuple(nvars));
   //   errs = typecheck(src_expr, exp_src_type);
   //   return errs if errs != [];
-  //   src_type = expr_type(src_expr);
+  //   src_type = expr_type(src_expr, environment);
   //   elem_type = seq_elem_supertype(src_type);
   //   assert is_subset(src_type, empty_seq_type) or elem_type != empty_type;
   //   exp_elem_types = seq_elem_types(exp_type);
@@ -359,7 +373,7 @@ implicit
   //   if maybe_sel_expr != nil:
   //     sel_expr = value(maybe_sel_expr);
   //     errs = typecheck(sel_expr, type_bool, environment=new_env);
-  //     new_env = left(refine_environment(sel_expr, environment=new_env));
+  //     new_env = left(refine_env(sel_expr, new_env));
   //   ;
   //   errs = errs & typecheck_any(expr, exp_elem_types, environment=new_env);
   //   if type_contains_obj(src_type, ()) or maybe_sel_expr != nil:
@@ -474,7 +488,7 @@ implicit
 
   //   [TypeCheckingError] typecheck_map_entry((key: Expr, value: Expr, cond: Expr?) entry, Type exp_key_type, Type exp_value_type)
   //   {
-  //     new_env = if entry.cond? then left(refine_environment(entry.cond)) else environment;
+  //     new_env = if entry.cond? then left(refine_env(entry.cond, environment)) else environment;
   //     key_errs = typecheck(entry.key, exp_key_type, environment=new_env);
   //     value_errs = typecheck(entry.value, exp_value_type, environment=new_env);
   //     return key_errs & value_errs;
@@ -482,7 +496,7 @@ implicit
 
   //   [TypeCheckingError] typecheck_record_field((key: Expr, value: Expr, cond: Expr?) entry, RecordTypeFields fields)
   //   {
-  //     new_env = if entry.cond? then left(refine_environment(entry.cond)) else environment;
+  //     new_env = if entry.cond? then left(refine_env(entry.cond, environment)) else environment;
   //     return typecheck(entry.value, fields[entry.key].type, environment=new_env);
   //   }
 

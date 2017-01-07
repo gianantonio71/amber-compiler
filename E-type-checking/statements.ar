@@ -2,89 +2,88 @@ implicit
 {
   typedefs    : [TypeName -> Type],
   signatures  : [(FnFamilyId, Nat) -> SgnSet],
-  environment : [Var -> Type],
   closures    : [ClsVar -> ClsType],
   var_aliases : [[Var]],
   verbose     : Bool;
 
 
-  [TypeCheckingError] typecheck(Statement* stmts, Type exp_type)
+  [TypeCheckingError] typecheck(Statement* stmts, Type exp_type, [Var -> Type] env)
   {
-    env = environment;
+    curr_env = env;
     for s <- stmts:
-      errs = typecheck(s, exp_type, environment=env);
+      errs = typecheck(s, exp_type, curr_env);
       return errs if errs != [];
-      env = update_environment(s, environment=env);
+      curr_env = update_environment(s, curr_env);
     ;
     return [];
   }
 
 
-  [TypeCheckingError] typecheck(Statement stmt, Type exp_type)
+  [TypeCheckingError] typecheck(Statement stmt, Type exp_type, [Var -> Type] env)
   {
-    errs = typecheck_without_annotations(stmt, exp_type);
+    errs = typecheck_without_annotations(stmt, exp_type, env);
     return [add_anchor_if_needed(e, stmt) : e <- errs];
 
 
-    [TypeCheckingError] typecheck_without_annotations(Statement stmt, Type exp_type):
-      assignment_stmt()   = typecheck_assignment_stmt(stmt.vars, stmt.value),
-      return_stmt(e?)     = typecheck(e, exp_type),
-      if_stmt()           = typecheck_if_stmt(stmt.cond, stmt.body, stmt.else, exp_type),
-      loop_stmt(ss?)      = typecheck_loop_stmt(ss, exp_type),
+    [TypeCheckingError] typecheck_without_annotations(Statement stmt, Type exp_type, [Var -> Type] env):
+      assignment_stmt()   = typecheck_assignment_stmt(stmt.vars, stmt.value, env),
+      return_stmt(e?)     = typecheck(e, exp_type, env),
+      if_stmt()           = typecheck_if_stmt(stmt.cond, stmt.body, stmt.else, exp_type, env),
+      loop_stmt(ss?)      = typecheck_loop_stmt(ss, exp_type, env),
       foreach_stmt()      = { maybe_idx_var = if stmt.idx_var? then just(stmt.idx_var) else nil;
-                              return typecheck_foreach_stmt(stmt.vars, maybe_idx_var, stmt.values, stmt.body, exp_type);
+                              return typecheck_foreach_stmt(stmt.vars, maybe_idx_var, stmt.values, stmt.body, exp_type, env);
                             },
       for_stmt()          = { maybe_var = if stmt.var? then just(stmt.var) else nil;
                               return typecheck_for_stmt(maybe_var, stmt.start_val,
-                                stmt.end_val, stmt.end_val_incl, stmt.body, exp_type);
+                                stmt.end_val, stmt.end_val_incl, stmt.body, exp_type, env);
                             },
-      let_stmt()          = typecheck_let_stmt(stmt.asgnms, stmt.body, exp_type),
+      let_stmt()          = typecheck_let_stmt(stmt.asgnms, stmt.body, exp_type, env),
       break_stmt          = [],
       fail_stmt           = [],
-      assert_stmt()       = typecheck(stmt.cond, type_bool),
-      print_stmt(e?)      = typecheck(e, type_any);
+      assert_stmt()       = typecheck(stmt.cond, type_bool, env),
+      print_stmt(e?)      = typecheck(e, type_any, env);
   }
 
 
-  [TypeCheckingError] typecheck_assignment_stmt(Var+ vars, Expr value)
+  [TypeCheckingError] typecheck_assignment_stmt(Var+ vars, Expr value, [Var -> Type] env)
   {
     nvars = nz_nat(length(vars));
     exp_type = if nvars == 1 then type_any else type_tuple(nvars);
-    return typecheck(value, exp_type);
+    return typecheck(value, exp_type, env);
   }
 
 
-  [TypeCheckingError] typecheck_if_stmt(Expr cond, Statement+ body, Statement* else_body, Type exp_type)
+  [TypeCheckingError] typecheck_if_stmt(Expr cond, Statement+ body, Statement* else_body, Type exp_type, [Var -> Type] env)
   {
-    errs = typecheck(cond, type_bool);
+    errs = typecheck(cond, type_bool, env);
     return errs if errs != [];
-    if_true_env, if_false_env = refine_environment(cond);
-    return typecheck(body, exp_type, environment=if_true_env) &
-           typecheck(else_body, exp_type, environment=if_false_env);
+    if_true_env, if_false_env = refine_env(cond, env);
+    return typecheck(body, exp_type, if_true_env) &
+           typecheck(else_body, exp_type, if_false_env);
   }
 
 
-  [TypeCheckingError] typecheck_loop_stmt(Statement+ stmts, Type exp_type)
+  [TypeCheckingError] typecheck_loop_stmt(Statement+ stmts, Type exp_type, [Var -> Type] env)
   {
-    env = environment;
+    curr_env = env;
     for 5: //## BAD: THIS IS A TOTALLY ARBITRARY NUMBER...
-      errs = typecheck(stmts, exp_type, environment=env);
+      errs = typecheck(stmts, exp_type, curr_env);
       return errs if errs != [];
-      new_env = update_environment(stmts, environment=env);
-      return [] if new_env == env;
-      env = new_env;
+      new_env = update_environment(stmts, curr_env);
+      return [] if new_env == curr_env;
+      curr_env = new_env;
     ;
     return [loop_did_not_converge(5)];
   }
 
 
-  [TypeCheckingError] typecheck_foreach_stmt(Var+ vars, Maybe[Var] maybe_idx_var, Expr values, Statement+ body, Type exp_type)
+  [TypeCheckingError] typecheck_foreach_stmt(Var+ vars, Maybe[Var] maybe_idx_var, Expr values, Statement+ body, Type exp_type, [Var -> Type] env)
   {
     nvars = nz_nat(length(vars));
     exp_src_type = if nvars == 1 then type_seq else type_seq(type_tuple(nvars));
-    errs = typecheck(values, exp_src_type);
+    errs = typecheck(values, exp_src_type, env);
     return errs if errs != [];
-    elem_type = seq_elem_supertype(expr_type(values));
+    elem_type = seq_elem_supertype(expr_type(values, env));
 
     // return {not_a_seq_type} if elem_type == empty_type; //## COULD I ACCEPT A TUPLE TYPE HERE ALSO?
 
@@ -96,43 +95,43 @@ implicit
       loop_vars = merge(([v -> t] : v, t <- zip(vars, field_types)));
     ;
     loop_vars = loop_vars & [value(maybe_idx_var) -> type_nat] if maybe_idx_var != nil;
-    env = update(environment, loop_vars);
+    curr_env = update(env, loop_vars);
     for 5:
-      errs = typecheck(body, exp_type, environment=env);
+      errs = typecheck(body, exp_type, curr_env);
       return errs if errs != [];
-      new_env = update_environment(body, environment=env);
-      return [] if new_env == env;
-      env = new_env;
+      new_env = update_environment(body, curr_env);
+      return [] if new_env == curr_env;
+      curr_env = new_env;
     ;
     return [loop_did_not_converge(5)];
   }
 
 
   [TypeCheckingError] typecheck_for_stmt(Maybe[Var] maybe_var, Expr start_val, Expr end_val, Bool end_val_incl,
-    Statement+ body, Type exp_type)
+    Statement+ body, Type exp_type, [Var -> Type] env)
   {
-    errs = typecheck(start_val, integer) & typecheck(end_val, integer);
+    errs = typecheck(start_val, integer, env) & typecheck(end_val, integer, env);
     return errs if errs != [];
-    env = environment & [
-      value(maybe_var) -> loop_var_type(expr_type(start_val), expr_type(end_val), end_val_incl) if maybe_var != nil
+    curr_env = env & [
+      value(maybe_var) -> loop_var_type(expr_type(start_val, env), expr_type(end_val, env), end_val_incl) if maybe_var != nil
     ];
     for 5:
-      errs = typecheck(body, exp_type, environment=env);
+      errs = typecheck(body, exp_type, curr_env);
       return errs if errs != [];
-      new_env = update_environment(body, environment=env);
-      return [] if new_env == env;
-      env = new_env;
+      new_env = update_environment(body, curr_env);
+      return [] if new_env == curr_env;
+      curr_env = new_env;
     ;
     return [loop_did_not_converge(5)];
   }
 
 
-  [TypeCheckingError] typecheck_let_stmt([ImplArg -> Expr] asgnms, Statement+ body, Type exp_type)
+  [TypeCheckingError] typecheck_let_stmt([ImplArg -> Expr] asgnms, Statement+ body, Type exp_type, [Var -> Type] env)
   {
-    errs = union([typecheck(e, type_any) : v, e <- asgnms]);
+    errs = union([typecheck(e, type_any, env) : v, e <- asgnms]);
     return errs if errs != [];
-    env_delta = [v -> expr_type(e) : v, e <- asgnms];
-    new_env = update(environment, env_delta);
-    return typecheck(body, exp_type, environment=new_env); //## BUG BUG BUG (WHY?)
+    env_delta = [v -> expr_type(e, env) : v, e <- asgnms];
+    new_env = update(env, env_delta);
+    return typecheck(body, exp_type, new_env); //## BUG BUG BUG (WHY?)
   }
 }
