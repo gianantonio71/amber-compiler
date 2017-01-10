@@ -557,7 +557,7 @@ implicit
   {
     assert length(params) == arity(signature); //## MAYBE I SHOULD RETURN FALSE IF THE TWO DON'T MATCH
 
-    for e, t <- zip(params, signature.params):
+    for e, t <- zip(params, signature.args):
       //## THIS IS A CHECK THAT SHOULD BE PERFORMED ELSEWHERE.
       assert (e :: Expr and t :: Type) or (e :: ClsExpr and t :: ClsType);
       if e :: Expr and t :: Type:
@@ -597,28 +597,94 @@ implicit
       accessor_test() = refine_accessor_test_env(cond.expr, cond.field, env),
       and_expr()      = refine_and_env(cond.left, cond.right, env),
       or_expr()       = refine_or_env(cond.left, cond.right, env),
+      fn_call()       = refine_fn_call_env(cond, env),
       _               = (env, env);
+  }
+
+
+  ([Var -> Type], [Var -> Type]) refine_fn_call_env(FnCallExpr expr, [Var -> Type] env)
+  {
+    sgn_set = signatures((expr.name, length(expr.args)));
+    return (env, env) if not sgn_set.refines_env;
+
+    sgns_envs = [s -> refine_fn_env(expr, s, env) : s <- sgn_set.sgns];
+    true_envs = [e : s, e <- sgns_envs; type_contains_obj(s.ret_type, true)];
+    false_envs = [e : s, e <- sgns_envs; type_contains_obj(s.ret_type, false)];
+    true_env = if true_envs != [] then merge_envs(true_envs) else unreachable_env(env);
+    false_env = if false_envs != [] then merge_envs(false_envs) else unreachable_env(env);
+    return (true_env, false_env);
+
+
+    [Var -> Type] refine_fn_env(FnCallExpr expr, FnType type, [Var -> Type] env)
+    {
+      ref_env = env;
+      for e, t <- zip(expr.args, type.args):
+        assert t != empty_type;
+        ref_env = left(refine_membership_env(e, t, ref_env)) if e :: Expr and t :: NeType;
+      ;
+      return ref_env;
+    }
   }
 
 
   ([Var -> Type], [Var -> Type]) refine_membership_env(Expr obj, NeType type, [Var -> Type] env)
   {
+    if obj :: Var:
+      env_delta = [v -> type : v <- var_group(obj)];
+
+    elif obj :: VarField:
+      var_type = env(obj.expr);
+      new_var_type = if var_type != empty_type
+        then update_mandatory_field_type(var_type, obj.field, type)
+        else empty_type;
+      env_delta = [v -> new_var_type : v <- var_group(obj.expr)];
+
+    else
+      env_delta = [:];
+    ;
+
     //## HERE MAYBE I COULD TRY TO REFINE THE FALSE BRANCH AS WELL...
-    env_true = update(env, [obj -> type if obj :: Var]);
-    return (env_true, env);
+    return (update(env, env_delta), env);
   }
 
 
   ([Var -> Type], [Var -> Type]) refine_eq_env(Expr left, Expr right, [Var -> Type] env)
   {
-    expr1, expr2 = if left :: Var then (left, right) else (right, left);
-    return (env, env) if not expr1 :: Var;
+    env_delta_eq, env_delta_not_eq =
+      if left :: Var
+        then refine(left, right, env)
 
-    eq_type, not_eq_type = eq_refine(env(expr1), expr_type(expr2, env));
-    return (
-      update(env, [expr1 -> eq_type]),
-      update(env, [expr1 -> not_eq_type])
-    );
+      elif right :: Var
+        then refine(right, left, env)
+      elif left :: VarField
+        then refine(left.expr, left.field, right, env)
+      elif right :: VarField
+        then refine(right.expr, right.field, left, env)
+      else
+        ([:], [:]);
+
+    return (update(env, env_delta_eq), update(env, env_delta_not_eq));
+
+
+    ([Var -> Type], [Var -> Type]) refine(Var var, Expr expr, [Var -> Type] env)
+    {
+      vars = var_group(var);
+      eq_type, not_eq_type = eq_refine(env(var), expr_type(expr, env));
+      return ([v -> eq_type : v <- vars], [v -> not_eq_type : v <- vars]);
+    }
+
+
+    ([Var -> Type], [Var -> Type]) refine(Var var, SymbObj field, Expr expr, [Var -> Type] env)
+    {
+      var_type = env(var);
+      vars = var_group(var);
+      field_type = accessor_expr_type(var, field, env);
+      field_type_eq, field_type_not_eq = eq_refine(field_type, expr_type(expr, env));
+      return ([:], [:]) if var_type == empty_type or field_type_eq == empty_type or field_type_not_eq == empty_type;
+      var_type_eq = update_mandatory_field_type(var_type, field, field_type_eq);
+      var_type_not_eq = update_mandatory_field_type(var_type, field, field_type_not_eq);
+      return ([v -> var_type_eq : v <- vars], [v -> var_type_not_eq : v <- vars]);
+    }
 
 
     (Type, Type) eq_refine(Type var_type, Type expr_type) =
@@ -768,23 +834,34 @@ implicit
   }
 
 
+  [Var -> Type] merge_envs([+[Var -> Type]] envs)
+  {
+    sorted_envs = nonempty(rand_sort(envs));
+    merged_env = head(sorted_envs);
+    for e <- tail(sorted_envs):
+      merged_env = merge_envs(merged_env, e);
+    ;
+    return merged_env;
+  }
+
+
   [Var -> <empty_type>] unreachable_env([Var -> Type] env) = [v -> empty_type : v, unused_var <- env];
 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  Type fn_call_type(FnType signature, AnyExpr* params, [ImplArg -> Expr] impl_args, [Var -> Type] env) //## DO I NEED THE THIRD PARAMETER?
+  Type fn_call_type(FnType signature, AnyExpr* args, [ImplArg -> Expr] impl_args, [Var -> Type] env) //## DO I NEED THE THIRD PARAMETER?
   {
-    type_var_insts = instantiate_type_vars(params, signature.params, env);
+    type_var_insts = instantiate_type_vars(args, signature.args, env);
     return replace_type_vars(signature.ret_type, type_var_insts);
   }
 
 
-  [TypeVar -> Type] instantiate_type_vars(AnyExpr* params, AnyType* param_types, [Var -> Type] env)
+  [TypeVar -> Type] instantiate_type_vars(AnyExpr* args, AnyType* param_types, [Var -> Type] env)
   {
     actual_types = ();
     formal_types = ();
-    for p, t <- zip(params, param_types):
+    for p, t <- zip(args, param_types):
       if p :: Expr and t :: Type:
         actual_types = (actual_types | expr_type(p, env));
         formal_types = (formal_types | t);
@@ -792,7 +869,7 @@ implicit
     ;
     type_var_insts = type_var_instantiations_for_subset(actual_types, formal_types);
 
-    cls_pars = ((p, t) : p, t <- zip(params, param_types); p :: ClsExpr and t :: ClsType);
+    cls_pars = ((p, t) : p, t <- zip(args, param_types); p :: ClsExpr and t :: ClsType);
     loop
       new_type_pairs = ();
       for p, t <- cls_pars:
@@ -891,16 +968,14 @@ implicit
     if expr :: Var:
       refined_type = type_pattern_intersection_superset(type, ptrn);
       assert refined_type != empty_type; //## WHAT IS THIS ASSERTION FOR? WHY CAN'T THE ORIGINAL TYPE ITSELF BE EMPTY?
-      var_group = only_element_or_def_if_empty([as : as <- var_aliases; in(expr, as)], [expr]);
-      new_env = update(new_env, [v -> refined_type : v <- var_group]);
+      new_env = update(new_env, [v -> refined_type : v <- var_group(expr)]);
 
-    elif expr :: <accessor(expr: Var, field: SymbObj)>:
+    elif expr :: VarField:
       var_type = expr_type(expr.expr, env);
       refined_field_type = type_pattern_intersection_superset(type, ptrn);
       fail if var_type == empty_type or refined_field_type == empty_type;
       refined_type = update_mandatory_field_type(var_type, expr.field, refined_field_type);
-      var_group = only_element_or_def_if_empty([as : as <- var_aliases; in(expr.expr, as)], [expr.expr]);
-      new_env = update(new_env, [v -> refined_type : v <- var_group]);
+      new_env = update(new_env, [v -> refined_type : v <- var_group(expr.expr)]);
     ;
 
     return new_env & generate_env(ptrn, type);
@@ -1216,4 +1291,15 @@ implicit typedefs : [TypeName -> Type]
         return (type: type, optional: f1.optional and f2.optional);
       } : l <- keys(fs1) & keys(fs2)
     ]);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+type VarField = accessor(expr: Var, field: SymbObj);
+
+
+implicit var_aliases : [[Var]]
+{
+  [Var] var_group(Var var) = only_element_or_def_if_empty([as : as <- var_aliases; in(var, as)], [var]);
 }

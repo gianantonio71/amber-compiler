@@ -1,5 +1,10 @@
-
-type SgnSet = sgn_set(sgns: [+FnType], agg_sgns: [FnType], ret_type: Maybe[Type], disp_arg_idxs: Maybe[Nat+]);
+type SgnSet = sgn_set(
+                sgns:           [+FnType],
+                agg_sgns:       [FnType],
+                ret_type:       Maybe[Type],
+                disp_arg_idxs:  Maybe[Nat+],
+                refines_env:    Bool
+              );
 
 
 SgnSet preprocess_signatures([+FnType] signatures, [TypeName -> Type] tdefs)
@@ -14,11 +19,16 @@ SgnSet preprocess_signatures([+FnType] signatures, [TypeName -> Type] tdefs)
     maybe_ret_type = nil;
   ;
   disp_arg_idxs = dispatch_args(signatures, tdefs);
+  let typedefs = tdefs:
+    refines_env = not (s <- signatures : not is_subset(s.ret_type, type_bool)) and
+                  (s <- signatures : is_eq(s.ret_type, type_true) or is_eq(s.ret_type, type_false));
+  ;
   return sgn_set(
     sgns:           signatures,
     agg_sgns:       agg_sgns,
     ret_type:       maybe_ret_type,
-    disp_arg_idxs:  disp_arg_idxs
+    disp_arg_idxs:  disp_arg_idxs,
+    refines_env:    refines_env
   );
 
 
@@ -27,18 +37,18 @@ SgnSet preprocess_signatures([+FnType] signatures, [TypeName -> Type] tdefs)
     a_sgn = an_elem(signatures);
     return nil if arity(a_sgn) == 0 or (s <- signatures : is_param_type(s));
     sgns = rand_sort(signatures);
-    for t @ i <- a_sgn.params:
+    for t @ i <- a_sgn.args:
       return just((i)) if t :: Type and is_dispatch_arg(i, sgns, tdefs);
     ;
     //## THIS CAN BE IMPROVED, I DON'T GENERALLY NEED TO CHECK ALL THE ARGUMENTS
-    return just(nonempty((i : a @ i <- a_sgn.params; a :: Type)));
+    return just(nonempty((i : a @ i <- a_sgn.args; a :: Type)));
   }
 
 
   Bool is_dispatch_arg(Nat idx, FnType+ sgns, [TypeName -> Type] tdefs)
   {
     count = length(sgns);
-    types = (s.params[idx] : s <- sgns);
+    types = (s.args(idx) : s <- sgns);
     fail if not types :: Type*;
     ptypes = (pseudotype(t, tdefs) : t <- types);
     for i < count:
@@ -77,16 +87,16 @@ SgnSet preprocess_signatures([+FnType] signatures, [TypeName -> Type] tdefs)
   FnType merge_all_sgns([+FnType] signatures, Nat par_idx, [TypeName -> Type] tdefs)
   {
     //## BUG BUG BUG: THERE'S PROBABLY A BUG WITH CLOSURE PARAMETERS HERE. INVESTIGATE
-    merged_par_type = union_type([cast_as_type(s.params[par_idx]) : s <- signatures]);
+    merged_par_type = union_type([cast_as_type(s.args(par_idx)) : s <- signatures]);
     merged_ret_type = union_superset([s.ret_type : s <- signatures]);
     a_sgn = an_elem(signatures);
-    params = (if i == par_idx then merged_par_type else p : p @ i <- an_elem(signatures).params);
-    return fn_type(params, a_sgn.impl_args, merged_ret_type);
+    args = (if i == par_idx then merged_par_type else p : p @ i <- an_elem(signatures).args);
+    return fn_type(args, a_sgn.impl_args, merged_ret_type);
   }
 
   Bool other_params_are_eq(FnType sgn1, FnType sgn2, Nat par_idx, [TypeName -> Type] tdefs)
   {
-    for p1, p2 @ i <- zip(sgn1.params, sgn2.params):
+    for p1, p2 @ i <- zip(sgn1.args, sgn2.args):
       return false if i != par_idx and not types_or_cls_types_are_eq(p1, p2, tdefs);
     ;
     nargs = keys(sgn1.impl_args);
@@ -136,7 +146,7 @@ implicit
         arg_type = expr_type(disp_arg, env);
         arg_ptype = pseudotype(arg_type, typedefs);
         // I can do this because if disp_arg_idx != nil then none of the polymorphic signatures is parametric
-        ret_types = [s.ret_type : s <- sgns; may_match(s.params[idx], arg_ptype)];
+        ret_types = [s.ret_type : s <- sgns; may_match(s.args(idx), arg_ptype)];
         return union_type(ret_types);
       else
         disp_args = (args[i] : i <- idxs);
@@ -144,7 +154,7 @@ implicit
         arg_types = (expr_type(e, env) : e <- disp_args);
         arg_ptypes = (pseudotype(t, typedefs) : t <- arg_types);
         // I can do this because if disp_arg_idx != nil then none of the polymorphic signatures is parametric
-        ret_types = [s.ret_type : s <- sgns; may_match((s.params[i] : i <- idxs), arg_ptypes)];
+        ret_types = [s.ret_type : s <- sgns; may_match((s.args(i) : i <- idxs), arg_ptypes)];
         return union_type(ret_types);
       ;
     ;
@@ -227,18 +237,18 @@ implicit
 
     // First I check that all scalar positional parameters typecheck. This is something that
     // I need to do before trying to determine the functions this call may dispatch to.
-    errs = seq_union((typecheck(p, type_any, env) : p <- args; p :: Expr));
+    errs = seq_union((typecheck(a, type_any, env) : a <- args; a :: Expr));
     return errs if errs != [];
 
     // Here we try to determine the (possibly aggregated) signature
     // of the polymorphic functions that may be actually called
-    param_types = (if p :: Expr then just(expr_type(p, env)) else nil : p <- args);
+    arg_types = (if a :: Expr then just(expr_type(a, env)) else nil : a <- args);
     candidate_signatures = [s : s <- all_sgns; will_dispatch_to(s, args, env)];
     if candidate_signatures == []:
       candidate_signatures = [s : s <- all_agg_sgns; will_dispatch_to(s, args, env)];
       if candidate_signatures == []:
-        param_types = (if p :: Expr then just(expr_type(p, env)) else nil : p <- args);
-        return [no_dispatchable_function_found(name, nz_nat(length(args)), all_sgns, nonempty(param_types))];
+        arg_types = (if a :: Expr then just(expr_type(a, env)) else nil : a <- args);
+        return [no_dispatchable_function_found(name, nz_nat(length(args)), all_sgns, nonempty(arg_types))];
       ;
     ;
 
@@ -250,24 +260,24 @@ implicit
   }
 
 
-  [TypeCheckingError] fully_typecheck_fn_call(FnSymbol name, FnType signature, AnyExpr* params, [ImplArg -> Expr] impl_args, Type exp_type, [Var -> Type] env)
+  [TypeCheckingError] fully_typecheck_fn_call(FnSymbol name, FnType signature, AnyExpr* args, [ImplArg -> Expr] impl_args, Type exp_type, [Var -> Type] env)
   {
     // We first check that all scalar positional parameters (and those parameters only) match
     // the type of the corresponding formal parameter (we already know they typecheck)
-    invalid_params = [];
-    for p, t @ i <- zip(params, signature.params):
+    invalid_args = [];
+    for p, t @ i <- zip(args, signature.args):
       if p :: Expr and t :: Type:
         actual_arg_type = expr_type(p, env);
         if not is_subset(actual_arg_type, replace_type_vars_with_type_any(t)):
-          invalid_params = invalid_params & [(i, p, actual_arg_type)];
+          invalid_args = invalid_args & [(i, p, actual_arg_type)];
         ;
       ;
     ;
-    return [invalid_param_types(name, signature, invalid_params)] if invalid_params != [];
+    return [invalid_param_types(name, signature, invalid_args)] if invalid_args != [];
 
     // Now we can instantiate the concrete type for type variables
     if is_param_type(signature):
-      res = try_to_instantiate_type_vars(params, signature.params, env);
+      res = try_to_instantiate_type_vars(args, signature.args, env);
       return [invalid_cls_param_types(signature, get_error(res))] if is_failure(res);
       type_var_insts = get_result(res);
     else
@@ -279,7 +289,7 @@ implicit
 
     // Let's start with positional closure parameters
     cls_errs = [];
-    for p, t <- zip(params, signature.params):
+    for p, t <- zip(args, signature.args):
       if p :: ClsExpr and t :: ClsType:
         cls_errs = cls_errs & typecheck(p, replace_type_vars(t, type_var_insts), env); //## BUG: I THINK THIS IS BROKEN...
       ;
@@ -287,7 +297,7 @@ implicit
 
     // Now implicit parameters
     impl_arg_errs = [];
-    // Going through all the implicit params in the signature
+    // Going through all the implicit arguments in the signature
     for n, t <- rand_sort_pairs(signature.impl_args):
       // Instantiating type variables in the formal type
       inst_type = replace_type_vars(t, type_var_insts);
@@ -330,11 +340,11 @@ implicit
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  Result[[TypeVar -> Type], [TypeCheckingError]] try_to_instantiate_type_vars(AnyExpr* params, AnyType* param_types, [Var -> Type] env)
+  Result[[TypeVar -> Type], [TypeCheckingError]] try_to_instantiate_type_vars(AnyExpr* args, AnyType* arg_types, [Var -> Type] env)
   {
     actual_types = ();
     formal_types = ();
-    for p, t <- zip(params, param_types):
+    for p, t <- zip(args, arg_types):
       if p :: Expr and t :: Type:
         actual_types = (actual_types | expr_type(p, env));
         formal_types = (formal_types | t);
@@ -345,7 +355,7 @@ implicit
     // OK, now we have our initial instantiations, based on the type of scalar parameters.
     // Next we must complete and refine those instantiations by looking at closure parameters
 
-    cls_pars = ((p, t) : p, t <- zip(params, param_types); p :: ClsExpr and t :: ClsType);
+    cls_pars = ((p, t) : p, t <- zip(args, arg_types); p :: ClsExpr and t :: ClsType);
     for 5:
       new_type_pairs = ();
       for p, t <- cls_pars:
