@@ -337,6 +337,23 @@ implicit
     src_type = expr_type(expr.src_expr, env);
     return empty_type if src_type == empty_type;
     return empty_seq_type if is_subset(src_type, empty_seq_type);
+
+    if not expr.sel_expr?:
+      maybe_src_tuple_types_set = maybe_tuple_types_union(src_type);
+      if maybe_src_tuple_types_set != nil:
+        src_tuple_types_set = value(maybe_src_tuple_types_set);
+        tuple_types = [({
+              env_delta = asgnm_env_updates(expr.vars, field_type);
+              env_delta = env_delta & [expr.idx_var -> int_range(i, i)] if expr.idx_var?;
+              new_env = update(env, env_delta);
+              return expr_type(expr.expr, new_env);
+            } : field_type @ i <- src_tuple_types
+          ) : src_tuple_types <- src_tuple_types_set
+        ];
+        return union_type([if ts != () then tuple_type(ts) else empty_seq_type : ts <- tuple_types]);
+      ;
+    ;
+
     src_elem_type = seq_elem_supertype(src_type);
     assert src_elem_type != empty_type;
 
