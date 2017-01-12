@@ -1,9 +1,15 @@
 implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg], actual_arg_arity : Nat
 {
-  ExprWFError* root_stmt_block_wf_errors(SynStmt+ stmts, [DefVar] ext_vars, Bool has_ret_val, Bool allow_proc_calls)
+  ExprWFError* root_stmt_block_wf_errors(SynStmt+ stmts, (Atom, SynType)* typed_vars, [DefVar] ext_vars, Bool has_ret_val, Bool allow_proc_calls)
   {
+    errs = ();
+    for v, t @ i <- typed_vars:
+      is_already_def = at_least_one((left(typed_vars(j)) == v : j < i)) or already_def(v, ext_vars);
+      errs = (errs | vars_redef(typed_vars(i), [var(v)])) if is_already_def;
+      errs = errs & (undef_type_var(tv) : tv <- rand_sort(syn_type_vars(t) - def_type_vars));
+    ;
     let allow_proc_calls=allow_proc_calls, has_return_value=has_ret_val, is_inside_loop=false:
-      errs = stmts_wf_errors(stmts, ext_vars, []);
+      errs = errs & stmts_wf_errors(stmts, ext_vars, []);
     ;
     return if errs != () then errs else (missing_ret_stmt(stmts) if has_ret_val and syn_may_fall_through(stmts));
   }

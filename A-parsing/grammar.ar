@@ -99,9 +99,6 @@ ParsingRule rule_ref_pretype                    = rule_ref(:pretype);
 ParsingRule rule_ref_expr                       = rule_ref(:expr);
 ParsingRule rule_ref_data                       = rule_ref(:data);
 ParsingRule rule_ref_ptrn                       = rule_ref(:ptrn);
-ParsingRule rule_ref_fndef                      = rule_ref(:fndef);
-ParsingRule rule_ref_fndef_proc                 = rule_ref(:fndef_proc);
-ParsingRule rule_ref_fndef_switch               = rule_ref(:fndef_switch);
 ParsingRule rule_ref_basic_time_expr            = rule_ref(:basic_time_expr);
 
 ParsingRule rule_ref_stmt(StmtCtx ctx):
@@ -123,7 +120,7 @@ ParsingRule rule_declaration =
     (:typedef,                  rule_typedef),
     (:par_typedef,              rule_par_typedef),
     (:fndef,                    rule_std_fndef),
-    (:fndef_proc,               rule_proc_fndef),
+    (:fndef_proc,               rule_proc_fndef(true)),
     (:fndef_switch,             rule_switch_fndef),
     (:implicit_block_1,         rule_implicit_block_1),
     (:implicit_block_2,         rule_implicit_block_2),
@@ -234,7 +231,7 @@ ParsingRule rule_implicit_block_1 =
   rule_seq((
     keyword_implicit,
     comma_sep_seq(rule_impl_arg),
-    brace_rule(rep_rule(rule_fndef, true))
+    brace_rule(rep_rule(rule_fndef(true), true))
   ));
 
 ParsingRule rule_implicit_block_2 =
@@ -244,7 +241,7 @@ ParsingRule rule_implicit_block_2 =
       rule_seq((
         comma_sep_seq(rule_impl_arg),
         rule_semicolon,
-        rep_rule(rule_fndef, true)
+        rep_rule(rule_fndef(true), true)
       ))
     )
   ));
@@ -368,10 +365,10 @@ ParsingRule int_type_bound =
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-ParsingRule rule_fndef =
+ParsingRule rule_fndef(Bool allow_nested) =
   rule_choice((
     (:std,    rule_std_fndef),
-    (:proc,   rule_proc_fndef),
+    (:proc,   rule_proc_fndef(allow_nested)),
     (:switch, rule_switch_fndef)
   ));
 
@@ -386,13 +383,20 @@ ParsingRule rule_std_fndef =
     rule_semicolon
   ));
 
-ParsingRule rule_proc_fndef =
+ParsingRule rule_proc_fndef(Bool allow_nested) =
   rule_seq((
     rule_type,
     rule_anon_choice((rule_id, rule_operator)),
     optional_rule(par_rule(comma_sep_seq(rule_fn_arg))),
-    brace_rule(rep_rule(rule_stmt(:pure), true))
+    brace_rule(
+      rule_seq((
+        rep_rule(rule_seq((rule_id, rule_colon, rule_ref_type, rule_semicolon))),
+        rep_rule_nonempty(rule_ref_stmt(:pure)),
+        rep_rule(rule_fndef(false)) if allow_nested
+      ))
+    )
   ));
+
 
 ParsingRule rule_switch_fndef = //## rule_try_fndef? rule_match_fndef?
   rule_seq((
@@ -485,11 +489,7 @@ ParsingRule rule_stmt(StmtCtx ctx) =
     (:loop_stmt,          rule_loop_stmt(ctx))          if ctx != :auto_method,
     (:while_stmt,         rule_while_stmt(ctx))         if ctx != :auto_method,
     (:let_stmt,           rule_let_stmt(ctx))           if ctx != :auto_method,
-    (:for_stmt,           rule_for_stmt(ctx))           if ctx != :auto_method,
-
-    (:fn,                 rule_ref_fndef)               if ctx == :pure,
-    (:fn_proc,            rule_ref_fndef_proc)          if ctx == :pure,
-    (:fn_case,            rule_ref_fndef_switch)        if ctx == :pure
+    (:for_stmt,           rule_for_stmt(ctx))           if ctx != :auto_method
   ));
 
 ParsingRule rule_asgnm_stmt =
@@ -827,7 +827,7 @@ ParsingRule rule_expr_0 =
 
     (:if_else,            rule_if_expr),
     (:match_expr,         rule_match_expr),
-    (:proc,               brace_rule(rep_rule(rule_ref_stmt(:pure), true))),
+    (:proc,               rule_proc_expr),
 
     (:call_lookalike,     rule_seq((rule_id, par_rule(comma_sep_seq(rule_ref_expr))))),
     (:impl_args_call,     rule_impl_args_call_expr),
@@ -838,6 +838,14 @@ ParsingRule rule_expr_0 =
     (:cls_par,            atomic_rule(qual_var)),
     (:data,               rule_seq((rule_hash, brace_rule(rule_data_expr))))
   ));
+
+ParsingRule rule_proc_expr =
+  brace_rule(
+    rule_seq((
+      rep_rule(rule_seq((rule_id, rule_colon, rule_ref_type, rule_semicolon))),
+      rep_rule_nonempty(rule_ref_stmt(:pure))
+    ))
+  );
 
 ParsingRule rule_rel_lookup_expr =
   rule_seq((

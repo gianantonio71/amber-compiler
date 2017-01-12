@@ -39,7 +39,7 @@ implicit
     accessor_test()       = type_bool,
     if_expr()             = if_expr_type(expr.cond, expr.then, expr.else, env),
     match_expr()          = match_expr_type(expr.exprs, expr.cases, env),
-    do_expr(ss?)          = return_type(ss, env),
+    do_expr()             = return_type(expr.body, env, typed_vars=expr.typed_vars),
     ex_qual()             = type_bool,
     set_comp()            = set_comp_expr_type(expr.expr, expr.source, env),
     map_comp()            = map_comp_expr_type(expr.key_expr, expr.value_expr, expr.source, env),
@@ -376,195 +376,6 @@ implicit
     elem_type = expr_type(expr.expr, new_env);
     nonempty = not expr.sel_expr? and is_subset(bound_expr_type, if expr.inclusive then type_nat else type_nz_nat);
     return type_seq(elem_type, nonempty);
-  }
-
-  //////////////////////////////////////////////////////////////////////////////
-  //////////////////////////////////////////////////////////////////////////////
-
-  Type return_type(Statement* stmts, [Var -> Type] env)
-  {
-    curr_env = env;
-    ret_types = [];
-    for s <- stmts:
-      ret_type = return_type(s, curr_env);
-      ret_types = ret_types & [ret_type];
-      curr_env = update_environment(s, curr_env);
-    ;
-    return union_superset(ret_types);
-  }
-
-
-  Type return_type(Statement stmt, [Var -> Type] env):
-    assignment_stmt()   = empty_type,
-    return_stmt(e?)     = expr_type(e, env),
-    if_stmt()           = if_stmt_return_type(stmt.cond, stmt.body, stmt.else, env),
-    loop_stmt(ss?)      = loop_stmt_return_type(ss, env),
-    foreach_stmt()      = foreach_stmt_return_type(stmt.vars, if stmt.idx_var? then just(stmt.idx_var) else nil, stmt.values, stmt.body, env),
-    for_stmt()          = for_stmt_return_type(if stmt.var? then just(stmt.var) else nil, stmt.start_val, stmt.end_val, stmt.end_val_incl, stmt.body, env),
-    let_stmt()          = let_stmt_return_type(stmt.asgnms, stmt.body, env),
-    break_stmt          = empty_type,
-    fail_stmt           = empty_type,
-    assert_stmt()       = empty_type,
-    print_stmt()        = empty_type,
-    imp_update_stmt()   = {fail;},
-    return_stmt         = {fail;},
-    proc_call_stmt()    = {fail;};
-
-
-  Type if_stmt_return_type(Expr cond, Statement+ body, Statement* else_body, [Var -> Type] env)
-  {
-    if_true_env, if_false_env = refine_env(cond, env);
-    true_ret_type = return_type(body, if_true_env);
-    false_ret_type = return_type(else_body, if_false_env);
-    return union_superset(true_ret_type, false_ret_type);
-  }
-
-
-  Type loop_stmt_return_type(Statement+ body, [Var -> Type] env)
-  {
-    //## BUG BUG BUG: THIS IS NOT SYNCRONIZED WITH TYPECHECKING
-    env_0 = env;
-    env_1 = update_environment(body, env_0);
-    ret_type_0 = return_type(body, env_0);
-    ret_type_1 = return_type(body, env_1);
-    return union_superset(ret_type_0, ret_type_1);
-  }
-
-
-  Type foreach_stmt_return_type(Var+ vars, Maybe[Var] maybe_idx_var, Expr values, Statement+ body, [Var -> Type] env)
-  {
-    //## BUG BUG BUG: THIS IS NOT SYNCRONIZED WITH TYPECHECKING
-    elem_type = seq_elem_supertype(expr_type(values, env));
-    assert elem_type != empty_type;
-    env_delta = asgnm_env_updates(vars, elem_type) & [value(maybe_idx_var) -> type_nat if maybe_idx_var != nil];
-    env_0 = update(env, env_delta);
-    env_1 = update_environment(body, env_0);
-    ret_type_0 = return_type(body, env_0);
-    ret_type_1 = return_type(body, env_1);
-    return union_superset(ret_type_0, ret_type_1);
-  }
-
-
-  Type for_stmt_return_type(Maybe[Var] maybe_var, Expr start_val, Expr end_val, Bool end_val_incl, Statement+ body, [Var -> Type] env)
-  {
-    //## BUG BUG BUG: THIS IS NOT SYNCRONIZED WITH TYPECHECKING
-    env_0 = env & [value(maybe_var) -> type_nat if maybe_var != nil];
-    env_1 = update_environment(body, env_0);
-    ret_type_0 = return_type(body, env_0);
-    ret_type_1 = return_type(body, env_1);
-    return union_superset(ret_type_0, ret_type_1);
-  }
-
-
-  Type let_stmt_return_type([ImplArg -> Expr] asgnms, Statement+ body, [Var -> Type] env)
-  {
-    env_delta = [v -> expr_type(e, env) : v, e <- asgnms];
-    new_env = update(env, env_delta);
-    return return_type(body, new_env);
-  }
-
-  //////////////////////////////////////////////////////////////////////////////
-  //////////////////////////////////////////////////////////////////////////////
-
-  [Var -> Type] update_environment(Statement* stmts, [Var -> Type] env)
-  {
-    curr_env = env;
-    for s <- stmts:
-      curr_env = update_environment(s, curr_env);
-    ;
-    assert may_fall_through(stmts) or curr_env :: [Var -> <empty_type>];
-    return curr_env;
-  }
-
-
-  // Returns the empty map when the statement cannot fall through
-  [Var -> Type] update_environment(Statement stmt, [Var -> Type] env):
-    assignment_stmt()   = update(env, asgnm_env_updates(stmt.vars, expr_type(stmt.value, env))),
-    return_stmt(e?)     = unreachable_env(env),
-    if_stmt()           = if_stmt_update_environment(stmt.cond, stmt.body, stmt.else, env),
-    loop_stmt(ss?)      = loop_stmt_update_environment(ss, env),
-    foreach_stmt()      = foreach_stmt_update_environment(stmt.vars, if stmt.idx_var? then just(stmt.idx_var) else nil, stmt.values, stmt.body, env),
-    for_stmt()          = for_stmt_update_environment(if stmt.var? then just(stmt.var) else nil, stmt.start_val, stmt.end_val, stmt.end_val_incl, stmt.body, env),
-    let_stmt()          = let_stmt_update_environment(stmt.asgnms, stmt.body, env),
-    break_stmt          = unreachable_env(env),
-    fail_stmt           = unreachable_env(env),
-    //## THIS IS AN INTERESTING CASE: IF I DECIDE TO MAKE ASSERTIONS REMOVABLE ONLY
-    //## WHEN THEY ARE NOT NECESSARY TO MAKE THE CODE STATICALLY TYPE CHECKABLE,
-    //## HOW CAN I DO IT? I WOULD NEED TO SOMEHOW STORE THE FACT THAT THE ASSERTION
-    //## IS REMOVABLE OR NOT DURING STATIC TYPE CHECKING...
-    assert_stmt(e?)     = env, // refine_env(e).if_true, //## SHOULD I RELY ON THIS? WHAT HAPPENS IF THE ASSERTIONS ARE REMOVED? MAYBE I NEED A NON-REMOVABLE ASSERTION TYPE
-    print_stmt()        = env;
-
-
-  [Var -> Type] if_stmt_update_environment(Expr cond, Statement+ body, Statement* else_body, [Var -> Type] env)
-  {
-    if_true_env, if_false_env = refine_env(cond, env);
-    res_env_true = update_environment(body, if_true_env);
-    res_env_false = update_environment(else_body, if_false_env);
-
-    if may_fall_through(body):
-      if may_fall_through(else_body):
-        return merge_envs(res_env_true, res_env_false);
-      else
-        return res_env_true;
-      ;
-    else
-      if may_fall_through(else_body):
-        return res_env_false;
-      else
-        return unreachable_env(env);
-      ;
-    ;
-  }
-
-
-  [Var -> Type] loop_stmt_update_environment(Statement+ body, [Var -> Type] env)
-  {
-    //## BUG BUG BUG: THIS IS NOT SYNCRONIZED WITH TYPECHECKING
-    return unreachable_env(env) if not may_fall_through(body);
-    env_0 = env;
-    env_1 = update_environment(body, env);
-    return merge_envs(env_0, env_1);
-  }
-
-
-  [Var -> Type] foreach_stmt_update_environment(Var+ vars, Maybe[Var] maybe_idx_var, Expr values, Statement+ body, [Var -> Type] env)
-  {
-    //## BUG BUG BUG: THIS IS NOT SYNCRONIZED WITH TYPECHECKING
-    elem_type = seq_elem_supertype(expr_type(values, env));
-    // assert elem_type != empty_type;
-    loop_vars = set(vars) & [value(maybe_idx_var) if maybe_idx_var != nil];
-    assert disjoint(keys(env), loop_vars);
-    nvars = nz_nat(length(vars));
-    if nvars == 1:
-      non_idx_typed_loop_vars = [vars[0] -> elem_type];
-    else
-      field_types = tuple_field_supertypes(elem_type, nvars);
-      non_idx_typed_loop_vars = merge(([v -> t] : v, t <- zip(vars, field_types)));
-    ;
-    env_0 = env & non_idx_typed_loop_vars & [value(maybe_idx_var) -> type_nat if maybe_idx_var != nil];
-    env_1 = update_environment(body, env_0);
-    return merge_envs(env, remove_keys(env_1, loop_vars));
-  }
-
-
-  [Var -> Type] for_stmt_update_environment(Maybe[Var] maybe_var, Expr start_val, Expr end_val, Bool end_val_incl, Statement+ body, [Var -> Type] env)
-  {
-    //## BUG BUG BUG: THIS IS NOT SYNCRONIZED WITH TYPECHECKING
-    env_0 = env & [
-      value(maybe_var) -> loop_var_type(expr_type(start_val, env), expr_type(end_val, env), end_val_incl) if maybe_var != nil
-    ];
-    env_1 = update_environment(body, env_0);
-    return merge_envs(env, remove_keys(env_1, [value(maybe_var) if maybe_var != nil]));
-  }
-
-
-  [Var -> Type] let_stmt_update_environment([ImplArg -> Expr] asgnms, Statement+ body, [Var -> Type] env)
-  {
-    return unreachable_env(env) if not may_fall_through(body); //## SEE COMMENT FOR loop_stmt() ABOVE
-    env_delta = [v -> expr_type(e, env) : v, e <- asgnms];
-    new_env = update(env, env_delta);
-    return update_environment(body, new_env);
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -1308,6 +1119,212 @@ implicit typedefs : [TypeName -> Type]
         return (type: type, optional: f1.optional and f2.optional);
       } : l <- keys(fs1) & keys(fs2)
     ]);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit
+{
+  typedefs    : [TypeName -> Type],
+  signatures  : [(FnFamilyId, Nat) -> SgnSet],
+  closures    : [ClsVar -> ClsType],
+  typed_vars  : [StdVar -> NeType],
+  var_aliases : [[Var]];
+
+  Type return_type(Statement* stmts, [Var -> Type] env)
+  {
+    curr_env = env;
+    ret_types = [];
+    for s <- stmts:
+      ret_type = return_type(s, curr_env);
+      ret_types = ret_types & [ret_type];
+      curr_env = update_environment(s, curr_env);
+    ;
+    return union_superset(ret_types);
+  }
+
+
+  Type return_type(Statement stmt, [Var -> Type] env):
+    assignment_stmt()   = empty_type,
+    return_stmt(e?)     = expr_type(e, env),
+    if_stmt()           = if_stmt_return_type(stmt.cond, stmt.body, stmt.else, env),
+    loop_stmt(ss?)      = loop_stmt_return_type(ss, env),
+    foreach_stmt()      = foreach_stmt_return_type(stmt.vars, if stmt.idx_var? then just(stmt.idx_var) else nil, stmt.values, stmt.body, env),
+    for_stmt()          = for_stmt_return_type(if stmt.var? then just(stmt.var) else nil, stmt.start_val, stmt.end_val, stmt.end_val_incl, stmt.body, env),
+    let_stmt()          = let_stmt_return_type(stmt.asgnms, stmt.body, env),
+    break_stmt          = empty_type,
+    fail_stmt           = empty_type,
+    assert_stmt()       = empty_type,
+    print_stmt()        = empty_type,
+    imp_update_stmt()   = {fail;},
+    return_stmt         = {fail;},
+    proc_call_stmt()    = {fail;};
+
+
+  Type if_stmt_return_type(Expr cond, Statement+ body, Statement* else_body, [Var -> Type] env)
+  {
+    if_true_env, if_false_env = refine_env(cond, env);
+    true_ret_type = return_type(body, if_true_env);
+    false_ret_type = return_type(else_body, if_false_env);
+    return union_superset(true_ret_type, false_ret_type);
+  }
+
+
+  Type loop_stmt_return_type(Statement+ body, [Var -> Type] env)
+  {
+    //## BUG BUG BUG: THIS IS NOT SYNCRONIZED WITH TYPECHECKING
+    env_0 = env;
+    env_1 = update_environment(body, env_0);
+    ret_type_0 = return_type(body, env_0);
+    ret_type_1 = return_type(body, env_1);
+    return union_superset(ret_type_0, ret_type_1);
+  }
+
+
+  Type foreach_stmt_return_type(Var+ vars, Maybe[Var] maybe_idx_var, Expr values, Statement+ body, [Var -> Type] env)
+  {
+    //## BUG BUG BUG: THIS IS NOT SYNCRONIZED WITH TYPECHECKING
+    elem_type = seq_elem_supertype(expr_type(values, env));
+    assert elem_type != empty_type;
+    env_delta = asgnm_env_updates(vars, elem_type) & [value(maybe_idx_var) -> type_nat if maybe_idx_var != nil];
+    env_0 = update(env, env_delta);
+    env_1 = update_environment(body, env_0);
+    ret_type_0 = return_type(body, env_0);
+    ret_type_1 = return_type(body, env_1);
+    return union_superset(ret_type_0, ret_type_1);
+  }
+
+
+  Type for_stmt_return_type(Maybe[Var] maybe_var, Expr start_val, Expr end_val, Bool end_val_incl, Statement+ body, [Var -> Type] env)
+  {
+    //## BUG BUG BUG: THIS IS NOT SYNCRONIZED WITH TYPECHECKING
+    env_0 = env & [value(maybe_var) -> type_nat if maybe_var != nil];
+    env_1 = update_environment(body, env_0);
+    ret_type_0 = return_type(body, env_0);
+    ret_type_1 = return_type(body, env_1);
+    return union_superset(ret_type_0, ret_type_1);
+  }
+
+
+  Type let_stmt_return_type([ImplArg -> Expr] asgnms, Statement+ body, [Var -> Type] env)
+  {
+    env_delta = [v -> expr_type(e, env) : v, e <- asgnms];
+    new_env = update(env, env_delta);
+    return return_type(body, new_env);
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  [Var -> Type] update_environment(Statement* stmts, [Var -> Type] env)
+  {
+    curr_env = env;
+    for s <- stmts:
+      curr_env = update_environment(s, curr_env);
+    ;
+    assert may_fall_through(stmts) or curr_env :: [Var -> <empty_type>];
+    return curr_env;
+  }
+
+
+  // Returns the empty map when the statement cannot fall through
+  [Var -> Type] update_environment(Statement stmt, [Var -> Type] env):
+    assignment_stmt()   = assignment_stmt_update_environment(stmt.vars, stmt.value, env),
+    return_stmt(e?)     = unreachable_env(env),
+    if_stmt()           = if_stmt_update_environment(stmt.cond, stmt.body, stmt.else, env),
+    loop_stmt(ss?)      = loop_stmt_update_environment(ss, env),
+    foreach_stmt()      = foreach_stmt_update_environment(stmt.vars, if stmt.idx_var? then just(stmt.idx_var) else nil, stmt.values, stmt.body, env),
+    for_stmt()          = for_stmt_update_environment(if stmt.var? then just(stmt.var) else nil, stmt.start_val, stmt.end_val, stmt.end_val_incl, stmt.body, env),
+    let_stmt()          = let_stmt_update_environment(stmt.asgnms, stmt.body, env),
+    break_stmt          = unreachable_env(env),
+    fail_stmt           = unreachable_env(env),
+    //## THIS IS AN INTERESTING CASE: IF I DECIDE TO MAKE ASSERTIONS REMOVABLE ONLY
+    //## WHEN THEY ARE NOT NECESSARY TO MAKE THE CODE STATICALLY TYPE CHECKABLE,
+    //## HOW CAN I DO IT? I WOULD NEED TO SOMEHOW STORE THE FACT THAT THE ASSERTION
+    //## IS REMOVABLE OR NOT DURING STATIC TYPE CHECKING...
+    assert_stmt(e?)     = env, // refine_env(e).if_true, //## SHOULD I RELY ON THIS? WHAT HAPPENS IF THE ASSERTIONS ARE REMOVED? MAYBE I NEED A NON-REMOVABLE ASSERTION TYPE
+    print_stmt()        = env;
+
+
+  [Var -> Type] assignment_stmt_update_environment(StdVar+ vars, Expr value, [Var -> Type] env)
+  {
+    inferred_env_delta = asgnm_env_updates(vars, expr_type(value, env));
+    corrected_env_delta = [v -> lookup(typed_vars, v, t) : v, t <- inferred_env_delta];
+    return update(env, corrected_env_delta);
+  }
+
+
+  [Var -> Type] if_stmt_update_environment(Expr cond, Statement+ body, Statement* else_body, [Var -> Type] env)
+  {
+    if_true_env, if_false_env = refine_env(cond, env);
+    res_env_true = update_environment(body, if_true_env);
+    res_env_false = update_environment(else_body, if_false_env);
+
+    if may_fall_through(body):
+      if may_fall_through(else_body):
+        return merge_envs(res_env_true, res_env_false);
+      else
+        return res_env_true;
+      ;
+    else
+      if may_fall_through(else_body):
+        return res_env_false;
+      else
+        return unreachable_env(env);
+      ;
+    ;
+  }
+
+
+  [Var -> Type] loop_stmt_update_environment(Statement+ body, [Var -> Type] env)
+  {
+    //## BUG BUG BUG: THIS IS NOT SYNCRONIZED WITH TYPECHECKING
+    return unreachable_env(env) if not may_fall_through(body);
+    env_0 = env;
+    env_1 = update_environment(body, env);
+    return merge_envs(env_0, env_1);
+  }
+
+
+  [Var -> Type] foreach_stmt_update_environment(Var+ vars, Maybe[Var] maybe_idx_var, Expr values, Statement+ body, [Var -> Type] env)
+  {
+    //## BUG BUG BUG: THIS IS NOT SYNCRONIZED WITH TYPECHECKING
+    elem_type = seq_elem_supertype(expr_type(values, env));
+    // assert elem_type != empty_type;
+    loop_vars = set(vars) & [value(maybe_idx_var) if maybe_idx_var != nil];
+    assert disjoint(keys(env), loop_vars);
+    nvars = nz_nat(length(vars));
+    if nvars == 1:
+      non_idx_typed_loop_vars = [vars[0] -> elem_type];
+    else
+      field_types = tuple_field_supertypes(elem_type, nvars);
+      non_idx_typed_loop_vars = merge(([v -> t] : v, t <- zip(vars, field_types)));
+    ;
+    env_0 = env & non_idx_typed_loop_vars & [value(maybe_idx_var) -> type_nat if maybe_idx_var != nil];
+    env_1 = update_environment(body, env_0);
+    return merge_envs(env, remove_keys(env_1, loop_vars));
+  }
+
+
+  [Var -> Type] for_stmt_update_environment(Maybe[Var] maybe_var, Expr start_val, Expr end_val, Bool end_val_incl, Statement+ body, [Var -> Type] env)
+  {
+    //## BUG BUG BUG: THIS IS NOT SYNCRONIZED WITH TYPECHECKING
+    env_0 = env & [
+      value(maybe_var) -> loop_var_type(expr_type(start_val, env), expr_type(end_val, env), end_val_incl) if maybe_var != nil
+    ];
+    env_1 = update_environment(body, env_0);
+    return merge_envs(env, remove_keys(env_1, [value(maybe_var) if maybe_var != nil]));
+  }
+
+
+  [Var -> Type] let_stmt_update_environment([ImplArg -> Expr] asgnms, Statement+ body, [Var -> Type] env)
+  {
+    return unreachable_env(env) if not may_fall_through(body); //## SEE COMMENT FOR loop_stmt() ABOVE
+    env_delta = [v -> expr_type(e, env) : v, e <- asgnms];
+    new_env = update(env, env_delta);
+    return update_environment(body, new_env);
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

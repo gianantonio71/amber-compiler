@@ -45,12 +45,20 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
     range_comp()        = desugar_range_comp_expr(expr, def_vars),
     if_expr()           = desugar_if_expr(expr, def_vars),
     match_expr()        = desugar_match_expr(expr.exprs, expr.cases, def_vars),
-    do_expr(ss?)        = do_expr(desugar_stmts(ss, def_vars)),
-    let_expr()          = do_expr(desugar_stmts(nonempty(expr.stmts & (syn_ret_stmt(expr.expr))), def_vars)),
+    do_expr(ss?)        = desugar_do_expr(expr.body, expr.typed_vars, def_vars),
+    let_expr()          = do_expr(desugar_stmts(nonempty(expr.stmts & (syn_ret_stmt(expr.expr))), def_vars), [:]),
     is_set(v?)          = is_set(memb_var(v)),
     output_is_def()     = expr;
 
   //////////////////////////////////////////////////////////////////////////////
+
+  Expr desugar_do_expr(SynStmt+ syn_body, (Atom, SynType)* syn_typed_vars, [StdVar] def_vars)
+  {
+    body = desugar_stmts(syn_body, def_vars);
+    typed_vars = merge(([var(v) -> syn_type_to_type(t, nil)] : v, t <- syn_typed_vars));
+    return do_expr(body, typed_vars);
+  }
+
 
   Expr desugar_call_lookalike(<StdVar, MembVar, QualAutoMembVar, QualDBMembVar, SymbChainAcc> var, Expr+ args)
   {

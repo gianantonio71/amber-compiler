@@ -152,7 +152,7 @@ Bool is_param_type(FnType type) = at_least_one((is_param_type(t) : t <- type.arg
   if_expr()               = retrieve(expr.cond) & retrieve(expr.then) & retrieve(expr.else),
   match_expr()            = seq_union((retrieve(e) : e <- expr.exprs)) &
                             seq_union((retrieve(c.expr) : c <- expr.cases)),
-  do_expr(ss?)            = retrieve_from_nested_exprs(ss, retrieve),
+  do_expr()               = retrieve_from_nested_exprs(expr.body, retrieve),
   ex_qual()               = retrieve_from_nested_exprs(expr.source, retrieve) & retrieve(expr.cond),
   set_comp()              = retrieve_from_nested_exprs(expr.source, retrieve) & retrieve(expr.expr),
   map_comp()              = retrieve_from_nested_exprs(expr.source, retrieve) & retrieve(expr.key_expr) & retrieve(expr.value_expr),
@@ -288,7 +288,13 @@ Expr replace_nested_exprs(Expr expr, (Expr -> Expr) replace):
   db_method_call()    = db_method_call(var: expr.var if expr.var?, name: expr.name, args: (replace(a) : a <- expr.args)),
   if_expr()           = if_expr(replace(expr.cond), replace(expr.then), replace(expr.else)),
   match_expr()        = match_expr((replace(e) : e <- expr.exprs), ((ptrns: c.ptrns, expr: replace(c.expr)) : c <- expr.cases)),
-  do_expr(ss?)        = do_expr(replace_exprs_in_stmts(ss, replace)),
+  //## BUG BUG BUG: HERE I SHOULD PROBABLY REPLACE THE VARIABLES IN THE EXPLICITLY TYPED LIST,
+  //## BUT THE SIGNATURE OF replace() DOES NOT MAKE THAT STRAIGHTFORWARD...
+  //## THINGS BEING WHAT THEY ARE, SHOULD I LEAVE THE LIST OF TYPED VARIABLES ALONE,
+  //## OR SHOULD I JUST CLEAR IT?
+  // do_expr()           = do_expr(replace_exprs_in_stmts(expr.body, replace), [replace(v) : v, t <- expr.typed_vars]),
+  // do_expr()           = do_expr(replace_exprs_in_stmts(expr.body, replace), expr.typed_vars),
+  do_expr()           = do_expr(replace_exprs_in_stmts(expr.body, replace), [:]),
   ex_qual()           = ex_qual(replace_exprs_in_clause(expr.source, replace), replace(expr.cond)),
   set_comp()          = set_comp(replace(expr.expr), replace_exprs_in_clause(expr.source, replace)),
   map_comp()          = map_comp(replace(expr.key_expr), replace(expr.value_expr), replace_exprs_in_clause(expr.source, replace)),
@@ -705,7 +711,7 @@ Bool is_pattern_any(Pattern ptrn):
   tern_rel_comp() = comp_extern_vars(expr.exprs, expr.source),
   seq_comp()      = seq_comp_extern_vars(expr),
   range_comp()    = range_comp_extern_vars(expr),
-  do_expr(ss?)    = stmts_extern_vars(ss),
+  do_expr()       = stmts_extern_vars(expr.body),
   match_expr()    = match_expr_extern_vars(expr.exprs, expr.cases),
   is_set(v?)      = [v],
   _               = retrieve_from_nested_exprs(expr, extern_vars);
