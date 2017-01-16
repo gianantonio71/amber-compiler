@@ -3,8 +3,7 @@ implicit
   typedefs    : [TypeName -> Type],
   signatures  : [(FnFamilyId, Nat) -> SgnSet],
   closures    : [ClsVar -> ClsType],
-  var_aliases : [[Var]],
-  verbose     : Bool;
+  var_aliases : [[Var]];
 
 
   [TypeCheckingError] typecheck(Expr expr, Type exp_type, [Var -> Type] env)
@@ -13,17 +12,15 @@ implicit
     // For some types of expressions, this ends up being a complete type check
     errs = pre_typecheck(expr, exp_type, env);
     // Some types of expressions need errors to be made more detailed
-    if errs != [] and (verbose or needs_errors_refinement(expr)):
-      ref_errs = generate_typechecking_error_messages(expr, empty_type, exp_type, env);
+    if errs != [] and expr :: <UnaryPseudoCall, RelMembTest, AccExpr, AccTestExpr>:
+      ref_errs = gen_err_msgs(expr, exp_type, env);
       errs = ref_errs if ref_errs != [];
     ;
     if errs == [] and needs_res_type_check(expr):
       // Checking that the result type is (a subset of) the expected one
       actual_type = expr_type(expr, env);
       if not is_subset(actual_type, exp_type):
-        // Trying to generate more meaningful error messages
-        errs = if verbose then generate_typechecking_error_messages(expr, actual_type, exp_type, env) else [];
-        errs = [unexpected_actual_type(actual_type, exp_type)] if errs == [];
+        errs = [unexpected_actual_type(actual_type, exp_type)];
       ;
     ;
     return [add_anchor_if_needed(err, expr) : err <- errs];
@@ -35,12 +32,6 @@ implicit
       match_expr()  |
       do_expr()     = false,
       _             = true;
-
-
-    Bool needs_errors_refinement(Expr):
-      unary_pseudo_call() |
-      rel_memb_test()     = true,
-      _                   = false;
   }
 
 
@@ -69,7 +60,7 @@ implicit
     membership()        = pre_typecheck_membership(expr.obj, expr.type, env),
     cast_expr()         = pre_typecheck_cast_expr(expr.expr, expr.type, env),
     accessor()          = pre_typecheck_accessor_expr(expr.expr, expr.field, env),
-    accessor_test()     = pre_typecheck_accessor_test_expr(expr.expr, expr.field, env),
+    accessor_test()     = typecheck(expr.expr, type_dot_access_target, env),
     if_expr()           = fully_typecheck_if_expr(expr.cond, expr.then, expr.else, exp_type, env),
     match_expr()        = fully_typecheck_match_expr(expr.exprs, expr.cases, exp_type, env),
     do_expr()           = typecheck(expr.body, exp_type, env, typed_vars=expr.typed_vars),
@@ -243,16 +234,6 @@ implicit
   }
 
 
-  [TypeCheckingError] pre_typecheck_accessor_test_expr(Expr expr, SymbObj field, [Var -> Type] env)
-  {
-    errs = typecheck(expr, type_dot_access_target, env);
-    return errs if errs != [];
-    target_type = expr_type(expr, env);
-    is_permitted = accessor_test_is_permitted(target_type, field);
-    return [accessor_test_not_permitted_error(target_type, field) if not is_permitted];
-  }
-
-
   [TypeCheckingError] fully_typecheck_if_expr(Expr cond, Expr then_expr, Expr else_expr, Type exp_type, [Var -> Type] env)
   {
     errs = typecheck(cond, type_bool, env);
@@ -275,7 +256,7 @@ implicit
     {
       errs = (ptrn_cannot_match_type(p, t) : p, t <- zip(ptrns, types); t != empty_type and not may_match(p, t));
       return set(errs) if errs != ();
-      case_expr_env = update_environment(exprs, ptrns, env);
+      case_expr_env = update_env(exprs, ptrns, env);
       return typecheck(expr, exp_type, case_expr_env);
     }
   }

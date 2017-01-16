@@ -4,8 +4,7 @@ implicit
   signatures  : [(FnFamilyId, Nat) -> SgnSet],
   closures    : [ClsVar -> ClsType],
   var_aliases : [[Var]],
-  typed_vars  : [StdVar -> NeType],
-  verbose     : Bool;
+  typed_vars  : [StdVar -> NeType];
 
 
   [TypeCheckingError] typecheck(Statement* stmts, Type exp_type, [Var -> Type] env)
@@ -14,7 +13,7 @@ implicit
     for s <- stmts:
       errs = typecheck(s, exp_type, curr_env);
       return errs if errs != [];
-      curr_env = update_environment(s, curr_env);
+      curr_env = update_env(s, curr_env);
     ;
     return [];
   }
@@ -64,17 +63,18 @@ implicit
   }
 
 
-  [TypeCheckingError] typecheck_loop_stmt(Statement+ stmts, Type exp_type, [Var -> Type] env)
+  [TypeCheckingError] typecheck_loop_stmt(Statement+ body, Type exp_type, [Var -> Type] env)
   {
-    curr_env = env;
-    for 5: //## BAD: THIS IS A TOTALLY ARBITRARY NUMBER...
-      errs = typecheck(stmts, exp_type, curr_env);
+    mutable_vars = intersection(keys(env), new_vars(body));
+    entry_env = env;
+    for 2:
+      errs = typecheck(body, exp_type, entry_env);
       return errs if errs != [];
-      new_env = update_environment(stmts, curr_env);
-      return [] if new_env == curr_env;
-      curr_env = new_env;
+      env_delta = select_by_key(update_env(body, entry_env), mutable_vars);
+      return [] if not (v, t <- env_delta : not is_subset(t, entry_env(v)));
+      entry_env = update(entry_env, merge_envs(entry_env, env_delta));
     ;
-    return [loop_did_not_converge(5)];
+    return [loop_did_not_converge(2)];
   }
 
 
@@ -96,15 +96,19 @@ implicit
       loop_vars = merge(([v -> t] : v, t <- zip(vars, field_types)));
     ;
     loop_vars = loop_vars & [value(maybe_idx_var) -> type_nat] if maybe_idx_var != nil;
-    curr_env = update(env, loop_vars);
-    for 5:
-      errs = typecheck(body, exp_type, curr_env);
+
+    mutable_vars = intersection(keys(env), new_vars(body));
+
+    entry_env = update(env, loop_vars);
+    for 2:
+      errs = typecheck(body, exp_type, entry_env);
       return errs if errs != [];
-      new_env = update_environment(body, curr_env);
-      return [] if new_env == curr_env;
-      curr_env = new_env;
+      env_delta = select_by_key(update_env(body, entry_env), mutable_vars);
+      return [] if not (v, t <- env_delta : not is_subset(t, entry_env(v)));
+      entry_env = update(entry_env, merge_envs(entry_env, env_delta));
     ;
-    return [loop_did_not_converge(5)];
+
+    return [loop_did_not_converge(2)];
   }
 
 
@@ -113,17 +117,26 @@ implicit
   {
     errs = typecheck(start_val, integer, env) & typecheck(end_val, integer, env);
     return errs if errs != [];
-    curr_env = env & [
-      value(maybe_var) -> loop_var_type(expr_type(start_val, env), expr_type(end_val, env), end_val_incl) if maybe_var != nil
+
+    entry_env = env & [
+      value(maybe_var) ->
+        loop_var_type(
+          expr_type(start_val, env),
+          expr_type(end_val, env),
+          end_val_incl
+        ) if maybe_var != nil
     ];
-    for 5:
-      errs = typecheck(body, exp_type, curr_env);
+
+    mutable_vars = intersection(keys(env), new_vars(body));
+
+    for 2:
+      errs = typecheck(body, exp_type, entry_env);
       return errs if errs != [];
-      new_env = update_environment(body, curr_env);
-      return [] if new_env == curr_env;
-      curr_env = new_env;
+      env_delta = select_by_key(update_env(body, entry_env), mutable_vars);
+      return [] if not (v, t <- env_delta : not is_subset(t, entry_env(v)));
+      entry_env = update(entry_env, merge_envs(entry_env, env_delta));
     ;
-    return [loop_did_not_converge(5)];
+    return [loop_did_not_converge(2)];
   }
 
 
