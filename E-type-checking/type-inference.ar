@@ -1,6 +1,6 @@
 implicit
 {
-  typedefs    : [TypeName -> Type],
+  typedefs    : [TypeName -> NeType],
   signatures  : [(FnFamilyId, Nat) -> SgnSet],
   closures    : [ClsVar -> ClsType],
   var_aliases : [[Var]];
@@ -157,10 +157,13 @@ implicit
       fields = [only_symb(e.key_type) -> (type: e.value_type, optional: e.optional) : e <- entries];
       return record_type(fields);
     else
-      actual_key_type = union_superset([e.key_type : e <- entries]);
-      actual_value_type = union_superset([e.value_type : e <- entries]);
+      key_type = union_superset([e.key_type : e <- entries]);
+      value_type = union_superset([e.value_type : e <- entries]);
       nonempty = (e <- entries : not e.optional);
-      return type_map(actual_key_type, actual_value_type, nonempty);
+      if key_type == empty_type or value_type == empty_type:
+        return if nonempty then empty_type else empty_bin_rel_type;
+      ;
+      return type_map(key_type, value_type, nonempty);
     ;
 
 
@@ -179,10 +182,13 @@ implicit
   Type bin_rel_expr_type([(args: (Expr, Expr), cond: Expr?)] raw_entries, [Var -> Type] env)
   {
     entries = [entry_info(e, env) : e <- raw_entries];
-    actual_arg0_type = union_superset([e.arg_types(0) : e <- entries]);
-    actual_arg1_type = union_superset([e.arg_types(1) : e <- entries]);
+    arg0_type = union_superset([e.arg_types(0) : e <- entries]);
+    arg1_type = union_superset([e.arg_types(1) : e <- entries]);
     nonempty = (e <- entries : not e.optional);
-    return type_bin_rel(actual_arg0_type, actual_arg1_type, nonempty);
+    if arg0_type == empty_type or arg1_type == empty_type:
+      return if nonempty then empty_type else empty_bin_rel_type;
+    ;
+    return type_bin_rel(arg0_type, arg1_type, nonempty);
 
 
     (arg_types: (Type, Type), optional: Bool) entry_info((args: (Expr, Expr), cond: Expr?) entry, [Var -> Type] env)
@@ -200,11 +206,14 @@ implicit
   Type tern_rel_expr_type([(args: (Expr, Expr, Expr), cond: Expr?)] raw_entries, [Var -> Type] env)
   {
     entries = [entry_info(e, env) : e <- raw_entries];
-    actual_arg0_type = union_superset([e.arg_types(0) : e <- entries]);
-    actual_arg1_type = union_superset([e.arg_types(1) : e <- entries]);
-    actual_arg2_type = union_superset([e.arg_types(2) : e <- entries]);
+    arg0_type = union_superset([e.arg_types(0) : e <- entries]);
+    arg1_type = union_superset([e.arg_types(1) : e <- entries]);
+    arg2_type = union_superset([e.arg_types(2) : e <- entries]);
     nonempty = (e <- entries : not e.optional);
-    return type_tern_rel(actual_arg0_type, actual_arg1_type, actual_arg2_type, nonempty);
+    if arg0_type == empty_type or arg1_type == empty_type or arg2_type == empty_type:
+      return if nonempty then empty_type else empty_tern_rel_type;
+    ;
+    return type_tern_rel(arg0_type, arg1_type, arg2_type, nonempty);
 
 
     (arg_types: (Type, Type, Type), optional: Bool) entry_info((args: (Expr, Expr, Expr), cond: Expr?) entry, [Var -> Type] env)
@@ -317,6 +326,9 @@ implicit
     arg0_type = expr_type(exprs(0), new_env);
     arg1_type = expr_type(exprs(1), new_env);
     nonempty = always_yields_results(source, env);
+    if arg0_type == empty_type or arg1_type == empty_type:
+      return if nonempty then empty_type else empty_bin_rel_type;
+    ;
     return type_bin_rel(arg0_type, arg1_type, nonempty);
   }
 
@@ -328,6 +340,9 @@ implicit
     arg1_type = expr_type(exprs(1), new_env);
     arg2_type = expr_type(exprs(2), new_env);
     nonempty = always_yields_results(source, env);
+    if arg0_type == empty_type or arg1_type == empty_type or arg2_type == empty_type:
+      return if nonempty then empty_type else empty_tern_rel_type;
+    ;
     return type_tern_rel(arg0_type, arg1_type, arg2_type, nonempty);
   }
 
@@ -840,7 +855,7 @@ type IterTree = never, once([Var -> Type]), repeated(IterTree), any([+IterTree])
 
 
 implicit
-  typedefs    : [TypeName -> Type],
+  typedefs    : [TypeName -> NeType],
   signatures  : [(FnFamilyId, Nat) -> SgnSet],
   closures    : [ClsVar -> ClsType],
   var_aliases : [[Var]]
@@ -1022,7 +1037,7 @@ MapCompType map_comp_union_type([+MapCompType] ts)
 }
 
 
-implicit typedefs : [TypeName -> Type]
+implicit typedefs : [TypeName -> NeType]
 {
   MapCompType both(MapCompType type1, MapCompType type2):
     empty_bin_rel_type,     _                     = type2,
@@ -1126,7 +1141,7 @@ implicit typedefs : [TypeName -> Type]
 
 implicit
 {
-  typedefs    : [TypeName -> Type],
+  typedefs    : [TypeName -> NeType],
   signatures  : [(FnFamilyId, Nat) -> SgnSet],
   closures    : [ClsVar -> ClsType],
   typed_vars  : [StdVar -> NeType],

@@ -18,12 +18,12 @@ type TypeCheckingError =
     target_signature:   FnType,
     param_name:         ImplArg,
     formal_type:        AnyType,
-    inst_formal_type:   AnyType,
+    inst_formal_type:   <empty_type, AnyType>,
     actual_type:        AnyType
   ),
   invalid_return_type(actual_type: Type, expected_type: Type),
   unexpected_actual_type(actual_type: Type, expected_type: Type),
-  invalid_cls_param_type(actual_type: ClsType, expected_type: ClsType),
+  invalid_cls_param_type(actual_type: ClsType, exp_arg_types: Type+, exp_ret_type: Type),
   invalid_rel_arg_type(idx: Nat, actual_type: Type, expected_type: Type),
   loop_did_not_converge(iteractions: NzNat),
   ptrn_cannot_match_type(pattern: Pattern, type: Type),
@@ -82,7 +82,7 @@ TypeCheckingError invalid_cls_var_type(ClsVar v, ClsType t, [TypeVar -> Type] tv
 
 TypeCheckingError invalid_cls_param_types(FnType s, [TypeCheckingError] es) = invalid_cls_param_types(target_signature: s, errors: es);
 
-TypeCheckingError invalid_implicit_par_type(FnType s, ImplArg p, AnyType ft, AnyType ift, AnyType at) =
+TypeCheckingError invalid_implicit_par_type(FnType s, ImplArg p, AnyType ft, <empty_type, AnyType> ift, AnyType at) =
   invalid_implicit_par_type(
     target_signature:   s,
     param_name:         p,
@@ -95,7 +95,8 @@ TypeCheckingError invalid_return_type(Type at, Type et) = invalid_return_type(ac
 
 TypeCheckingError unexpected_actual_type(Type at, Type et) = unexpected_actual_type(actual_type: at, expected_type: et);
 
-TypeCheckingError invalid_cls_param_type(ClsType at, ClsType et) = invalid_cls_param_type(actual_type: at, expected_type: et);
+TypeCheckingError invalid_cls_param_type(ClsType at, Type+ eat, Type ert) =
+  invalid_cls_param_type(actual_type: at, exp_arg_types: eat, exp_ret_type: ert);
 
 TypeCheckingError invalid_rel_arg_type(Nat i, Type at, Type et) = invalid_rel_arg_type(idx: i, actual_type: at, expected_type: et);
 
@@ -122,7 +123,7 @@ TypeCheckingError expression_can_never_belong_to_type(Type at, Type t)  = expres
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-implicit typedefs : [TypeName -> Type]
+implicit typedefs : [TypeName -> NeType]
 {
   [TypeCheckingError] invalid_type_if_not_subset(Type at, Type et) = [
     unexpected_actual_type(at, et) if not is_subset(at, et)
@@ -208,7 +209,10 @@ String* create_error_msg(TypeCheckingError err):
   unexpected_actual_type()            = ( "Invalid type: " & user_repr(err.actual_type),
                                           "  The type must be a subset of " & user_repr(err.expected_type)
                                         ),
-  invalid_cls_param_type()            = ("Invalid closure parameter type. Actual type: " & user_repr(err.actual_type) & " Expected type: " & user_repr(err.expected_type)),
+  invalid_cls_param_type()            = ( "Invalid closure parameter type.",
+                                          "  Actual type: " & user_repr(err.actual_type),
+                                          "  Expected type: " & cls_type_user_repr(err.exp_arg_types, err.exp_ret_type)
+                                        ),
   loop_did_not_converge()             = ("Cannot infer types of variables updated in loop"),
   ptrn_cannot_match_type()            = ("Pattern cannot match type: " & user_repr(err.pattern)),
   annotated_error()                   = create_annotated_error_msg(err.error, err.anchor),

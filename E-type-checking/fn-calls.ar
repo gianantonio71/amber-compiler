@@ -7,7 +7,7 @@ type SgnSet = sgn_set(
               );
 
 
-SgnSet preprocess_signatures([+FnType] signatures, [TypeName -> Type] tdefs)
+SgnSet preprocess_signatures([+FnType] signatures, [TypeName -> NeType] tdefs)
 {
   sgns_by_ret_type = equiv_groups(signatures, is_eq($a.ret_type, $b.ret_type, typedefs=tdefs));
   // new_sgns = nonempty(union({aggregate_signatures(ss, tdefs) : ss <- sgns_by_ret_type}));
@@ -32,7 +32,7 @@ SgnSet preprocess_signatures([+FnType] signatures, [TypeName -> Type] tdefs)
   );
 
 
-  Maybe[Nat+] dispatch_args([+FnType] signatures, [TypeName -> Type] tdefs)
+  Maybe[Nat+] dispatch_args([+FnType] signatures, [TypeName -> NeType] tdefs)
   {
     a_sgn = an_elem(signatures);
     return nil if arity(a_sgn) == 0 or (s <- signatures : is_param_type(s));
@@ -45,7 +45,7 @@ SgnSet preprocess_signatures([+FnType] signatures, [TypeName -> Type] tdefs)
   }
 
 
-  Bool is_dispatch_arg(Nat idx, FnType+ sgns, [TypeName -> Type] tdefs)
+  Bool is_dispatch_arg(Nat idx, FnType+ sgns, [TypeName -> NeType] tdefs)
   {
     count = length(sgns);
     types = (s.args(idx) : s <- sgns);
@@ -61,7 +61,7 @@ SgnSet preprocess_signatures([+FnType] signatures, [TypeName -> Type] tdefs)
 }
 
 
-[+FnType] aggregate_signatures([+FnType] signatures, [TypeName -> Type] tdefs)
+[+FnType] aggregate_signatures([+FnType] signatures, [TypeName -> NeType] tdefs)
 {
   a_sgn = an_elem(signatures);
   sgns = signatures;
@@ -70,7 +70,7 @@ SgnSet preprocess_signatures([+FnType] signatures, [TypeName -> Type] tdefs)
   ;
   return sgns;
 
-  [+FnType] merge_comp_sgns([+FnType] signatures, Nat par_idx, [TypeName -> Type] tdefs)
+  [+FnType] merge_comp_sgns([+FnType] signatures, Nat par_idx, [TypeName -> NeType] tdefs)
   {
     new_sgns = [];
     sgns = signatures;
@@ -87,14 +87,14 @@ SgnSet preprocess_signatures([+FnType] signatures, [TypeName -> Type] tdefs)
   FnType merge_all_sgns([+FnType] signatures, Nat par_idx, [TypeName -> Type] tdefs)
   {
     //## BUG BUG BUG: THERE'S PROBABLY A BUG WITH CLOSURE PARAMETERS HERE. INVESTIGATE
-    merged_par_type = union_type([cast_as_type(s.args(par_idx)) : s <- signatures]);
-    merged_ret_type = union_superset([s.ret_type : s <- signatures]);
+    merged_par_type = ne_union_type([cast_type(s.args(par_idx)) : s <- signatures]);
+    merged_ret_type = ne_union_superset([s.ret_type : s <- signatures]);
     a_sgn = an_elem(signatures);
     args = (if i == par_idx then merged_par_type else p : p @ i <- an_elem(signatures).args);
     return fn_type(args, a_sgn.impl_args, merged_ret_type);
   }
 
-  Bool other_params_are_eq(FnType sgn1, FnType sgn2, Nat par_idx, [TypeName -> Type] tdefs)
+  Bool other_params_are_eq(FnType sgn1, FnType sgn2, Nat par_idx, [TypeName -> NeType] tdefs)
   {
     for p1, p2 @ i <- zip(sgn1.args, sgn2.args):
       return false if i != par_idx and not types_or_cls_types_are_eq(p1, p2, tdefs);
@@ -109,7 +109,7 @@ SgnSet preprocess_signatures([+FnType] signatures, [TypeName -> Type] tdefs)
     return true;
   }
 
-  Bool types_or_cls_types_are_eq(AnyType t1, AnyType t2, [TypeName -> Type] tdefs):
+  Bool types_or_cls_types_are_eq(AnyType t1, AnyType t2, [TypeName -> NeType] tdefs):
     Type,     Type      = is_eq(t1, t2, typedefs=tdefs),
     ClsType,  ClsType   = is_eq(t1, t2, typedefs=tdefs);
 }
@@ -117,7 +117,7 @@ SgnSet preprocess_signatures([+FnType] signatures, [TypeName -> Type] tdefs)
 
 implicit
 {
-  typedefs    : [TypeName -> Type],
+  typedefs    : [TypeName -> NeType],
   signatures  : [(FnFamilyId, Nat) -> SgnSet],
   closures    : [ClsVar -> ClsType],
   var_aliases : [[Var]];
@@ -202,7 +202,7 @@ implicit
 
 implicit
 {
-  typedefs    : [TypeName -> Type],
+  typedefs    : [TypeName -> NeType],
   signatures  : [(FnFamilyId, Nat) -> SgnSet],
   closures    : [ClsVar -> ClsType],
   var_aliases : [[Var]];
@@ -288,9 +288,11 @@ implicit
 
     // Let's start with positional closure parameters
     cls_errs = [];
-    for p, t <- zip(args, signature.args):
-      if p :: ClsExpr and t :: ClsType:
-        cls_errs = cls_errs & typecheck(p, replace_type_vars(t, type_var_insts), env); //## BUG: I THINK THIS IS BROKEN...
+    for arg, type <- zip(args, signature.args):
+      if arg :: ClsExpr and type :: ClsType:
+        arg_types = (replace_type_vars(t, type_var_insts) : t <- type.in_types);
+        ret_type = replace_type_vars(type.out_type, type_var_insts);
+        cls_errs = cls_errs & typecheck(arg, arg_types, ret_type, env); //## BUG: I THINK THIS IS BROKEN...
       ;
     ;
 
@@ -299,24 +301,19 @@ implicit
     // Going through all the implicit arguments in the signature
     for n, t <- rand_sort_pairs(signature.impl_args):
       // Instantiating type variables in the formal type
+      //## IMPLICIT ARGUMENTS TYPES ARE NOT SUPPOSED TO CONTAIN TYPE VARIABLES ANYMORE,
+      //## SO THIS STEP SHOULD BE USELESS...
       inst_type = replace_type_vars(t, type_var_insts);
-      if has_key(impl_args, n):
+      if impl_args(n, ?):
         // The implicit argument has been specified as part of the function call
         impl_arg_errs = impl_arg_errs & typecheck(impl_args(n), inst_type, env);
-      elif has_key(env, n):
+      elif env(n, ?):
         // The argument has been specified implicitly, as a scalar object
         // The actual parameter is an object, and the formal parameter must be an object too
         // (unless there's a bug in the well-formedness checking code)
-        actual_type = env[n];
-        if not is_subset(actual_type, cast_as_type(inst_type)):
+        actual_type = env(n);
+        if actual_type != empty_type and (inst_type == empty_type or not is_subset(actual_type, cast_type(inst_type))):
           impl_arg_errs = impl_arg_errs & [invalid_implicit_par_type(signature, n, t, inst_type, actual_type)];
-        ;
-      elif has_key(closures, n):
-        // Implicitly specified again, this time as a closure.
-        // The formal parameter must be a closure as well
-        actual_cls_type = closures[n];
-        if not is_subset(actual_cls_type, cast_as_cls_type(inst_type)):
-          impl_arg_errs = impl_arg_errs & [invalid_implicit_par_type(signature, n, t, inst_type, actual_cls_type)];
         ;
       else
         // The implicit argument has not been provided, either implicitly or explicitly
