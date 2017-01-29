@@ -3,6 +3,7 @@ implicit
   typedefs    : [TypeName -> NeType],
   signatures  : [(FnFamilyId, Nat) -> SgnSet],
   closures    : [ClsVar -> ClsType],
+  constraints : [(AtomicFnSymb, NzNat) -> [+ClsType]],
   var_aliases : [[Var]];
 
 
@@ -411,6 +412,13 @@ implicit
     return true;
   }
 
+
+  Bool will_dispatch_to(ClsType signature, AnyExpr* args, [Var -> Type] env) =
+    all((
+      is_scalar_expr(a) and is_subset(expr_type(a, env), t)
+      : a, t <- zip(args, signature.in_types)
+    ));
+
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
@@ -447,7 +455,9 @@ implicit
 
   ([Var -> Type], [Var -> Type]) refine_fn_call_env(FnCallExpr expr, [Var -> Type] env)
   {
-    sgn_set = signatures((expr.name, length(expr.args)));
+    fn_key = (expr.name, length(expr.args));
+    return (env, env) if not signatures(fn_key, ?);
+    sgn_set = signatures(fn_key);
     return (env, env) if not sgn_set.refines_env;
 
     sgns_envs = [s -> refine_fn_env(expr, s, env) : s <- sgn_set.sgns];
@@ -855,11 +865,14 @@ type IterTree = never, once([Var -> Type]), repeated(IterTree), any([+IterTree])
 
 
 implicit
+{
   typedefs    : [TypeName -> NeType],
   signatures  : [(FnFamilyId, Nat) -> SgnSet],
   closures    : [ClsVar -> ClsType],
-  var_aliases : [[Var]]
-{
+  constraints : [(AtomicFnSymb, NzNat) -> [+ClsType]],
+  var_aliases : [[Var]];
+
+
   IterTree full_iter_tree(Clause cls, [Var -> Type] env) = iter_tree(cls, env, :once($));
 
 
@@ -1144,6 +1157,7 @@ implicit
   typedefs    : [TypeName -> NeType],
   signatures  : [(FnFamilyId, Nat) -> SgnSet],
   closures    : [ClsVar -> ClsType],
+  constraints : [(AtomicFnSymb, NzNat) -> [+ClsType]],
   typed_vars  : [StdVar -> NeType],
   var_aliases : [[Var]];
 

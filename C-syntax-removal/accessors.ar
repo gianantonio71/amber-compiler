@@ -54,23 +54,77 @@ DBMethodCall apply_args(PreDBCall pre_call, Expr* args) =
 
 ////////////////////////////////////////////////////////////////////////////////
 
+[[+TypeVar -> Atom]] typevar_bindings(TypeVarDecl decl) =
+  [nonempty(merge(([type_var(v) -> t] : v, t <- zip(decl.type_vars, types)))) : types <- set(decl.prot_types)];
+
+
 implicit syn_prg : SynPrg
 {
-  [PrgDecl] all_syn_decls = match (syn_prg) prg(ds?)  = set(ds);
+  [PrgDecl] all_syn_decls
+  {
+    return union([process_src_file(ds) : unused_var, ds <- syn_prg.parsed_src_files]);
+
+    [PrgDecl] process_src_file(PrgDecl* decls)
+    {
+      decl_set = set(decls);
+      tvar_binds = union([typevar_bindings(d) : d <- decl_set; typevar_decl() <~ d]);
+      return [
+        match (d)
+          syn_fn_def()  = process_fn_def(d, tvar_binds),
+          impl_block()  = process_impl_block(d, tvar_binds),
+          _             = d
+        : d <- decl_set
+      ];
+    }
+
+    SynFnDef process_fn_def(SynFnDef fn_def, [[+TypeVar -> Atom]] tvar_binds)
+    {
+      assert fn_def.typevars == [];
+      tvars = seq_union((syn_type_vars(a.type) : a <- fn_def.args));
+      assert subset(syn_type_vars(fn_def.res_type), tvars);
+      local_tvar_binds = [fb : b <- tvar_binds; fb = [v -> t : v, t <- b; tvars(v)]; fb != [:]];
+      local_fns = (transfer_attachments(process_fn_def(fd, tvar_binds), fd) : fd <- fn_def.local_fns);
+      new_fn_def = syn_fn_def(
+        name:       fn_def.name,
+        args:       fn_def.args,
+        res_type:   fn_def.res_type,
+        expr:       fn_def.expr,
+        local_fns:  local_fns,
+        typevars:   local_tvar_binds
+      );
+      return transfer_attachments(new_fn_def, fn_def);
+    }
+
+
+    ImplBlock process_impl_block(ImplBlock block, [[+TypeVar -> Atom]] tvar_binds)
+    {
+      fn_defs = (process_fn_def(fd, tvar_binds) : fd <- block.fn_defs);
+      return transfer_attachments(impl_block(block.args, fn_defs), block);
+    }
+  }
+
 
   [SynTypedef]    syn_tdefs       = [d : d <- all_syn_decls; typedef()          <~ d];
   [SynParTypedef] syn_par_tdefs   = [d : d <- all_syn_decls; par_typedef()      <~ d];
   [SynFnDef]      syn_fn_defs     = [d : d <- all_syn_decls; syn_fn_def()       <~ d];
   [SynProcDef]    syn_proc_defs   = [d : d <- all_syn_decls; syn_proc_def()     <~ d];
-  [ImplBlock]     impl_blocks     = [d : d <- all_syn_decls; implicit_block()   <~ d];
+  [ImplBlock]     impl_blocks     = [d : d <- all_syn_decls; impl_block()       <~ d];
   [SynAutoDef]    syn_auto_defs   = [d : d <- all_syn_decls; syn_auto_def()     <~ d];
   [SynDBDef]      syn_db_defs     = [d : d <- all_syn_decls; syn_db_def()       <~ d];
   [AutoMethodDef] auto_methods    = [d : d <- all_syn_decls; auto_method_def()  <~ d];
   [HandlerDef]    handler_defs    = [d : d <- all_syn_decls; handler_def()      <~ d];
   [UsingBlock]    using_blocks    = [d : d <- all_syn_decls; using_block()      <~ d];
+  [ProtDecl]      prot_decls      = [d : d <- all_syn_decls; prot_decl()        <~ d];
+  [TypeVarDecl]   typevar_decls   = [d : d <- all_syn_decls; typevar_decl()     <~ d];
 
 
   [TypeName -> NeType] typedefs = create_type_map(syn_tdefs, syn_par_tdefs);
+
+
+  [Atom] protocol_types = union([set(pd.types) : pd <- prot_decls]);
+
+
+  [Atom -> ProtDecl] prot_decl_by_type = [t -> pd : pd <- prot_decls; t <- set(pd.types)];
 
 
   [ProcSymbol -> SynProcDef] proc_defs_by_id = [p.name -> p : p <- syn_proc_defs];
@@ -328,6 +382,31 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef
 
 implicit syn_prg : SynPrg, syn_artifact : SynArtifact
 {
+  [AtomicFnSymb -> [+NzNat]] protocol_methods
+  {
+    args, typevars = match (syn_artifact)
+      top_level_fn_def()  |
+      nested_fn_def()     = (syn_artifact.fndef.args, syn_artifact.fndef.typevars),
+      _                   = ((), []);
+
+    // All the protocol types that are mentioned in the current function signatures,
+    // either directly or via an explicitly declared type variable
+    expl_prot_types = union([values(tvs) : tvs <- typevars]);
+    impl_prot_types = seq_union((refd_prot_types(a.type, protocol_types) : a <- args));
+    prot_types = expl_prot_types & impl_prot_types;
+
+    // All relevant protocols and their methods
+    prots = [prot_decl_by_type[t] : t <- prot_types];
+    methods = [m : p <- prots; m <- set(p.methods)];
+
+    // Methods that do not contain protocol types that are not used in the current signature
+    filtered_methods = [m : m <- methods; (unused_var?, ats?, rt?) <~ m;
+                            subset(refd_prot_types(ats, rt, protocol_types), prot_types)];
+
+    return merge_values([[n -> length(ats) : m <- filtered_methods; (n?, ats?, unused_var?) <~ m]]);
+  }
+
+
   [TypeVar] def_type_vars
   {
     return match (syn_artifact)
@@ -505,7 +584,11 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact
 
 
   Nat* arg_arities(AtomicFnSymb fn_symb, Nat arity) =
-    fn_defs_arg_arities[fn_symb][arity];
+    if arity == 0 or lookup(protocol_methods, fn_symb, [])(arity)
+      then (0 : i < arity)
+      else fn_defs_arg_arities[fn_symb][arity];
+      //## BUG BUG BUG: THIS CRASHES THE COMPILER...
+      // else fn_defs_arg_arities(fn_symb)(arity);
 
 
   Nat* arg_arities(NestedFnFamilyId fn_symb, Nat arity) =
@@ -514,6 +597,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact
 
   [+[ImplArg]] fn_impl_args(AtomicFnSymb fn_symb, Nat arity)
   {
+    return [[]] if arity != 0 and lookup(protocol_methods, fn_symb, [])(arity);
     ext_fds = top_level_fndefs_by_name_arity[fn_symb][arity];
     return [[a.name : a <- ias] : efd <- ext_fds; ias = right(efd)];
   }

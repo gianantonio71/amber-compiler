@@ -32,8 +32,9 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
 {
   Bool arity_is_compatible(AtomicFnSymb fn_symb, Nat arity)
   {
-    arities = keys(top_level_fndefs_by_name_arity[fn_symb]);
-    return arities(arity);
+    fn_arities = keys(lookup(top_level_fndefs_by_name_arity, fn_symb, [:]));
+    prot_meth_arities = lookup(protocol_methods, fn_symb, []);
+    return fn_arities(arity) or (arity != 0 and prot_meth_arities(arity));
   }
 
   Bool arity_is_compatible(NestedFnFamilyId fn_symb, Nat arity)
@@ -311,7 +312,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
     gen_resols = [
       std_var if def_vars(std_var);
       impl_arg if impl_args(impl_arg);
-      fn_symb if top_level_fndefs_by_name_arity(fn_symb, ?)
+      fn_symb if top_level_fndefs_by_name_arity(fn_symb, ?) or protocol_methods(fn_symb, ?)
     ];
     ctx_resols = resolve_symbol(syn_artifact, symbol);
     return gen_resols & ctx_resols;
@@ -390,29 +391,29 @@ implicit syn_prg : SynPrg
   }
 
 
-  [<ClsVar, NestedFnFamilyId>] resolve_symbol(TopLevelFnDef artifact, Atom symbol)
+  [<ClsVar, StdFnSymb, NestedFnFamilyId>] resolve_symbol(TopLevelFnDef artifact, Atom symbol)
   {
     cls_var = cls_var(symbol);
     fn_symb = fn_symbol(symbol);
     nested_fn_symb = nested_fn_symbol(artifact.unique_name, fn_symb);
 
-    return [
-      cls_var         if (a <- set(artifact.fndef.args); cls_arg() <~ a : a.name == symbol);
-      nested_fn_symb  if at_least_one((fn.name == fn_symb : fn <- artifact.fndef.local_fns))
-    ];
+    may_be_cls_var = (a <- set(artifact.fndef.args); cls_arg() <~ a : a.name == symbol);
+    may_be_loc_fn = at_least_one((fn.name == fn_symb : fn <- artifact.fndef.local_fns));
+
+    return [cls_var if may_be_cls_var; nested_fn_symb if may_be_loc_fn];
   }
 
 
-  [<ClsVar, NestedFnFamilyId>] resolve_symbol(NestedFnDef artifact, Atom symbol)
+  [<ClsVar, StdFnSymb, NestedFnFamilyId>] resolve_symbol(NestedFnDef artifact, Atom symbol)
   {
     cls_var = cls_var(symbol);
     fn_symb = fn_symbol(symbol);
     nested_fn_symb = nested_fn_symbol(artifact.parent_unique_name, fn_symb);
 
-    return [
-      cls_var         if (a <- set(artifact.fndef.args); cls_arg() <~ a : a.name == symbol);
-      nested_fn_symb  if at_least_one((fn.name == fn_symb : fn <- artifact.parent_fndef.local_fns))
-    ];
+    may_be_cls_var = (a <- set(artifact.fndef.args); cls_arg() <~ a : a.name == symbol);
+    may_be_loc_fn = at_least_one((fn.name == fn_symb : fn <- artifact.parent_fndef.local_fns));
+
+    return [cls_var if may_be_cls_var; nested_fn_symb if may_be_loc_fn];
   }
 
 

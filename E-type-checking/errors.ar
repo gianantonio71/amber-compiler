@@ -28,6 +28,8 @@ type TypeCheckingError =
   loop_did_not_converge(iteractions: NzNat),
   ptrn_cannot_match_type(pattern: Pattern, type: Type),
 
+  internal_typechecking_error,
+
   annotated_error(error: TypeCheckingError, anchor: Any),
 
   missing_impl_argument(fn: FnSymbol, arg: ImplArg),
@@ -42,7 +44,22 @@ type TypeCheckingError =
   invalid_map_lookup_key_type(exp_type: Type, actual_type: Type),
   invalid_map_lookup_value_type(exp_type: Type, actual_type: Type),
   expressions_can_never_be_equal(left_type: Type, right_type: Type),
-  expression_can_never_belong_to_type(actual_type: Type, type: Type);
+  expression_can_never_belong_to_type(actual_type: Type, type: Type),
+
+  invalid_prot_method_return_type(
+    method_name:      AtomicFnSymb,
+    args_types:       Type+,
+    ret_type:         Type,
+    actual_ret_type:  Type
+  ),
+  no_suitable_prot_method_found(
+    method_name:    AtomicFnSymb,
+    args_types:     Type+,
+    ret_type:       Type,
+    instantiations: [TypeVar -> Type],
+    constraints:    [ClsType],
+    signatures:     [FnType]
+  );
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -104,6 +121,8 @@ TypeCheckingError loop_did_not_converge(NzNat nis) = loop_did_not_converge(itera
 
 TypeCheckingError ptrn_cannot_match_type(Pattern p, Type t) = add_anchor_if_needed(ptrn_cannot_match_type(pattern: p, type: t), p);
 
+TypeCheckingError internal_typechecking_error = :internal_typechecking_error;
+
 TypeCheckingError annotated_error(TypeCheckingError e, Any a) = annotated_error(error: e, anchor: a);
 
 
@@ -119,6 +138,9 @@ TypeCheckingError invalid_map_lookup_value_type(Type et, Type at)   = invalid_ma
 TypeCheckingError expressions_can_never_be_equal(Type lt, Type rt)  = expressions_can_never_be_equal(left_type: lt, right_type: rt);
 
 TypeCheckingError expression_can_never_belong_to_type(Type at, Type t)  = expression_can_never_belong_to_type(actual_type: at, type: t);
+
+TypeCheckingError invalid_prot_method_return_type(AtomicFnSymb n, Type+ ats, Type rt, Type art) =
+  invalid_prot_method_return_type(method_name: n, args_types: ats, ret_type: rt, actual_ret_type: art);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -215,6 +237,9 @@ String* create_error_msg(TypeCheckingError err):
                                         ),
   loop_did_not_converge()             = ("Cannot infer types of variables updated in loop"),
   ptrn_cannot_match_type()            = ("Pattern cannot match type: " & user_repr(err.pattern)),
+
+  internal_typechecking_error         = ("Internal typechecking error"),
+
   annotated_error()                   = create_annotated_error_msg(err.error, err.anchor),
 
   not_a_valid_unary_pseudocall_target() = ("Not a valid target for unary pseudocall operator: " & user_repr(err.type)),
@@ -237,7 +262,33 @@ String* create_error_msg(TypeCheckingError err):
                                           "  Right type: " & user_repr(err.right_type)
                                         ),
 
-  expression_can_never_belong_to_type() = ("Expression can never belong to type. Actual type: " & user_repr(err.actual_type));
+  expression_can_never_belong_to_type() = ("Expression can never belong to type. Actual type: " & user_repr(err.actual_type)),
+
+  invalid_prot_method_return_type()   = ( "Invalid return type for protocol method " &
+                                            user_repr(err.method_name, length(err.args_types)),
+                                          "  Expected type: " & user_repr(err.ret_type),
+                                          "  Actual type:   " & user_repr(err.actual_ret_type)
+                                        ),
+
+  no_suitable_prot_method_found()     = {
+    method_repr = user_repr(err.method_name, length(err.args_types));
+    if err.constraints == [] and err.signatures == []:
+      return ("No protocol method found: " & method_repr);
+    ;
+    exp_sgn = append((user_repr(t) : t <- err.args_types), ", ") & " -> " & user_repr(err.ret_type);
+
+    msg_header = (
+      "No suitable protocol method found: " & method_repr,
+      "  Expected signature:",
+      "    " & exp_sgn,
+      "  Actual signatures:"
+    );
+
+    reqs_sgns = ("    " & user_repr(rs) : rs <- rand_sort(err.constraints));
+    sgns = ("    " & user_repr(s) : s <- rand_sort(err.signatures));
+
+    return msg_header & reqs_sgns & sgns;
+  };
 
 
 String* create_no_dispatchable_function_found_error_msg(FnSymbol name, NzNat arity, [+FnType] signatures, Maybe[Type]* par_types)

@@ -4,7 +4,7 @@ implicit syn_prg : SynPrg, db_def : SynDBDef
   {
     state_vars = [
       memb_var(v.name) -> (
-        type:       syn_type_to_type(v.type, nil),
+        type:       desugar_type(v.type),
         init_value: desugar_expr(v.init_value, [], syn_artifact=db_def, impl_args=[])
       ) : v <- db_state_vars
     ];
@@ -30,11 +30,11 @@ implicit syn_prg : SynPrg, db_def : SynDBDef
   [RelVar -> (signatures: [+NeType+], keys: [[+Nat]])] desugared_relvars
   {
     root_relvars_sgns = [
-      [rel_var(v.name) -> (syn_type_to_type(t, nil) : t <- v.col_types)] : v <- db_rel_vars
+      [rel_var(v.name) -> (desugar_type(t) : t <- v.col_types)] : v <- db_rel_vars
     ];
 
     attr_relvars_sgns = [
-      [rel_var(arv.name) -> (syn_type_to_type(t, nil) : t <- (rv.col_types | arv.type))]
+      [rel_var(arv.name) -> (desugar_type(t) : t <- (rv.col_types | arv.type))]
       : rv <- db_rel_vars; arv <- set(rv.attributes)
     ];
 
@@ -55,14 +55,14 @@ implicit syn_prg : SynPrg, db_def : SynDBDef
 
     // root_relvars = [[
     //   rel_var(v.name) -> (
-    //     types:  (syn_type_to_type(t, nil) | t <- v.col_types),
+    //     types:  (desugar_type(t) | t <- v.col_types),
     //     keys:   v.keys
     //   )] | v <- db_rel_vars
     // ];
 
     // attr_relvars = [[
     //   rel_var(arv.name) -> (
-    //     types:  (syn_type_to_type(t, nil) | t <- (rv.col_types || arv.type)),
+    //     types:  (desugar_type(t) | t <- (rv.col_types || arv.type)),
     //     keys:   if arv.cardinality.multiple then [] else rv.keys
     //   )] | rv <- db_rel_vars, arv <- set(rv.attributes)
     // ];
@@ -71,8 +71,8 @@ implicit syn_prg : SynPrg, db_def : SynDBDef
 
   Method desugar_db_method(DBMethodDef method_def)
   {
-    args = ((syn_type_to_type(t, nil), just(var(n))) : t, n <- method_def.args);
-    ret_type = syn_type_to_type(method_def.ret_type, nil);
+    args = ((desugar_type(t), just(var(n))) : t, n <- method_def.args);
+    ret_type = desugar_type(method_def.ret_type);
     arg_vars = set((var(n) : unused_var, n <- method_def.args));
     artifact = using_block_method_def(db_def.name, method_def);
     expr = desugar_expr(method_def.expr, arg_vars, syn_artifact = artifact, impl_args = []);
@@ -82,7 +82,7 @@ implicit syn_prg : SynPrg, db_def : SynDBDef
 
   Update desugar_update(UpdateDef update_def)
   {
-    args = ((syn_type_to_type(t, nil), v) : t, v <- update_def.args);
+    args = ((desugar_type(t), v) : t, v <- update_def.args);
     arg_vars = set((v : unused_var, v <- update_def.args));
     artifact = using_block_update_def(db_def.name, update_def);
     body = desugar_stmts(update_def.body, arg_vars, syn_artifact = artifact, impl_args = []);
@@ -92,7 +92,7 @@ implicit syn_prg : SynPrg, db_def : SynDBDef
 
   Handler desugar_handler(HandlerDef handler_def)
   {
-    type = syn_type_to_type(handler_def.type, nil);
+    type = desugar_type(handler_def.type);
     body = desugar_stmts(handler_def.body, [var(:it)], syn_artifact = handler_def, impl_args = []);
     return handler(type, body);
   }

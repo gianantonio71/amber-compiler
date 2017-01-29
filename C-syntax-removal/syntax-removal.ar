@@ -13,8 +13,8 @@ implicit syn_prg : SynPrg
 
   Procedure desugar_proc_def(SynProcDef pd)
   {
-    args = ((var: p.var, type: syn_type_to_type(p.type, nil)) : p <- pd.args);
-    maybe_ret_type = if pd.res_type != nil then just(syn_type_to_type(value(pd.res_type), nil)) else nil;
+    args = ((var: p.var, type: desugar_type(p.type)) : p <- pd.args);
+    maybe_ret_type = if pd.res_type != nil then just(desugar_type(value(pd.res_type))) else nil;
     body = desugar_stmts(pd.body, set((p.var : p <- pd.args)), syn_artifact = pd, impl_args = []);
     auto_vars = merge(([loc_auto_var(v.var) -> auto_symbol(v.type)] : v <- pd.auto_vars));
     db_vars = merge(([loc_db_var(v.var) -> db_symbol(v.type)] : v <- pd.db_vars));
@@ -56,7 +56,7 @@ implicit syn_prg : SynPrg
       nested_fns = union([desugar_nested_fn_def_family(fds, fn_def, final_name, impl_args) : fds <- nested_fn_def_groups]);
       // Desugaring the main function
       let syn_artifact = top_level_fn_def(fn_def, final_name, impl_args):
-        fn = make_fn_def(final_name, fn_def.args, impl_args, fn_def.res_type, fn_def.expr);
+        fn = make_fn_def(final_name, fn_def.args, impl_args, fn_def.res_type, fn_def.expr, fn_def.typevars);
       ;
       return nested_fns & [transfer_attachments(fn, fn_def)];
     }
@@ -78,7 +78,7 @@ implicit syn_prg : SynPrg
       local_name = unique_fn_symbol(local_name, value(maybe_idx)) if maybe_idx != nil;
       final_name = nested_fn_symbol(outer_fn_name, local_name);
       let syn_artifact = nested_fn_def(fn_def, outer_fn_def, outer_fn_name, impl_args):
-        fn = make_fn_def(final_name, fn_def.args, impl_args, fn_def.res_type, fn_def.expr);
+        fn = make_fn_def(final_name, fn_def.args, impl_args, fn_def.res_type, fn_def.expr, fn_def.typevars);
       ;
       return transfer_attachments(fn, fn_def);
     }
@@ -89,33 +89,81 @@ implicit syn_prg : SynPrg
 
 implicit syn_prg : SynPrg, syn_artifact : SynArtifact
 {
-  Function make_fn_def(FnSymbol name, SynArg* syn_args, [ImplArgDecl] syn_impl_args, SynType syn_res_type, SynExpr syn_expr)
+  Function make_fn_def(FnSymbol name, SynArg* syn_args, [ImplArgDecl] syn_impl_args, SynType syn_res_type,
+    SynExpr syn_expr, [[+TypeVar -> Atom]] typevars)
   {
-    args = (desugar_formal_arg(a) : a <- syn_args);
-    impl_args = [a.name -> syn_type_to_type(a.type, nil) : a <- syn_impl_args];
-    res_type = syn_type_to_type(syn_res_type, nil);
+    // Retrieving all protocol types referenced in the argument types (no need to look at the return type)
+    sorted_prot_types = rand_sort(seq_union((refd_prot_types(a.type, protocol_types) : a <- syn_args)));
+    assert subset(refd_prot_types(syn_res_type, protocol_types), set(sorted_prot_types));
+
+    // Protocol type -> type variable substitution map (just for signature types, not constraints types)
+    subst_map = merge(([a -> type_var(i)] : a @ i <- sorted_prot_types));
+
+    // Desugaring types
+    args = (desugar_formal_arg(a, subst_map) : a <- syn_args);
+    impl_args = [a.name -> desugar_type(a.type) : a <- syn_impl_args];
+    res_type = desugar_prot_aware_type(syn_res_type, subst_map);
+
+    // Desugaring expression
     def_vars = [var(a.name) : a <- set(syn_args); obj_arg() <~ a; a.name?];
     expr = desugar_expr(syn_expr, def_vars, impl_args = [a.name : a <- syn_impl_args]);
+
+    // Creating type variable -> protocol type map for implicitly declared type variables
+    impl_binds = type_vars_bindings(sorted_prot_types);
+
+    // Calculating the type variable constraints from the type variables -> protocol types bindings
+    constrs = constraints(impl_binds & typevars);
+
     return function(
       name:       name,
       args:       args,
       impl_args:  impl_args,
       res_type:   res_type,
-      expr:       expr
+      expr:       expr,
+      constrs:    constrs
     );
 
 
-    FormalObjArg desugar_formal_arg(SynObjArg arg) =
+    [AtomicFnSymb -> [+ClsType]] constraints([[+TypeVar -> Atom]] binds) =
+      merge_value_sets_nonempty([constraints(bs) : bs <- binds]);
+
+
+    [AtomicFnSymb -> [+ClsType]] constraints([+TypeVar -> Atom] binds)
+    {
+      assert size([prot_decl_by_type[t] : unused_var, t <- binds]) == 1;
+
+      bound_types = values(binds);
+      prot = only([prot_decl_by_type[t] : unused_var, t <- binds]);
+      subst_map = reverse(binds);
+
+      return merge_values(set(({
+          args_types = (desugar_prot_aware_type(t, subst_map) : t <- ats);
+          ret_type = desugar_prot_aware_type(rt, subst_map);
+          return [n -> cls_type(args_types, ret_type)];
+        } : n, ats, rt <- prot.methods; subset(refd_prot_types(ats, rt, set(prot.types)), bound_types)
+      )));
+    }
+
+
+    [[+TypeVar -> Atom]] type_vars_bindings(Atom* sorted_prot_types)
+    {
+      var_type_pairs = seq_union(([(type_var(i), pt)] : pt @ i <- sorted_prot_types));
+      var_type_by_prot = group_by(var_type_pairs, prot_decl_by_type[right($)]);
+      return [[left(vt) -> right(vt) : vt <- vts] : p, vts <- var_type_by_prot];
+    }
+
+
+    FormalObjArg desugar_formal_arg(SynObjArg arg, [Atom -> TypeVar] subst_map) =
       formal_obj_arg(
         var:  var(arg.name) if arg.name?,
-        type: syn_type_to_type(arg.type, nil)
-    );
+        type: desugar_prot_aware_type(arg.type, subst_map)
+      );
 
 
-    FormalClsArg desugar_formal_arg(SynClsArg arg) =
+    FormalClsArg desugar_formal_arg(SynClsArg arg, [Atom -> TypeVar] subst_map) =
       formal_cls_arg(
         var:  cls_var(arg.name),
-        type: syn_type_to_type(arg.type, nil)
+        type: desugar_cls_type(arg.type, desugar_prot_aware_type($, subst_map))
       );
   }
 }

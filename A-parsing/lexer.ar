@@ -135,11 +135,14 @@ ParseTokenResult read_mixedcase_id(Nat* bytes, Nat offset)
 {
   assert is_upper(bytes, offset);
   len = alphanum_length(bytes, offset);
+  next_idx = nat(offset + len);
+  is_quoted = is_char(bytes, next_idx, ascii_single_quote);
   fail if len == 0; //## SHUTTING UP THE TYPECHECKER. AN ASSERT WOULD BE NICER
-  return failure(nat(offset+len)) if is_char(bytes, nat(offset+len), ascii_underscore);
-  return failure(offset) if none((is_lower(bytes, nat(offset+i)) : i < len));
+  return failure(next_idx) if is_char(bytes, next_idx, ascii_underscore);
+  return failure(offset) if not is_quoted and none((is_lower(bytes, nat(offset+i)) : i < len));
   symbol = symb(to_lower_with_underscores(nonempty(subseq(bytes, offset, len))));
-  return success(token_line_info(mixedcase_id(symbol), offset, len));
+  token = if is_quoted then uppercase_id(symbol) else mixedcase_id(symbol);
+  return success(token_line_info(token, offset, nz_nat(len + if is_quoted then 1 else 0)));
 }
 
 ParseTokenResult read_uppercase_id(Nat* bytes, Nat offset)
@@ -150,7 +153,8 @@ ParseTokenResult read_uppercase_id(Nat* bytes, Nat offset)
   next_idx = offset + len;
   next_ch = at(bytes, next_idx, 0);
   return failure(nat(next_idx)) if is_lower(next_ch) or next_ch == ascii_underscore;
-  symbol = symb((lower(ch) : ch <- subseq(bytes, offset, len)));
+  symbol = symb(to_lower_with_underscores(nonempty(subseq(bytes, offset, len))));
+  // symbol = symb((lower(ch) : ch <- subseq(bytes, offset, len)));
   return success(token_line_info(uppercase_id(symbol), offset, len));
 }
 

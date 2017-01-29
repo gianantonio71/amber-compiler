@@ -11,11 +11,21 @@ implicit syn_prg : SynPrg
     );
 
 
+  //## MOVE THIS TO accessor.ar
+  [BasicTypeSymbol -> [+Nat]] type_prot_arity_map
+  {
+    prot_types_arity_map = [type_symbol(t) -> [0] : d <- prot_decls; t <- set(d.types)];
+    return type_arity_map & prot_types_arity_map;
+  }
+
+
   WFError* prg_wf_errors
   {
     return typedefs_wf_errors if typedefs_wf_errors != ();
 
-    //## INSERT HERE GLOBAL CHECKS FOR AUTOMATA AND SCHEMAS
+    //## INSERT HERE GLOBAL CHECKS FOR AUTOMATA, SCHEMAS, PROTOCOLS
+
+    return typevar_decls_wf_errors if typevar_decls_wf_errors != ();
 
     args_errs = join(rand_sort([block_args_wf_errors(b.args) : b <- impl_blocks]));
     return args_errs if args_errs != ();
@@ -158,6 +168,17 @@ implicit syn_prg : SynPrg
   }
 
 
+  WFError* typevar_decls_wf_errors
+  {
+    return join((typevar_decl_wf_errors(rd) : rd <- rand_sort(typevar_decls)));
+
+    WFError* typevar_decl_wf_errors(TypeVarDecl typevar_decl)
+    {
+      return (); //## TODO: IMPLEMENT IMPLEMENT IMPLEMENT
+    }
+  }
+
+
   WFError* block_args_wf_errors(ImplArgDecl* signatures)
   {
     errs = ();
@@ -185,8 +206,8 @@ implicit syn_prg : SynPrg
 
   Maybe[WFError] fndef_signature_wf_errors(SynFnDef fndef, ImplArgDecl* impl_args)
   {
-    errs = join((type_wf_errors(p.type, type_arity_map) : p <- fndef.args; p.type?));
-    errs = errs & type_wf_errors(fndef.res_type, type_arity_map) if fndef.res_type?;
+    errs = join((type_wf_errors(p.type, type_prot_arity_map) : p <- fndef.args));
+    errs = errs & type_wf_errors(fndef.res_type, type_prot_arity_map);
 
     pos_args = (a.name : a <- fndef.args; a.name?);
     impl_args_ids = (bare_id(p.name) : p <- impl_args);

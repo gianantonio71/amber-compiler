@@ -91,7 +91,8 @@ SgnSet preprocess_signatures([+FnType] signatures, [TypeName -> NeType] tdefs)
     merged_ret_type = ne_union_superset([s.ret_type : s <- signatures]);
     a_sgn = an_elem(signatures);
     args = (if i == par_idx then merged_par_type else p : p @ i <- an_elem(signatures).args);
-    return fn_type(args, a_sgn.impl_args, merged_ret_type);
+    constrs = merge_value_sets_nonempty([s.constrs : s <- signatures]);
+    return fn_type(args, a_sgn.impl_args, merged_ret_type, constrs);
   }
 
   Bool other_params_are_eq(FnType sgn1, FnType sgn2, Nat par_idx, [TypeName -> NeType] tdefs)
@@ -120,11 +121,24 @@ implicit
   typedefs    : [TypeName -> NeType],
   signatures  : [(FnFamilyId, Nat) -> SgnSet],
   closures    : [ClsVar -> ClsType],
+  constraints : [(AtomicFnSymb, NzNat) -> [+ClsType]],
   var_aliases : [[Var]];
 
 
   Type fn_call_expr_type(FnSymbol name, AnyExpr* args, [ImplArg -> Expr] impl_args, [Var -> Type] env)
   {
+    // If I already have a matching signature among the constraints, I just need that one
+    if constraints != [:] and name :: AtomicFnSymb and impl_args == [:] and args :: Expr+:
+      fn_key = (name, length(args));
+      if constraints(fn_key, ?):
+        ret_types = [rs.out_type : rs <- constraints(fn_key); will_dispatch_to(rs, args, env)];
+        //## IF THERE IS MORE THAN ONE MATCHING SIGNATURE, I SHOULD SELECT THE MOST
+        //## SPECIFIC ONE, OR A SUPERSET OF THE INTERSECTION MAYBE. CERTAINLY NOT
+        //## A SUPERSET OF THE UNION
+        return union_superset(ret_types) if ret_types != [];
+      ;
+    ;
+
     // If all the functions have the same, non-parametric return type we just return that
     fn_key = (name, length(args));
     sgn_set = signatures[fn_key];
@@ -205,56 +219,90 @@ implicit
   typedefs    : [TypeName -> NeType],
   signatures  : [(FnFamilyId, Nat) -> SgnSet],
   closures    : [ClsVar -> ClsType],
+  constraints : [(AtomicFnSymb, NzNat) -> [+ClsType]],
   var_aliases : [[Var]];
 
   [TypeCheckingError] fully_typecheck_fn_call(FnSymbol name, AnyExpr* args, [ImplArg -> Expr] impl_args, Type exp_type, [Var -> Type] env)
   {
-    // Making sure the arguments typecheck, when the result can be any object
-    arg_errs = [];
-    for a <- args:
-      arg_errs = arg_errs & typecheck(a, type_any, env) if a :: Expr;
+    // Making sure the scalar, positional arguments typecheck on their own
+    errs = seq_union((typecheck(a, type_any, env) : a <- args; a :: Expr));
+    return errs if errs != [];
+
+    // Trying with required functions first
+    if constraints != [:] and name :: AtomicFnSymb and impl_args == [:] and args :: Expr+:
+      fn_key = (name, length(args));
+      if constraints(fn_key, ?):
+        for rs <- rand_sort(constraints(fn_key)):
+          if seq_union((typecheck(a, t, env) : a, t <- zip(args, rs.in_types))) == []:
+            return [invalid_return_type(rs.out_type, exp_type) if not is_subset(rs.out_type, exp_type)];
+          ;
+        ;
+      ;
     ;
-    return arg_errs if arg_errs != [];
 
     // Simple case first. If there's only one signature, we just typecheck that one directly
     fn_key = (name, length(args));
-    sgn_set = signatures[fn_key];
-    all_sgns = sgn_set.sgns;
-    // return typecheck_fn_call(name, only(all_sgns), args, impl_args, exp_type) if size(all_sgns) == 1;
-    for s <- rand_sort(all_sgns):
-      errs = fully_typecheck_fn_call(name, s, args, impl_args, exp_type, env);
-      return [] if errs == [];
-    ;
-    all_agg_sgns = sgn_set.agg_sgns;
-    for s <- rand_sort(all_agg_sgns):
-      errs = fully_typecheck_fn_call(name, s, args, impl_args, exp_type, env);
-      return [] if errs == [];
+    if has_key(signatures, fn_key):
+      sgn_set = signatures[fn_key];
+      all_sgns = sgn_set.sgns;
+      // return typecheck_fn_call(name, only(all_sgns), args, impl_args, exp_type) if size(all_sgns) == 1;
+      for s <- rand_sort(all_sgns):
+        errs = fully_typecheck_fn_call(name, s, args, impl_args, exp_type, env);
+        return [] if errs == [];
+      ;
+      all_agg_sgns = sgn_set.agg_sgns;
+      for s <- rand_sort(all_agg_sgns):
+        errs = fully_typecheck_fn_call(name, s, args, impl_args, exp_type, env);
+        return [] if errs == [];
+      ;
     ;
 
-    // If we get here, it means that the function call is not going to typecheck.
+    return gen_fn_call_err_msg(name, args, impl_args, exp_type, env);
+  }
+
+
+  [TypeCheckingError] gen_fn_call_err_msg(FnSymbol name, AnyExpr* args, [ImplArg -> Expr] impl_args, Type exp_type, [Var -> Type] env)
+  {
+    // If we get here, it means that the function call is not going to typecheck,
+    // even though all its scalar, positional arguments do.
     // So we'll just try to determine the type of error.
 
-    // First I check that all scalar positional parameters typecheck. This is something that
-    // I need to do before trying to determine the functions this call may dispatch to.
-    errs = seq_union((typecheck(a, type_any, env) : a <- args; a :: Expr));
-    return errs if errs != [];
+    // Gathering all the type constraint signatures
+    req_sgns = [];
+    if name :: AtomicFnSymb and impl_args == [:] and args :: Expr+:
+      fn_key = (name, length(args));
+      req_sgns = constraints(fn_key) if constraints(fn_key, ?);
+    ;
+
+    // Gathering all "real" function signatures
+    fn_key = (name, length(args));
+    if has_key(signatures, fn_key):
+      sgn_set = signatures[fn_key];
+      all_sgns = sgn_set.sgns;
+      agg_sgns = sgn_set.agg_sgns;
+    else
+      all_sgns = [];
+      agg_sgns = [];
+    ;
+
 
     // Here we try to determine the (possibly aggregated) signature
     // of the polymorphic functions that may be actually called
     arg_types = (if a :: Expr then just(expr_type(a, env)) else nil : a <- args);
+
     candidate_signatures = [s : s <- all_sgns; will_dispatch_to(s, args, env)];
     if candidate_signatures == []:
-      candidate_signatures = [s : s <- all_agg_sgns; will_dispatch_to(s, args, env)];
+      candidate_signatures = [s : s <- agg_sgns; will_dispatch_to(s, args, env)];
       if candidate_signatures == []:
         arg_types = (if a :: Expr then just(expr_type(a, env)) else nil : a <- args);
-        return [no_dispatchable_function_found(name, nz_nat(length(args)), all_sgns, nonempty(arg_types))];
+        avail_sgns = nonempty(all_sgns & [cls_to_fn_type(rs) : rs <- req_sgns]);
+        return [no_dispatchable_function_found(name, nz_nat(length(args)), avail_sgns, nonempty(arg_types))];
       ;
     ;
 
     // There might be more than one candidate signature
     // if the type of one or more parameters is the empty type
     err_sets = [fully_typecheck_fn_call(name, s, args, impl_args, exp_type, env) : s <- candidate_signatures];
-
     return if in([], err_sets) then [] else an_elem(err_sets);
   }
 
@@ -281,6 +329,12 @@ implicit
       type_var_insts = get_result(res);
     else
       type_var_insts = [:];
+    ;
+
+    // If there are constraints on those type variable instantiations we check them
+    if type_var_insts != [:]:
+      errs = union([check_type_var_insts(type_var_insts, n, t) : n, ts <- signature.constrs; t <- ts]);
+      return errs if errs != [];
     ;
 
     // With the type variables instantiated, we can "instantiate" the formal type
@@ -331,6 +385,53 @@ implicit
 
     //## BAD: HERE I SHOULD PROVIDE MORE INFORMATION ABOUT THESE ERRORS
     return cls_errs & impl_arg_errs & ret_type_errs;
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  [TypeCheckingError] check_type_var_insts([TypeVar -> Type] insts, AtomicFnSymb fn_name, ClsType fn_type)
+  {
+    args_types = (replace_type_vars(t, insts) : t <- fn_type.in_types);
+    ret_type = replace_type_vars(fn_type.out_type, insts);
+
+    fn_key = (fn_name, length(args_types));
+
+    constrs = if constraints(fn_key, ?) then constraints(fn_key) else [];
+    for rs <- rand_sort(constrs):
+      if all((is_subset(at, et) : at, et <- zip(args_types, rs.in_types))):
+        err = invalid_prot_method_return_type(fn_name, args_types, ret_type, rs.out_type);
+        return [err if not is_subset(rs.out_type, ret_type)];
+      ;
+    ;
+
+    fn_key = (fn_name, arity(fn_type));
+    if has_key(signatures, fn_key):
+      sgn_set = signatures[fn_key];
+      all_sgns = sgn_set.sgns;
+      all_agg_sgns = sgn_set.agg_sgns;
+      for s <- rand_sort(all_sgns) & rand_sort(all_agg_sgns):
+        if s.impl_args == [:] and s.constrs == [:]:
+          if all((is_ne_type(et) and is_subset(at, et) : at, et <- zip(args_types, s.args))):
+            err = invalid_prot_method_return_type(fn_name, args_types, ret_type, s.ret_type);
+            return [err if not is_subset(s.ret_type, ret_type)];
+          ;
+        ;
+      ;
+    else
+      all_sgns = [];
+    ;
+
+    return [
+      no_suitable_prot_method_found(
+        method_name:    fn_name,
+        args_types:     args_types,
+        ret_type:       ret_type,
+        instantiations: insts,
+        constraints:    constrs,
+        signatures:     all_sgns
+      )
+    ];
   }
 
   //////////////////////////////////////////////////////////////////////////////
