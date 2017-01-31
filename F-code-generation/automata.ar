@@ -7,7 +7,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
 
     memb_bool_vars = seq_union((memb_bool_vars(n) : n <- nodes)) & [(is_new, true)];
     memb_int_vars = auto_memb_int_vars;
-    memb_int_vect_vars = set((nodes_to_update_vect_var(l, nz_nat(s)) : s @ l <- levels_sizes; s > 2));
+    memb_int_vect_vars = [nodes_to_update_vect_var(l, nz_nat(s)) : s @ l <~ levels_sizes; s > 2];
     memb_obj_vars = seq_union((memb_obj_vars(n) : n <- nodes)) & [(memb_var(id), :blank) : id <- keys(automaton.params)];
 
     const_data = [time_slots_len(a, ls) : a, c <- automaton.time_rules; ls = trigger_times_table(c.time_expr); ls != ()];
@@ -23,7 +23,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
                    rand_sort([cleanup_db(var, type) : var, type <- automaton.nested_dbs]);
 
     // Generating methods for queuing updates
-    queue_update_code = [n.id -> gen_queue_update_method(n, nodes_indexes[n.id], levels_sizes[n.level]) : n <- set(nodes)];
+    queue_update_code = [n.id -> gen_queue_update_method(n, nodes_indexes[n.id], levels_sizes[n.level]) : n <~ nodes];
 
     assert {
       inputs_count = size(automaton.inputs);
@@ -72,7 +72,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
     level_marked_nodes_counts = count_vector((n.level : n <- nodes; needs_initial_update(n)), length(levels_sizes));
     is_time_sens = is_time_sensitive(automaton.name);
     node_specific_vars = seq_union((memb_int_vars(n) : n <- nodes));
-    level_specific_vars = set(((update_count_var(l), level_marked_nodes_counts[l]) : s @ l <- levels_sizes; s > 2));
+    level_specific_vars = [(update_count_var(l), level_marked_nodes_counts[l]) : s @ l <~ levels_sizes; s > 2];
     // Not adding the arrays used to store the trigger heaps
     // That is done in the target language code generation phase
     global_time_vars = [(time_triggers_count_var, 0) if is_time_sens; (last_update_time, 0) if is_time_sens];
@@ -129,7 +129,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
 
     // Creating the list of node that are initially marked for update
     marked_nodes = [id : id, n <- nodes_by_id; needs_initial_update(n)];
-    assert marked_nodes == [id : v_iv <- memb_bool_vars; (up_to_date_var(id?), iv?) <~ v_iv; not iv];
+    assert marked_nodes == [id : v_iv <- memb_bool_vars; (up_to_date_var(id?), iv?) ?= v_iv; not iv];
     marked_nodes_by_level = (intersection(ns, marked_nodes) : ns @ l <- nodes_ids_by_level);
 
     // Initializing variables that contain the list of nodes that must be updated.
@@ -316,10 +316,10 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
 
 Instr* gen_dispatch_auto_method_body(AutoSymbol auto_type, Method+ methods, [TypeName -> Type] typedefs)
 {
-  assert length(methods) > 1;                             // There must be more than one method
-  assert size(set((m.name : m <- methods))) == 1;         // All methods must have the same name
-  assert size(set((length(m.args) : m <- methods))) == 1; // All methods have the same arity
-  assert length(head(methods).args) > 0;                  // No-argument methods cannot be polymorphic
+  assert length(methods) > 1;                         // There must be more than one method
+  assert size([m.name : m <~ methods]) == 1;          // All methods must have the same name
+  assert size([length(m.args) : m <~ methods]) == 1;  // All methods have the same arity
+  assert length(head(methods).args) > 0;              // No-argument methods cannot be polymorphic
 
   l0 = lvar(0);
 

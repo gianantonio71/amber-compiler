@@ -829,7 +829,7 @@ implicit filename : String, lines : Nat**
   {
     nodes = rule_seq_nodes(block_node(mtc));
     assert length(nodes) == 4;
-    head_clause = build_iter_clause_ast(nodes(0));
+    head_clause = build_clause_ast(nodes(0));
     extra_clauses = (build_clause_ast(rule_seq_node(n, 1)) : n <- rep_rule_nodes(nodes(1)));
     expr = build_expr_ast(nodes(3));
     return syn_ex_qual(nonempty((head_clause) & extra_clauses), expr);
@@ -840,7 +840,7 @@ implicit filename : String, lines : Nat**
     nodes = rule_seq_nodes(mtc);
     assert length(nodes) == 4;
     expr = build_expr_ast(nodes(0));
-    head_clause = build_iter_clause_ast(nodes(2));
+    head_clause = build_clause_ast(nodes(2));
     extra_clauses = (build_clause_ast(rule_seq_node(n, 1)) : n <- rep_rule_nodes(nodes(3)));
     return syn_set_comp(expr, nonempty((head_clause) & extra_clauses));
   }
@@ -851,7 +851,7 @@ implicit filename : String, lines : Nat**
     assert length(nodes) == 6;
     key_expr = build_expr_ast(nodes(0));
     value_expr = build_expr_ast(nodes(2));
-    head_clause = build_iter_clause_ast(nodes(4));
+    head_clause = build_clause_ast(nodes(4));
     extra_clauses = (build_clause_ast(rule_seq_node(n, 1)) : n <- rep_rule_nodes(nodes(5)));
     return syn_map_comp(key_expr, value_expr, nonempty((head_clause) & extra_clauses));
   }
@@ -865,7 +865,7 @@ implicit filename : String, lines : Nat**
       build_expr_ast(nodes(2)),
       build_expr_ast(rule_seq_node(nodes(3), 1)) if nodes(3) != null_match
     );
-    head_clause = build_iter_clause_ast(nodes(5));
+    head_clause = build_clause_ast(nodes(5));
     extra_clauses = (build_clause_ast(rule_seq_node(n, 1)) : n <- rep_rule_nodes(nodes(6)));
     return syn_rel_comp(exprs, nonempty((head_clause) & extra_clauses));
   }
@@ -1533,10 +1533,11 @@ implicit filename : String, lines : Nat**
   {
     inner_mtc = get_rule_match(mtc);
     clause = match (get_rule_name(mtc))
-      iter    = build_iter_clause_ast(inner_mtc),
-      asgnm   = build_asgnm_clause_ast(inner_mtc),
-      match   = build_match_clause_ast(inner_mtc),
-      filter  = syn_filter_clause(build_expr_ast(inner_mtc));
+      iter      = build_iter_clause_ast(inner_mtc),
+      seq_iter  = build_seq_iter_clause_ast(inner_mtc),
+      asgnm     = build_asgnm_clause_ast(inner_mtc),
+      match     = build_match_clause_ast(inner_mtc),
+      filter    = syn_filter_clause(build_expr_ast(inner_mtc));
     return attach_src_code_info(clause, mtc);
   }
 
@@ -1553,6 +1554,19 @@ implicit filename : String, lines : Nat**
       expr = build_expr_ast(nodes(2));
       return syn_iter_clause(nonempty(vars), expr);
     }
+  }
+
+  SynClause build_seq_iter_clause_ast(RuleMatch mtc)
+  {
+    nodes = rule_seq_nodes(mtc);
+    assert length(nodes) == 4;
+    vars = (
+      if get_token(n) == underscore then nil else just(get_lowercase_id(n))
+      : n <- rep_rule_nodes(nodes(0))
+    );
+    idx_var = if nodes(1) != null_match then just(get_lowercase_id(nodes(1), 1)) else nil;
+    src = build_expr_ast(nodes(3));
+    return syn_seq_clause(nonempty(vars), idx_var, src);
   }
 
   SynClause build_asgnm_clause_ast(RuleMatch mtc)

@@ -102,9 +102,9 @@ Type expand_type_ref(TypeSymbol type_symb, [TypeName -> Type] typedefs)
 
 Bool is_param_type(Type type) = get_type_vars(type) != [];
 
-Bool is_param_type(ClsType type) = at_least_one((is_param_type(t) : t <- type.in_types)) or is_param_type(type.out_type);
+Bool is_param_type(ClsType type) = (t <~ type.in_types : is_param_type(t)) or is_param_type(type.out_type);
 
-Bool is_param_type(FnType type) = at_least_one((is_param_type(t) : t <- type.args)) or is_param_type(type.ret_type);
+Bool is_param_type(FnType type) = (t <~ type.args : is_param_type(t)) or is_param_type(type.ret_type);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -386,7 +386,7 @@ Clause replace_exprs_in_clause(Clause cls, (Expr -> Expr) replace):
   set_clause()      = set_clause(cls.var, replace(cls.src)),
   rel_clause()      = rel_clause(cls.vars, replace(cls.src), (apply(a, replace) : a <- cls.args)),
   relvar_clause()   = relvar_clause(cls.vars, cls.rel_var, (apply(a, replace) : a <- cls.args)),
-  seq_clause()      = seq_clause(cls.var, replace(cls.src)),
+  seq_clause()      = seq_clause(cls.vars, cls.idx_var, replace(cls.src)),
   and_clause()      = and_clause(replace_exprs_in_clause(cls.left, replace), replace_exprs_in_clause(cls.right, replace)),
   or_clause()       = or_clause(replace_exprs_in_clause(cls.left, replace), replace_exprs_in_clause(cls.right, replace)),
   match_clause()    = match_clause(cls.ptrn, replace(cls.expr)),
@@ -560,7 +560,7 @@ Clause replace_external_vars_in_clause(Clause clause, [Var -> Var] subst_map):
   set_clause()      = replace_external_vars_in_set_clause(clause.var, clause.src, subst_map),
   rel_clause()      = replace_external_vars_in_rel_clause(clause.vars, clause.src, clause.args, subst_map),
   relvar_clause()   = replace_external_vars_in_relvar_clause(clause.vars, clause.rel_var, clause.args, subst_map),
-  seq_clause()      = replace_external_vars_in_seq_clause(clause.var, clause.src, subst_map),
+  seq_clause()      = replace_external_vars_in_seq_clause(clause.vars, clause.idx_var, clause.src, subst_map),
   and_clause()      = replace_external_vars_in_and_clause(clause.left, clause.right, subst_map),
   or_clause()       = replace_external_vars_in_or_clause(clause.left, clause.right, subst_map),
   match_clause()    = replace_external_vars_in_match_clause(clause.ptrn, clause.expr, subst_map),
@@ -593,11 +593,11 @@ Clause replace_external_vars_in_relvar_clause(StdVar+ vars, AnyRelVar src, Maybe
 }
 
 
-Clause replace_external_vars_in_seq_clause(StdVar var, Expr src, [Var -> Var] subst_map)
+Clause replace_external_vars_in_seq_clause(Maybe[StdVar]+ vars, Maybe[StdVar] idx_var, Expr src, [Var -> Var] subst_map)
 {
-  assert not has_key(subst_map, var);
+  assert none((subst_map(value(v), ?) : v <- vars; v != nil));
   new_src = replace_external_vars(src, subst_map);
-  return seq_clause(var, new_src);
+  return seq_clause(vars, idx_var, new_src);
 }
 
 
@@ -672,7 +672,7 @@ Bool is_pattern_any(Pattern ptrn):
   set_clause()      = [cls.var],
   rel_clause()      = set(cls.vars),
   relvar_clause()   = set(cls.vars),
-  seq_clause()      = [cls.var],
+  seq_clause()      = [value(v) : v <~ (cls.vars | cls.idx_var); v != nil],
   and_clause()      = new_vars(cls.left) & new_vars(cls.right),
   or_clause()       = intersection(new_vars(cls.left), new_vars(cls.right)),
   match_clause()    = new_vars(cls.ptrn),
@@ -751,7 +751,7 @@ Bool is_pattern_any(Pattern ptrn):
 [Var] any_expr_extern_vars(ClsExpr expr):
   ClsVar      = [],
   fn_ptr()    = [],
-  cls_expr()  = { new_vars = set((fn_par(i) : i < length(expr.args)) & values(expr.args));
+  cls_expr()  = { new_vars = [fn_par(i) : _ @ i <~ expr.args] & set(values(expr.args));
                   ext_vars = extern_vars(expr.expr) - new_vars;
                   assert not (v <- ext_vars : v :: FnPar);
                   return ext_vars;

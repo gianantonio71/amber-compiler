@@ -9,7 +9,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
     float_lit()         = expr,
     seq_expr(ses?)      = desugar_seq_expr(ses, def_vars),
     seq_tail_expr()     = seq_tail_expr(desugar_expr(expr.seq, def_vars), (desugar_expr(e, def_vars) : e <- expr.tail)),
-    set_expr(es?)       = set_expr([desugar_expr(e, def_vars) : e <- set(es)]),
+    set_expr(es?)       = set_expr([desugar_expr(e, def_vars) : e <~ es]),
     map_expr(es?)       = desugar_map_expr(set(es), def_vars),
     bin_rel_expr(es?)   = desugar_bin_rel_expr(set(es), def_vars),
     tern_rel_expr(es?)  = desugar_tern_rel_expr(set(es), def_vars),
@@ -130,8 +130,8 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
 
   Expr desugar_rel_memb_test(SynExpr syn_target, Maybe[SynExpr]+ syn_args, [StdVar] def_vars)
   {
-    assert at_least_one((a == nil : a <- syn_args));
-    assert at_least_one((a != nil : a <- syn_args));
+    assert (a <~ syn_args : a == nil);
+    assert (a <~ syn_args : a != nil);
 
     args = (apply(a, desugar_expr($, def_vars)) : a <- syn_args);
     if syn_target :: IdChain:
@@ -364,17 +364,22 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
 
 
     Clause desugar(SynClause cls, [StdVar] def_vars):
-      iter_clause()       = desugar_iter_clause(cls.vars, cls.src, def_vars),
-      and_clause(cs?)     = mk_and_clause(cs, def_vars),
-      or_clause(cs?)      = foldr((desugar_clause(c, def_vars) : c <- cs), or_clause),
-      match_clause()      = match_clause(desugar_ptrn(cls.ptrn), desugar_expr(cls.expr, def_vars)),
-      asgnm_clause()      = asgnm_clause(cls.var, desugar_expr(cls.expr, def_vars)),
-      filter_clause()     = filter_clause(desugar_expr(cls.cond, def_vars));
+      iter_clause()     = desugar_iter_clause(cls.vars, cls.src, def_vars),
+      seq_clause()      = seq_clause(
+                            (apply(v, var) : v <- cls.vars),
+                            apply(cls.idx_var, var),
+                            desugar_expr(cls.src, def_vars)
+                          ),
+      and_clause(cs?)   = mk_and_clause(cs, def_vars),
+      or_clause(cs?)    = foldr((desugar_clause(c, def_vars) : c <- cs), or_clause),
+      match_clause()    = match_clause(desugar_ptrn(cls.ptrn), desugar_expr(cls.expr, def_vars)),
+      asgnm_clause()    = asgnm_clause(cls.var, desugar_expr(cls.expr, def_vars)),
+      filter_clause()   = filter_clause(desugar_expr(cls.cond, def_vars));
 
 
     Clause desugar_iter_clause(StdVar+ vars, SynExpr syn_src_expr, [StdVar] def_vars)
     {
-      if syn_src_expr :: SynRelMembTest and at_least_one((a == nil : a <- syn_src_expr.args)):
+      if syn_src_expr :: SynRelMembTest and (a <~ syn_src_expr.args : a == nil):
         if all((a == nil : a <- syn_src_expr.args)):
           return desugar_iter_clause(vars, syn_src_expr.target, def_vars);
         ;
@@ -571,6 +576,6 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
       ptrn_tag_obj()          = ptrn_tag_obj(ptrn.tag, desugar_ptrn(ptrn.obj)),
       ptrn_var()              = ptrn_var(ptrn.var, desugar_ptrn(ptrn.ptrn)),
       ptrn_type(type?)        = type_to_pattern(desugar_type(type), typedefs),
-      ptrn_union(ps?)         = ptrn_union(set((desugar_ptrn(p) : p <- ps)));
+      ptrn_union(ps?)         = ptrn_union([desugar_ptrn(p) : p <~ ps]);
   }
 }

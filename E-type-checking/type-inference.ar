@@ -632,7 +632,7 @@ implicit
     set_clause()        = env & [cls.var -> set_elem_supertype(expr_type(cls.src, env))],
     rel_clause()        = gen_rel_clause_env(cls.vars, cls.src, cls.args, env),
     relvar_clause()     = gen_relvar_clause_env(cls.vars, cls.rel_var, cls.args, env),
-    seq_clause()        = env & [cls.var -> set_elem_supertype(expr_type(cls.src, env))],
+    seq_clause()        = gen_seq_clause_env(cls.vars, cls.idx_var, cls.src, env),
     and_clause()        = { new_env = generate_env(cls.left, env);
                             return generate_env(cls.right, new_env);
                           },
@@ -641,6 +641,25 @@ implicit
     match_clause()      = update_env(cls.expr, cls.ptrn, env),
     asgnm_clause()      = env & [cls.var -> expr_type(cls.expr, env)],
     filter_clause(e?)   = left(refine_env(e, env));
+
+
+  [Var -> Type] gen_seq_clause_env(Maybe[StdVar]+ vars, Maybe[StdVar] idx_var, Expr src, [Var -> Type] env)
+  {
+    src_expr_type = expr_type(src, env);
+    elem_type = seq_elem_supertype(src_expr_type);
+
+    nvars = nz_nat(length(vars));
+    if nvars == 1:
+      var = vars(0);
+      env_delta = [value(var) -> elem_type if var != nil];
+    else
+      types = tuple_field_supertypes(elem_type, nvars);
+      env_delta = merge(([value(v) -> t] : v, t <- zip(vars, types); v != nil));
+    ;
+    env_delta = env_delta & [value(idx_var) -> type_nat] if idx_var != nil;
+
+    return env & env_delta;
+  }
 
 
   [Var -> Type] gen_rel_clause_env(StdVar+ vars, Expr src, Maybe[Expr]+ args, [Var -> Type] env)
@@ -880,7 +899,7 @@ implicit
     set_clause()      = set_clause_iter_tree(cls.var, cls.src, env, tail),
     rel_clause()      = rel_clause_iter_tree(cls.vars, cls.src, cls.args, env, tail),
     relvar_clause()   = relvar_clause_iter_tree(cls.vars, cls.rel_var, cls.args, env, tail),
-    seq_clause()      = seq_clause_iter_tree(cls.var, cls.src, env, tail),
+    seq_clause()      = seq_clause_iter_tree(cls.vars, cls.idx_var, cls.src, env, tail),
     and_clause()      = iter_tree(cls.left, env, iter_tree(cls.right, $, tail)),
     or_clause()       = :all(iter_tree(cls.left, env, tail), iter_tree(cls.right, env, tail)),
     match_clause()    = :any([:never; tail(update_env(cls.expr, cls.ptrn, env))]), //## THE never CAN BE ELIMINATED IF THE MATCH NEVER FAILS
@@ -913,12 +932,21 @@ implicit
   }
 
 
-  IterTree seq_clause_iter_tree(StdVar var, Expr src, [Var -> Type] env, ([Var -> Type] -> IterTree) tail)
+  IterTree seq_clause_iter_tree(Maybe[StdVar]+ vars, Maybe[StdVar] idx_var, Expr src, [Var -> Type] env, ([Var -> Type] -> IterTree) tail)
   {
     src_type = expr_type(src, env);
     elem_type = seq_elem_supertype(src_type);
     return :never if elem_type == empty_type;
-    new_env = env & [var -> elem_type];
+    nvars = nz_nat(length(vars));
+    if nvars == 1:
+      var = vars(0);
+      env_delta = [value(var) -> elem_type if var != nil];
+    else
+      types = tuple_field_supertypes(elem_type, nvars);
+      env_delta = merge(([value(v) -> t] : v, t <- zip(vars, types); v != nil));
+    ;
+    env_delta = env_delta & [value(idx_var) -> type_nat] if idx_var != nil;
+    new_env = env & env_delta;
     tree = :repeated(tail(new_env));
     tree = :any([:never; tree]) if is_subset(empty_seq_type, src_type);
     return tree;

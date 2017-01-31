@@ -35,16 +35,16 @@ implicit syn_prg : SynPrg, db_def : SynDBDef
 
     attr_relvars_sgns = [
       [rel_var(arv.name) -> (desugar_type(t) : t <- (rv.col_types | arv.type))]
-      : rv <- db_rel_vars; arv <- set(rv.attributes)
+      : rv <- db_rel_vars; arv <~ rv.attributes
     ];
 
     relvars_sgns = merge_values(root_relvars_sgns & attr_relvars_sgns);
 
-    root_relvars_keys = [[rel_var(v.name) -> [set(k) : k <- set(v.keys)] : v <- db_rel_vars]];
+    root_relvars_keys = [[rel_var(v.name) -> [set(k) : k <~ v.keys] : v <- db_rel_vars]];
 
     attr_relvars_keys = [
-      [rel_var(arv.name) -> if arv.cardinality.multiple then [] else [set((i : i < length(rv.col_types)))]]
-      : rv <- db_rel_vars; arv <- set(rv.attributes)
+      [rel_var(arv.name) -> if arv.cardinality.multiple then [] else [[i : _ @ i <~ rv.col_types]]]
+      : rv <- db_rel_vars; arv <~ rv.attributes
     ];
 
     relvars_keys = merge(root_relvars_keys & attr_relvars_keys);
@@ -64,7 +64,7 @@ implicit syn_prg : SynPrg, db_def : SynDBDef
     //   rel_var(arv.name) -> (
     //     types:  (desugar_type(t) | t <- (rv.col_types || arv.type)),
     //     keys:   if arv.cardinality.multiple then [] else rv.keys
-    //   )] | rv <- db_rel_vars, arv <- set(rv.attributes)
+    //   )] | rv <- db_rel_vars, arv <~ rv.attributes
     // ];
   }
 
@@ -73,7 +73,7 @@ implicit syn_prg : SynPrg, db_def : SynDBDef
   {
     args = ((desugar_type(t), just(var(n))) : t, n <- method_def.args);
     ret_type = desugar_type(method_def.ret_type);
-    arg_vars = set((var(n) : unused_var, n <- method_def.args));
+    arg_vars = [var(n) : _, n <~ method_def.args];
     artifact = using_block_method_def(db_def.name, method_def);
     expr = desugar_expr(method_def.expr, arg_vars, syn_artifact = artifact, impl_args = []);
     return method(method_symbol(method_def.name), args, ret_type, expr);
@@ -83,7 +83,7 @@ implicit syn_prg : SynPrg, db_def : SynDBDef
   Update desugar_update(UpdateDef update_def)
   {
     args = ((desugar_type(t), v) : t, v <- update_def.args);
-    arg_vars = set((v : unused_var, v <- update_def.args));
+    arg_vars = [v : _, v <~ update_def.args];
     artifact = using_block_update_def(db_def.name, update_def);
     body = desugar_stmts(update_def.body, arg_vars, syn_artifact = artifact, impl_args = []);
     return update(update_symbol(update_def.name), args, body);

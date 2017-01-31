@@ -48,7 +48,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
     set_clause()      = gen_set_clause_code(cls.var, cls.src, loc_bound_vars, action),
     rel_clause()      = gen_rel_clause_code(cls.vars, cls.src, cls.args, loc_bound_vars, action),
     relvar_clause()   = gen_relvar_clause_code(cls.vars, cls.rel_var, cls.args, loc_bound_vars, action),
-    seq_clause()      = gen_seq_clause_code(cls.var, cls.src, loc_bound_vars, action),
+    seq_clause()      = gen_seq_clause_code(cls.vars, cls.idx_var, cls.src, loc_bound_vars, action),
     and_clause()      = gen_clause_code(cls.left, loc_bound_vars, match_action(cls.right, action)),
     or_clause()       = nonempty(gen_clause_code(cls.left, loc_bound_vars, action) & gen_clause_code(cls.right, loc_bound_vars, action)),
     match_clause()    = gen_match_clause_code(cls.ptrn, cls.expr, loc_bound_vars, action),
@@ -204,9 +204,39 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_seq_clause_code(StdVar var, Expr src, [StdVar] loc_bound_vars, MatchAction action)
+  Instr+ gen_seq_clause_code(Maybe[StdVar]+ vars, Maybe[StdVar] idx_var, Expr src, [StdVar] loc_bound_vars, MatchAction action)
   {
-    fail;
+    src_var, var_gen = next_obj_var(next_var_gen);
+    // Variables to avoid: src_var
+    src_info = gen_eval_info(src, src_var, next_var_gen = var_gen);
+
+    it_var, var_gen = next_seq_it_var(var_gen);
+    int_idx_var, var_gen = next_int_var(var_gen); //## BAD: USED EVEN WHEN NOT REQUIRED
+    // Variables to avoid: src_var, it_var, idx_var
+    new_bound_vars = [value(v) : v <~ (vars | idx_var); v != nil];
+    next_step_code = gen_code(action, loc_bound_vars & new_bound_vars, next_var_gen = var_gen);
+
+    if length(vars) == 1:
+      var = only(vars);
+      vars_set_code = (set_var(value(var), get_curr_obj(it_var)) if var != nil);
+    else
+      // tmp_var is only needed during a destructuring assignment, it can be safely reused elsewhere
+      tmp_var, unused_var = next_obj_var(var_gen);
+      vars_set_code = (set_var(tmp_var, get_curr_obj(it_var)));
+      vars_set_code = vars_set_code & (set_var(value(v), at(tmp_var, i)) : v @ i <- vars; v != nil);
+    ;
+    vars_set_code = vars_set_code & (set_var(value(idx_var), int_obj(int_idx_var))) if idx_var != nil;
+
+    next_iter_code = (move_forward(it_var), increment(int_idx_var) if idx_var != nil);
+
+    body = (break_if(is_out_of_range(it_var))) & vars_set_code & next_step_code & next_iter_code;
+    loop_code = (
+      get_iter(it_var, src_info.expr),
+      set_ivar(int_idx_var, 0) if idx_var != nil,
+      repeat(nonempty(body))
+    );
+
+    return nonempty(src_info.eval_code & loop_code);
   }
 
 

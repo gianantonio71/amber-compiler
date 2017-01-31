@@ -33,6 +33,7 @@ ParsingRule rule_double_pipe      = atomic_rule(double_pipe);
 ParsingRule rule_double_colon     = atomic_rule(double_colon);
 ParsingRule rule_double_lower     = atomic_rule(double_lower);
 ParsingRule rule_hash             = atomic_rule(hash);
+ParsingRule rule_try_assign       = atomic_rule(try_assign);
 
 ParsingRule rule_id = rule_lc_id; //## I SHOULD EXCLUDE ALL THE KEYWORDS HERE...
 
@@ -766,18 +767,34 @@ ParsingRule rule_restore_state_ctrl_stmt =
 
 ParsingRule rule_clause =
   rule_choice((
-    (:iter,       rule_iter_clause),
-    (:asgnm,      rule_seq((rule_id, rule_equals, rule_ref_expr))),
-    (:match,      rule_seq((rule_ptrn, rule_wavy_left_arrow, rule_ref_expr))),
-    (:filter,     rule_ref_expr)
+    (:iter,     rule_iter_clause),
+    (:seq_iter, rule_seq_clause),
+    (:asgnm,    rule_seq((rule_id, rule_equals, rule_ref_expr))),
+    (:match,    rule_seq((rule_ptrn, rule_try_assign, rule_ref_expr))),
+    (:filter,   rule_ref_expr)
   ));
 
-ParsingRule rule_iter_clause = rep_rule(
+ParsingRule rule_head_clause =
+  rule_choice((
+    (:iter,     rule_iter_clause),
+    (:seq_iter, rule_seq_clause)
+  ));
+
+ParsingRule rule_iter_clause =
+  rep_rule(
     rule_seq((comma_sep_seq(rule_id), rule_left_arrow, rule_ref_expr)),
     rule_pipe,
     true,
     false
   );
+
+ParsingRule rule_seq_clause =
+  rule_seq((
+    comma_sep_seq(rule_anon_choice((rule_id, rule_underscore))),
+    optional_rule_seq((rule_at, rule_id)),
+    rule_wavy_left_arrow,
+    rule_ref_expr
+  ));
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -965,7 +982,7 @@ ParsingRule rule_impl_args_call_expr =
 ParsingRule rule_ex_qual_expr =
   par_rule(
     rule_seq((
-      rule_iter_clause,
+      rule_head_clause,
       rep_rule(rule_seq((rule_semicolon, rule_clause))),
       rule_colon,
       rule_ref_expr
@@ -977,7 +994,7 @@ ParsingRule rule_set_cp_expr =
     rule_seq((
       rule_ref_expr,
       rule_colon,
-      rule_iter_clause,
+      rule_head_clause,
       rep_rule(rule_seq((rule_semicolon, rule_clause)))
     ))
   );
@@ -989,7 +1006,7 @@ ParsingRule rule_map_cp_expr =
       rule_right_arrow,
       rule_ref_expr,
       rule_colon,
-      rule_iter_clause,
+      rule_head_clause,
       rep_rule(rule_seq((rule_semicolon, rule_clause)))
     ))
   );
@@ -1002,7 +1019,7 @@ ParsingRule rule_rel_cp_expr =
       rule_ref_expr,
       optional_rule_seq((rule_comma, rule_ref_expr)),
       rule_colon,
-      rule_iter_clause,
+      rule_head_clause,
       rep_rule(rule_seq((rule_semicolon, rule_clause)))
     ))
   );
