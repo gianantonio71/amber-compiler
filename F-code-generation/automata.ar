@@ -7,10 +7,10 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
 
     memb_bool_vars = seq_union((memb_bool_vars(n) : n <- nodes)) & [(is_new, true)];
     memb_int_vars = auto_memb_int_vars;
-    memb_int_vect_vars = [nodes_to_update_vect_var(l, nz_nat(s)) : s @ l <~ levels_sizes; s > 2];
+    memb_int_vect_vars = [nodes_to_update_vect_var(l, nz_nat(s)) : s @ l <~ levels_sizes, s > 2];
     memb_obj_vars = seq_union((memb_obj_vars(n) : n <- nodes)) & [(memb_var(id), :blank) : id <- keys(automaton.params)];
 
-    const_data = [time_slots_len(a, ls) : a, c <- automaton.time_rules; ls = trigger_times_table(c.time_expr); ls != ()];
+    const_data = [time_slots_len(a, ls) : a, c <- automaton.time_rules, ls = trigger_times_table(c.time_expr), ls != ()];
 
     pre_init_code       = gen_pre_init_code(memb_bool_vars, memb_int_vars, memb_obj_vars);
     nodes_update_code   = merge(([n.id -> gen_node_update_code(n)] : n <- nodes));
@@ -69,13 +69,13 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
   [(MembIntVar, Int)] auto_memb_int_vars
   {
     nodes = gen_auto_nodes;
-    level_marked_nodes_counts = count_vector((n.level : n <- nodes; needs_initial_update(n)), length(levels_sizes));
+    level_marked_nodes_counts = count_vector((n.level : n <- nodes, needs_initial_update(n)), length(levels_sizes));
     is_time_sens = is_time_sensitive(automaton.name);
     node_specific_vars = seq_union((memb_int_vars(n) : n <- nodes));
-    level_specific_vars = [(update_count_var(l), level_marked_nodes_counts[l]) : s @ l <~ levels_sizes; s > 2];
+    level_specific_vars = [(update_count_var(l), level_marked_nodes_counts[l]) : s @ l <~ levels_sizes, s > 2];
     // Not adding the arrays used to store the trigger heaps
     // That is done in the target language code generation phase
-    global_time_vars = [(time_triggers_count_var, 0) if is_time_sens; (last_update_time, 0) if is_time_sens];
+    global_time_vars = [(time_triggers_count_var, 0) if is_time_sens, (last_update_time, 0) if is_time_sens];
     return node_specific_vars & level_specific_vars & global_time_vars;
   }
 
@@ -106,7 +106,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
   {
     res_var, var_gen = next_obj_var(blank_var_gen);
 
-    args_code = (set_var(value(v), fn_par(i)) : unused_var, v @ i <- method.args; v != nil);
+    args_code = (set_var(value(v), fn_par(i)) : unused_var, v @ i <- method.args, v != nil);
     body_code = gen_eval_code(method.expr, res_var, artifact = automaton, next_var_gen = var_gen);
 
     // entry_code = [push_call_info(fndef.name, fn_par(i)) : p @ i <- fndef.params])];
@@ -128,14 +128,14 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
     code_2 = (init_memb_var(var, init_val) : var, init_val <- rand_sort(memb_obj_vars));
 
     // Creating the list of node that are initially marked for update
-    marked_nodes = [id : id, n <- nodes_by_id; needs_initial_update(n)];
-    assert marked_nodes == [id : v_iv <- memb_bool_vars; (up_to_date_var(id?), iv?) ?= v_iv; not iv];
+    marked_nodes = [id : id, n <- nodes_by_id, needs_initial_update(n)];
+    assert marked_nodes == [id : v_iv <- memb_bool_vars, (up_to_date_var(id?), iv?) ?= v_iv, not iv];
     marked_nodes_by_level = (intersection(ns, marked_nodes) : ns @ l <- nodes_ids_by_level);
 
     // Initializing variables that contain the list of nodes that must be updated.
     code_3 = join((
       (set_ivar(nodes_to_update_var(l, i), nodes_indexes[n]) : n @ i <- rand_sort(marked_nodes_by_level[l]))
-      : ns @ l <- nodes_ids_by_level; size(ns) > 2
+      : ns @ l <- nodes_ids_by_level, size(ns) > 2
     ));
 
     // Now initializing all parameters.
@@ -192,7 +192,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
     apply_code = (reset_memb_var(memb_var(id), :blank) : id <- rand_sort(discrete_signals_ids)) &
                  (init_memb_var(v, :blank) : v <- sorted_memb_copy_vars) &
                  (set_var(v, memb_var(bare_id(v))) : v <- sorted_memb_copy_vars) &
-                 (mark_for_update(n.id) : n <- nodes; must_always_be_recalculated(n)) &
+                 (mark_for_update(n.id) : n <- nodes, must_always_be_recalculated(n)) &
                  join(levels_code) &
                  (reset_memb_var(v, :blank) : v <- sorted_memb_copy_vars) &
                  (do_if(is_new, first_pass_finish_code));
@@ -300,7 +300,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
   {
     param_ids = keys(automaton.params);
     dep_map = [a -> [if v :: MembVar then bare_id(v) else {fail;} : v <- extern_vars(p.value)] : a, p <- automaton.params];
-    assert not (s, ts <- dep_map; t <- ts : not in(t, param_ids));
+    assert not (s, ts <- dep_map, t <- ts : not in(t, param_ids));
     sorted_params = topological_sort(dep_map);
     let next_var_gen = blank_var_gen:
       params_init_code = (

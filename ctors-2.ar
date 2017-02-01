@@ -70,10 +70,10 @@ RecordType ne_record_type(RecordTypeFields fs) = :ne_record_type(fs);
 Type record_type([SymbObj -> (type: Type, optional: Bool)] fs)
 {
   return empty_type if (unused_var, f <- fs : f.type == empty_type and not f.optional);
-  rfs = [l -> (type: t, optional: f.optional) : l, f <- fs; t = f.type; t != empty_type];
+  rfs = [l -> (type: t, optional: f.optional) : l, f <- fs, t = f.type, t != empty_type];
   return empty_type if rfs == [:];
   nonempty = (unused_var, f <- rfs : not f.optional);
-  return ne_union_type([:ne_record_type(rfs); empty_bin_rel_type if not nonempty]);
+  return ne_union_type([:ne_record_type(rfs), empty_bin_rel_type if not nonempty]);
 }
 
 //## BAD: IF THE LANGUAGE HAD SUBSIGNATURES, THIS FUNCTION WOULD NOT BE NEEDED
@@ -98,19 +98,19 @@ NeType ne_union_type([+NeType] ts)
   nu_ts = union([nu_types(t) : t <- ts]);
   return if size(nu_ts) == 1 then only(nu_ts) else :union_type(nonempty(nu_ts));
 
-  [+NeType] nu_types(NeType type):
+  [+NeType] nu_types(NeType type) =
     union_type(ts?)  = nonempty(union([nu_types(t) : t <- ts])),
     _                = [type];
 }
 
 Type union_type([Type] ts)
 {
-  nu_ts = union([nu_types(t) : t <- ts; t != empty_type]);
+  nu_ts = union([nu_types(t) : t <- ts, t != empty_type]);
   return if   nu_ts == []       then empty_type
          elif size(nu_ts) == 1  then only(nu_ts)
                                 else :union_type(nu_ts);
 
-  [+NeType] nu_types(NeType type):
+  [+NeType] nu_types(NeType type) =
     union_type(ts?)  = nonempty(union([nu_types(t) : t <- ts])),
     _                = [type];
 }
@@ -145,11 +145,11 @@ Pattern ptrn_ne_bin_rel                         = :ptrn_ne_bin_rel;
 Pattern ptrn_empty_tern_rel                     = :ptrn_empty_tern_rel;
 Pattern ptrn_ne_tern_rel                        = :ptrn_ne_tern_rel;
 
-Pattern ptrn_seq                                = ptrn_union([ptrn_empty_seq; ptrn_ne_seq]);
-Pattern ptrn_set                                = ptrn_union([ptrn_empty_set; ptrn_ne_set]);
-Pattern ptrn_map                                = ptrn_union([ptrn_empty_bin_rel; ptrn_ne_map]);
-Pattern ptrn_bin_rel                            = ptrn_union([ptrn_empty_bin_rel; ptrn_ne_bin_rel]);
-Pattern ptrn_tern_rel                           = ptrn_union([ptrn_empty_tern_rel; ptrn_ne_tern_rel]);
+Pattern ptrn_seq                                = ptrn_union([ptrn_empty_seq, ptrn_ne_seq]);
+Pattern ptrn_set                                = ptrn_union([ptrn_empty_set, ptrn_ne_set]);
+Pattern ptrn_map                                = ptrn_union([ptrn_empty_bin_rel, ptrn_ne_map]);
+Pattern ptrn_bin_rel                            = ptrn_union([ptrn_empty_bin_rel, ptrn_ne_bin_rel]);
+Pattern ptrn_tern_rel                           = ptrn_union([ptrn_empty_tern_rel, ptrn_ne_tern_rel]);
 
 <ptrn_any> ptrn_any                             = :ptrn_any;
 TagPtrn ptrn_symbol(Atom a)                     = :ptrn_symbol(:object(a));
@@ -170,7 +170,7 @@ Pattern ptrn_union([+Pattern] ps)
   //## I COULD ALSO ELIMINATE PATTERNS THAT ARE SUBSETS OF OTHER PATTERNS IN THE SET
   return :ptrn_union(ps);
 
-  [Pattern] patterns(Pattern ptrn):
+  [Pattern] patterns(Pattern ptrn) =
     ptrn_union(ps?)   = union([patterns(p) : p <- ps]),
     _                 = [ptrn];
 }

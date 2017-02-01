@@ -41,7 +41,7 @@ SgnSet preprocess_signatures([+FnType] signatures, [TypeName -> NeType] tdefs)
       return just((i)) if t :: Type and is_dispatch_arg(i, sgns, tdefs);
     ;
     //## THIS CAN BE IMPROVED, I DON'T GENERALLY NEED TO CHECK ALL THE ARGUMENTS
-    return just(nonempty((i : a @ i <- a_sgn.args; a :: Type)));
+    return just(nonempty((i : a @ i <- a_sgn.args, a :: Type)));
   }
 
 
@@ -76,7 +76,7 @@ SgnSet preprocess_signatures([+FnType] signatures, [TypeName -> NeType] tdefs)
     sgns = signatures;
     while sgns != []:
       sgn = an_elem(sgns);
-      comp_sgns = [s : s <- sgns; other_params_are_eq(sgn, s, par_idx, tdefs)];
+      comp_sgns = [s : s <- sgns, other_params_are_eq(sgn, s, par_idx, tdefs)];
       new_sgn = if size(comp_sgns) > 1 then merge_all_sgns(nonempty(comp_sgns), par_idx, tdefs) else only(comp_sgns);
       new_sgns = new_sgns & [new_sgn];
       sgns = sgns - comp_sgns;
@@ -110,7 +110,7 @@ SgnSet preprocess_signatures([+FnType] signatures, [TypeName -> NeType] tdefs)
     return true;
   }
 
-  Bool types_or_cls_types_are_eq(AnyType t1, AnyType t2, [TypeName -> NeType] tdefs):
+  Bool types_or_cls_types_are_eq(AnyType t1, AnyType t2, [TypeName -> NeType] tdefs) =
     Type,     Type      = is_eq(t1, t2, typedefs=tdefs),
     ClsType,  ClsType   = is_eq(t1, t2, typedefs=tdefs);
 }
@@ -131,7 +131,7 @@ implicit
     if constraints != [:] and name :: AtomicFnSymb and impl_args == [:] and args :: Expr+:
       fn_key = (name, length(args));
       if constraints(fn_key, ?):
-        ret_types = [rs.out_type : rs <- constraints(fn_key); will_dispatch_to(rs, args, env)];
+        ret_types = [rs.out_type : rs <- constraints(fn_key), will_dispatch_to(rs, args, env)];
         //## IF THERE IS MORE THAN ONE MATCHING SIGNATURE, I SHOULD SELECT THE MOST
         //## SPECIFIC ONE, OR A SUPERSET OF THE INTERSECTION MAYBE. CERTAINLY NOT
         //## A SUPERSET OF THE UNION
@@ -160,7 +160,7 @@ implicit
         arg_type = expr_type(disp_arg, env);
         arg_ptype = pseudotype(arg_type, typedefs);
         // I can do this because if disp_arg_idx != nil then none of the polymorphic signatures is parametric
-        ret_types = [s.ret_type : s <- sgns; may_match(s.args(idx), arg_ptype)];
+        ret_types = [s.ret_type : s <- sgns, may_match(s.args(idx), arg_ptype)];
         return union_type(ret_types);
       else
         disp_args = (args[i] : i <- idxs);
@@ -168,7 +168,7 @@ implicit
         arg_types = (expr_type(e, env) : e <- disp_args);
         arg_ptypes = (pseudotype(t, typedefs) : t <- arg_types);
         // I can do this because if disp_arg_idx != nil then none of the polymorphic signatures is parametric
-        ret_types = [s.ret_type : s <- sgns; may_match((s.args(i) : i <- idxs), arg_ptypes)];
+        ret_types = [s.ret_type : s <- sgns, may_match((s.args(i) : i <- idxs), arg_ptypes)];
         return union_type(ret_types);
       ;
     ;
@@ -188,7 +188,7 @@ implicit
     }
 
 
-    Bool may_match(AnyType type, PseudoType ptype):
+    Bool may_match(AnyType type, PseudoType ptype) =
       Type  = not are_disjoint(pseudotype(type, typedefs), ptype);
 
 
@@ -199,9 +199,9 @@ implicit
       fn_key = (name, length(args));
       param_maybe_types = (if p :: Expr then just(expr_type(p, env)) else nil : p <- args);
       sgn_set = signatures[fn_key];
-      candidate_signatures = [s : s <- sgn_set.sgns; will_dispatch_to(s, args, env)];
+      candidate_signatures = [s : s <- sgn_set.sgns, will_dispatch_to(s, args, env)];
       if candidate_signatures == []:
-        candidate_signatures = [s : s <- sgn_set.agg_sgns; will_dispatch_to(s, args, env)];
+        candidate_signatures = [s : s <- sgn_set.agg_sgns, will_dispatch_to(s, args, env)];
       ;
 
       // assert size(candidate_signatures) == 1 or (t <~ param_maybe_types : t != nil and is_subset(value(t), empty_type));
@@ -225,7 +225,7 @@ implicit
   [TypeCheckingError] fully_typecheck_fn_call(FnSymbol name, AnyExpr* args, [ImplArg -> Expr] impl_args, Type exp_type, [Var -> Type] env)
   {
     // Making sure the scalar, positional arguments typecheck on their own
-    errs = seq_union((typecheck(a, type_any, env) : a <- args; a :: Expr));
+    errs = seq_union((typecheck(a, type_any, env) : a <- args, a :: Expr));
     return errs if errs != [];
 
     // Trying with required functions first
@@ -290,9 +290,9 @@ implicit
     // of the polymorphic functions that may be actually called
     arg_types = (if a :: Expr then just(expr_type(a, env)) else nil : a <- args);
 
-    candidate_signatures = [s : s <- all_sgns; will_dispatch_to(s, args, env)];
+    candidate_signatures = [s : s <- all_sgns, will_dispatch_to(s, args, env)];
     if candidate_signatures == []:
-      candidate_signatures = [s : s <- agg_sgns; will_dispatch_to(s, args, env)];
+      candidate_signatures = [s : s <- agg_sgns, will_dispatch_to(s, args, env)];
       if candidate_signatures == []:
         arg_types = (if a :: Expr then just(expr_type(a, env)) else nil : a <- args);
         avail_sgns = nonempty(all_sgns & [cls_to_fn_type(rs) : rs <- req_sgns]);
@@ -333,7 +333,7 @@ implicit
 
     // If there are constraints on those type variable instantiations we check them
     if type_var_insts != [:]:
-      errs = union([check_type_var_insts(type_var_insts, n, t) : n, ts <- signature.constrs; t <- ts]);
+      errs = union([check_type_var_insts(type_var_insts, n, t) : n, ts <- signature.constrs, t <- ts]);
       return errs if errs != [];
     ;
 
@@ -452,7 +452,7 @@ implicit
     // OK, now we have our initial instantiations, based on the type of scalar parameters.
     // Next we must complete and refine those instantiations by looking at closure parameters
 
-    cls_pars = ((p, t) : p, t <- zip(args, arg_types); p :: ClsExpr and t :: ClsType);
+    cls_pars = ((p, t) : p, t <- zip(args, arg_types), p :: ClsExpr and t :: ClsType);
     for 5:
       new_type_pairs = ();
       for p, t <- cls_pars:
@@ -473,7 +473,7 @@ implicit
     return failure([]); //## BAD: ADD MEANINGFUL ERROR MESSAGE
 
 
-    [TypeCheckingError] typecheck_closure_params(ClsExpr expr, ClsType type, [TypeVar -> Type] type_var_insts, [Var -> Type] env):
+    [TypeCheckingError] typecheck_closure_params(ClsExpr expr, ClsType type, [TypeVar -> Type] type_var_insts, [Var -> Type] env) =
       ClsVar      = {
         actual_type = closures[expr];
         errs = [];

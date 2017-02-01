@@ -43,7 +43,6 @@ ParsingRule keyword_after     = rule_keyword(:after);
 ParsingRule keyword_and       = rule_keyword(:and);
 ParsingRule keyword_assert    = rule_keyword(:assert);
 ParsingRule keyword_break     = rule_keyword(:break);
-ParsingRule keyword_cell      = rule_keyword(:cell);
 ParsingRule keyword_delete    = rule_keyword(:delete);
 ParsingRule keyword_elif      = rule_keyword(:elif);
 ParsingRule keyword_else      = rule_keyword(:else);
@@ -62,6 +61,7 @@ ParsingRule keyword_not       = rule_keyword(:not);
 ParsingRule keyword_or        = rule_keyword(:or);
 ParsingRule keyword_print     = rule_keyword(:print);
 ParsingRule keyword_protocol  = rule_keyword(:protocol);
+ParsingRule keyword_reactive  = rule_keyword(:reactive);
 ParsingRule keyword_return    = rule_keyword(:return);
 ParsingRule keyword_schema    = rule_keyword(:schema);
 ParsingRule keyword_since     = rule_keyword(:since);
@@ -104,7 +104,7 @@ ParsingRule rule_ref_data                       = rule_ref(:data);
 ParsingRule rule_ref_ptrn                       = rule_ref(:ptrn);
 ParsingRule rule_ref_basic_time_expr            = rule_ref(:basic_time_expr);
 
-ParsingRule rule_ref_stmt(StmtCtx ctx):
+ParsingRule rule_ref_stmt(StmtCtx ctx) =
   pure          = rule_ref(:stmt_pure),
   auto_method   = rule_ref(:stmt_auto_method),
   db_method     = rule_ref(:stmt_db_method),
@@ -204,7 +204,7 @@ ParsingRule rule_switch_db_method_def =
     rule_type,
     rule_id,
     par_rule(comma_sep_seq(rule_seq((rule_type, rule_id)))),
-    rule_colon,
+    rule_equals,
     comma_sep_seq(rule_switch_case),
     rule_semicolon
   ));
@@ -432,7 +432,7 @@ ParsingRule rule_switch_fndef = //## rule_try_fndef? rule_match_fndef?
     rule_type,
     rule_anon_choice((rule_id, rule_operator)),
     par_rule(comma_sep_seq(rule_fn_arg)),
-    rule_colon,
+    rule_equals,
     comma_sep_seq(rule_switch_case),
     rule_semicolon
   ));
@@ -496,7 +496,7 @@ ParsingRule rule_stmt(StmtCtx ctx) =
     (:print_stmt,         rule_print_stmt),
     (:imp_update,         rule_imp_update_stmt),
 
-    (:no_val_ret,         rule_no_val_ret_stmt)         if in(ctx, [:update; :proc]),
+    (:no_val_ret,         rule_no_val_ret_stmt)         if in(ctx, [:update, :proc]),
     (:proc_call,          rule_proc_call_stmt)          if ctx == :proc,
 
     (:send_msg,           rule_send_msg_stmt)           if ctx == :update,
@@ -844,12 +844,12 @@ ParsingRule rule_expr_0 =
     (false,               keyword_false),
     (nil,                 keyword_nil),
 
-    (:set,                bracket_rule(opt_semicolon_sep_seq(rule_subexpr))),
+    (:set,                bracket_rule(opt_comma_sep_seq(rule_subexpr))),
     (:empty_bin_rel,      bracket_rule(rule_colon)),
-    (:map,                bracket_rule(semicolon_sep_seq(rule_map_entry))),
-    (:bin_rel,            bracket_rule(semicolon_sep_seq(rule_bin_rel_entry))),
+    (:map,                bracket_rule(comma_sep_seq(rule_map_entry))),
+    (:bin_rel,            bracket_rule(weird_semicolon_sep_seq(rule_bin_rel_entry))),
     (:empty_tern_rel,     bracket_rule(rule_double_colon)),
-    (:tern_rel,           bracket_rule(semicolon_sep_seq(rule_tern_rel_entry))),
+    (:tern_rel,           bracket_rule(weird_semicolon_sep_seq(rule_tern_rel_entry))),
 
     (:seq,                rule_seq_expr),
     (:seq_tail,           rule_seq_tail_expr),
@@ -983,7 +983,7 @@ ParsingRule rule_ex_qual_expr =
   par_rule(
     rule_seq((
       rule_head_clause,
-      rep_rule(rule_seq((rule_semicolon, rule_clause))),
+      rep_rule(rule_seq((rule_comma, rule_clause))),
       rule_colon,
       rule_ref_expr
     ))
@@ -995,7 +995,7 @@ ParsingRule rule_set_cp_expr =
       rule_ref_expr,
       rule_colon,
       rule_head_clause,
-      rep_rule(rule_seq((rule_semicolon, rule_clause)))
+      rep_rule(rule_seq((rule_comma, rule_clause)))
     ))
   );
 
@@ -1007,7 +1007,7 @@ ParsingRule rule_map_cp_expr =
       rule_ref_expr,
       rule_colon,
       rule_head_clause,
-      rep_rule(rule_seq((rule_semicolon, rule_clause)))
+      rep_rule(rule_seq((rule_comma, rule_clause)))
     ))
   );
 
@@ -1020,7 +1020,7 @@ ParsingRule rule_rel_cp_expr =
       optional_rule_seq((rule_comma, rule_ref_expr)),
       rule_colon,
       rule_head_clause,
-      rep_rule(rule_seq((rule_semicolon, rule_clause)))
+      rep_rule(rule_seq((rule_comma, rule_clause)))
     ))
   );
 
@@ -1040,7 +1040,7 @@ ParsingRule rule_seq_cp_expr =
         (:range, rule_seq((rule_id, rule_ops((lower, lower_eq)))))
       )),
       rule_ref_expr,
-      optional_rule_seq((rule_semicolon, rule_ref_expr))
+      optional_rule_seq((rule_comma, rule_ref_expr))
     ))
   );
 
@@ -1086,15 +1086,15 @@ ParsingRule rule_data_expr =
 
     (:string,         rule_string),
 
-    (:set,            bracket_rule(opt_semicolon_sep_seq(rule_ref_data))),
+    (:set,            bracket_rule(opt_comma_sep_seq(rule_ref_data))),
 
     (:empty_bin_rel,  bracket_rule(rule_colon)),
-    (:map,            bracket_rule(semicolon_sep_seq(rule_seq((rule_ref_data, rule_right_arrow, rule_ref_data))))),
+    (:map,            bracket_rule(comma_sep_seq(rule_seq((rule_ref_data, rule_right_arrow, rule_ref_data))))),
     (:record,         bracket_rule(comma_sep_seq(rule_seq((rule_lc_id, rule_colon, rule_ref_data))))),
-    (:ne_bin_rel,     bracket_rule(semicolon_sep_seq(rule_seq((rule_ref_data, rule_colon, rule_ref_data))))),
+    (:ne_bin_rel,     bracket_rule(weird_semicolon_sep_seq(rule_seq((rule_ref_data, rule_comma, rule_ref_data))))),
 
     (:empty_tern_rel, bracket_rule(rule_double_colon)),
-    (:ne_tern_rel,    bracket_rule(semicolon_sep_seq(rule_seq((rule_ref_data, rule_comma, rule_ref_data, rule_comma, rule_ref_data))))),
+    (:ne_tern_rel,    bracket_rule(weird_semicolon_sep_seq(rule_seq((rule_ref_data, rule_comma, rule_ref_data, rule_comma, rule_ref_data))))),
 
     (:seq,            par_rule(opt_comma_sep_seq(rule_ref_data))),
 
@@ -1153,7 +1153,7 @@ ParsingRule rule_card = optional_rule(rule_anon_choice((rule_question_mark, rule
 
 ParsingRule rule_auto_def =
   rule_seq((
-    keyword_cell,
+    keyword_reactive,
     optional_rule(rule_type),
     rule_lc_id,
     optional_rule(par_rule(comma_sep_seq(rule_lc_id))),
@@ -1363,7 +1363,7 @@ ParsingRule rule_switch_auto_method_def =
     rule_dot,
     rule_id,
     optional_rule(par_rule(comma_sep_seq(rule_seq((rule_type, rule_id))))),
-    rule_colon,
+    rule_equals,
     comma_sep_seq(rule_switch_case),
     rule_semicolon
   ));

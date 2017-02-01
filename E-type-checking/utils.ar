@@ -1,4 +1,4 @@
-Type union_superset(Type t1, Type t2) = union_superset([t1; t2]);
+Type union_superset(Type t1, Type t2) = union_superset([t1, t2]);
 
 Type union_superset([Type] types) = union_type(types);
 
@@ -20,7 +20,7 @@ Type replace_type_vars_with_type_any(Type type) = replace_type_vars_computed(typ
 //## OF A PATTERN AND A TYPE, AND I DON'T WANT THAT CODE TO DEPEND ON THE CODE
 //## THAT CALCULATES THE (APPROXIMATE) INTERSECTION OF TWO TYPES
 
-<IntType, empty_type> int_types_intersection(IntType int_type_1, IntType int_type_2):
+<IntType, empty_type> int_types_intersection(IntType int_type_1, IntType int_type_2) =
   integer,      _             = int_type_2,
 
   low_ints(),   low_ints()    = low_ints(min(int_type_1.max, int_type_2.max)),
@@ -43,7 +43,7 @@ Type replace_type_vars_with_type_any(Type type) = replace_type_vars_computed(typ
 
 implicit typedefs : [TypeName -> NeType]
 {
-  [TypeVar] retrieve_type_vars(Type type):
+  [TypeVar] retrieve_type_vars(Type type) =
     TypeVar   = [type],
     _         = retrieve_from_nested_types(type, retrieve_type_vars($, typedefs=typedefs));
 
@@ -53,7 +53,7 @@ implicit typedefs : [TypeName -> NeType]
 
   // The type returned by this function is always a subset of both the
   // input type and the [type implicitly defined by] the input pattern
-  Type type_pattern_intersection_superset(Type type, Pattern ptrn):
+  Type type_pattern_intersection_superset(Type type, Pattern ptrn) =
     empty_type,         _                 = empty_type,
 
     _,                  ptrn_any          = type,
@@ -120,7 +120,7 @@ implicit typedefs : [TypeName -> NeType]
 
     tag_obj_type(),     _                 = empty_type,
 
-    union_type(ts?),    _                 = { int_types = [it : t <- ts; it = type_pattern_intersection_superset(t, ptrn); it != empty_type];
+    union_type(ts?),    _                 = { int_types = [it : t <- ts, it = type_pattern_intersection_superset(t, ptrn), it != empty_type];
                                               return empty_type if int_types == [];
                                               // return only(int_types) if size(int_types) == 1;
                                               // The types here are all union-compatible, since they are all
@@ -133,7 +133,7 @@ implicit typedefs : [TypeName -> NeType]
 
   //## THIS IS PRETTY MUCH UNTESTED. IT SHOULD BE TESTED WITH THE TYPE SUBSET TESTING CODE,
   //## AND MAYBE IT WOULD BE GOOD TO DO SOME MANUAL TESTING, ESPECIALLY FOR TUPLE TYPES
-  Bool type_contains_obj(Type type, Any obj):
+  Bool type_contains_obj(Type type, Any obj) =
     empty_type,           _       = false,
 
     atom_type,            +       = true,
@@ -194,7 +194,7 @@ implicit typedefs : [TypeName -> NeType]
                                     ),
     ne_tern_rel_type(),   _       = false,
 
-    ne_record_type(fs?),  [->]    = obj != [:] and subset([l : l, f <- fs; not f.optional], keys(obj)) and
+    ne_record_type(fs?),  [->]    = obj != [:] and subset([l : l, f <- fs, not f.optional], keys(obj)) and
                                     not (k, v <- obj : not has_key(fs, k) or not type_contains_obj(fs[k].type, v)),
     ne_record_type(fs?),  _       = false,
 
@@ -212,7 +212,7 @@ implicit typedefs : [TypeName -> NeType]
   //## I COULD ASSERT THAT THE RESULTING TYPE IS A SUBSET OF THE ORIGINAL ONE
   //## THAT WOULD INTRODUCE A CYCLIC DEPENDENCY (ALBEIT ONLY IN DEBUG MODE) BETWEEN
   //## TYPE UTILS AND SUBTYPE CHECKING. ALSO THE SYNTAX WOULD NOT BE GREAT.
-  Type subtract_obj_from_type(Type type, Any obj):
+  Type subtract_obj_from_type(Type type, Any obj) =
     symb_type(object(s?))   = if obj == s then empty_type else type,
 
     low_ints()              = if obj == type.max then low_ints(type.max-1) else type,
@@ -231,7 +231,7 @@ implicit typedefs : [TypeName -> NeType]
     empty_set_type          = if obj == [] then empty_type else type,
     empty_bin_rel_type      = if obj == [:] then empty_type else type,
 
-    union_type(ts?)         = { nts = [nt : t <- ts; nt = subtract_obj_from_type(t, obj); nt != empty_type];
+    union_type(ts?)         = { nts = [nt : t <- ts, nt = subtract_obj_from_type(t, obj), nt != empty_type];
                                 return if nts == [] then empty_type else union_type(nts);
                               },
 
@@ -252,7 +252,7 @@ FnType signature(Function fn) =
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-BuiltInType builtin_signature(BuiltIn):
+BuiltInType builtin_signature(BuiltIn) =
   neg             = unary_int_op,
   add             = binary_int_op,
   sub             = binary_int_op,
@@ -327,7 +327,7 @@ NeType type_map_t1_t2         = type_map(type_var(:t1), type_var(:t2));
 NeType type_true  = symb_type(true);
 NeType type_false = symb_type(false);
 
-NeType type_bool = ne_union_type([type_true; type_false]);
+NeType type_bool = ne_union_type([type_true, type_false]);
 
 NeType type_nat = high_ints(0);
 NeType type_nz_nat = high_ints(1);
@@ -338,9 +338,9 @@ NeType type_map = type_map(type_any, type_any);
 NeType type_bin_rel = type_bin_rel(type_any, type_any);
 NeType type_tern_rel = type_tern_rel(type_any, type_any, type_any);
 
-NeType type_set_rel = ne_union_type([type_set; type_bin_rel; type_tern_rel]);
+NeType type_set_rel = ne_union_type([type_set, type_bin_rel, type_tern_rel]);
 
-NeType type_unary_pseudocall_target = ne_union_type([atom_type; type_seq; type_set; type_map]);
+NeType type_unary_pseudocall_target = ne_union_type([atom_type, type_seq, type_set, type_map]);
 
 NeType type_ne_seq      = ne_seq_type(type_any);
 NeType type_ne_set      = ne_set_type(type_any);
@@ -368,26 +368,26 @@ NeType type_tern_rel(NeType arg_1_type, NeType arg_2_type, NeType arg_3_type, Bo
     then ne_tern_rel_type(arg_1_type, arg_2_type, arg_3_type)
     else type_tern_rel(arg_1_type, arg_2_type, arg_3_type);
 
-NeType type_seq(NeType elem_type)  = ne_union_type([empty_seq_type; ne_seq_type(elem_type)]);
-NeType type_set(NeType elem_type)  = ne_union_type([empty_set_type; ne_set_type(elem_type)]);
-NeType type_mset(NeType elem_type) = ne_union_type([empty_bin_rel_type; ne_map_type(elem_type, high_ints(1))]);
+NeType type_seq(NeType elem_type)  = ne_union_type([empty_seq_type, ne_seq_type(elem_type)]);
+NeType type_set(NeType elem_type)  = ne_union_type([empty_set_type, ne_set_type(elem_type)]);
+NeType type_mset(NeType elem_type) = ne_union_type([empty_bin_rel_type, ne_map_type(elem_type, high_ints(1))]);
 
 NeType type_tuple(<2..*> size)  = ne_tuple_type(nonempty(size * (type_any)));
 
-NeType type_map(NeType key_type, NeType value_type)  = ne_union_type([empty_bin_rel_type; ne_map_type(key_type, value_type)]);
+NeType type_map(NeType key_type, NeType value_type)  = ne_union_type([empty_bin_rel_type, ne_map_type(key_type, value_type)]);
 
 NeType type_bin_rel(NeType arg_1_type, NeType arg_2_type) =
-  ne_union_type([empty_bin_rel_type; ne_bin_rel_type(arg_1_type, arg_2_type)]);
+  ne_union_type([empty_bin_rel_type, ne_bin_rel_type(arg_1_type, arg_2_type)]);
 
 NeType type_tern_rel(NeType arg_1_type, NeType arg_2_type, NeType arg_3_type) =
-  ne_union_type([empty_tern_rel_type; ne_tern_rel_type(arg_1_type, arg_2_type, arg_3_type)]);
+  ne_union_type([empty_tern_rel_type, ne_tern_rel_type(arg_1_type, arg_2_type, arg_3_type)]);
 
-NeType type_string = tag_obj_type(symb_type(:string), ne_union_type([empty_seq_type; ne_seq_type(type_nat)]));
+NeType type_string = tag_obj_type(symb_type(:string), ne_union_type([empty_seq_type, ne_seq_type(type_nat)]));
 
 NeType type_any = type_ref(builtin_type_symbol(:any));
 
 NeType type_dot_access_target =
   ne_union_type([
-    type_map(atom_type, type_any);
+    type_map(atom_type, type_any),
     tag_obj_type(atom_type, type_map(atom_type, type_any))
   ]);

@@ -1,4 +1,4 @@
-[StdVar] syn_new_vars(SynPtrn ptrn):
+[StdVar] syn_new_vars(SynPtrn ptrn) =
     ptrn_var()      = [ptrn.var] & syn_new_vars(ptrn.ptrn),
     ptrn_tuple(ps?) = seq_union((syn_new_vars(p) : p <- ps)),
     ptrn_tag_obj()  = syn_new_vars(ptrn.tag) & syn_new_vars(ptrn.obj),
@@ -6,10 +6,10 @@
     _               = [];
 
 
-[StdVar] syn_new_vars(SynStmt stmt):
+[StdVar] syn_new_vars(SynStmt stmt) =
   assignment_stmt()       = set(stmt.vars),
   if_stmt()               = { bodies = [b.body : b <~ stmt.branches] & [stmt.else];
-                              return intersection([syn_new_vars(ss) : ss <- bodies; syn_may_fall_through(ss)]);
+                              return intersection([syn_new_vars(ss) : ss <- bodies, syn_may_fall_through(ss)]);
                             },
   let_stmt()              = syn_new_vars(stmt.body),
   proc_call_stmt()        = [stmt.res_var if stmt.res_var?],
@@ -21,9 +21,9 @@
 [StdVar] syn_new_vars(<SynStmt, SynClause>* objs) = seq_union((syn_new_vars(obj) : obj <- objs));
 
 
-[StdVar] syn_new_vars(SynClause clause):
+[StdVar] syn_new_vars(SynClause clause) =
   iter_clause()         = set(clause.vars),
-  seq_clause()          = [var(value(v)) : v <~ (clause.vars | clause.idx_var); v != nil],
+  seq_clause()          = [var(value(v)) : v <~ (clause.vars | clause.idx_var), v != nil],
   and_clause(cs?)       = seq_union((syn_new_vars(c) : c <- cs)),
   or_clause(cs?)        = intersection([syn_new_vars(c) : c <~ cs]),
   match_clause()        = syn_new_vars(clause.ptrn),
@@ -31,7 +31,7 @@
   filter_clause()       = [];
 
 
-[StdVar] syn_new_vars(SynIter iter):
+[StdVar] syn_new_vars(SynIter iter) =
   seq_iter()    = set(iter.vars) & [iter.idx_var if iter.idx_var?],
   range_iter()  = [iter.var if iter.var?];
 
@@ -40,7 +40,7 @@
 
 [TypeVar] syn_type_vars(SynClsType type) = seq_union((syn_type_vars(t) : t <- type.in_types)) & syn_type_vars(type.out_type);
 
-[TypeVar] syn_type_vars(SynType type):
+[TypeVar] syn_type_vars(SynType type) =
   SynLeafType         = [],
   type_ref(ts?)       = syn_type_vars(ts),
   type_var()          = [type],
@@ -53,7 +53,7 @@
   tag_obj_type()      = syn_type_vars(type.tag_type) & syn_type_vars(type.obj_type),
   union_type(ts?)     = seq_union((syn_type_vars(t) : t <- ts));
 
-[TypeVar] syn_type_vars(SynTypeSymbol type_symb):
+[TypeVar] syn_type_vars(SynTypeSymbol type_symb) =
   BasicTypeSymbol   = [],
   par_type_symbol() = seq_union((syn_type_vars(t) : t <- type_symb.params));
 
@@ -94,11 +94,11 @@ ClsType desugar_cls_type(SynClsType type, (SynType -> NeType) desugar) =
 
 ////////////////////////////////////////////////////////////////////////////////
 
-NeType desugar_type_ref(SynTypeRef, (<SynTypeRef, SynTypeVar> -> NeType) desugar):
+NeType desugar_type_ref(SynTypeRef, (<SynTypeRef, SynTypeVar> -> NeType) desugar) =
   type_ref(ts?) = type_ref(desugar_type_symb(ts, desugar));
 
 
-TypeSymbol desugar_type_symb(SynTypeSymbol type_symb, (<SynTypeRef, SynTypeVar> -> NeType) desugar):
+TypeSymbol desugar_type_symb(SynTypeSymbol type_symb, (<SynTypeRef, SynTypeVar> -> NeType) desugar) =
   BasicTypeSymbol   = type_symb,
   par_type_symbol() = { type_pars = (desugar_type(p, desugar) : p <- type_symb.params);
                         return par_type_symbol(type_symb.symbol, type_pars);
@@ -106,7 +106,7 @@ TypeSymbol desugar_type_symb(SynTypeSymbol type_symb, (<SynTypeRef, SynTypeVar> 
 
 ////////////////////////////////////////////////////////////////////////////////
 
-NeType desugar_type(SynType type, (<SynTypeRef, SynTypeVar> -> NeType) desugar):
+NeType desugar_type(SynType type, (<SynTypeRef, SynTypeVar> -> NeType) desugar) =
   LeafType          = type,
   type_var()        = desugar(type),
   type_ref()        = desugar(type),
@@ -129,7 +129,7 @@ NeType desugar_type(SynType type, (<SynTypeRef, SynTypeVar> -> NeType) desugar):
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-[Atom] refd_prot_types(SynType type, [Atom] prot_types):
+[Atom] refd_prot_types(SynType type, [Atom] prot_types) =
   type_ref(ts?)     = {match (ts) type_symbol(a?) = [a if prot_types(a)], _ = []},
   LeafType          = [],
   type_var()        = [],
@@ -191,15 +191,15 @@ PseudoType syn_pseudotype(SynType type, [TypeName -> Type] typedefs) = pseudotyp
 }
 
 
-[+StmtOutcome] syn_outcomes(SynStmt stmt):
+[+StmtOutcome] syn_outcomes(SynStmt stmt) =
   return_stmt               = [:returns],
-  return_stmt()             = [:fails; :returns],
+  return_stmt()             = [:fails, :returns],
   if_stmt()                 = nonempty(
                                 [:fails] & syn_outcomes(stmt.else) & seq_union((syn_outcomes(b.body) : b <- stmt.branches))
                               ),
   loop_stmt(body?)          = loop_stmt_syn_outcomes(stmt.skip_first, stmt.body),
   inf_loop_stmt(ss?)        = inf_loop_stmt_syn_outcomes(ss),
-  for_stmt()                = [:fails; :falls_through; :returns if in(:returns, syn_outcomes(stmt.body))],
+  for_stmt()                = [:fails, :falls_through, :returns if in(:returns, syn_outcomes(stmt.body))],
   let_stmt()                = nonempty([:fails] & syn_outcomes(stmt.body)),
   break_stmt                = [:breaks],
   fail_stmt                 = [:fails],
@@ -218,15 +218,15 @@ PseudoType syn_pseudotype(SynType type, [TypeName -> Type] typedefs) = pseudotyp
   apply_ctrl_stmt()         |
   send_msg_ctrl_stmt()      |
   read_state_ctrl_stmt()    |
-  restore_state_ctrl_stmt() = [:falls_through; :fails];
+  restore_state_ctrl_stmt() = [:falls_through, :fails];
 
 
 [+StmtOutcome] loop_stmt_syn_outcomes(Bool skip_first, SynStmt+ body)
 {
   os = syn_outcomes(body);
   return [
-    :falls_through  if in(:falls_through, os) or in(:breaks, os) or not skip_first;
-    :returns        if in(:returns, os);
+    :falls_through  if in(:falls_through, os) or in(:breaks, os) or not skip_first,
+    :returns        if in(:returns, os),
     :fails
   ];
 }
@@ -236,8 +236,8 @@ PseudoType syn_pseudotype(SynType type, [TypeName -> Type] typedefs) = pseudotyp
 {
   os = syn_outcomes(body);
   return nonempty([
-    :falls_through  if in(:breaks, os);
-    :returns        if in(:returns, os);
+    :falls_through  if in(:breaks, os),
+    :returns        if in(:returns, os),
     :fails          if in(:fails, os) or in(:falls_through, os)
   ]);
 }
@@ -251,9 +251,9 @@ Bool syn_may_fall_through(SynStmt* stmts) = in(:falls_through, syn_outcomes(stmt
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-[Var] already_def_vars([Var] new_vars, [Var] curr_vars) = [v : v <- new_vars; already_def(v, curr_vars)];
+[Var] already_def_vars([Var] new_vars, [Var] curr_vars) = [v : v <- new_vars, already_def(v, curr_vars)];
 
-Bool already_def(Var var, [Var] vars):
+Bool already_def(Var var, [Var] vars) =
   var(n?)       = already_def(n, vars),
   impl_arg(n?)  = already_def(n, vars),
   memb_var(n?)  = already_def(n, vars),
@@ -264,7 +264,7 @@ Bool already_def(Atom var_name, [Var] vars) =
   in(impl_arg(var_name), vars)  or
   in(memb_var(var_name), vars);
 
-FnSymbol impl_arg_to_fn_symb(ImplArg p):
+FnSymbol impl_arg_to_fn_symb(ImplArg p) =
   impl_arg(n?)   = fn_symbol(n);
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -272,7 +272,7 @@ FnSymbol impl_arg_to_fn_symb(ImplArg p):
 
 Atom rule_id(ConstDecl decl)  = decl.name;
 
-Atom rule_id(RuleDecl decl):
+Atom rule_id(RuleDecl decl) =
   syn_plain_rule()                  |
   syn_cond_rule()                   |
   syn_foreach_rule()                |
@@ -307,9 +307,9 @@ Atom rule_id(RuleDecl decl):
 
     overriding_ids = [rule_id(d) : d <~ child.rules & child.consts];
 
-    inherited_inputs = (i : i <- parent.inputs; not in(i.name, overriding_ids));
-    inherited_consts = (c : c <- parent.consts; not in(c.name, overriding_ids));
-    inherited_rules  = (r : r <- parent.rules;  not in(rule_id(r), overriding_ids));
+    inherited_inputs = (i : i <- parent.inputs, not in(i.name, overriding_ids));
+    inherited_consts = (c : c <- parent.consts, not in(c.name, overriding_ids));
+    inherited_rules  = (r : r <- parent.rules,  not in(rule_id(r), overriding_ids));
 
     return syn_auto_def(
       name:       child.name,
@@ -334,7 +334,7 @@ type AccessorChain = accessor(expr: <ConstOrVar, AccessorChain>, field: Atom);
 
 type IdChain = ConstOrVar, AccessorChain;
 
-(Atom) destructure_id_chain(ConstOrVar expr):
+(Atom) destructure_id_chain(ConstOrVar expr) =
   const_or_var(a?)  = (a);
 
 Atom+ destructure_id_chain(AccessorChain expr) =

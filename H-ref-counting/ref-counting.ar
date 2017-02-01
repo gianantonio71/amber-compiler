@@ -62,7 +62,7 @@ Instr+ add_ref_counting(Instr+ instrs)
 {
   leaf_nodes, code_tree = build_root_code_graph(instrs);
   flow_map = build_flow_map(code_tree, leaf_nodes);
-  no_end_node_flow_map = ((n : n <- ns; n != end_node) : ns <- flow_map);
+  no_end_node_flow_map = ((n : n <- ns, n != end_node) : ns <- flow_map);
   rev_flow_map = reverse_flow_map(no_end_node_flow_map);
   live_vars_before_map, live_vars_after_map = build_live_vars_maps(leaf_nodes, no_end_node_flow_map);
   // ref_live_vars_before_map, ref_live_vars_after_map = ref_build_live_vars_maps(leaf_nodes, flow_map);
@@ -70,7 +70,7 @@ Instr+ add_ref_counting(Instr+ instrs)
   // ref_entry_vars_states = ref_entry_vars_states(leaf_nodes, flow_map, live_vars_after_map);
   assert {
     before_info = zip(live_vars_before_map, entry_vars_states);
-    uninit_vars = ([v : v <- lvs; not is_initialized(vs, v)] : lvs, vs <- before_info);
+    uninit_vars = ([v : v <- lvs, not is_initialized(vs, v)] : lvs, vs <- before_info);
     is_ok = none((vs != [] : vs <- uninit_vars));
     if not is_ok:
       print "***********************************************";
@@ -120,7 +120,7 @@ VarsState* entry_vars_states(NodeInfo* leaf_nodes, Nat** flow_map, [TrkVar]* liv
   len = length(leaf_nodes);
 
   rev_flow_map = reverse_flow_map(flow_map);
-  fwd_nodes_map = ([n : n <- ns; n < i] : ns @ i <- rev_flow_map);
+  fwd_nodes_map = ([n : n <- ns, n < i] : ns @ i <- rev_flow_map);
 
   entry_states = (blank_vars_state);
   for i = 1..len:
@@ -202,7 +202,7 @@ implicit flow_map : NodeId**, live_vars_after_map : [TrkVar]*, entry_vars_states
   }
 
 
-  RCNodeInfo add_ref_counting(NodeInfo info, NodeId* next_nodes, VarsState entry_state, VarsState exit_state, Instr* pre_instrs, Instr* post_instrs):
+  RCNodeInfo add_ref_counting(NodeInfo info, NodeId* next_nodes, VarsState entry_state, VarsState exit_state, Instr* pre_instrs, Instr* post_instrs) =
     std_node(terminate)                     = std_node((terminate)),
     std_node(ret_val(e?))                   = {assert post_instrs == (); return rc_ret_node(e, entry_state, pre_instrs);},
     std_node(<break_loop, exit_block> i?)   = { assert pre_instrs == () and post_instrs == ();
@@ -299,7 +299,7 @@ implicit entry_vars_states : VarsState*
 Instr+ ref_count_closures(Instr+ instrs)  = (ref_count_closures_single_instruction(i) : i <- instrs);
 
 
-Instr ref_count_closures_single_instruction(Instr instr):
+Instr ref_count_closures_single_instruction(Instr instr) =
   call_proc()         = call_proc(
                           var:  instr.var if instr.var?,
                           name: instr.name,
@@ -318,6 +318,6 @@ Instr ref_count_closures_single_instruction(Instr instr):
 
 AtomicExpr ref_count_closure(AtomicExpr expr) = expr; //## NOT THE BEST NAME IN THIS CASE...
 
-BoundCls ref_count_closure(BoundCls cls):
+BoundCls ref_count_closure(BoundCls cls) =
   ClsVar        = cls,
   bound_cls()   = bound_cls(cls_def(cls.cls.arity, add_ref_counting(cls.cls.body)), cls.capt_vars, cls.capt_cls_vars);

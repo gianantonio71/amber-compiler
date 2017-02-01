@@ -2,7 +2,7 @@ Type replace_type_vars(Type type, [TypeVar -> Type] substitutions) = replace_typ
 
 
 //## BAD: FIND DECENT NAME, OR EVEN BETTER, REMOVE THE RESTRICTIONS ABOUT CLOSURE PARAMETERS FOR FUNCTIONS WITH SAME NAME AND ARITY
-Type replace_type_vars_computed(Type type, (TypeVar -> Type) replace):
+Type replace_type_vars_computed(Type type, (TypeVar -> Type) replace) =
   empty_type          = empty_type,
   LeafType            = type,
   TypeVar             = replace(type),
@@ -31,7 +31,7 @@ Type replace_type_vars_computed(Type type, (TypeVar -> Type) replace):
   union_type(ts?)     = union_type([replace_type_vars_computed(t, replace) : t <- ts]);
 
 
-TypeSymbol replace_type_vars_computed(TypeSymbol type_symb, (TypeVar -> Type) replace):
+TypeSymbol replace_type_vars_computed(TypeSymbol type_symb, (TypeVar -> Type) replace) =
   type_symbol()           = type_symb,
   builtin_type_symbol()   = type_symb,
   par_type_symbol()       = par_type_symbol(
@@ -42,7 +42,7 @@ TypeSymbol replace_type_vars_computed(TypeSymbol type_symb, (TypeVar -> Type) re
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-[T] retrieve_from_nested_types(Type type, (Type -> [T]) retrieve):
+[T] retrieve_from_nested_types(Type type, (Type -> [T]) retrieve) =
   empty_type          = [],
   LeafType            = [],
   type_ref(ts?)       = retrieve_from_nested_types(ts, retrieve),
@@ -58,7 +58,7 @@ TypeSymbol replace_type_vars_computed(TypeSymbol type_symb, (TypeVar -> Type) re
   union_type(ts?)     = union([retrieve(t) : t <- ts]);
 
 
-[T] retrieve_from_nested_types(TypeSymbol type_symb, (Type -> [T]) retrieve):
+[T] retrieve_from_nested_types(TypeSymbol type_symb, (Type -> [T]) retrieve) =
   BasicTypeSymbol     = [],
   par_type_symbol()   = seq_union((retrieve(t) : t <- type_symb.params));
 
@@ -78,24 +78,24 @@ Type expand_type_ref(TypeSymbol type_symb, [TypeName -> Type] typedefs)
 
   Type exp_type_any =
     union_type([
-      atom_type;
-      integer;
-      float_type;
-      empty_seq_type;
-      empty_set_type;
-      empty_bin_rel_type;
-      empty_tern_rel_type;
-      type_ne_seq;
-      type_ne_set;
-      type_ne_bin_rel;
-      type_ne_tern_rel;
+      atom_type,
+      integer,
+      float_type,
+      empty_seq_type,
+      empty_set_type,
+      empty_bin_rel_type,
+      empty_tern_rel_type,
+      type_ne_seq,
+      type_ne_set,
+      type_ne_bin_rel,
+      type_ne_tern_rel,
       tag_obj_type(atom_type, type_any)
     ]);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-[TypeVar] get_type_vars(Type type):
+[TypeVar] get_type_vars(Type type) =
   TypeVar   = [type],
   _         = retrieve_from_nested_types(type, get_type_vars);
 
@@ -109,7 +109,7 @@ Bool is_param_type(FnType type) = (t <~ type.args : is_param_type(t)) or is_para
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-[T] retrieve_from_nested_exprs(Expr expr, (Expr -> [T]) retrieve):
+[T] retrieve_from_nested_exprs(Expr expr, (Expr -> [T]) retrieve) =
   LeafObj                 = [],
   FloatLit                = [],
   set_expr(ses?)          = union([any_expr_retrieve_from_nested_exprs(se, retrieve) : se <- ses]),
@@ -125,8 +125,8 @@ Bool is_param_type(FnType type) = (t <~ type.args : is_param_type(t)) or is_para
   cls_call()              = seq_union((retrieve(p) : p <- expr.args)),
   builtin_call()          = seq_union((retrieve(p) : p <- expr.args)),
   unary_pseudo_call()     = retrieve(expr.target) & retrieve(expr.arg),
-  rel_memb_test()         = retrieve(expr.rel) & seq_union((retrieve(value(a)) : a <- expr.args; a != nil)),
-  relvar_memb_test()      = seq_union((retrieve(value(a)) : a <- expr.args; a != nil)),
+  rel_memb_test()         = retrieve(expr.rel) & seq_union((retrieve(value(a)) : a <- expr.args, a != nil)),
+  relvar_memb_test()      = seq_union((retrieve(value(a)) : a <- expr.args, a != nil)),
   relvar_lookup()         = seq_union((retrieve(e) : e <- expr.set_args)),
   singl_only_elem()       = retrieve(expr.set),
   and_expr()              = retrieve(expr.left) & retrieve(expr.right),
@@ -158,13 +158,13 @@ Bool is_param_type(FnType type) = (t <~ type.args : is_param_type(t)) or is_para
 
 [T] any_expr_retrieve_from_nested_exprs(CondExpr expr, (Expr -> [T]) retrieve)  = retrieve(expr.expr) & retrieve(expr.cond);
 
-[T] any_expr_retrieve_from_nested_exprs(ClsExpr expr, (Expr -> [T]) retrieve):
+[T] any_expr_retrieve_from_nested_exprs(ClsExpr expr, (Expr -> [T]) retrieve) =
   ClsVar      = [],
   fn_ptr()    = [],
   cls_expr()  = retrieve(expr.expr);
 
 
-[T] retrieve_from_nested_exprs(Statement stmt, (Expr -> [T]) retrieve):
+[T] retrieve_from_nested_exprs(Statement stmt, (Expr -> [T]) retrieve) =
   assignment_stmt()         = retrieve(stmt.value),
   return_stmt(e?)           = retrieve(e),
   if_stmt()                 = retrieve(stmt.cond) & retrieve_from_nested_exprs(stmt.body, retrieve) &
@@ -183,7 +183,7 @@ Bool is_param_type(FnType type) = (t <~ type.args : is_param_type(t)) or is_para
   send_msg_stmt()           = retrieve(stmt.msg),
   try_update_stmt()         = seq_union((retrieve(a) : a <- stmt.args)),
   set_memb_var_stmt()       = retrieve(stmt.value), //## NOT SURE ABOUT THIS ONE, IT MIGHT BE NECESSARY TO ALSO RETRIEVE THE TARGET VARIABLE IN ORDER TO MAKE extern_vars() WORK. BUT WHAT ABOUT THE ASSIGNMENT STATEMENTS THEN?
-  delete_stmt()             = seq_union((retrieve(value(a)) : a <- stmt.fields; a != nil)),
+  delete_stmt()             = seq_union((retrieve(value(a)) : a <- stmt.fields, a != nil)),
   insert_stmt()             = seq_union((retrieve(e) : e <- stmt.fields)),
   set_input_ctrl_stmt()     = retrieve(stmt.value),
   clear_input_ctrl_stmt()   = [],
@@ -196,10 +196,10 @@ Bool is_param_type(FnType type) = (t <~ type.args : is_param_type(t)) or is_para
 [T] retrieve_from_nested_exprs(Statement* stmts, (Expr -> [T]) retrieve) = seq_union((retrieve_from_nested_exprs(s, retrieve) : s <- stmts));
 
 
-[T] retrieve_from_nested_exprs(Clause cls, (Expr -> [T]) retrieve):
+[T] retrieve_from_nested_exprs(Clause cls, (Expr -> [T]) retrieve) =
   set_clause()      = retrieve(cls.src),
-  rel_clause()      = retrieve(cls.src) & seq_union((retrieve(value(a)) : a <- cls.args; a != nil)),
-  relvar_clause()   = seq_union((retrieve(value(a)) : a <- cls.args; a != nil)),
+  rel_clause()      = retrieve(cls.src) & seq_union((retrieve(value(a)) : a <- cls.args, a != nil)),
+  relvar_clause()   = seq_union((retrieve(value(a)) : a <- cls.args, a != nil)),
   seq_clause()      = retrieve(cls.src),
   and_clause()      = retrieve_from_nested_exprs(cls.left, retrieve) & retrieve_from_nested_exprs(cls.right, retrieve),
   or_clause()       = retrieve_from_nested_exprs(cls.left, retrieve) & retrieve_from_nested_exprs(cls.right, retrieve),
@@ -212,7 +212,7 @@ Bool is_param_type(FnType type) = (t <~ type.args : is_param_type(t)) or is_para
 
 [T] retrieve_from_nested_stmts(Statement* stmts, (Statement -> [T]) retrieve) = seq_union((retrieve(s) : s <- stmts));
 
-[T] retrieve_from_nested_stmts(Statement stmt, (Statement -> [T]) retrieve):
+[T] retrieve_from_nested_stmts(Statement stmt, (Statement -> [T]) retrieve) =
   if_stmt()                 = seq_union((retrieve_from_nested_stmts(ss, retrieve) : ss <- (stmt.body, stmt.else))),
   loop_stmt(ss?)            = retrieve_from_nested_stmts(ss, retrieve),
   foreach_stmt()            |
@@ -244,7 +244,7 @@ Bool is_param_type(FnType type) = (t <~ type.args : is_param_type(t)) or is_para
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-Expr replace_nested_exprs(Expr expr, (Expr -> Expr) replace):
+Expr replace_nested_exprs(Expr expr, (Expr -> Expr) replace) =
   LeafObj             = expr,
   FloatLit            = expr,
   set_expr(ses?)      = set_expr([replace_exprs_in_subexpr(se, replace) : se <- ses]),
@@ -317,23 +317,23 @@ Expr replace_nested_exprs(Expr expr, (Expr -> Expr) replace):
 CondExpr replace_exprs_in_cond_expr(CondExpr expr, (Expr -> Expr) replace) = cond_expr(replace(expr.expr), replace(expr.cond));
 
 
-ClsExpr replace_exprs_in_cls_expr(ClsExpr expr, (Expr -> Expr) replace):
+ClsExpr replace_exprs_in_cls_expr(ClsExpr expr, (Expr -> Expr) replace) =
   ClsVar      = expr,
   fn_ptr()    = expr,
   cls_expr()  = cls_expr(expr.args, replace(expr.expr));
 
 
-SubExpr replace_exprs_in_subexpr(SubExpr subexpr, (Expr -> Expr) replace):
+SubExpr replace_exprs_in_subexpr(SubExpr subexpr, (Expr -> Expr) replace) =
   CondExpr  = replace_exprs_in_cond_expr(subexpr, replace),
   Expr      = replace(subexpr);
 
 
-AnyExpr replace_exprs_in_any_expr(AnyExpr expr, (Expr -> Expr) replace):
+AnyExpr replace_exprs_in_any_expr(AnyExpr expr, (Expr -> Expr) replace) =
   ClsExpr   = replace_exprs_in_cls_expr(expr, replace),
   Expr      = replace(expr);
 
 
-Statement replace_exprs_in_stmt(Statement stmt, (Expr -> Expr) replace):
+Statement replace_exprs_in_stmt(Statement stmt, (Expr -> Expr) replace) =
   assignment_stmt()   = assignment_stmt(stmt.vars, replace(stmt.value)),
   return_stmt(e?)     = return_stmt(replace(e)),
   if_stmt()           = if_stmt(
@@ -361,7 +361,7 @@ Statement replace_exprs_in_stmt(Statement stmt, (Expr -> Expr) replace):
   assert_stmt()       = assert_stmt(
                           replace(stmt.cond),
                           //## NEITHER OF THESE IS GOOD. BUT WHAT ALTERNATIVES DO WE HAVE?
-                          [if e :: <StdVar, ImplArg> then e else {fail;} : v <- stmt.env; e = replace(v)],
+                          [if e :: <StdVar, ImplArg> then e else {fail;} : v <- stmt.env, e = replace(v)],
                           // [e : v <- stmt.env, e = replace(v), e :: <StdVar, ImplArg>],
                           stmt.file,
                           stmt.line,
@@ -382,7 +382,7 @@ Statement replace_exprs_in_stmt(Statement stmt, (Expr -> Expr) replace):
 Statement+ replace_exprs_in_stmts(Statement+ stmts, (Expr -> Expr) replace) = (replace_exprs_in_stmt(s, replace) : s <- stmts);
 
 
-Clause replace_exprs_in_clause(Clause cls, (Expr -> Expr) replace):
+Clause replace_exprs_in_clause(Clause cls, (Expr -> Expr) replace) =
   set_clause()      = set_clause(cls.var, replace(cls.src)),
   rel_clause()      = rel_clause(cls.vars, replace(cls.src), (apply(a, replace) : a <- cls.args)),
   relvar_clause()   = relvar_clause(cls.vars, cls.rel_var, (apply(a, replace) : a <- cls.args)),
@@ -396,7 +396,7 @@ Clause replace_exprs_in_clause(Clause cls, (Expr -> Expr) replace):
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-Expr replace_external_vars(Expr expr, [Var -> Var] subst_map):
+Expr replace_external_vars(Expr expr, [Var -> Var] subst_map) =
   Var             = lookup(subst_map, expr, expr),
   fn_call()       = replace_external_vars_in_fn_call(expr, subst_map),
   match_expr()    = replace_external_vars_in_match_exprs(expr, subst_map),
@@ -535,7 +535,7 @@ Expr replace_external_vars_in_range_comp(RangeCompExpr expr, [Var -> Var] subst_
 }
 
 
-ClsExpr replace_external_vars(ClsExpr expr, [Var -> Var] subst_map):
+ClsExpr replace_external_vars(ClsExpr expr, [Var -> Var] subst_map) =
   ClsVar      = expr,
   fn_ptr()    = expr,
   cls_expr()  = replace_external_vars(expr.args, expr.expr, subst_map);
@@ -551,12 +551,12 @@ ClsExpr replace_external_vars(Maybe[StdVar]+ args, Expr expr, [Var -> Var] subst
   //## THIS HAS TO BE FIXED SOMEHOW...
   assert not (unused_var, vv <- subst_map : vv :: FnPar or in(vv, non_anon_params));
 
-  new_subst_map = [kv -> vv : kv, vv <- subst_map; not in(kv, non_anon_params); not kv :: FnPar];
+  new_subst_map = [kv -> vv : kv, vv <- subst_map, not in(kv, non_anon_params), not kv :: FnPar];
   return cls_expr(args, replace_external_vars(expr, new_subst_map));
 }
 
 
-Clause replace_external_vars_in_clause(Clause clause, [Var -> Var] subst_map):
+Clause replace_external_vars_in_clause(Clause clause, [Var -> Var] subst_map) =
   set_clause()      = replace_external_vars_in_set_clause(clause.var, clause.src, subst_map),
   rel_clause()      = replace_external_vars_in_rel_clause(clause.vars, clause.src, clause.args, subst_map),
   relvar_clause()   = replace_external_vars_in_relvar_clause(clause.vars, clause.rel_var, clause.args, subst_map),
@@ -595,7 +595,7 @@ Clause replace_external_vars_in_relvar_clause(StdVar+ vars, AnyRelVar src, Maybe
 
 Clause replace_external_vars_in_seq_clause(Maybe[StdVar]+ vars, Maybe[StdVar] idx_var, Expr src, [Var -> Var] subst_map)
 {
-  assert none((subst_map(value(v), ?) : v <- vars; v != nil));
+  assert none((subst_map(value(v), ?) : v <- vars, v != nil));
   new_src = replace_external_vars(src, subst_map);
   return seq_clause(vars, idx_var, new_src);
 }
@@ -636,7 +636,7 @@ Clause replace_external_vars_in_asgnm_clause(StdVar var, Expr expr, [Var -> Var]
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-[Var] pattern_vars(Pattern ptrn):
+[Var] pattern_vars(Pattern ptrn) =
   ptrn_tag_obj()    = pattern_vars(ptrn.tag) & pattern_vars(ptrn.obj),
   ptrn_var()        = [ptrn.var] & pattern_vars(ptrn.ptrn),
   ptrn_union(ps?)   = union([pattern_vars(p) : p <- ps]), //## SINCE PATTERNS IN A UNION ARE SUPPOSED TO DEFINE THE SAME SET OF VARIABLES, IT SHOULD BE FINE TO JUST PICK ONE ELEMENT OF THE UNION AND RETURN ITS VARIABLES
@@ -644,7 +644,7 @@ Clause replace_external_vars_in_asgnm_clause(StdVar var, Expr expr, [Var -> Var]
 
 
 //## BUG BUG BUG: THIS IS INCOMPLETE, A PATTERN UNION COULD BE A PATTERN "ANY" TOO
-Bool is_pattern_any(Pattern ptrn):
+Bool is_pattern_any(Pattern ptrn) =
   ptrn_any    = true,
   ptrn_var()  = is_pattern_any(ptrn.ptrn),
   _           = false;
@@ -661,18 +661,18 @@ Bool is_pattern_any(Pattern ptrn):
 //## DECIDE EXACTLY WHAT VARIABLES ARE INCLUDED, AND WHAT ONES ARE NOT. AND REVISIT ALL USAGES OF THESE
 //## FUNCTIONS.
 
-[StdVar] new_vars(Pattern ptrn):
+[StdVar] new_vars(Pattern ptrn) =
   ptrn_var()      = new_vars(ptrn.ptrn) & [ptrn.var],
   ptrn_tuple(ps?) = seq_union((new_vars(p) : p <- ps)),
   ptrn_tag_obj()  = new_vars(ptrn.tag) & new_vars(ptrn.obj),
   ptrn_union(ps?) = intersection([new_vars(p) : p <- ps]),
   _               = [];
 
-[StdVar] new_vars(Clause cls):
+[StdVar] new_vars(Clause cls) =
   set_clause()      = [cls.var],
   rel_clause()      = set(cls.vars),
   relvar_clause()   = set(cls.vars),
-  seq_clause()      = [value(v) : v <~ (cls.vars | cls.idx_var); v != nil],
+  seq_clause()      = [value(v) : v <~ (cls.vars | cls.idx_var), v != nil],
   and_clause()      = new_vars(cls.left) & new_vars(cls.right),
   or_clause()       = intersection(new_vars(cls.left), new_vars(cls.right)),
   match_clause()    = new_vars(cls.ptrn),
@@ -680,9 +680,9 @@ Bool is_pattern_any(Pattern ptrn):
   filter_clause()   = [];
 
 
-[StdVar] new_vars(Statement stmt):
+[StdVar] new_vars(Statement stmt) =
   assignment_stmt() = set(stmt.vars),
-  if_stmt()         = intersection([new_vars(stmt.body) if may_fall_through(stmt.body); new_vars(stmt.else) if may_fall_through(stmt.else)]),
+  if_stmt()         = intersection([new_vars(stmt.body) if may_fall_through(stmt.body), new_vars(stmt.else) if may_fall_through(stmt.else)]),
   let_stmt()        = new_vars(stmt.body),
   proc_call_stmt()  = [stmt.res_var if stmt.res_var?],
   _                 = [];
@@ -692,7 +692,7 @@ Bool is_pattern_any(Pattern ptrn):
 ///////////////////////////////////////////////////////////////////////////////
 
 //## THIS FUNCTION DOES NOT RETRIEVE QUALIFIED MEMBER VARIABLES LIKE auto_var.public_var OR db_var.var
-[Var] extern_vars(Expr expr):
+[Var] extern_vars(Expr expr) =
   Var             = [expr],
   fn_call()       = union([any_expr_extern_vars(e) : e <- set(expr.args) & values(expr.impl_args)]),
   ex_qual()       = comp_extern_vars((expr.cond), expr.source),
@@ -748,7 +748,7 @@ Bool is_pattern_any(Pattern ptrn):
 
 [Var] any_expr_extern_vars(Expr expr) = extern_vars(expr);
 
-[Var] any_expr_extern_vars(ClsExpr expr):
+[Var] any_expr_extern_vars(ClsExpr expr) =
   ClsVar      = [],
   fn_ptr()    = [],
   cls_expr()  = { new_vars = [fn_par(i) : _ @ i <~ expr.args] & set(values(expr.args));
@@ -759,10 +759,10 @@ Bool is_pattern_any(Pattern ptrn):
 
 ///////////////////////////////////////////////////////////////////////////////
 
-[Var] clause_extern_vars(Clause cls):
+[Var] clause_extern_vars(Clause cls) =
   set_clause()        = extern_vars(cls.src),
-  rel_clause()        = extern_vars(cls.src) & seq_union((extern_vars(value(a)) : a <- cls.args; a != nil)),
-  relvar_clause()     = seq_union((extern_vars(value(a)) : a <- cls.args; a != nil)),
+  rel_clause()        = extern_vars(cls.src) & seq_union((extern_vars(value(a)) : a <- cls.args, a != nil)),
+  relvar_clause()     = seq_union((extern_vars(value(a)) : a <- cls.args, a != nil)),
   seq_clause()        = extern_vars(cls.src),
   and_clause()        = clause_extern_vars(cls.left) & {clause_extern_vars(cls.right) - new_vars(cls.left)},
   or_clause()         = clause_extern_vars(cls.left) & clause_extern_vars(cls.right),
@@ -783,7 +783,7 @@ Bool is_pattern_any(Pattern ptrn):
 }
 
 
-[Var] stmt_extern_vars(Statement s):
+[Var] stmt_extern_vars(Statement s) =
   assignment_stmt() = extern_vars(s.value),
   return_stmt       = [],
   return_stmt(e?)   = extern_vars(e),
@@ -799,14 +799,14 @@ Bool is_pattern_any(Pattern ptrn):
   proc_call_stmt()  = seq_union((extern_vars(p) : p <- s.params));
 
 
-[Var] cls_expr_extern_vars(ClsExpr expr):
+[Var] cls_expr_extern_vars(ClsExpr expr) =
   ClsVar      = [],
   fn_ptr()    = [],
   cls_expr()  = extern_vars(expr.expr) - set(values(expr.args) & (fn_par(i) : i < length(expr.args)));
 
 ////////////////////////////////////////////////////////////////////////////////
 
-[ClsVar] cls_vars(Expr expr):
+[ClsVar] cls_vars(Expr expr) =
   fn_call()   = union([cls_vars(e) : e <- set(expr.args) & values(expr.impl_args)]),
   cls_call()  = { res = [expr.name] & seq_union((cls_vars(a) : a <- expr.args));
                   return if res :: [ClsVar] then res else {fail;}; //## BAD BAD BAD
@@ -814,14 +814,14 @@ Bool is_pattern_any(Pattern ptrn):
   _           = retrieve_from_nested_exprs(expr, cls_vars($)); //## BAD BAD BAD: WORKAROUND FOR A BUG IN THE TYPECHECKER
 
 
-[ClsVar] cls_vars(ClsExpr expr):
+[ClsVar] cls_vars(ClsExpr expr) =
   ClsVar      = [expr],
   fn_ptr()    = [],
   cls_expr()  = cls_vars(expr.expr);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Expr replace_cls_vars(Expr expr, [ClsVar -> CaptClsVar] subst_map):
+Expr replace_cls_vars(Expr expr, [ClsVar -> CaptClsVar] subst_map) =
   fn_call()   = replace_cls_vars_in_fn_call(expr, subst_map),
   cls_call()  = replace_cls_vars_in_cls_call(expr, subst_map),
   _           = replace_nested_exprs(expr, replace_cls_vars($, subst_map));
@@ -845,7 +845,7 @@ Expr replace_cls_vars_in_cls_call(ClsCall expr, [ClsVar -> CaptClsVar] subst_map
 }
 
 
-ClsExpr replace_cls_vars(ClsExpr expr, [ClsVar -> CaptClsVar] subst_map):
+ClsExpr replace_cls_vars(ClsExpr expr, [ClsVar -> CaptClsVar] subst_map) =
   cls_var()       = if subst_map(expr, ?) then subst_map(expr) else expr,
   capt_cls_var()  = {fail;}, //## THIS IS NOT SUPPOSED TO HAPPEN. FIX IT ANYWAY...
   fn_ptr()        = expr,
@@ -876,10 +876,10 @@ type StmtOutcome = fails, returns, breaks, falls_through;
 }
 
 
-[+StmtOutcome] outcomes(Statement stmt):
-  assignment_stmt() = [:fails; :falls_through],
+[+StmtOutcome] outcomes(Statement stmt) =
+  assignment_stmt() = [:fails, :falls_through],
   return_stmt       = [:returns],
-  return_stmt()     = [:fails; :returns],
+  return_stmt()     = [:fails, :returns],
   if_stmt()         = nonempty([:fails] & outcomes(stmt.body) & outcomes(stmt.else)), // Shutting up the type checker
   loop_stmt(body?)  = {
     os = outcomes(body);
@@ -891,15 +891,15 @@ type StmtOutcome = fails, returns, breaks, falls_through;
     os = {os - [:breaks]} & [:falls_through] if in(:breaks, os);
     return nonempty(os); // Shutting up the type checker
   },
-  foreach_stmt()    = nonempty([:fails; :falls_through] & outcomes(stmt.body) - [:breaks]), // Shutting up the type checker
-  for_stmt()        = nonempty([:fails; :falls_through] & outcomes(stmt.body) - [:breaks]), // Shutting up the type checker //## BAD: SAME AS ABOVE
+  foreach_stmt()    = nonempty([:fails, :falls_through] & outcomes(stmt.body) - [:breaks]), // Shutting up the type checker
+  for_stmt()        = nonempty([:fails, :falls_through] & outcomes(stmt.body) - [:breaks]), // Shutting up the type checker //## BAD: SAME AS ABOVE
   let_stmt()        = nonempty([:fails] & outcomes(stmt.body)), // Shutting up the type checker
   break_stmt        = [:breaks],
   fail_stmt         = [:fails],
-  assert_stmt()     = [:falls_through; :fails],
-  print_stmt()      = [:falls_through; :fails],
-  imp_update_stmt() = [:falls_through; :fails],
-  proc_call_stmt()  = [:falls_through; :fails];
+  assert_stmt()     = [:falls_through, :fails],
+  print_stmt()      = [:falls_through, :fails],
+  imp_update_stmt() = [:falls_through, :fails],
+  proc_call_stmt()  = [:falls_through, :fails];
 
 ////////////////////////////////////////////////////////////////////////////////
 

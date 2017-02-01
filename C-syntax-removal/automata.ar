@@ -12,13 +12,13 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef
 
     // Desugaring plain rules, which can have implicit repeated conditions
     plain_rules_output = [desugar_plain_rule(r) : r <- syn_plain_rules];
-    rules = merge([value(r) : o <- plain_rules_output; r = left(o); r != nil]);
-    rep_actions_1 = [value(a) : o <- plain_rules_output; a = right(o); a != nil];
+    rules = merge([value(r) : o <- plain_rules_output, r = left(o), r != nil]);
+    rep_actions_1 = [value(a) : o <- plain_rules_output, a = right(o), a != nil];
 
     // Desugaring conditional rules, which can have additional repeated conditions
     cond_rule_output = [desugar_cond_rule(r) : r <- syn_cond_rules];
-    actions = [value(a) : o <- cond_rule_output; a = left(o); a != nil];
-    rep_actions_2 = [value(a) : o <- cond_rule_output; a = right(o); a != nil];
+    actions = [value(a) : o <- cond_rule_output, a = left(o), a != nil];
+    rep_actions_2 = [value(a) : o <- cond_rule_output, a = right(o), a != nil];
 
     // Foreach rules can only lead to repeated actions
     rep_actions_3 = [foreach_rule_to_repeated_action(r) : r <- syn_foreach_rules];
@@ -40,9 +40,9 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef
 
     // Desugaring method calls on nested automata
     all_msg_send_actions = [msg_send_to_action(c) : c <- syn_msg_sends];
-    cond_method_calls = [value(ca) : a <- all_msg_send_actions; ca = left(a); ca != nil];
+    cond_method_calls = [value(ca) : a <- all_msg_send_actions, ca = left(a), ca != nil];
     actions = actions & cond_method_calls;
-    rep_method_calls = [value(ra) : a <- all_msg_send_actions; ra = right(a); ra != nil];
+    rep_method_calls = [value(ra) : a <- all_msg_send_actions, ra = right(a), ra != nil];
     rep_actions = rep_actions & rep_method_calls;
 
     // // Identifying and separating constant rules
@@ -81,7 +81,7 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef
   }
 
 
-  Bool is_fake(SynTimeVaryingRule rule):
+  Bool is_fake(SynTimeVaryingRule rule) =
     syn_time_varying_boolean_rule()   |
     syn_time_varying_unchanged_rule() = is_const(rule.time_expr),
     syn_time_varying_inactive_rule()  = is_const(rule.time_expr) and
@@ -117,8 +117,8 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef
     if syn_msg_send.signals != ():
       signals = (memb_var(a) : a <- syn_msg_send.signals);
     else
-      all_signals = union([auto_expr_extern_vars(e) : e <- [message; value(maybe_cond) if maybe_cond != nil]]);
-      signals = rand_sort([s : s <- all_signals; s :: <MembVar, QualAutoMembVar>; signal_is_discrete(s)]);
+      all_signals = union([auto_expr_extern_vars(e) : e <- [message, value(maybe_cond) if maybe_cond != nil]]);
+      signals = rand_sort([s : s <- all_signals, s :: <MembVar, QualAutoMembVar>, signal_is_discrete(s)]);
     ;
     signals_set_conds = (is_set(s) : s <- signals);
 
@@ -155,7 +155,7 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef
     //## WOULD BE NICE TO ADD AN ASSERT HERE, AS WELL.
     //## WE ARE ALSO IGNORING THE output_is_def() EXPRESSION, WHICH SHOULD BE ALLOWED
     //## ONLY INSIDE THE BODY OF A PROCEDURE
-    discrete_signals = [v : v <- auto_expr_extern_vars(expr); v :: <MembVar, QualAutoMembVar>; signal_is_discrete(v)];
+    discrete_signals = [v : v <- auto_expr_extern_vars(expr), v :: <MembVar, QualAutoMembVar>, signal_is_discrete(v)];
 
     // If a plain rule does not contain any discrete signals,
     // then it defines a continuous intermediate signal
@@ -179,7 +179,7 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef
       cond = desugar_auto_expr(branch.cond, []);
       expr = desugar_auto_expr(branch.expr, []);
       ss = auto_expr_extern_vars(cond) & auto_expr_extern_vars(expr);
-      dss = (s : s <- rand_sort(ss); s :: <MembVar, QualAutoMembVar> and signal_is_discrete(s));
+      dss = (s : s <- rand_sort(ss), s :: <MembVar, QualAutoMembVar> and signal_is_discrete(s));
 
       if dss != ():
         if rule.discrete:
@@ -241,7 +241,7 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef
   }
 
 
-  TimeVaryingCond syn_time_varying_rule_to_cond(SynTimeVaryingRule rule):
+  TimeVaryingCond syn_time_varying_rule_to_cond(SynTimeVaryingRule rule) =
     syn_time_varying_boolean_rule()   = time_varying_boolean_cond(desugar_auto_expr(rule.cond, []), rule.time_expr),
     syn_time_varying_unchanged_rule() = time_varying_unchanged_cond(desugar_auto_expr(rule.cond, []), rule.time_expr),
     syn_time_varying_inactive_rule()  = time_varying_since_cond([memb_var(s) : s <~ rule.signals], rule.time_expr, rule.starts_at_time_0);

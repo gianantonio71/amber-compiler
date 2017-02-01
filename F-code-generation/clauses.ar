@@ -16,7 +16,7 @@ MatchAction match_action(Clause c, MatchAction a) = match_action(clause: c, acti
 
 implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options : CompilationOptions
 {
-  Instr+ gen_code(MatchAction action, [StdVar] loc_bound_vars):
+  Instr+ gen_code(MatchAction action, [StdVar] loc_bound_vars) =
     match_action()              = gen_clause_code(action.clause, loc_bound_vars, action.action),
     set_found_var_and_leave()   = (set_var(action.var, obj_true), exit_block),
     eval_and_store()            = gen_code_for_eval_and_store(action.streams);
@@ -44,7 +44,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_clause_code(Clause cls, [StdVar] loc_bound_vars, MatchAction action):
+  Instr+ gen_clause_code(Clause cls, [StdVar] loc_bound_vars, MatchAction action) =
     set_clause()      = gen_set_clause_code(cls.var, cls.src, loc_bound_vars, action),
     rel_clause()      = gen_rel_clause_code(cls.vars, cls.src, cls.args, loc_bound_vars, action),
     relvar_clause()   = gen_relvar_clause_code(cls.vars, cls.rel_var, cls.args, loc_bound_vars, action),
@@ -99,7 +99,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
       // Variables to avoid: src_var, it_var
       next_step_code = gen_code(action, loc_bound_vars & set(vars), next_var_gen = var_gen);
 
-      set_vars_code = (set_var(v, get_curr_arg(it_var, nat_01(i))) : v, i <- zip(vars, (j : a @ j <- args; a == nil)));
+      set_vars_code = (set_var(v, get_curr_arg(it_var, nat_01(i))) : v, i <- zip(vars, (j : a @ j <- args, a == nil)));
       body_code =(break_if(is_out_of_range(it_var))) & set_vars_code & next_step_code & (move_forward(it_var));
       loop_code = (get_iter(it_var, src_info.expr, low_level_args), repeat(nonempty(body_code)));
 
@@ -126,7 +126,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
       // Variables to avoid: src_var, it_var
       next_step_code = gen_code(action, loc_bound_vars & set(vars), next_var_gen = var_gen);
 
-      set_vars_code = (set_var(v, get_curr_arg(it_var, nat_02(i))) : v, i <- zip(vars, (j : a @ j <- args; a == nil)));
+      set_vars_code = (set_var(v, get_curr_arg(it_var, nat_02(i))) : v, i <- zip(vars, (j : a @ j <- args, a == nil)));
       body_code = (break_if(is_out_of_range(it_var))) & set_vars_code & next_step_code & (move_forward(it_var));
       loop_code = (get_iter(it_var, src_info.expr, low_level_args), repeat(nonempty(body_code)));
 
@@ -147,7 +147,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
 
     //## INVALID ARGS SHOULD BE NULL...
     arg_to_var_before_perm = (i-1 : i <- partial_sums((bit(a == nil) : a <- relvar_args)));
-    var_to_arg_after_perm = (i : a @ i <- table_args; a == nil);
+    var_to_arg_after_perm = (i : a @ i <- table_args, a == nil);
     vars_perm = (arg_to_var_before_perm(args_perm(var_to_arg_after_perm(i))) : unused_var @ i <- vars); //## UGLY UGLY UGLY
     perm_vars = (vars(vars_perm(i)) : unused_var @ i <- vars); //## UGLY UGLY UGLY
 
@@ -162,8 +162,8 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
     };
 
     filtered_idxs = idxs_into_filtered_seq((a != nil : a <- table_args));
-    unfiltered_idxs = (i : a @ i <- table_args; a != nil);
-    blank_idxs = (i : a @ i <- table_args; a == nil);
+    unfiltered_idxs = (i : a @ i <- table_args, a != nil);
+    blank_idxs = (i : a @ i <- table_args, a == nil);
     set_args = values(table_args);
     info = gen_eval_info(set_args);
 
@@ -213,7 +213,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
     it_var, var_gen = next_seq_it_var(var_gen);
     int_idx_var, var_gen = next_int_var(var_gen); //## BAD: USED EVEN WHEN NOT REQUIRED
     // Variables to avoid: src_var, it_var, idx_var
-    new_bound_vars = [value(v) : v <~ (vars | idx_var); v != nil];
+    new_bound_vars = [value(v) : v <~ (vars | idx_var), v != nil];
     next_step_code = gen_code(action, loc_bound_vars & new_bound_vars, next_var_gen = var_gen);
 
     if length(vars) == 1:
@@ -223,7 +223,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
       // tmp_var is only needed during a destructuring assignment, it can be safely reused elsewhere
       tmp_var, unused_var = next_obj_var(var_gen);
       vars_set_code = (set_var(tmp_var, get_curr_obj(it_var)));
-      vars_set_code = vars_set_code & (set_var(value(v), at(tmp_var, i)) : v @ i <- vars; v != nil);
+      vars_set_code = vars_set_code & (set_var(value(v), at(tmp_var, i)) : v @ i <- vars, v != nil);
     ;
     vars_set_code = vars_set_code & (set_var(value(idx_var), int_obj(int_idx_var))) if idx_var != nil;
 

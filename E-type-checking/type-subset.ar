@@ -38,16 +38,16 @@ SubsetCond subset_when(TypeVar var, Type type)            = [subset_when(type_va
 SubsetCond all_conds([SubsetCond] iss) =
   if in(not_a_subset, iss)
     then not_a_subset
-    else union([is : is <- iss; is != not_a_subset]); //## POINTLESS, BUT NEEDED FOR TYPECHECKING
+    else union([is : is <- iss, is != not_a_subset]); //## POINTLESS, BUT NEEDED FOR TYPECHECKING
 
 [(TypeSymbol, Type)] subtype_conds(SubsetCond conds) =
   if conds != not_a_subset
-    then [(c.subset, c.superset) : c <- conds; subset_if() ?= c]
+    then [(c.subset, c.superset) : c <- conds, subset_if() ?= c]
     else {fail;};
 
 SubsetCond type_var_inst_conds(SubsetCond conds) =
   if conds != not_a_subset
-    then [c : c <- conds; subset_when() ?= c]
+    then [c : c <- conds, subset_when() ?= c]
     else {fail;};
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -84,7 +84,7 @@ implicit typedefs : [TypeName -> NeType], inst_type_vars : Bool
         new_untested_hypotheses = new_untested_hypotheses & new_subtype_conds;
 
         // Adding the new conditions about type variables to the previous ones
-        type_var_conds = all_conds([type_var_conds; new_var_conds]);
+        type_var_conds = all_conds([type_var_conds, new_var_conds]);
       ;
 
       // Removing the hypotheses that have already been tested
@@ -100,7 +100,7 @@ implicit typedefs : [TypeName -> NeType], inst_type_vars : Bool
   }
 
 
-  SubsetCond shallow_subset_conds(Type t1, Type t2):
+  SubsetCond shallow_subset_conds(Type t1, Type t2) =
     empty_type,           _                   = [],
     _,                    empty_type          = {fail;}, //false,
 
@@ -149,11 +149,11 @@ implicit typedefs : [TypeName -> NeType], inst_type_vars : Bool
     empty_bin_rel_type,   _                   = not_a_subset,
 
     ne_map_type(),        ne_map_type()       = all_conds([
-                                                  shallow_subset_conds(t1.key_type, t2.key_type);
+                                                  shallow_subset_conds(t1.key_type, t2.key_type),
                                                   shallow_subset_conds(t1.value_type, t2.value_type)
                                                 ]),
     ne_map_type(),        ne_bin_rel_type()   = all_conds([
-                                                  shallow_subset_conds(t1.key_type, t2.args_types(0));
+                                                  shallow_subset_conds(t1.key_type, t2.args_types(0)),
                                                   shallow_subset_conds(t1.value_type, t2.args_types(1))
                                                 ]),
     // ne_map_type(),        ne_record_type(fs?) = map_record_shallow_subset_conds(t1.key_type, t1.value_type, fs),
@@ -192,18 +192,18 @@ implicit typedefs : [TypeName -> NeType], inst_type_vars : Bool
     // tag_obj_type(),       tag_obj_type()      = all_conds({shallow_subset_conds(t1.tag_type, t2.tag_type), shallow_subset_conds(t1.obj_type, t2.obj_type)}),
     tag_obj_type(),       tag_obj_type()      = { tcs = shallow_subset_conds(t1.tag_type, t2.tag_type);
                                                   return not_a_subset if tcs == not_a_subset;
-                                                  return all_conds([tcs; shallow_subset_conds(t1.obj_type, t2.obj_type)]);
+                                                  return all_conds([tcs, shallow_subset_conds(t1.obj_type, t2.obj_type)]);
                                                 },
     tag_obj_type(),       _                   = not_a_subset;
 
 
   SubsetCond union_shallow_subset_conds(Type t1, [+NeType] ts2)
   {
-    all_conds = [cs : t2 <- ts2; cs = shallow_subset_conds(t1, t2); cs != not_a_subset];
+    all_conds = [cs : t2 <- ts2, cs = shallow_subset_conds(t1, t2), cs != not_a_subset];
     return not_a_subset if all_conds == [];
     return [] if in([], all_conds);
     return only(all_conds) if size(all_conds) == 1;
-    var_only_conds = [cs : cs <- all_conds; subtype_conds(cs) == []];
+    var_only_conds = [cs : cs <- all_conds, subtype_conds(cs) == []];
     return an_elem(var_only_conds) if var_only_conds != []; //## COULD WE IMPROVE ON THIS?
     return an_elem(all_conds); //## BAD: THIS IS REALLY REALLY BAD.
   }
@@ -213,8 +213,8 @@ implicit typedefs : [TypeName -> NeType], inst_type_vars : Bool
   {
     labels_1 = keys(fs1);
     labels_2 = keys(fs2);
-    mandatory_labels_1 = [l : l, f <- fs1; not f.optional];
-    mandatory_labels_2 = [l : l, f <- fs2; not f.optional];
+    mandatory_labels_1 = [l : l, f <- fs1, not f.optional];
+    mandatory_labels_2 = [l : l, f <- fs2, not f.optional];
     optional_labels_1  = labels_1 - mandatory_labels_1;
     optional_labels_2  = labels_2 - mandatory_labels_2;
 
@@ -255,7 +255,7 @@ implicit typedefs : [TypeName -> NeType], inst_type_vars : Bool
   SubsetCond record_bin_rel_shallow_subset_conds(RecordTypeFields record_fields, NeType arg0_type, NeType arg1_type) =
     all_conds([
       all_conds([
-        shallow_subset_conds(symb_type(l), arg0_type);
+        shallow_subset_conds(symb_type(l), arg0_type),
         shallow_subset_conds(f.type, arg1_type)
       ]) : l, f <- record_fields
     ]);
@@ -281,7 +281,7 @@ implicit typedefs : [TypeName -> NeType], inst_type_vars : Bool
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-Bool is_integer_subset(IntType t1, IntType t2):
+Bool is_integer_subset(IntType t1, IntType t2) =
   _,            integer     = true,
   integer,      _           = false,
 

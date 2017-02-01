@@ -1,6 +1,6 @@
 type DefVar = StdVar, FnPar; //## FIND BETTER NAME AND PLACE
 
-[StdVar] std_vars([DefVar] vs) = [v : v <- vs; v :: StdVar];
+[StdVar] std_vars([DefVar] vs) = [v : v <- vs, v :: StdVar];
 
 
 implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg], actual_arg_arity : Nat
@@ -13,7 +13,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg], ac
   }
 
 
-  ExprWFError* expr_nested_wf_errors(SynExpr expr, [DefVar] def_vars):
+  ExprWFError* expr_nested_wf_errors(SynExpr expr, [DefVar] def_vars) =
     object()            = (),
     float_lit()         = (),
     seq_expr(ses?)      = join((expr_wf_errors(se, def_vars) : se <- ses)),
@@ -31,8 +31,8 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg], ac
     binary_op_call()    = expr_wf_errors(expr.left_arg, def_vars) & expr_wf_errors(expr.right_arg, def_vars),
     builtin_call()      = join((expr_wf_errors(e, def_vars) : e <- expr.args)),
     call_lookalike()    = if expr.target :: IdChain then () else join((expr_wf_errors(e, def_vars) : e <- expr.args)),
-    rel_memb_test()     = join((expr_wf_errors(value(e), def_vars) : e <- expr.args; e != nil)),
-    rel_lookup()        = join((expr_wf_errors(value(a), def_vars) : a <- expr.args; a != nil)),
+    rel_memb_test()     = join((expr_wf_errors(value(e), def_vars) : e <- expr.args, e != nil)),
+    rel_lookup()        = join((expr_wf_errors(value(a), def_vars) : a <- expr.args, a != nil)),
     singl_only_elem()   = expr_wf_errors(expr.set, def_vars),
     and()               = expr_wf_errors(expr.left, def_vars) & expr_wf_errors(expr.right, def_vars),
     or()                = expr_wf_errors(expr.left, def_vars) & expr_wf_errors(expr.right, def_vars),
@@ -102,7 +102,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg], ac
   ////////////////////////////////////////////////////////////////////////////////
   ////////////////////////////////////////////////////////////////////////////////
 
-  ExprWFError* expr_local_wf_errors(SynExpr expr, [DefVar] def_vars):
+  ExprWFError* expr_local_wf_errors(SynExpr expr, [DefVar] def_vars) =
     const_or_var(a?)    = const_or_var_local_wf_errors(a, def_vars),
     accessor()          = if expr :: AccessorChain then accessor_local_wf_errors(expr, def_vars) else (),
     accessor_test()     = if expr :: <accessor_test(expr: IdChain, field: Atom)> //## BAD BAD: WORKING AROUND TYPE CHECKING "BUG"
@@ -111,7 +111,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg], ac
     cls_par(n?)         = (undef_impl_cls_arg(expr) if n >= actual_arg_arity),
     call_lookalike()    = if expr :: <call_lookalike(target: IdChain, args: SynExpr+)> //## BAD BAD: WORKING AROUND TYPE CHECKING "BUG"
                             then call_lookalike_local_wf_errors(expr, def_vars)
-                            else (wrong_pseudocall_arity(expr) if not in(length(expr.args), [1; 2])),
+                            else (wrong_pseudocall_arity(expr) if not in(length(expr.args), [1, 2])),
     rel_memb_test()     = rel_memb_test_local_wf_errors(expr, def_vars),
     unary_op_call()     = unary_op_call_local_wf_errors(expr.op, expr.expr, def_vars),
     binary_op_call()    = binary_op_call_local_wf_errors(expr.op, expr.left_arg, expr.right_arg, def_vars),
@@ -153,7 +153,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg], ac
       if resols == []:
         //## BAD BAD BAD: USING A FIXED MAXIMUM ARITY
         // Now passing and empty set of defined vars, so we avoid unary or binary pseudocalls
-        valid_arities = set((a : a < 20; resolve_by_priority_as_memb_test_target(symbols, arity, def_vars) != []));
+        valid_arities = set((a : a < 20, resolve_by_priority_as_memb_test_target(symbols, arity, def_vars) != []));
         return if valid_arities != []
           then (wrong_rel_test_arity(expr, valid_arities))
           else (invalid_expr(expr));
@@ -167,7 +167,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg], ac
     ;
 
     return if arity != 2 and arity != 3
-        then (wrong_rel_test_arity(expr, [2; 3]))
+        then (wrong_rel_test_arity(expr, [2, 3]))
       elif all((a == nil : a <- expr.args))
         then (invalid_expr(expr))
       else
@@ -191,7 +191,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg], ac
     if resols == []:
       //## BAD BAD BAD: USING A FIXED MAXIMUM ARITY
       // Now passing and empty set of defined vars, so we avoid unary or binary pseudocalls
-      valid_arities = set((a : a < 20; resolve_by_priority_as_call_lookalike_target(symbols, a, []) != []));
+      valid_arities = set((a : a < 20, resolve_by_priority_as_call_lookalike_target(symbols, a, []) != []));
       return if valid_arities != []
         then (wrong_arity(expr, valid_arities))
         else (unknown_function_or_method(expr));

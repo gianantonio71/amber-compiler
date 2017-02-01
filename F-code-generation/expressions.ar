@@ -1,6 +1,6 @@
 implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options : CompilationOptions
 {
-  Instr+ gen_eval_code(Expr expr, EvalDestVar res_var):
+  Instr+ gen_eval_code(Expr expr, EvalDestVar res_var) =
     object()            = (set_var(res_var, expr)),
     float_lit()         = (mk_float(res_var, expr.mantissa, expr.dec_exp)),
     Var                 = (set_var(res_var, expr)),
@@ -62,7 +62,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   Instr+ gen_eval_code_for_set_expr([SubExpr] subexprs, EvalDestVar res_var)
   {
     return (set_var(res_var, empty_set)) if subexprs == [];
-    non_cond_exprs = [e : e <- subexprs; e :: Expr];
+    non_cond_exprs = [e : e <- subexprs, e :: Expr];
     cond_exprs = subexprs - non_cond_exprs;
     sorted_subexprs = rand_sort(non_cond_exprs) & rand_sort(cond_exprs);
     info = gen_vector_eval_info(nonempty(sorted_subexprs));
@@ -159,8 +159,8 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   {
     return (set_var(res_var, empty_bin_rel)) if entries == [];
 
-    non_cond_entries = rand_sort([e : e <- entries; not e.cond?]);
-    cond_entries = rand_sort([e : e <- entries; e.cond?]);
+    non_cond_entries = rand_sort([e : e <- entries, not e.cond?]);
+    cond_entries = rand_sort([e : e <- entries, e.cond?]);
 
     count = nz_nat(size(entries));
 
@@ -210,8 +210,8 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   {
     return (set_var(res_var, empty_tern_rel)) if entries == [];
 
-    non_cond_entries = rand_sort([e : e <- entries; not e.cond?]);
-    cond_entries = rand_sort([e : e <- entries; e.cond?]);
+    non_cond_entries = rand_sort([e : e <- entries, not e.cond?]);
+    cond_entries = rand_sort([e : e <- entries, e.cond?]);
 
     count = nz_nat(size(entries));
 
@@ -275,7 +275,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
       //## BUG BUG BUG. THE ASSIGNMENTS ARE DONE IN RANDOM ORDER. FIX THIS
       var = an_elem(nonempty(keys(impl_args)));
       expr = impl_args[var];
-      rem_impl_args = [v -> e : v, e <- impl_args; v != var];
+      rem_impl_args = [v -> e : v, e <- impl_args, v != var];
       backup_var, var_gen = next_obj_var(next_var_gen);
       info = gen_eval_info(expr, next_var_gen = var_gen);
       body = gen_eval_code_for_fn_call_expr(name, params, rem_impl_args, res_var, next_var_gen = info.next_var_gen);
@@ -286,7 +286,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
     else
       pars_are_first_order = (is_expr(p) : p <- params);
       par_packed_idxs = packed_seq_idxs(pars_are_first_order);
-      pars_info = gen_eval_info((cast_as_expr(p) : p @ i <- params; pars_are_first_order(i)));
+      pars_info = gen_eval_info((cast_as_expr(p) : p @ i <- params, pars_are_first_order(i)));
       all_params = (
         if pars_are_first_order(i)
           then pars_info.exprs(par_packed_idxs(i))
@@ -313,7 +313,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
     return nonempty(pars_info.eval_code & call_code);
 
 
-    Instr+ gen_call_code(BuiltIn name, AtomicExpr* params, EvalDestVar res_var):
+    Instr+ gen_call_code(BuiltIn name, AtomicExpr* params, EvalDestVar res_var) =
       obj         = (set_var(res_var, get_inner_obj(params[0]))),
       has_key     = { bvar, unused_var = next_bool_var(next_var_gen);
                       map_par = params[0];
@@ -333,7 +333,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
       _           = (gen_eval_instr(name, params, res_var));
 
 
-    Instr gen_eval_instr(BuiltIn name, AtomicExpr* ps, EvalDestVar res_var):
+    Instr gen_eval_instr(BuiltIn name, AtomicExpr* ps, EvalDestVar res_var) =
       slice         = get_seq_slice(res_var, ps[0], get_int_val(ps[1]), get_int_val(ps[2])),
       cat           = join_seqs(res_var, ps[0], ps[1]),
       rev           = rev_seq(res_var, ps[0]),
@@ -358,7 +358,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
       _             = set_var(res_var, gen_eval_expr(name, ps));
 
 
-    ObjExpr gen_eval_expr(BuiltIn name, AtomicExpr* ps):
+    ObjExpr gen_eval_expr(BuiltIn name, AtomicExpr* ps) =
       symb        = to_symb(ps[0]),
       neg         = int_obj(minus(get_int_val(ps[0]))),
       add         = int_obj(add(get_int_val(ps[0]), get_int_val(ps[1]))),
@@ -401,7 +401,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
     assert length(args) == 2 or length(args) == 3;
 
     rel_info = gen_eval_info(rel);
-    args_info = gen_eval_info((value(a) : a <- args; a != nil), next_var_gen = rel_info.next_var_gen);
+    args_info = gen_eval_info((value(a) : a <- args, a != nil), next_var_gen = rel_info.next_var_gen);
 
     if all((a != nil : a <- args)):
       code = (set_var(res_var, bool_obj(contains(rel_info.expr, nonempty(args_info.exprs)))));
@@ -432,8 +432,8 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
     table_args = (relvar_args(i) : i <- args_perm);
 
     filtered_idxs = idxs_into_filtered_seq((a != nil : a <- table_args));
-    unfiltered_idxs = (i : a @ i <- table_args; a != nil);
-    set_args = (value(a) : a <- table_args; a != nil);
+    unfiltered_idxs = (i : a @ i <- table_args, a != nil);
+    set_args = (value(a) : a <- table_args, a != nil);
     info = gen_eval_info(set_args);
 
     surr_vars, var_gen = next_int_vars(info.next_var_gen, length(set_args));
@@ -472,7 +472,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
 
     all_relvar_args = subseq(set_args, 0, unknown_arg_idx, nil) & (nil) & subseq(set_args, unknown_arg_idx, nil, 0);
     all_table_args = (all_relvar_args(i) : i <- args_perm);
-    set_table_args = (a : a <- all_table_args; a != nil);
+    set_table_args = (a : a <- all_table_args, a != nil);
 
     assert {
       set_args_perm = ({
