@@ -12,15 +12,15 @@ type AutoNodeDependency = BlockNodeId, QualMembVar, QualRelVar; // QualMembVar/Q
 
 BlockNodeId dependency_to_node_id(BlockNodeId id)   = id;
 
-StdBlockNodeId dependency_to_node_id(QualAutoMembVar var)  = auto_or_db_var_to_node_id(var.auto_var);
-StdBlockNodeId dependency_to_node_id(QualDBMembVar var)    = auto_or_db_var_to_node_id(var.db_var);
+NestedAutoNodeId dependency_to_node_id(QualAutoMembVar var)  = auto_or_db_var_to_node_id(var.auto_var);
+StdBlockNodeId   dependency_to_node_id(QualDBMembVar var)    = auto_or_db_var_to_node_id(var.db_var);
 
 StdBlockNodeId dependency_to_node_id(QualRelVar var)  = auto_or_db_var_to_node_id(var.db_var);
 
 
-StdBlockNodeId auto_or_db_var_to_node_id(AnyAutoVar) =
+NestedAutoNodeId auto_or_db_var_to_node_id(AnyAutoVar) =
   loc_auto_var()      = {fail;},
-  memb_auto_var(a?)   = std_block_node_id(a);
+  memb_auto_var(a?)   = nested_auto_node_id(a);
 
 StdBlockNodeId auto_or_db_var_to_node_id(AnyDBVar var) =
   loc_db_var()      = {fail;},
@@ -134,7 +134,7 @@ implicit automaton : Automaton
     nested_auto_input_up_nodes    = [id -> expr_deps(e) : id, e <- nested_auto_inputs];
     rules_up_nodes                = [std_block_node_id(a) -> expr_deps(e) : a, e <- automaton.rules];
     time_rules_up_nodes           = [std_block_node_id(a) -> time_rule_deps(c) : a, c <- automaton.time_rules];
-    nested_autos_up_nodes         = [std_block_node_id(auto_id) ->
+    nested_autos_up_nodes         = [nested_auto_node_id(auto_id) ->
                                       [nested_auto_input_id(auto_id, in_id) : in_id, unused_var <- auto.args]
                                       : auto_id, auto <- automaton.nested_autos
                                     ];
@@ -202,7 +202,7 @@ implicit automaton : Automaton
 
   //## TYPECHECKING BUG TYPECHECKING BUG TYPECHECKING BUG
   // [+BlockNodeId -> [+BlockNodeId]] trigger_down_nodes_map
-  [BlockNodeId -> [BlockNodeId]] trigger_down_nodes_map
+  [BlockNodeId -> [+BlockNodeId]] trigger_down_nodes_map
   {
     // Reversing the dependency mapping: node -> all nodes that depend on it
     fat_map = reverse_multi(trigger_up_nodes_map);
@@ -212,7 +212,7 @@ implicit automaton : Automaton
 
 
   //## TYPECHECKING BUG SAME AS ABOVE
-  [StdBlockNodeId -> [MembVar -> [BlockNodeId]]] output_trigger_down_nodes_map
+  [NestedAutoNodeId -> [MembVar -> [BlockNodeId]]] output_trigger_down_nodes_map
   {
     // Reversing the dependency mapping: node -> all nodes that depend on it: [AutoNodeDependency -> [+BlockNodeId]]
     fat_map = reverse_multi(trigger_up_nodes_map);
@@ -253,13 +253,6 @@ implicit program : Program, automaton : Automaton
       //## WHAT DOES THIS ASSERTION DO?
       assert not (o, ns <- output_dep_nodes : not disjoint(ns, [std_block_node_id(id) : id <- state_vars_ids]));
       return nested_db_node(node_id, msg, output_dep_nodes, level);
-    ;
-
-    if has_key(automaton.nested_autos, core_id):
-      output_dep_nodes = lookup(output_trigger_down_nodes_map, node_id, [:]);
-      //## WHAT DOES THIS ASSERTION DO?
-      assert not (o, ns <- output_dep_nodes : not disjoint(ns, [std_block_node_id(id) : id <- state_vars_ids]));
-      return nested_auto_node(node_id, output_dep_nodes, level);
     ;
 
     dep_nodes = lookup(trigger_down_nodes_map, node_id, []);
@@ -327,6 +320,17 @@ implicit program : Program, automaton : Automaton
       msg_send_action(bare_id)
       : c <- cond_info.msg_sends, c.trigger == trigger_value, bare_id = bare_id(c.db_var)
     ];
+  }
+
+
+  AutoNode create_auto_node(NestedAutoNodeId node_id, Nat level)
+  {
+    core_id = get_inner_id(node_id);
+    assert automaton.nested_autos(core_id, ?);
+    output_dep_nodes = lookup(output_trigger_down_nodes_map, node_id, [:]);
+    //## WHAT DOES THIS ASSERTION DO?
+    assert not (o, ns <- output_dep_nodes : not disjoint(ns, [std_block_node_id(id) : id <- state_vars_ids]));
+    return nested_auto_node(node_id, output_dep_nodes, level);
   }
 
 

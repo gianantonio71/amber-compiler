@@ -10,7 +10,8 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
     pending_input_var = pending_input_var(id);
 
     body = (set_var(memb_var, l0), set_bvar(memb_has_changed(id), true) if in(id, memb_copy_vars_ids)) &
-           (mark_for_update(n) : n <- rand_sort(node.downstream_nodes));
+           (mark_for_update(n) : n <- rand_sort(node.downstream_nodes)) &
+           flag_as_changed_if_output(id);
 
     return nonempty((read_pending_var(l0, pending_input_var), init_memb_var(pending_input_var, :blank)) & body) if node.discrete;
 
@@ -33,7 +34,8 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
     eval_code = (try_block(nv_var, eval_code)) if not is_total(node.expr);
     cond = neg(is_eq(var, nv_var));
     body = (set_var(var, nv_var), set_bvar(memb_has_changed(id), true) if in(id, memb_copy_vars_ids)) &
-           (mark_for_update(n) : n <- rand_sort(node.downstream_nodes));
+           (mark_for_update(n) : n <- rand_sort(node.downstream_nodes)) &
+           flag_as_changed_if_output(id);
     return (eval_code | do_if(cond, body));
   }
 
@@ -51,7 +53,8 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
     eval_instr = try_block(nv_var, (eval_instr)) if (e <~ node.exprs : not is_total(e));
     cond = neg(is_eq(var, nv_var));
     body = (set_var(var, nv_var), set_bvar(memb_has_changed(id), true) if in(id, memb_copy_vars_ids)) &
-           (mark_for_update(n) : n <- rand_sort(node.downstream_nodes));
+           (mark_for_update(n) : n <- rand_sort(node.downstream_nodes)) &
+           flag_as_changed_if_output(id);
     return (eval_instr, do_if(cond, body));
   }
 
@@ -67,7 +70,11 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
       eval_instr = switch_on_nat(update_source_var(id), cases);
     ;
     eval_instr = try_block(nv_var, (eval_instr)) if (e <~ node.exprs : not is_total(e));
-    return nonempty((eval_instr, set_var(var, nv_var)) & (mark_for_update(n) : n <- rand_sort(node.downstream_nodes)));
+    return nonempty(
+      (eval_instr, set_var(var, nv_var)) &
+      (mark_for_update(n) : n <- rand_sort(node.downstream_nodes)) &
+      flag_as_changed_if_output(id)
+    );
   }
 
 
@@ -390,7 +397,9 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
       // If the condition has changed, we update it and we add the downstream nodes to the update queue
       do_if_not(
         is_eq(cond_var, l0),
-        (set_var(cond_var, l0)) & (mark_for_update(n) : n <- rand_sort(node.downstream_nodes))
+        (set_var(cond_var, l0)) &
+        (mark_for_update(n) : n <- rand_sort(node.downstream_nodes)) &
+        flag_as_changed_if_output(id)
       )
     );
   }
@@ -497,7 +506,9 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
     update_memb_var_instr =
       do_if_not(
         is_eq(cond_var, l0),
-        (set_var(cond_var, l0)) & (mark_for_update(n) : n <- rand_sort(node.downstream_nodes))
+        (set_var(cond_var, l0)) &
+        (mark_for_update(n) : n <- rand_sort(node.downstream_nodes)) &
+        flag_as_changed_if_output(id)
       );
 
     return (code | update_memb_var_instr);
@@ -516,7 +527,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
       //## SHOULD I CHECK THAT THE INPUT IS NOT NULL BEFORE SETTING IT, OR IS THIS ALREADY DONE
       //## INSIDE THE NESTED AUTOMATON?
       set_input(auto_var, auto_vars_types[auto_var], node_id.input, nv_var),
-      mark_for_update(std_block_node_id(node_id.auto))
+      mark_for_update(nested_auto_node_id(node_id.auto))
     );
 
     code = eval_code & set_var_code;
@@ -539,11 +550,15 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
     auto_type = auto_vars_types[auto_var];
     update_source_var = update_source_var(inner_id);
 
-    elapsed_time_expr = if is_time_sensitive(auto_type)
-      then sub(curr_time, nested_auto_int_var(auto_var, last_update_time))
-      else 0;
+    is_time_sensitive = is_time_sensitive(auto_type);
 
-    update_code = (auto_apply(auto_var, auto_type, elapsed_time_expr));
+    update_code = (
+      set_ivar(
+        nested_auto_int_var(auto_var, elapsed_time),
+        sub(curr_time, nested_auto_int_var(auto_var, last_update_time))
+      ) if is_time_sensitive,
+      auto_apply(auto_var, auto_type)
+    );
 
     //## CURRENTLY WE PROPAGATE THE UPDATE WITHOUT CHECKING WHAT INPUTS (IF ANY) HAVE CHANGED. FIX
     prop_code = (mark_for_update(id) : id <- rand_sort(union(values(node.downstream_nodes_by_output))));
@@ -554,7 +569,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
       do_if(
         is_gt(triggers_count_var, 0),
         insert_timer(automaton.name, time_varying_nodes_indexes[node.id], first_trigger_var)
-      ) if is_time_sensitive(auto_type)
+      ) if is_time_sensitive
     );
 
     return update_code & prop_code & timer_code;
@@ -743,6 +758,18 @@ implicit program : Program, automaton : Automaton
 
 
   Instr mark_for_update_from_parent_cond(CondNodeId node_id) = queue_cond_update(automaton.name, node_id, false);
+
+
+  Instr* flag_as_changed_if_output(Atom id)
+  {
+    return () if not automaton.outputs(id, ?);
+    return (
+      set_ivar(changed_output(changed_outputs_count), outputs_indexes[id]),
+      increment(changed_outputs_count)
+    );
+
+    [Atom -> Nat] outputs_indexes = merge(([a -> i] : a @ i <- sorted_outputs_ids));
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

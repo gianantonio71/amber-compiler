@@ -6,7 +6,9 @@ String to_c_var_ref_name(<VecVar, ItVar, StreamVar, AnyClsVar> v)  = to_c_var_na
 
 /////////////////////////////////////////////////////////////////////////////////////
 
-String to_c_var_decl_name(MembIntVectVar v) = "nodes_to_update_" & printed(v.level) & "[" & printed(v.size) & "]";
+String to_c_var_decl_name(MembIntVectVar v) =
+  nodes_to_update_vect_var()  = "nodes_to_update_" & printed(v.level) & "[" & printed(v.size) & "]",
+  changed_outputs()           = "changed_outputs[" & printed(v.size) & "]";
 
 /////////////////////////////////////////////////////////////////////////////////////
 
@@ -80,6 +82,7 @@ String to_c_var_name(BoolVar v, Bool add_prefix)
     watched_signal_up_to_date_var(a?)             = prefix & upper_camel_case(a) & "_WSUTD",
     up_to_date_var(std_block_node_id(a?))         = prefix & upper_camel_case(a) & "_UTD",
     up_to_date_var(cond_node_id(n?))              = prefix & "cond_" & printed(n) & "_UTD",
+    up_to_date_var(nested_auto_node_id(a?))       = prefix & upper_camel_case(a) & "_A_UTD",
     up_to_date_var(nested_auto_input_id() id?)    = prefix & upper_camel_case(id.auto) & "_" & upper_camel_case(id.input) & "_UTD",
     is_new                                        = prefix & "is_new";
 }
@@ -87,12 +90,16 @@ String to_c_var_name(BoolVar v, Bool add_prefix)
 
 String to_c_var_name(IntVar v, Bool add_prefix)
 {
+  assert match (v)
+    changed_output()  |
+    elapsed_time()    = add_prefix,
+    _                 = true;
+
   prefix = if add_prefix then "self->" else "";
   return match (v)
     ivar(n?)                            = "i" & printed(n),
     curr_time                           = "curr_time",
     update_time                         = "update_time",
-    elapsed_time                        = "elapsed_time",
     update_source_var(a?)               = prefix & upper_camel_case(a) & "_update_source",
     update_count_var(l?)                = prefix & "update_count_" & printed(l),
     nodes_to_update_var()               = prefix & "nodes_to_update_" & printed(v.level) & "[" & to_c_idx_expr(v.index) & "]",
@@ -102,6 +109,10 @@ String to_c_var_name(IntVar v, Bool add_prefix)
     trigger_times_heap_var(i?)          = prefix & "trigger_times_heap[" & printed(i) & "]",
     time_varying_cond_ids_heap_var(i?)  = prefix & "time_varying_cond_ids_heap[" & printed(i) & "]",
     last_update_time                    = prefix & "last_update_time",
+    elapsed_time                        = prefix & "elapsed_time",
+    changed_outputs_count               = prefix & "changed_outputs_count",
+    changed_output()                    = prefix & "changed_outputs[" & to_c_idx_expr(v.index) & "]",
+    elapsed_time(av?)                   = to_c_var_name(av, false) & ".elapsed_time",
     nested_auto_int_var()               = to_c_var_name(v.auto_var, true) & "." & to_c_var_name(v.memb_var, false);
 }
 
@@ -307,6 +318,7 @@ String queue_update_method_name(BlockNodeId id, AutoSymbol auto) = node_specific
 String node_specific_method_name_prefix(BlockNodeId id, AutoSymbol auto) =
   std_block_node_id(a?)   = to_c_name(auto) & "_" & upper_camel_case(a),
   cond_node_id(n?)        = to_c_name(auto) & "_" & printed(n),
+  nested_auto_node_id(a?) = to_c_name(auto) & "_" & upper_camel_case(a) & "_AUTO",
   nested_auto_input_id()  = to_c_name(auto) & "_" & upper_camel_case(id.auto) & "_" & upper_camel_case(id.input);
 
 
@@ -318,3 +330,22 @@ String clear_timer_method_name(AutoSymbol auto) = to_c_name(auto) & "_CLEAR_TIME
 ////////////////////////////////////////////////////////////////////////////////
 
 String const_int_seq_c_name(Nat seq_id) = "const_int_seq_" & printed(seq_id);
+
+//////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
+
+String to_c_fn_name(FnSymbol fn_symb, Nat arity) =
+  fn_symbol(symb?)    = upper_camel_case(symb) & "_" & printed(arity),
+  op_symbol(op?)      = _str_(op),
+  nested_fn_symbol()  = to_c_fn_name(fn_symb.outer, arity) & "__" & to_c_fn_name(fn_symb.inner, arity),
+  unique_fn_symbol()  = to_c_fn_name(fn_symb.symbol, arity) & uppercase_encoding(fn_symb.id); //## IS THIS ENOUGHT TO AVOID CONFLICTS?
+
+String to_c_fn_name(BoolFnName n, Nat) = to_c_fn_name(n);
+String to_c_fn_name(BoolFnName) =
+  memb_test(+ a?)       = "is_" & upper_camel_case(a),
+  memb_test(* n?)       = "is_type_" & printed(n),
+  memb_test(a1?, + a2?) = "is_" & upper_camel_case(a2) & "_" & upper_camel_case(a1),
+  memb_test(a?, * n?)   = "is_" & upper_camel_case(a) & " " & printed(n);
+
+String to_c_fn_name(ProcSymbol s, Nat) = to_c_fn_name(s);
+String to_c_fn_name(ProcSymbol) = proc_symbol(s?)  = upper_camel_case(s) & "_P"; //## UGLY UGLY UGLY

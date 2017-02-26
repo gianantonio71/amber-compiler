@@ -5,13 +5,15 @@ implicit program : Program, options : CompilationOptions
 {
   CompiledPrg compiled_program
   {
-    fndefs        = [gen_fn_code(fd) : fd <- program.fndefs];
-    proc_defs     = [gen_proc_code(pd) : pd <- program.proc_defs];
-    blocks        = [gen_auto_code(automaton=a) : a <- program.auto_defs];
-    trans_blocks  = [compiled_database(database=db) : db <- program.data_bases];
+    memb_test_preds = [memb_test_pred(t, memb_test_preds_map, program.typedefs) : t, unused_var <- memb_test_preds_map];
+    fndefs          = [gen_fn_code(fd) : fd <- program.fndefs];
+    proc_defs       = [gen_proc_code(pd) : pd <- program.proc_defs];
+    blocks          = [gen_auto_code(automaton=a) : a <- program.auto_defs];
+    trans_blocks    = [compiled_database(database=db) : db <- program.data_bases];
 
     return compiled_prg(
-      bool_procs:   memb_test_fns,
+      typedefs:     program.typedefs,
+      bool_procs:   memb_test_preds,
       procs:        fndefs & proc_defs & dispatch_functions,
       blocks:       blocks,
       trans_blocks: trans_blocks,
@@ -19,23 +21,55 @@ implicit program : Program, options : CompilationOptions
     );
   }
 
+  //////////////////////////////////////////////////////////////////////////////
 
-  [BoolProcDef] memb_test_fns
-  {
-    init_types = union([retrieve_types(fd.expr) : fd <- program.fndefs]) &
-                 union([retrieve_from_nested_exprs(pd.body, retrieve_types) : pd <- program.proc_defs]);
+  [NeType] runtime_checked_root_types =
+    union([retrieve_types(fd.expr) : fd <- program.fndefs]) &
+    union([retrieve_from_nested_exprs(pd.body, retrieve_types) : pd <- program.proc_defs]) &
+    union([retrieve_from_nested_exprs(a, retrieve_types) : a <- program.auto_defs]) &
+    union([retrieve_from_nested_exprs(db, retrieve_types) : db <- program.data_bases]) &
+    [info.type : a <- program.auto_defs, unused_var, info <- a.inputs | unused_var, info <- a.outputs];
 
-    type_symbs = union([retrieve_type_symbs(t) : t <- init_types]);
+
+  //## CASE STUDY: THINK OF A BETTER WAY TO WRITE THIS FUNCTION
+  [NeType] runtime_checked_types {
+    root_type_symbs = union([retrieve_type_symbs(t) : t <- runtime_checked_root_types]);
+    type_symbs = root_type_symbs;
     new_type_symbs = type_symbs;
     while new_type_symbs != []:
       new_types = [expand_type_ref(ts, program.typedefs) : ts <- new_type_symbs];
       new_type_symbs = union([retrieve_type_symbs(t) : t <- new_types]) - type_symbs;
       type_symbs = type_symbs & new_type_symbs;
     ;
-
-    return [mk_named_type_memb_test_fn(ts, program.typedefs) : ts <- type_symbs];
+    nested_types = [type_ref(ts) : ts <- type_symbs];
+    return runtime_checked_root_types & nested_types;
   }
 
+
+  //## CASE STUDY: THINK OF A BETTER WAY TO WRITE THIS FUNCTION, WITHOUT LOOPS OR SORTING
+  [NeType -> BoolFnName] memb_test_preds_map {
+    entries = ();
+    next_id = 0;
+    for type <- rand_sort(runtime_checked_types):
+      pred_name, next_id = match (type)
+        type_ref(type_symbol(a?))       = (memb_test(a), next_id),
+        type_ref(par_type_symbol() ts?) = pred_name(ts, next_id),
+        _                               = (memb_test(next_id), nat(next_id + 1));
+      entries = (entries | [type -> pred_name]);
+    ;
+    return merge(entries);
+
+
+    (BoolFnName, Nat) pred_name(ParTypeSymbol type_symb, Nat next_id) {
+      outer_id = match (type_symb.symbol) type_symbol(a?) = a;
+      inner_id, new_next_id = match (type_symb.params)
+        (type_ref(type_symbol(a?))) = (a, next_id),
+        _                           = (next_id, nat(next_id + 1));
+      return (memb_test(outer_id, inner_id), new_next_id);
+    }
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
 
   ObjProcDef gen_proc_code(Procedure procedure)
   {
@@ -188,6 +222,6 @@ implicit program : Program, options : CompilationOptions
   type_ref(ts?) = [ts] & retrieve_from_nested_types(ts, retrieve_type_symbs),
   _             = retrieve_from_nested_types(type, retrieve_type_symbs);
 
-[Type] retrieve_types(Expr expr) =
+[NeType] retrieve_types(Expr expr) =
   membership()  = [expr.type] & retrieve_from_nested_exprs(expr, retrieve_types),
   _             = retrieve_from_nested_exprs(expr, retrieve_types);

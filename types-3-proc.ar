@@ -35,13 +35,16 @@ type MembIntVar     = update_source_var(Atom),
                       trigger_times_heap_var(<0..0>),
                       time_varying_cond_ids_heap_var(<0..0>),
                       last_update_time,
+                      elapsed_time,
+                      changed_outputs_count,
                       nested_auto_int_var(auto_var: MembAutoVar, memb_var: MembIntVar);
 
 type MembObjVar     = watched_signal_value_var(Atom);
 
 type IntConst       = time_slot_length(automaton: AutoSymbol, expr_id: Atom, time_slot: IntExpr);
 
-type MembIntVectVar = nodes_to_update_vect_var(level: Nat, size: NzNat); //## BAD: <size> SHOULD BE OF TYPE <3..*>
+type MembIntVectVar = nodes_to_update_vect_var(level: Nat, size: NzNat), //## BAD: <size> SHOULD BE OF TYPE <3..*>
+                      changed_outputs(size: NzNat);
 
 type BoolArgVar     = invalidate_cond_expr_cache; //## FIND BETTER NAME
 
@@ -52,9 +55,16 @@ type BoolVar        = bvar(Nat),
                       MembBoolVar,
                       BoolArgVar;
 
-type IntArgVar      = elapsed_time;
+type LocAutoIntVar  = elapsed_time(LocAutoVar); //## BETTER NAME/CLASSIFICATION
 
-type IntVar         = ivar(Nat), update_time, curr_time, MembIntVar, IntArgVar;
+type ProjdIntVar    = changed_output(index: <Nat, IntVar>);
+
+type IntVar         = ivar(Nat),
+                      update_time,
+                      curr_time,
+                      ProjdIntVar,
+                      MembIntVar,
+                      LocAutoIntVar;
 
 type StreamVar      = svar(Nat); //## DOES THIS NEED CLEANUP?
 
@@ -71,7 +81,7 @@ type AnyVar         = ObjVar, VecVar, BoolVar, IntVar, ItVar, StreamVar;
 
 type ObjFnName      = FnSymbol, ProcSymbol;
 
-type BoolFnName     = memb_test(TypeSymbol);
+type BoolFnName     = memb_test(<Atom, Nat, (Atom, <Atom, Nat>)>);
 
 type InlineObj      = LeafObj, empty_seq, empty_set, empty_bin_rel, empty_tern_rel;
 
@@ -254,9 +264,9 @@ type BasicInstr     = init_stream(StreamVar),
                       clear_input(var: AnyAutoVar, type: AutoSymbol, input: Atom),
 
                       auto_init(var: AnyAutoVar?, type: AutoSymbol),
-                      auto_update(var: AnyAutoVar?, type: AutoSymbol),
+                      // auto_update(var: AnyAutoVar?, type: AutoSymbol),
                       auto_update_node(type: AutoSymbol, node: BlockNodeId, time_var: IntVar?),
-                      auto_apply(var: AnyAutoVar?, type: AutoSymbol, elapsed_time: IntExpr),
+                      auto_apply(var: AnyAutoVar?, type: AutoSymbol),
 
                       init_db(db_var: AnyDBVar, type: DBSymbol),
                       cleanup_db(db_var: AnyDBVar, type: DBSymbol),
@@ -337,9 +347,10 @@ type ConstBlockData = time_slots_len(expr_id: Atom, lengths: Nat+);
 
 type StdBlockNodeId         = std_block_node_id(Atom);
 type CondNodeId             = cond_node_id(Nat);
+type NestedAutoNodeId       = nested_auto_node_id(Atom);
 type NestedAutoInputNodeId  = nested_auto_input_id(auto: Atom, input: Atom);
 
-type BlockNodeId    = StdBlockNodeId, CondNodeId, NestedAutoInputNodeId;
+type BlockNodeId    = StdBlockNodeId, CondNodeId, NestedAutoNodeId, NestedAutoInputNodeId;
 
 //## PUT THEM SOMEWHERE ELSE MAYBE?
 type MethodId   = method_id(symbol: MethodSymbol, arity: Nat, id: Nat?);
@@ -353,8 +364,11 @@ type Table        = table(value_stores: ValueStoreId+, keys: [[+Nat]]);
 
 type Block  = block(
                 name:                 AutoSymbol,
-                inputs:               Atom*,
-                outputs:              [Atom],
+                ord_inputs:           Atom*,
+                ord_outputs:          Atom*,
+                input_memb_preds:     [Atom -> BoolFnName],
+                inputs:               [Atom -> (type: NeType, discrete: Bool)],
+                outputs:              [Atom -> (type: NeType, discrete: Bool)],
                 memb_vars:            [<MembVar, MembObjVar, PendingInputVar, PendingStateVar, MembIntVar, MembIntVectVar, MembBoolVar>],
                 nested_auto_vars:     [MembAutoVar -> AutoSymbol],
                 nested_trans_blocks:  [MembDBVar -> DBSymbol],
@@ -383,6 +397,7 @@ type TransBlock = trans_block(
                   );
 
 type CompiledPrg  = compiled_prg(
+                      typedefs:     [TypeName -> NeType],
                       bool_procs:   [BoolProcDef],
                       procs:        [ObjProcDef],
                       blocks:       [Block],

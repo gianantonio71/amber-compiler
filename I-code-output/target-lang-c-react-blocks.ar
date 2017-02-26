@@ -1,6 +1,5 @@
 implicit
 {
-  par_types                       : ParTypeSymbol*,
   sorted_cls_defs                 : ClsDef*,
   int_seqs_types_and_lengths      : (String, Nat)*,
   cached_semi_consts_by_impl_arg  : [ImplArg -> [+FnSymbol]];
@@ -52,9 +51,7 @@ implicit
     apply_method_vars_decls = (apply_method_vars_decls | "") if apply_method_vars_decls != ();
 
     apply_body = apply_method_vars_decls & compile_to_c(block.apply_code, nil);
-    // time_arg = if block.time_rules_count != 0 then ", int64 " & to_c_var_decl_name(elapsed_time) else "";
-    time_arg = ", int64 " & to_c_var_decl_name(elapsed_time);
-    apply_sgn = "void " & apply_method_name(block.name) & "(" & name_str & " *self" & time_arg & ", ENV &env)";
+    apply_sgn = "void " & apply_method_name(block.name) & "(" & name_str & " *self, ENV &env)";
     apply_decl = (apply_sgn & ";");
     apply_proc = (apply_sgn, "{") & indent_lines(apply_body) & ("}");
 
@@ -85,8 +82,8 @@ implicit
     insert_timer_method_decl, insert_timer_method_impl = gen_insert_timer_method(block.name);
     clear_timer_method_decl, clear_timer_method_impl = gen_clear_timer_method(block.name);
 
-    queue_input_updates = length(block.inputs) > 2; //## BAD BAD BAD: THE NUMBER 2 IS REPEATED IN THE CODE GENERATION PHASE
-    input_decls, input_impls = unzip((gen_input_setter(block.name, id, i, queue_input_updates) : id @ i <- block.inputs));
+    queue_input_updates = length(block.ord_inputs) > 2; //## BAD BAD BAD: THE NUMBER 2 IS REPEATED IN THE CODE GENERATION PHASE
+    input_decls, input_impls = unzip((gen_input_setter(block.name, id, i, queue_input_updates) : id @ i <- block.ord_inputs));
     input_impls = join(intermix(input_impls, ("", "")));
 
     method_decls, method_impls = unzip(rand_sort([gen_user_def_method(block.name, id, b) : id, b <- block.methods_code]));
@@ -161,7 +158,7 @@ implicit
   }
 
 
-  (String, String*) gen_queue_update_method(AutoSymbol block_name, StdBlockNodeId memb_id, Instr* body, Bool two_level_update)
+  (String, String*) gen_queue_update_method(AutoSymbol block_name, <StdBlockNodeId, NestedAutoNodeId> memb_id, Instr* body, Bool two_level_update)
   {
     method_name = queue_update_method_name(memb_id, block_name);
     other_arg = if two_level_update then ", bool " & to_c_var_decl_name(invalidate_cond_expr_cache) else "";

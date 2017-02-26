@@ -57,8 +57,7 @@ implicit
       assignment_stmt()       = expr_wf_errors(stmt.value, all_vars),
       return_stmt(e?)         = expr_wf_errors(e, all_vars),
       if_stmt()               = if_stmt_wf_errors(stmt, ro_vars, rw_vars, all_vars),
-      loop_stmt()             = expr_wf_errors(stmt.cond, ro_vars & rw_vars) &
-                                stmts_wf_errors(stmt.body, ro_vars, rw_vars, is_inside_loop=true),
+      loop_stmt()             = loop_stmt_wf_errors(stmt.cond, stmt.skip_first, stmt.body, ro_vars, rw_vars, all_vars),
       inf_loop_stmt(ss?)      = stmts_wf_errors(ss, ro_vars, rw_vars, is_inside_loop=true),
       for_stmt()              = for_stmt_wf_errors(stmt, ro_vars, rw_vars, all_vars),
       let_stmt()              = (),
@@ -76,14 +75,22 @@ implicit
       delete_stmt()           = join((join((expr_wf_errors(value(a), all_vars) : a <- e.args, a != nil)) : e <- stmt.entries)),
       insert_stmt()           = join((join((expr_wf_errors(a, all_vars) : a <- e.args)) : e <- stmt.entries)),
 
-      set_input_ctrl_stmt()     = expr_wf_errors(stmt.value, all_vars),
-      clear_input_ctrl_stmt()   = (),
-      apply_ctrl_stmt()         = if stmt.elapsed_time? then expr_wf_errors(stmt.elapsed_time, all_vars) else (),
-      send_msg_ctrl_stmt()      = expr_wf_errors(stmt.msg, all_vars),
-      read_state_ctrl_stmt()    = (),
-      restore_state_ctrl_stmt() = expr_wf_errors(stmt.state, all_vars),
+      set_input_ctrl_stmt()         = expr_wf_errors(stmt.value, all_vars),
+      clear_input_ctrl_stmt()       = (),
+      set_elapsed_time_ctrl_stmt()  = expr_wf_errors(stmt.time, all_vars),
+      apply_ctrl_stmt()             = (),
+      send_msg_ctrl_stmt()          = expr_wf_errors(stmt.msg, all_vars),
+      read_state_ctrl_stmt()        = (),
+      restore_state_ctrl_stmt()     = expr_wf_errors(stmt.state, all_vars);
 
-      fn_def_stmt()           = {fail;};
+
+    ExprWFError* loop_stmt_wf_errors(SynExpr cond, Bool skip_first, SynStmt+ body, [DefVar] ro_vars, [StdVar] rw_vars, [DefVar] all_vars)
+    {
+      body_errs = stmts_wf_errors(body, ro_vars, rw_vars, is_inside_loop=true);
+      return body_errs if body_errs != ();
+      body_vars = if skip_first then syn_new_vars(body) else [];
+      return expr_wf_errors(cond, all_vars & body_vars);
+    }
 
 
     ExprWFError* if_stmt_wf_errors(SynIfStmt[SynStmt] stmt, [DefVar] ro_vars, [StdVar] rw_vars, [DefVar] all_vars)
@@ -135,18 +142,26 @@ implicit
 
     set_input_ctrl_stmt()     |
     clear_input_ctrl_stmt()   = set_or_clear_input_ctrl_stmt_local_wf_errors(stmt.var, stmt.input, ro_vars, rw_vars),
-    apply_ctrl_stmt()         = auto_var_errors(loc_auto_var(stmt.var), ro_vars, rw_vars),
+    set_elapsed_time_ctrl_stmt()  = auto_var_errors(loc_auto_var(stmt.var), ro_vars, rw_vars),
+    apply_ctrl_stmt()         = apply_ctrl_stmt_local_wf_errors(stmt.auto_var, stmt.res_var, ro_vars, rw_vars),
     send_msg_ctrl_stmt()      = send_msg_ctrl_stmt_local_wf_errors(stmt.res_var, stmt.db_var, ro_vars, rw_vars),
     read_state_ctrl_stmt()    = read_state_ctrl_stmt_local_wf_errors(stmt.res_var, stmt.db_var, ro_vars, rw_vars),
     restore_state_ctrl_stmt() = restore_state_ctrl_stmt_local_wf_errors(stmt.res_var, stmt.db_var, ro_vars, rw_vars),
 
-    fn_def_stmt()             = {fail;},
     assert_stmt(e?)           = (),
     print_stmt(e?)            = (),
     fail_stmt                 = (),
     if_stmt()                 = (),
     loop_stmt()               = (),
     inf_loop_stmt(ss?)        = ();
+
+
+  ExprWFError* apply_ctrl_stmt_local_wf_errors(Atom auto_var, Atom res_var, [DefVar] ro_vars, [StdVar] rw_vars)
+  {
+    auto_var_errs = auto_var_errors(loc_auto_var(auto_var), ro_vars, rw_vars);
+    res_var_errs = (ro_vars_asgnm([var(res_var)]) if already_def(res_var, ro_vars));
+    return auto_var_errs & res_var_errs;
+  }
 
 
   ExprWFError* send_msg_stmt_local_wf_errors(Atom var, SynExpr msg, [DefVar] ro_vars, [StdVar] rw_vars)

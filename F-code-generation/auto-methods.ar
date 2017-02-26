@@ -1,13 +1,12 @@
 implicit automaton : Automaton
 {
-  [Atom] state_vars_ids = keys(automaton.state);
+  Atom* sorted_outputs_ids = rand_sort(keys(automaton.outputs));
 
+  [Atom] state_vars_ids = keys(automaton.state);
 
   [<AutoCondAction, AutoRepAction>] all_actions = automaton.actions & automaton.rep_actions;
 
-
   [Atom] discrete_inputs_ids = [id : id, input <- automaton.inputs, input.discrete];
-
 
   [Atom] discrete_signals_ids = discrete_inputs_ids & union([set_discrete_signals_ids(a) : a <- all_actions]);
 
@@ -55,15 +54,16 @@ implicit automaton : Automaton
 
 implicit program : Program, automaton : Automaton
 {
-  StdBlockNodeId* sorted_time_varying_nodes
+  <StdBlockNodeId, NestedAutoNodeId>* sorted_time_varying_nodes
   {
-    time_rule_ids = keys(automaton.time_rules);
-    time_sensitive_nested_autos_ids = [id : id, na <- automaton.nested_autos, is_time_sensitive(na.type)];
-    time_sensitive_nodes_ids = time_rule_ids & time_sensitive_nested_autos_ids;
-    return (std_block_node_id(id) : id <- rand_sort(time_sensitive_nodes_ids));
+    time_rules = [std_block_node_id(id) : id, unused_var <- automaton.time_rules];
+    nested_autos = [nested_auto_node_id(id) : id, na <- automaton.nested_autos, is_time_sensitive(na.type)];
+    return rand_sort(time_rules & nested_autos);
   }
 
-  [StdBlockNodeId -> Nat] time_varying_nodes_indexes = merge(([n -> i] : n @ i <- sorted_time_varying_nodes));
+
+  [<StdBlockNodeId, NestedAutoNodeId> -> Nat] time_varying_nodes_indexes =
+    merge(([n -> i] : n @ i <- sorted_time_varying_nodes));
 
 
   Bool is_discrete(MembVar v) = in(bare_id(v), discrete_signals_ids);

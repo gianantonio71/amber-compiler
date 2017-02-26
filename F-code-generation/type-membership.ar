@@ -1,15 +1,17 @@
-BoolProcDef mk_named_type_memb_test_fn(TypeSymbol type_symb, [TypeName -> NeType] typedefs)
+BoolProcDef memb_test_pred(NeType type, [NeType -> BoolFnName] memb_test_preds, [TypeName -> NeType] typedefs)
 {
   res_var, var_gen = next_bool_var(blank_var_gen);
-  type = expand_type_ref(type_symb, typedefs);
-  let typedefs = typedefs, next_var_gen = var_gen:
-    code = gen_type_checking_code(type, fn_par(0), res_var);
+  exp_type = match (type)
+    type_ref(ts?) = expand_type_ref(ts, typedefs),
+    _             = type;
+  let typedefs = typedefs, memb_test_preds = memb_test_preds, next_var_gen = var_gen:
+    code = gen_type_checking_code(exp_type, fn_par(0), res_var);
   ;
-  return bool_proc_def(memb_test(type_symb), 1, nonempty(code & (ret_val(res_var))));
+  return bool_proc_def(memb_test_preds(type), 1, nonempty(code & (ret_val(res_var))));
 }
 
 
-implicit typedefs : [TypeName -> NeType], next_var_gen : VarGen
+implicit typedefs : [TypeName -> NeType], memb_test_preds : [NeType -> BoolFnName], next_var_gen : VarGen
 {
   Instr+ gen_type_checking_code(Type type, AtomicExpr obj, BoolVar res_var)
   {
@@ -25,6 +27,7 @@ implicit typedefs : [TypeName -> NeType], next_var_gen : VarGen
       tuple_type(ts?)     = gen_tuple_type_checking_code(ts, obj, res_var),
       tag_obj_type()      = gen_tag_obj_type_checking_code(type.tag_type, type.obj_type, obj, res_var),
       union_type(ts?)     = gen_union_type_checking_code(ts, obj, res_var),
+      type_ref()          = (set_bvar(res_var, eval_bool_fn(memb_test_preds(type), (obj)))),
       _                   = (set_bvar(res_var, gen_type_checking_expr(type, obj)));
   }
 
@@ -304,10 +307,8 @@ BoolExpr gen_type_checking_expr(Type type, AtomicExpr obj) =
   high_ints()         = and_then(is_int(obj), is_ge(get_int_val(obj), type.min)),
   int_range()         = and_then(is_int(obj), is_ge(get_int_val(obj), type.min), is_le(get_int_val(obj), max(type))),
   float_type          = is_float(obj),
-  type_ref(ts?)       = eval_bool_fn(memb_test(ts), (obj)),
   type_var()          = true, //## BUG BUG BUG THIS IS TEMPORARY...
   empty_seq_type      = is_eq(obj, empty_seq),
   empty_set_type      = is_eq(obj, empty_set),
   empty_bin_rel_type  = is_eq(obj, empty_bin_rel),
   empty_tern_rel_type = is_eq(obj, empty_tern_rel);
-

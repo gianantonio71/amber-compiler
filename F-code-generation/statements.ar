@@ -36,7 +36,8 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
 
     set_input_ctrl_stmt()     = gen_code_for_set_input_ctrl_stmt(stmt.var, stmt.input, stmt.value),
     clear_input_ctrl_stmt()   = gen_code_for_clear_input_ctrl_stmt(stmt.var, stmt.input),
-    apply_ctrl_stmt()         = gen_code_for_apply_ctrl_stmt(stmt.var, if stmt.elapsed_time? then just(stmt.elapsed_time) else nil),
+    set_elapsed_time_ctrl_stmt()  = gen_code_for_set_elapsed_time_ctrl_stmt(stmt.var, stmt.time),
+    apply_ctrl_stmt()         = gen_code_for_apply_ctrl_stmt(stmt.auto_var, stmt.res_var),
     send_msg_ctrl_stmt()      = gen_code_for_send_msg_ctrl_stmt(stmt.res_var, stmt.db_var, stmt.msg),
     read_state_ctrl_stmt()    = (copy_state(stmt.res_var, stmt.db_var, var_type(stmt.db_var))),
     restore_state_ctrl_stmt() = gen_code_for_restore_state_ctrl_stmt(stmt.res_var, stmt.db_var, stmt.state);
@@ -150,18 +151,22 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_code_for_apply_ctrl_stmt(LocAutoVar var, Maybe[Expr] maybe_elapsed_time)
+  Instr+ gen_code_for_set_elapsed_time_ctrl_stmt(LocAutoVar var, Expr time)
   {
-    type = var_type(var);
-    if maybe_elapsed_time != nil:
-      time_eval_info = gen_eval_info(value(maybe_elapsed_time));
-      code = time_eval_info.eval_code;
-      time = get_int_val(time_eval_info.expr);
-    else
-      code = ();
-      time = 0;
-    ;
-    return (code | auto_apply(var, type, time));
+    time_eval_info = gen_eval_info(time);
+    set_time_instr = set_ivar(elapsed_time(var), get_int_val(time_eval_info.expr));
+    return (time_eval_info.eval_code | set_time_instr);
+  }
+
+
+  Instr+ gen_code_for_apply_ctrl_stmt(LocAutoVar var, StdVar res_var)
+  {
+    auto_type = var_type(var);
+    res_value = if is_time_sensitive(auto_type) then is_eq(elapsed_time(var), 0) else true;
+    return (
+      auto_apply(var, auto_type),
+      set_var(res_var, bool_obj(res_value))
+    );
   }
 
 

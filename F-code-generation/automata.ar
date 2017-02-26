@@ -7,7 +7,6 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
 
     memb_bool_vars = seq_union((memb_bool_vars(n) : n <- nodes)) & [(is_new, true)];
     memb_int_vars = auto_memb_int_vars;
-    memb_int_vect_vars = [nodes_to_update_vect_var(l, nz_nat(s)) : s @ l <~ levels_sizes, s > 2];
     memb_obj_vars = seq_union((memb_obj_vars(n) : n <- nodes)) & [(memb_var(id), :blank) : id <- keys(automaton.params)];
 
     const_data = [time_slots_len(a, ls) : a, c <- automaton.time_rules, ls = trigger_times_table(c.time_expr), ls != ()];
@@ -49,8 +48,11 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
 
     return block(
       name:                 automaton.name,
-      inputs:               sorted_input_ids,
-      outputs:              keys(automaton.outputs),
+      ord_inputs:           sorted_input_ids,
+      ord_outputs:          sorted_outputs_ids,
+      input_memb_preds:     [i -> memb_test_preds_map[d.type] : i, d <- automaton.inputs],
+      inputs:               automaton.inputs,
+      outputs:              automaton.outputs,
       memb_vars:            memb_vars,
       nested_auto_vars:     [memb_auto_var(id) -> auto.type : id, auto <- automaton.nested_autos],
       nested_trans_blocks:  automaton.nested_dbs,
@@ -70,13 +72,25 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
   {
     nodes = gen_auto_nodes;
     level_marked_nodes_counts = count_vector((n.level : n <- nodes, needs_initial_update(n)), length(levels_sizes));
-    is_time_sens = is_time_sensitive(automaton.name);
     node_specific_vars = seq_union((memb_int_vars(n) : n <- nodes));
     level_specific_vars = [(update_count_var(l), level_marked_nodes_counts[l]) : s @ l <~ levels_sizes, s > 2];
     // Not adding the arrays used to store the trigger heaps
     // That is done in the target language code generation phase
-    global_time_vars = [(time_triggers_count_var, 0) if is_time_sens, (last_update_time, 0) if is_time_sens];
-    return node_specific_vars & level_specific_vars & global_time_vars;
+    global_time_vars =
+      if is_time_sensitive(automaton.name)
+        then [(time_triggers_count_var, 0), (last_update_time, 0), (elapsed_time, 0)]
+        else [];
+    output_change_vars = [(changed_outputs_count, 0) if automaton.outputs != [:]];
+    return node_specific_vars & level_specific_vars & global_time_vars & output_change_vars;
+  }
+
+
+  [MembIntVectVar] memb_int_vect_vars
+  {
+    vars = [nodes_to_update_vect_var(l, nz_nat(s)) : s @ l <~ levels_sizes, s > 2];
+    outputs_count = size(automaton.outputs);
+    vars = vars & [changed_outputs(outputs_count)] if outputs_count != 0;
+    return vars;
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -158,7 +172,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
     node_idx_var = ivar(0);
     node_count_var = ivar(1);
     curr_time_var = ivar(2);
-    a_free_var = ivar(3);
+    a_free_int_var = ivar(3);
 
     //## WHAT DOES THIS DO? I HAVE NO IDEA...
     queue_memb_copy_updates_code = join((
@@ -186,12 +200,13 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
         ;
         first_pass_finish_code = (first_pass_finish_code | set_ivar(update_count_var(0), counter_var));
       ;
-      first_pass_finish_code = (first_pass_finish_code | auto_apply(automaton.name, 0));
+      first_pass_finish_code = (first_pass_finish_code | auto_apply(automaton.name));
     ;
 
     apply_code = (reset_memb_var(memb_var(id), :blank) : id <- rand_sort(discrete_signals_ids)) &
                  (init_memb_var(v, :blank) : v <- sorted_memb_copy_vars) &
                  (set_var(v, memb_var(bare_id(v))) : v <- sorted_memb_copy_vars) &
+                 (set_ivar(changed_outputs_count, 0) if automaton.outputs != [:]) &
                  (mark_for_update(n.id) : n <- nodes, must_always_be_recalculated(n)) &
                  join(levels_code) &
                  (reset_memb_var(v, :blank) : v <- sorted_memb_copy_vars) &
@@ -200,12 +215,11 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
     init_memb_copies_code = (set_bvar(memb_has_changed(id), false) : id <- sorted_memb_copy_vars_ids);
 
     apply_code = init_memb_copies_code & apply_code & queue_memb_copy_updates_code;
-    apply_code = add_time_loop(apply_code, curr_time_var, a_free_var) if is_time_sensitive(automaton.name);
-
+    apply_code = add_timer_code(apply_code, curr_time_var, a_free_int_var) if is_time_sensitive(automaton.name);
     return apply_code;
 
 
-    Instr* add_time_loop(Instr* core_code, IntVar curr_time_var, IntVar a_free_var)
+    Instr* add_timer_code(Instr* core_code, IntVar curr_time_var, IntVar a_free_int_var)
     {
       time_varying_nodes_by_idx = merge([[i -> a] : a, i <- time_varying_nodes_indexes]);
       assert time_varying_nodes_by_idx == reverse(time_varying_nodes_indexes);
@@ -214,19 +228,19 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
         set_ivar(curr_time_var, update_time),
         do_if(
           is_gt(time_triggers_count_var, 0),
-          ( set_ivar(a_free_var, trigger_times_heap_var(0)),
+          ( set_ivar(a_free_int_var, trigger_times_heap_var(0)),
             do_if(
-              is_le(a_free_var, update_time),
-              ( set_ivar(curr_time_var, a_free_var),
+              is_le(a_free_int_var, update_time),
+              ( set_ivar(curr_time_var, a_free_int_var),
                 repeat((
-                  set_ivar(a_free_var, time_varying_cond_ids_heap_var(0)),
+                  set_ivar(a_free_int_var, time_varying_cond_ids_heap_var(0)),
                   switch_on_nat(
-                    a_free_var,
+                    a_free_int_var,
                     ( (mark_for_update(time_varying_nodes_by_idx[i]))
                       : i < nz_nat(size(time_varying_nodes_by_idx))
                     )
                   ),
-                  clear_timer(automaton.name, a_free_var),
+                  clear_timer(automaton.name, a_free_int_var),
                   break_if(
                     or_else((
                       is_eq(time_triggers_count_var, 0),
@@ -240,11 +254,13 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
         )
       );
 
-      return (
-        set_ivar(update_time, add(last_update_time, elapsed_time)),
-        set_ivar(last_update_time, update_time),
-        repeat(nonempty(header_code & core_code & (break_if(is_eq(curr_time_var, update_time)))))
+      set_upd_time_code = (set_ivar(update_time, add(last_update_time, elapsed_time)));
+      adjust_time_vars_code = (
+        set_ivar(last_update_time, curr_time_var),
+        set_ivar(elapsed_time, sub(update_time, curr_time_var))
       );
+
+      return set_upd_time_code & header_code & adjust_time_vars_code & core_code;
     }
   }
 
@@ -289,7 +305,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
       code = (do_if_not(up_to_date_var(nodes_ids[i]), nodes_code[i]) : i < node_count);
     ;
 
-    code = (do_if(is_eq(curr_time_var, update_time), code)) if level_idx == 0 and is_time_sensitive;
+    code = (do_if(is_eq(curr_time_var, update_time), code)) if level_idx == 0 and is_time_sensitive and code != ();
 
     return code;
   }

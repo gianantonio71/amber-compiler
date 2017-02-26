@@ -187,7 +187,8 @@ Bool is_param_type(FnType type) = (t <~ type.args : is_param_type(t)) or is_para
   insert_stmt()             = seq_union((retrieve(e) : e <- stmt.fields)),
   set_input_ctrl_stmt()     = retrieve(stmt.value),
   clear_input_ctrl_stmt()   = [],
-  apply_ctrl_stmt()         = if stmt.elapsed_time? then retrieve(stmt.elapsed_time) else [],
+  set_elapsed_time_ctrl_stmt()  = retrieve(stmt.time),
+  apply_ctrl_stmt()         = [],
   send_msg_ctrl_stmt()      = retrieve(stmt.msg),
   read_state_ctrl_stmt()    = [],
   restore_state_ctrl_stmt() = retrieve(stmt.state);
@@ -206,6 +207,46 @@ Bool is_param_type(FnType type) = (t <~ type.args : is_param_type(t)) or is_para
   match_clause()    = retrieve(cls.expr),
   asgnm_clause()    = retrieve(cls.expr),
   filter_clause(e?) = retrieve(e);
+
+////////////////////////////////////////////////////////////////////////////////
+
+[T] retrieve_from_nested_exprs(AutoAtomicAction action, (Expr -> [T]) retrieve) =
+  state_update()        = retrieve(action.value),
+  discrete_signal_def() = retrieve(action.value),
+  msg_send()            = retrieve(action.message);
+
+
+[T] retrieve_from_nested_exprs(<AutoCondAction, AutoRepAction> action, (Expr -> [T]) retrieve) =
+  retrieve(action.cond) & union([retrieve_from_nested_exprs(a, retrieve) : a <- action.body | a <- action.else]);
+
+
+[T] retrieve_from_nested_exprs(TimeVaryingCond cond, (Expr -> [T]) retrieve) =
+  time_varying_boolean_cond()   = retrieve(cond.expr),
+  time_varying_unchanged_cond() = retrieve(cond.expr),
+  time_varying_since_cond()     = [];
+
+
+[T] retrieve_from_nested_exprs(Automaton automaton, (Expr -> [T]) retrieve) =
+  union(
+    [retrieve(s.init_value) : unused_var, s <- automaton.state] &
+    [retrieve(p.value) : unused_var, p <- automaton.params] &
+    [retrieve(e) : unused_var, e <- automaton.rules] &
+    [retrieve_from_nested_exprs(c, retrieve) : unused_var, c <- automaton.time_rules] &
+    [retrieve_from_nested_exprs(a, retrieve) : a <- automaton.actions] &
+    [retrieve_from_nested_exprs(a, retrieve) : a <- automaton.rep_actions] &
+    [retrieve(e) : unused_var_1, na <- automaton.nested_autos, unused_var_2, e <- na.args] &
+    [retrieve(m.expr) : m <- automaton.methods]
+  );
+
+////////////////////////////////////////////////////////////////////////////////
+
+[T] retrieve_from_nested_exprs(DataBase data_base, (Expr -> [T]) retrieve) =
+  union(
+    [retrieve(v.init_value) : unused_var, v <- data_base.state_vars] &
+    [retrieve(m.expr) : m <- data_base.methods] &
+    [retrieve_from_nested_exprs(u.body, retrieve) : u <- data_base.updates] &
+    [retrieve_from_nested_exprs(h.body, retrieve) : h <- data_base.handlers]
+  );
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
