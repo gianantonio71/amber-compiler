@@ -66,8 +66,7 @@ CCodeOutput compile_to_c(CompiledPrg prg)
     "#include <stdlib.h>",
     "#include <string.h>",
     "",
-    "namespace generated",
-    "{"
+    "namespace generated {"
   ) & indent_lines(c_code & proc_code.body & int_seqs_defs & ("", "") & wrappers_decls & ("", "") & wrappers_impls) & ("}");
 
   body = body & runtime_callbacks;
@@ -191,7 +190,7 @@ Int pow(Int b, Nat e)
 String+ generate_push_call_info_wrapper(Nat arity)
 {
   signature = "void push_call_info_wrapper(const char *fn_name" & append((", OBJ p" & printed(i) : i < arity)) & ")";
-  code = (signature, "{", "#ifndef NDEBUG");
+  code = (signature & " {", "#ifndef NDEBUG");
   if arity == 0:
     code = code & ("  push_call_info(fn_name, 0, (OBJ *)0);");
   else
@@ -320,7 +319,7 @@ implicit
     comp_body = compile_to_c(body, nil);
 
     has_var_decls = var_decls != () or auto_var_decls != () or db_vars_decls != ();
-    code = (signature, "{") & indent_lines(var_decls) & indent_lines(auto_var_decls) &
+    code = (signature & " {") & indent_lines(var_decls) & indent_lines(auto_var_decls) &
            indent_lines(db_vars_decls) & ("" if has_var_decls) & indent_lines(comp_body) & ("}");
 
     if cached:
@@ -330,11 +329,9 @@ implicit
       wrapper_code = (
         "",
         "",
-        ret_type_str(pd) & fn_name & "(" & par_list_str & ")",
-        "{",
+        ret_type_str(pd) & fn_name & "(" & par_list_str & ") {",
         "  static OBJ " & cache_var_name & " = make_blank_obj();" if is_real_const,
-        "  if (is_blank_obj(" & cache_var_name & "))",
-        "  {",
+        "  if (is_blank_obj(" & cache_var_name & ")) {",
         "     bool in_try_state = is_in_try_state();",
         "     if (in_try_state)",
         "       enter_copy_state();",
@@ -404,7 +401,7 @@ implicit
     vars_decls = gen_vars_decls(cd.body);
     comp_body = compile_to_c(cd.body, nil);
 
-    return (signature, "{") & indent_lines(vars_decls) & ("") & indent_lines(comp_body) & ("}");
+    return (signature & " {") & indent_lines(vars_decls) & ("") & indent_lines(comp_body) & ("}");
   }
 
 
@@ -541,7 +538,7 @@ implicit
 
     get_table_iter()      = compile_get_table_iter_to_c(instr.it_var, instr.table, instr.args),
     queue_deletes()       = compile_queue_deletes_to_c(instr.rel_var, instr.args),
-    queue_insert_value()  = (mk_gen_call(instr.res_var, "value_store_insert", (aux_struct_var_ref_name(instr.store)), (instr.value), ())),
+    queue_insert_value()  = (mk_gen_call(instr.res_var, "value_store_insert", (to_c_expr(instr.store), aux_struct_var_ref_name(instr.store)), (instr.value), ())),
     queue_insert_tuple()  = compile_queue_insert_tuple_to_c(instr.rel_var, instr.tuple);
 
 
@@ -592,15 +589,13 @@ implicit
     return (
       "int depth = get_call_stack_depth();",
       "enter_try_state();",
-      "try",
-      "{"
+      "try {"
       ) & indent_lines(body_code) & (
       "  enter_copy_state();",
       "  " & var_name & " = copy_obj(" & var_name & ");",
       "  return_to_normal_state();",
       "}",
-      "catch (...)",
-      "{",
+      "catch (...) {",
       "  pop_try_mode_call_info(depth);",
       "  abort_try_state();",
       "  " & var_name & " = make_null_obj();",
@@ -716,11 +711,11 @@ implicit
     head = body(0);
     if head :: <branch(cond: BoolExpr, when_true: (<break_loop>), when_false: ())>:
       cond_str = to_c_expr(neg(head.cond));
-      body_text = ("{") & indent_lines(compile_to_c(tail(body), block_id)) & ("}");
-      return ("while (" & cond_str & ")") & body_text;
+      body_text = indent_lines(compile_to_c(tail(body), block_id)) & ("}");
+      return ("while (" & cond_str & ") {") & body_text;
     else
-      body_text = ("{") & indent_lines(compile_to_c(body, block_id)) & ("}");
-      return ("for ( ; ; )") & body_text;
+      body_text = indent_lines(compile_to_c(body, block_id)) & ("}");
+      return ("for ( ; ; ) {") & body_text;
     ;
   }
 
@@ -813,7 +808,7 @@ implicit
       ("case " & printed(i) & ":") & indent_lines((compile_to_c(c, block_id) | "break;", ""))
       : c @ i <- cases
     );
-    return ("switch (" & to_c_expr(value) & ")", "{") & indent_lines(join(cases_code)) & ("}");
+    return ("switch (" & to_c_expr(value) & ") {") & indent_lines(join(cases_code)) & ("}");
   }
 
 
@@ -833,7 +828,7 @@ implicit
     );
     body_code = (body_code | ("", "default:") & indent_lines(compile_to_c(else, block_id))) if else != ();
 
-    return ("switch (" & value_str & ")", "{") & indent_lines(join(body_code)) & ("}");
+    return ("switch (" & value_str & ") {") & indent_lines(join(body_code)) & ("}");
   }
 
 
@@ -1003,11 +998,11 @@ implicit
   String* compile_branch_to_c(BoolExpr cond, Instr* when_true, Instr* when_false, <Nat, nil> block_id)
   {
     assert when_true != ();
-    code = ("if (" & to_c_expr(cond) & ")", "{")     &
+    code = ("if (" & to_c_expr(cond) & ") {")     &
            indent_lines(compile_to_c(when_true, block_id)) &
            ("}");
     if when_false != ():
-      code = code & ("else", "{") & indent_lines(compile_to_c(when_false, block_id)) & ("}");
+      code = code & ("else {") & indent_lines(compile_to_c(when_false, block_id)) & ("}");
     ;
     return code;
   }
@@ -1017,8 +1012,7 @@ implicit
   {
     text_arg = if text != nil then printed(value(text)) else "0";
     header = (
-      "if (is_symb(" & to_c_expr(cond) & ", symb_idx_false))",
-      "{",
+      "if (is_symb(" & to_c_expr(cond) & ", symb_idx_false)) {",
       "  print_assertion_failed_msg(" & printed(file) & ", " & printed(line) & ", " & text_arg & ");"
     );
     vars_content = ("  dump_var(" & printed(_str_(bare_id(v))) & ", " & to_c_var_ref_name(v) & ");" : v <- vars);
@@ -1086,11 +1080,9 @@ String* c_main_fn = (
   "#include <stdio.h>",
   "",
   "",
-  "int main(int argc, char **argv)",
-  "{",
+  "int main(int argc, char **argv) {",
   "  OBJ args = make_empty_seq();",
-  "  if (argc > 1)",
-  "  {",
+  "  if (argc > 1) {",
   "    OBJ *arg_buff = new OBJ[argc-1];",
   "    for (int i=0 ; i < argc-1 ; i++)",
   "      arg_buff[i] = str_to_obj(argv[i+1]);",
