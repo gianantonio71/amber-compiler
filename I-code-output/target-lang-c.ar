@@ -54,17 +54,28 @@ CCodeOutput compile_to_c(CompiledPrg prg)
   );
 
   let typedefs = prg.typedefs:
-    wrappers_decls, wrappers_impls = unzip((reactive_automaton_wrapper(block=b) : b <- rand_sort(prg.blocks)));
+    auto_wrappers_decls, auto_wrappers_impls = unzip(rand_sort([react_auto_wrapper(block=b) : b <- prg.blocks]));
+    trans_blocks = [b.name -> b : b <- prg.trans_blocks];
+    db_wrappers_decls, db_wrappers_impls = unzip(rand_sort([trans_auto_wrapper(b, trans_blocks) : b <- prg.trans_blocks]));
   ;
-  wrappers_decls = join(intermix(wrappers_decls, ("", "")));
-  wrappers_impls = join(intermix(wrappers_impls, ("", "")));
+  wrappers_decls = join(intermix(auto_wrappers_decls & db_wrappers_decls, ("", "")));
+  wrappers_impls = join(intermix(auto_wrappers_impls & db_wrappers_impls, ("", "")));
+
+  has_automata = prg.blocks != [] or prg.trans_blocks != [];
 
   body = (
-    "#include \"lib.h\"\n\n",
-    "#include \"iolib.h\"\n\n",
-    "",
     "#include <stdlib.h>",
     "#include <string.h>",
+    "",
+    "#include <vector>" if has_automata,
+    "#include <string>" if has_automata,
+    "#include <tuple>" if has_automata,
+    "#include <memory>" if has_automata,
+    "",
+    "#include \"lib.h\"",
+    "#include \"iolib.h\"",
+    "#include \"lib-cpp.h\"" if has_automata,
+    "#include \"cell-lang.h\"" if has_automata,
     "",
     "namespace generated {"
   ) & indent_lines(c_code & proc_code.body & int_seqs_defs & ("", "") & wrappers_decls & ("", "") & wrappers_impls) & ("}");
@@ -72,7 +83,18 @@ CCodeOutput compile_to_c(CompiledPrg prg)
   body = body & runtime_callbacks;
   body = body & c_main_fn if (p <- prg.procs : p.name == proc_symbol(:main));
 
-  header = if wrappers_decls != () then ("namespace generated {") & indent_lines(wrappers_decls) & ("}") else ();
+  header = if wrappers_decls != ()
+    then (
+      "#include <vector>",
+      "#include <string>",
+      "#include <tuple>",
+      "#include <memory>",
+      "",
+      "#include \"cell-lang.h\"",
+      "",
+      "namespace generated {"
+    ) & indent_lines(wrappers_decls) & ("}")
+    else ();
 
   return (body: body, header: header);
 

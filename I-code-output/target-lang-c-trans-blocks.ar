@@ -7,7 +7,7 @@ implicit
 
   CCodeOutput compile_trans_block_to_c(TransBlock block)
   {
-    state_vars_decls = ["OBJ " & to_c_var_decl_name(v) & ";" : v <- block.state_vars];
+    state_vars_decls = ["OBJ " & to_c_var_decl_name(v) & ";" : v, unused_var <- block.state_vars];
     value_store_decls = ["VALUE_STORE " & to_c_var_decl_name(v) & ";" : v <- block.value_stores];
     table_decls = [table_c_type(t) & " " & to_c_var_decl_name(v) & ";" : v, t <- block.tables];
     nested_blocks_decls = [to_c_name(t) & " " & to_c_var_decl_name(v) & ";" : v, t <- block.nested_blocks];
@@ -15,7 +15,7 @@ implicit
     memb_decls = rand_sort(state_vars_decls) & rand_sort(value_store_decls) & rand_sort(table_decls) & rand_sort(nested_blocks_decls);
     struct_decl = ("struct " & to_c_name(block.name) & " {") & indent_lines(memb_decls) & ("};");
 
-    aux_vars_decls = ["OBJ " & to_c_var_decl_name(pending_state_var(bare_id(v))) & ";" : v <- block.state_vars];
+    aux_vars_decls = ["OBJ " & to_c_var_decl_name(pending_state_var(bare_id(v))) & ";" : v, unused_var <- block.state_vars];
     aux_stores_decls = ["VALUE_STORE_UPDATES " & aux_struct_var_decl_name(vs) & ";" : vs <- block.value_stores];
     aux_tables_decls = [
       pending_updates_var_type(t) & " " & pending_updates_var_decl_name(v) & ";"
@@ -53,7 +53,7 @@ implicit
 
     aux_cleanup_decl, aux_cleanup_impl = aux_struct_cleanup_code(block);
 
-    methods_decls, methods_impls = unzip(rand_sort([gen_user_def_method(block.name, id, b) : id, b <- block.methods_code]));
+    methods_decls, methods_impls = unzip(rand_sort([gen_user_def_method(block.name, id, m.code) : id, m <- block.methods]));
     methods_impls = join(intermix(methods_impls, ("", "")));
 
     updates_decls, updates_impls = unzip(rand_sort([gen_update(block.name, id, b) : id, b <- block.updates_code]));
@@ -168,6 +168,7 @@ implicit
     aux_struct_init_call = mk_gen_call(aux_struct_init_proc_name(block_name), ("self", "&self_aux"), (), ());
     set_state_call = mk_gen_call(set_state_proc_name(block_name), ("self", "&self_aux"), (fn_par(0)), ("env"));
     updates_check_call = mk_gen_call(updates_check_proc_name(block_name), ("self", "&self_aux"), (), ());
+    updates_copy_call = mk_gen_call(updates_copy_proc_name(block_name), ("self", "&self_aux"), (), ());
     updates_apply_call = mk_gen_call(updates_apply_proc_name(block_name), ("self", "&self_aux"), (), ());
     updates_finish_call = mk_gen_call(updates_finish_proc_name(block_name), ("self", "&self_aux"), (), ());
     aux_struct_cleanup_call = mk_gen_call(aux_struct_cleanup_proc_name(block_name), ("&self_aux"), (), ());
@@ -180,6 +181,7 @@ implicit
       "bool ok = " & updates_check_call,
       "enter_copy_state();",
       "if (ok) {",
+      "  " & updates_copy_call,
       "  " & updates_apply_call,
       "  " & updates_finish_call,
       "}",
@@ -233,7 +235,7 @@ implicit
 
   (String, String*) updates_copy_code(TransBlock block)
   {
-    var_ids = (bare_id(v) : v <- rand_sort(block.state_vars));
+    var_ids = (bare_id(v) : v <- rand_sort(keys(block.state_vars)));
     vars_copy_code = join((var_copy_code(id) : id <- var_ids));
 
     value_stores_copy_code = (
@@ -291,7 +293,7 @@ implicit
 
   (String, String*) updates_finish_code(TransBlock block)
   {
-    var_ids = (bare_id(v) : v <- rand_sort(block.state_vars));
+    var_ids = (bare_id(v) : v <- rand_sort(keys(block.state_vars)));
     vars_copy_code = join((var_apply_code(id) : id <- var_ids));
 
     tables_finish_code = [{
@@ -323,7 +325,7 @@ implicit
 
   (String, String*) aux_struct_init_code(TransBlock block)
   {
-    var_ids = (bare_id(v) : v <- rand_sort(block.state_vars));
+    var_ids = (bare_id(v) : v <- rand_sort(keys(block.state_vars)));
     init_vars_code = (to_c_var_ref_name(pending_state_var(id)) & " = make_blank_obj();" : id <- var_ids);
 
     value_stores_init_code = (
@@ -423,7 +425,7 @@ implicit
     impl_args_strs = (to_c_name(block_name) & " *self", aux_struct_c_name(block_name) & " *self_aux");
     expl_args_strs = ("OBJ p" & printed(i) : i < arity(update_id));
     args_str = append(impl_args_strs & expl_args_strs, ", ");
-    sgn = "OBJ " & update_name(block_name, update_id) & "(" & args_str & ", ENV &env)";
+    sgn = "void " & update_name(block_name, update_id) & "(" & args_str & ", ENV &env)";
     vars_decls = gen_vars_decls(body);
     body_text = vars_decls & ("" if vars_decls != ()) & compile_to_c(body, nil);
     return (sgn & ";", (sgn & " {") & indent_lines(body_text) & ("}"));

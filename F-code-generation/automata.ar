@@ -11,10 +11,10 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
 
     const_data = [time_slots_len(a, ls) : a, c <- automaton.time_rules, ls = trigger_times_table(c.time_expr), ls != ()];
 
-    pre_init_code       = gen_pre_init_code(memb_bool_vars, memb_int_vars, memb_obj_vars);
-    nodes_update_code   = merge(([n.id -> gen_node_update_code(n)] : n <- nodes));
-    apply_code          = gen_apply_code(nodes);
-    methods_code        = gen_methods_code(automaton.methods);
+    pre_init_code     = gen_pre_init_code(memb_bool_vars, memb_int_vars, memb_obj_vars);
+    nodes_update_code = merge(([n.id -> gen_node_update_code(n)] : n <- nodes));
+    apply_code        = gen_apply_code(nodes);
+    methods           = compiled_methods(automaton.methods);
 
     // Generating cleanup code
     cleanup_code = join(((release(v), init_memb_var(v, :blank)) : v, unused_var <- rand_sort(memb_obj_vars))) &
@@ -61,7 +61,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
       nodes_update_code:    nodes_update_code,
       apply_code:           apply_code,
       queue_update_code:    queue_update_code,
-      methods_code:         methods_code,
+      methods:              methods,
       const_data:           const_data,
       time_rules_count:     size(time_varying_nodes_indexes)
     );
@@ -95,38 +95,50 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
 
   //////////////////////////////////////////////////////////////////////////////
 
-  [MethodId -> Instr*] gen_methods_code([Method] methods)
+  //## COMPILATION OF METHODS FOR BOTH TYPES OF AUTOMATA IS ALMOST IDENTICAL, CAN WE SHARE SOME CODE HERE?
+  [MethodId -> CompiledMethod] compiled_methods([Method] methods)
   {
-    return merge([
-      gen_code_for_overloaded_methods(ms) : unused_var, ms <- group_by(methods, ($.name, length($.args)))
-    ]);
+    return merge([compiled(ms) : unused_var, ms <- group_by(methods, ($.name, length($.args)))]);
 
 
-    [MethodId -> Instr*] gen_code_for_overloaded_methods([+Method] methods)
+    [MethodId -> CompiledMethod] compiled([+Method] methods)
     {
       a_method = an_elem(methods);
       name = a_method.name;
       arity = length(a_method.args);
-      return [method_id(name, arity) -> gen_method_code(a_method)] if size(methods) == 1;
+      return [method_id(name, arity) -> compiled(a_method)] if size(methods) == 1;
+
       sorted_methods = rand_sort(methods);
-      comp_methods = merge(([method_id(m.name, arity, i) -> gen_method_code(m)] : m @ i <- sorted_methods));
+      comp_methods = merge(([method_id(m.name, arity, i) -> compiled(m)] : m @ i <- sorted_methods));
+
+      disp_method_args_types = (ne_union_superset([left(m.args(i)) : m <- methods]) : i < arity);
+      disp_method_args_memb_preds = [(memb_test_preds_map[t] : t, unused_var <- m.args) : m <- methods];
+      disp_method_ret_type = ne_union_superset([m.ret_type : m <- methods]);
       disp_method_code = gen_dispatch_auto_method_body(automaton.name, sorted_methods, program.typedefs);
-      return comp_methods & [method_id(name, arity) -> disp_method_code];
+      disp_method = compiled_method(disp_method_args_types, disp_method_args_memb_preds, disp_method_ret_type, disp_method_code);
+
+      return comp_methods & [method_id(name, arity) -> disp_method];
     }
-  }
 
 
-  Instr* gen_method_code(Method method)
-  {
-    res_var, var_gen = next_obj_var(blank_var_gen);
+    CompiledMethod compiled(Method method) =
+      compiled_method(
+        (t : t, unused_var <- method.args),
+        [(memb_test_preds_map[t] : t, unused_var <- method.args)],
+        method.ret_type,
+        gen_code(method)
+      );
 
-    args_code = (set_var(value(v), fn_par(i)) : unused_var, v @ i <- method.args, v != nil);
-    body_code = gen_eval_code(method.expr, res_var, artifact = automaton, next_var_gen = var_gen);
 
-    // entry_code = [push_call_info(fndef.name, fn_par(i)) : p @ i <- fndef.params])];
-    // exit_code = [pop_call_info];
-
-    return (args_code & body_code | ret_val(res_var));
+    Instr* gen_code(Method method)
+    {
+      res_var, var_gen = next_obj_var(blank_var_gen);
+      args_code = (set_var(value(v), fn_par(i)) : unused_var, v @ i <- method.args, v != nil);
+      body_code = gen_eval_code(method.expr, res_var, artifact = automaton, next_var_gen = var_gen);
+      // entry_code = [push_call_info(fndef.name, fn_par(i)) : p @ i <- fndef.params])];
+      // exit_code = [pop_call_info];
+      return (args_code & body_code | ret_val(res_var));
+    }
   }
 
 
