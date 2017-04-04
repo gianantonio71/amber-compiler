@@ -21,8 +21,8 @@ implicit typedefs : [TypeName -> NeType], memb_test_preds : [NeType -> BoolFnNam
       ne_set_type()       = gen_ne_set_type_checking_code(type.elem_type, obj, res_var),
       ne_seq_type()       = gen_ne_seq_type_checking_code(type.elem_type, obj, res_var),
       ne_map_type()       = gen_ne_map_type_checking_code(type.key_type, type.value_type, obj, res_var),
-      ne_bin_rel_type()   = gen_ne_bin_rel_type_checking_code(type.args_types, obj, res_var),
-      ne_tern_rel_type()  = gen_ne_tern_rel_type_checking_code(type.args_types, obj, res_var),
+      ne_bin_rel_type()   = gen_ne_bin_rel_type_checking_code(type.signatures, obj, res_var),
+      ne_tern_rel_type()  = gen_ne_tern_rel_type_checking_code(type.signatures, obj, res_var),
       ne_record_type(fs?) = gen_ne_record_type_checking_code(fs, obj, res_var),
       tuple_type(ts?)     = gen_tuple_type_checking_code(ts, obj, res_var),
       tag_obj_type()      = gen_tag_obj_type_checking_code(type.tag_type, type.obj_type, obj, res_var),
@@ -126,27 +126,34 @@ implicit typedefs : [TypeName -> NeType], memb_test_preds : [NeType -> BoolFnNam
   }
 
 
-  Instr+ gen_ne_bin_rel_type_checking_code((Type, Type) args_types, AtomicExpr obj, BoolVar res_var)
+  Instr+ gen_ne_bin_rel_type_checking_code([+(NeType, NeType)] signatures, AtomicExpr obj, BoolVar res_var)
   {
-    return (set_bvar(res_var, is_ne_bin_rel(obj))) if all((is_type_any(t) : t <- args_types));
+    return (set_bvar(res_var, is_ne_bin_rel(obj))) if (s <- signatures : all((is_type_any(t) : t <- s)));
 
-    obj_var, var_gen = next_obj_var(next_var_gen);
-    it_var, var_gen = next_bin_rel_it_var(var_gen);
+    arg0_var, var_gen = next_obj_var(next_var_gen);
+    arg1_var, var_gen = next_obj_var(var_gen);
+    it_var,   var_gen = next_bin_rel_it_var(var_gen);
 
     let next_var_gen = var_gen:
+      entry_check_code = ();
+      for t0, t1 @ i <- rand_sort(signatures):
+        check_attempt_code = (
+          gen_type_checking_code(t0, arg0_var, res_var) |
+          do_if(res_var, gen_type_checking_code(t1, arg1_var, res_var))
+        );
+        check_attempt_code = (do_if_not(res_var, check_attempt_code)) if i > 0;
+        entry_check_code = entry_check_code & check_attempt_code;
+      ;
+
       code = (
         block_failure_if_not(is_ne_bin_rel(obj), res_var),
         get_iter(it_var, obj, (nil, nil)),
         repeat(
           nonempty(
             ( break_if(is_out_of_range(it_var)),
-              get_curr_arg(obj_var, it_var, 0)
-            ) &
-            gen_type_checking_code(args_types(0), obj_var, res_var) &
-            ( exit_block_if_not(res_var),
-              get_curr_arg(obj_var, it_var, 1)
-            ) &
-            gen_type_checking_code(args_types(1), obj_var, res_var) &
+              get_curr_arg(arg0_var, it_var, 0),
+              get_curr_arg(arg1_var, it_var, 1)
+            ) & entry_check_code &
             ( exit_block_if_not(res_var),
               move_forward(it_var)
             )
@@ -160,31 +167,39 @@ implicit typedefs : [TypeName -> NeType], memb_test_preds : [NeType -> BoolFnNam
   }
 
 
-  Instr+ gen_ne_tern_rel_type_checking_code((Type, Type, Type) args_types, AtomicExpr obj, BoolVar res_var)
+  Instr+ gen_ne_tern_rel_type_checking_code([+(Type, Type, Type)] signatures, AtomicExpr obj, BoolVar res_var)
   {
-    return (set_bvar(res_var, is_ne_tern_rel(obj))) if all((is_type_any(t) : t <- args_types));
+    return (set_bvar(res_var, is_ne_tern_rel(obj))) if (s <- signatures : all((is_type_any(t) : t <- s)));
 
-    obj_var, var_gen = next_obj_var(next_var_gen);
-    it_var, var_gen = next_tern_rel_it_var(var_gen);
+    arg0_var, var_gen = next_obj_var(next_var_gen);
+    arg1_var, var_gen = next_obj_var(var_gen);
+    arg2_var, var_gen = next_obj_var(var_gen);
+    it_var,   var_gen = next_tern_rel_it_var(var_gen);
 
     let next_var_gen = var_gen:
+      entry_check_code = ();
+      for t0, t1, t2 @ i <- rand_sort(signatures):
+        check_attempt_code = (
+          gen_type_checking_code(t0, arg0_var, res_var) |
+          do_if(res_var, (
+            gen_type_checking_code(t1, arg1_var, res_var) |
+            do_if(res_var, gen_type_checking_code(t2, arg2_var, res_var))
+          ))
+        );
+        check_attempt_code = (do_if_not(res_var, check_attempt_code)) if i > 0;
+        entry_check_code = entry_check_code & check_attempt_code;
+      ;
+
       code = (
         block_failure_if_not(is_ne_tern_rel(obj), res_var),
         get_iter(it_var, obj, (nil, nil, nil)),
         repeat(
           nonempty(
             ( break_if(is_out_of_range(it_var)),
-              get_curr_arg(obj_var, it_var, 0)
-            ) &
-            gen_type_checking_code(args_types(0), obj_var, res_var) &
-            ( exit_block_if_not(res_var),
-              get_curr_arg(obj_var, it_var, 1)
-            ) &
-            gen_type_checking_code(args_types(1), obj_var, res_var) &
-            ( exit_block_if_not(res_var),
-              get_curr_arg(obj_var, it_var, 2)
-            ) &
-            gen_type_checking_code(args_types(2), obj_var, res_var) &
+              get_curr_arg(arg0_var, it_var, 0),
+              get_curr_arg(arg1_var, it_var, 1),
+              get_curr_arg(arg2_var, it_var, 2)
+            ) & entry_check_code &
             ( exit_block_if_not(res_var),
               move_forward(it_var)
             )

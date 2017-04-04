@@ -152,33 +152,24 @@ implicit typedefs : [TypeName -> NeType], inst_type_vars : Bool
                                                   shallow_subset_conds(t1.key_type, t2.key_type),
                                                   shallow_subset_conds(t1.value_type, t2.value_type)
                                                 ]),
-    ne_map_type(),        ne_bin_rel_type()   = all_conds([
-                                                  shallow_subset_conds(t1.key_type, t2.args_types(0)),
-                                                  shallow_subset_conds(t1.value_type, t2.args_types(1))
-                                                ]),
+    ne_map_type(),        ne_bin_rel_type()   = relation_shallow_subset_conds((t1.key_type, t1.value_type), t2.signatures),
     // ne_map_type(),        ne_record_type(fs?) = map_record_shallow_subset_conds(t1.key_type, t1.value_type, fs),
     ne_map_type(),        _                   = not_a_subset,
 
-    ne_bin_rel_type(),    ne_bin_rel_type()   = all_conds([
-                                                  shallow_subset_conds(at1, at2)
-                                                  : at1, at2 <~ zip(t1.args_types, t2.args_types)
-                                                ]),
+    ne_bin_rel_type(),    ne_bin_rel_type()   = all_conds([relation_shallow_subset_conds(s, t2.signatures) : s <- t1.signatures]),
     ne_bin_rel_type(),    _                   = not_a_subset,
 
     // Ternary relation types
     empty_tern_rel_type,  empty_tern_rel_type = [],
     empty_tern_rel_type,  _                   = not_a_subset,
 
-    ne_tern_rel_type(),   ne_tern_rel_type()  = all_conds([
-                                                  shallow_subset_conds(at1, at2)
-                                                  : at1, at2 <~ zip(t1.args_types, t2.args_types)
-                                                ]),
+    ne_tern_rel_type(),   ne_tern_rel_type()  = all_conds([relation_shallow_subset_conds(s, t2.signatures) : s <- t1.signatures]),
     ne_tern_rel_type(),   _                   = not_a_subset,
 
     // Record types
     ne_record_type(fs1?), ne_record_type(fs2?)  = record_shallow_subset_conds(fs1, fs2),
-    ne_record_type(fs?),  ne_map_type()       = record_bin_rel_shallow_subset_conds(fs, t2.key_type, t2.value_type),
-    ne_record_type(fs?),  ne_bin_rel_type()   = record_bin_rel_shallow_subset_conds(fs, t2.args_types(0), t2.args_types(1)),
+    ne_record_type(fs?),  ne_map_type()       = record_bin_rel_shallow_subset_conds(fs, [(t2.key_type, t2.value_type)]),
+    ne_record_type(fs?),  ne_bin_rel_type()   = record_bin_rel_shallow_subset_conds(fs, t2.signatures),
     ne_record_type(),     _                   = not_a_subset,
 
     // Tuple types
@@ -197,6 +188,21 @@ implicit typedefs : [TypeName -> NeType], inst_type_vars : Bool
     tag_obj_type(),       _                   = not_a_subset;
 
 
+  SubsetCond relation_shallow_subset_conds(NeType+ subtypes, [+NeType+] signatures) {
+    all_conds = [cs : s <- signatures, cs = subset_conds(subtypes, s), cs != not_a_subset];
+    return not_a_subset if all_conds == [];
+    return [] if all_conds([]);
+    return only(all_conds) if size(all_conds) == 1;
+    var_only_conds = [cs : cs <- all_conds, subtype_conds(cs) == []];
+    return an_elem(var_only_conds) if var_only_conds != []; //## CAN WE IMPROVE ON THIS?
+    return an_elem(all_conds); //## BAD BAD BAD: REALLY REALLY BAD
+
+
+    SubsetCond subset_conds(NeType+ subtypes, NeType+ supertypes) =
+      all_conds([shallow_subset_conds(subtype, supertype) : subtype, supertype <~ zip(subtypes, supertypes)]);
+  }
+
+
   SubsetCond union_shallow_subset_conds(Type t1, [+NeType] ts2)
   {
     all_conds = [cs : t2 <- ts2, cs = shallow_subset_conds(t1, t2), cs != not_a_subset];
@@ -204,8 +210,8 @@ implicit typedefs : [TypeName -> NeType], inst_type_vars : Bool
     return [] if in([], all_conds);
     return only(all_conds) if size(all_conds) == 1;
     var_only_conds = [cs : cs <- all_conds, subtype_conds(cs) == []];
-    return an_elem(var_only_conds) if var_only_conds != []; //## COULD WE IMPROVE ON THIS?
-    return an_elem(all_conds); //## BAD: THIS IS REALLY REALLY BAD.
+    return an_elem(var_only_conds) if var_only_conds != []; //## CAN WE IMPROVE ON THIS?
+    return an_elem(all_conds); //## BAD BAD BAD: REALLY REALLY BAD
   }
 
 
@@ -252,13 +258,9 @@ implicit typedefs : [TypeName -> NeType], inst_type_vars : Bool
   //   ]);
 
 
-  SubsetCond record_bin_rel_shallow_subset_conds(RecordTypeFields record_fields, NeType arg0_type, NeType arg1_type) =
-    all_conds([
-      all_conds([
-        shallow_subset_conds(symb_type(l), arg0_type),
-        shallow_subset_conds(f.type, arg1_type)
-      ]) : l, f <- record_fields
-    ]);
+  SubsetCond record_bin_rel_shallow_subset_conds(RecordTypeFields record_fields, [+(NeType, NeType)] signatures) =
+    all_conds([relation_shallow_subset_conds((symb_type(l), f.type), signatures) : l, f <- record_fields]);
+
 
   //## THINK ABOUT THIS ONE, AND ONCE YOU UNDERSTAND IT (IF IT IS CORRECT), COMMENT IT
   //## IT IS RELATED TO THE COMMENT ABOVE, IN record_shallow_subset_conds()

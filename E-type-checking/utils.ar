@@ -99,7 +99,7 @@ implicit typedefs : [TypeName -> NeType]
     ne_map_type(),      _                 = empty_type,
 
     ne_bin_rel_type(),  ptrn_ne_bin_rel   = type,
-    ne_bin_rel_type(),  ptrn_ne_map       = ne_map_type(type.args_types(0), type.args_types(1)),
+    ne_bin_rel_type(),  ptrn_ne_map       = ne_map_type(bin_rel_arg_supertype(type, 0), bin_rel_arg_supertype(type, 1)),
     ne_bin_rel_type(),  _                 = empty_type,
 
     ne_tern_rel_type(), _                 = if ptrn == ptrn_ne_tern_rel then type else empty_type,
@@ -182,15 +182,18 @@ implicit typedefs : [TypeName -> NeType]
     ne_bin_rel_type(),    [:]     = obj != [:] and
                                     not (
                                       l, r <- obj :
-                                        not type_contains_obj(type.args_types(0), l) or
-                                        not type_contains_obj(type.args_types(1), r)
+                                        not (s <- type.signatures :
+                                          type_contains_obj(s(0), l) and type_contains_obj(s(1), r)
+                                        )
                                     ),
     ne_bin_rel_type(),    _       = false,
 
     ne_tern_rel_type(),   [::]    = obj != [::] and
                                     not (
                                       l, m, r <- obj :
-                                        not all((type_contains_obj(t, x) : t, x <- zip(type.args_types, (l, m, r))))
+                                        not (s <- type.signatures :
+                                          all((type_contains_obj(s(i), v) : v @ i <- (l, m, r)))
+                                        )
                                     ),
     ne_tern_rel_type(),   _       = false,
 
@@ -336,8 +339,8 @@ NeType type_nz_nat = high_ints(1);
 NeType type_seq = type_seq(type_any);
 NeType type_set = type_set(type_any);
 NeType type_map = type_map(type_any, type_any);
-NeType type_bin_rel = type_bin_rel(type_any, type_any);
-NeType type_tern_rel = type_tern_rel(type_any, type_any, type_any);
+NeType type_bin_rel = type_bin_rel([(type_any, type_any)], false);
+NeType type_tern_rel = type_tern_rel([(type_any, type_any, type_any)], false);
 
 NeType type_set_rel = ne_union_type([type_set, type_bin_rel, type_tern_rel]);
 
@@ -346,8 +349,8 @@ NeType type_unary_pseudocall_target = ne_union_type([atom_type, type_seq, type_s
 NeType type_ne_seq      = ne_seq_type(type_any);
 NeType type_ne_set      = ne_set_type(type_any);
 NeType type_ne_map      = ne_map_type(type_any, type_any);
-NeType type_ne_bin_rel  = ne_bin_rel_type(type_any, type_any);
-NeType type_ne_tern_rel = ne_tern_rel_type(type_any, type_any, type_any);
+NeType type_ne_bin_rel  = ne_bin_rel_type_nonvoid([(type_any, type_any)]);
+NeType type_ne_tern_rel = ne_tern_rel_type_nonvoid([(type_any, type_any, type_any)]);
 
 TagObjType type_tagged_obj = tag_obj_type(atom_type, type_any);
 
@@ -360,27 +363,26 @@ Type type_set(<empty_type>, Bool nonempty) = if nonempty then empty_type else em
 NeType type_map(NeType key_type, NeType value_type, Bool nonempty) =
   if nonempty then ne_map_type(key_type, value_type) else type_map(key_type, value_type);
 
-NeType type_bin_rel(NeType arg_1_type, NeType arg_2_type, Bool nonempty) =
-  if nonempty then ne_bin_rel_type(arg_1_type, arg_2_type) else type_bin_rel(arg_1_type, arg_2_type);
-
-NeType type_tern_rel(NeType arg_1_type, NeType arg_2_type, NeType arg_3_type, Bool nonempty) =
-  if nonempty
-    then ne_tern_rel_type(arg_1_type, arg_2_type, arg_3_type)
-    else type_tern_rel(arg_1_type, arg_2_type, arg_3_type);
-
 NeType type_seq(NeType elem_type)  = ne_union_type([empty_seq_type, ne_seq_type(elem_type)]);
 NeType type_set(NeType elem_type)  = ne_union_type([empty_set_type, ne_set_type(elem_type)]);
 NeType type_mset(NeType elem_type) = ne_union_type([empty_bin_rel_type, ne_map_type(elem_type, high_ints(1))]);
 
 NeType type_tuple(<2..*> size)  = ne_tuple_type(nonempty(size * (type_any)));
 
-NeType type_map(NeType key_type, NeType value_type)  = ne_union_type([empty_bin_rel_type, ne_map_type(key_type, value_type)]);
+NeType type_map(NeType key_type, NeType value_type) =
+  ne_union_type([empty_bin_rel_type, ne_map_type(key_type, value_type)]);
 
-NeType type_bin_rel(NeType arg_1_type, NeType arg_2_type) =
-  ne_union_type([empty_bin_rel_type, ne_bin_rel_type(arg_1_type, arg_2_type)]);
+NeType type_bin_rel([+(NeType, NeType)] signatures, Bool nonempty) {
+  type = ne_bin_rel_type_nonvoid(signatures);
+  type = ne_union_type([empty_bin_rel_type, type]) if not nonempty;
+  return type;
+}
 
-NeType type_tern_rel(NeType arg_1_type, NeType arg_2_type, NeType arg_3_type) =
-  ne_union_type([empty_tern_rel_type, ne_tern_rel_type(arg_1_type, arg_2_type, arg_3_type)]);
+NeType type_tern_rel([+(NeType, NeType, NeType)] signatures, Bool nonempty) {
+  type = ne_tern_rel_type_nonvoid(signatures);
+  type = ne_union_type([empty_tern_rel_type, type]) if not nonempty;
+  return type;
+}
 
 NeType type_string = tag_obj_type(symb_type(:string), ne_union_type([empty_seq_type, ne_seq_type(type_nat)]));
 

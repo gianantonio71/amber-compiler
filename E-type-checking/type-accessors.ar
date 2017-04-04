@@ -122,7 +122,7 @@ implicit typedefs : [TypeName -> NeType]
 
   Type bin_rel_arg_supertype(Type type, <0..1> arg) =
     ne_map_type()       = if arg == 0 then type.key_type else type.value_type,
-    ne_bin_rel_type()   = type.args_types(arg),
+    ne_bin_rel_type()   = union_superset([s(arg) : s <- type.signatures]),
     ne_record_type(fs?) = if arg == 0
                             then union_type([symb_type(s) : s, unused_var <- fs])
                             else union_superset([f.type : unused_var, f <- fs]),
@@ -138,7 +138,7 @@ implicit typedefs : [TypeName -> NeType]
 
 
   Type tern_rel_arg_supertype(Type type, <0..2> arg) =
-    ne_tern_rel_type()  = type.args_types(arg),
+    ne_tern_rel_type()  = union_superset([s(arg) : s <- type.signatures]),
     union_type(ts?)     = union_superset([tern_rel_arg_supertype(t, arg) : t <- ts]),
     type_var()          = type_any,
     type_ref(ts?)       = tern_rel_arg_supertype(expand_type_ref(ts, typedefs), arg),
@@ -154,9 +154,10 @@ implicit typedefs : [TypeName -> NeType]
     ne_map_type()       = if pseudotypes_are_disjoint(type.key_type, arg0_type, typedefs)
                             then empty_type
                             else type.value_type,
-    ne_bin_rel_type()   = if pseudotypes_are_disjoint(type.args_types(0), arg0_type, typedefs)
-                            then empty_type
-                            else type.args_types(1),
+    ne_bin_rel_type()   = union_superset([
+                            if pseudotypes_are_disjoint(s(0), arg0_type, typedefs) then empty_type else s(1)
+                            : s <- type.signatures
+                          ]),
     ne_record_type(fs?) = union_superset([f.type : s, f <- fs, type_contains_obj(arg0_type, bare_obj(s))]),
     union_type(ts?)     = union_superset([restricted_bin_rel_arg1_supertype(t, arg0_type) : t <- ts]),
     type_var()          = if arg0_type != empty_type then type_any else empty_type,

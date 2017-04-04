@@ -180,56 +180,32 @@ implicit
   }
 
 
-  Type bin_rel_expr_type([(args: (Expr, Expr), cond: Expr?)] raw_entries, [Var -> Type] env)
-  {
-    entries = [entry_info(e, env) : e <- raw_entries];
-    arg0_type = union_superset([e.arg_types(0) : e <- entries]);
-    arg1_type = union_superset([e.arg_types(1) : e <- entries]);
+  Type bin_rel_expr_type([(args: (Expr, Expr), cond: Expr?)] raw_entries, [Var -> Type] env) {
+    entries = [{
+        new_env = if e.cond? then left(refine_env(e.cond, env)) else env;
+        return (types: (expr_type(a, new_env) : a <- e.args), optional: e.cond?);
+      } : e <- raw_entries
+    ];
+    rel_sgns = [(t0, t1) : e <- entries, (t0?, t1?) ?= e.types, t0 != empty_type, t1 != empty_type];
+    return empty_bin_rel_type if rel_sgns == [];
     nonempty = (e <- entries : not e.optional);
-    if arg0_type == empty_type or arg1_type == empty_type:
-      return if nonempty then empty_type else empty_bin_rel_type;
-    ;
-    return type_bin_rel(arg0_type, arg1_type, nonempty);
-
-
-    (arg_types: (Type, Type), optional: Bool) entry_info((args: (Expr, Expr), cond: Expr?) entry, [Var -> Type] env)
-    {
-      new_env = if entry.cond? then left(refine_env(entry.cond, env)) else env;
-      arg0, arg1 = entry.args;
-      return (
-        arg_types: (expr_type(arg0, new_env), expr_type(arg1, new_env)),
-        optional:  entry.cond?
-      );
-    }
+    return type_bin_rel(rel_sgns, nonempty);
   }
 
 
-  Type tern_rel_expr_type([(args: (Expr, Expr, Expr), cond: Expr?)] raw_entries, [Var -> Type] env)
-  {
-    entries = [entry_info(e, env) : e <- raw_entries];
-    arg0_type = union_superset([e.arg_types(0) : e <- entries]);
-    arg1_type = union_superset([e.arg_types(1) : e <- entries]);
-    arg2_type = union_superset([e.arg_types(2) : e <- entries]);
+  Type tern_rel_expr_type([(args: (Expr, Expr, Expr), cond: Expr?)] raw_entries, [Var -> Type] env) {
+    entries = [{
+        new_env = if e.cond? then left(refine_env(e.cond, env)) else env;
+        return (types: (expr_type(a, new_env) : a <- e.args), optional: e.cond?);
+      } : e <- raw_entries
+    ];
+    rel_sgns = [
+      (t0, t1, t2) : e <- entries, (t0?, t1?, t2?) ?= e.types,
+        t0 != empty_type, t1 != empty_type, t2 != empty_type
+    ];
+    return empty_tern_rel_type if rel_sgns == [];
     nonempty = (e <- entries : not e.optional);
-    if arg0_type == empty_type or arg1_type == empty_type or arg2_type == empty_type:
-      return if nonempty then empty_type else empty_tern_rel_type;
-    ;
-    return type_tern_rel(arg0_type, arg1_type, arg2_type, nonempty);
-
-
-    (arg_types: (Type, Type, Type), optional: Bool) entry_info((args: (Expr, Expr, Expr), cond: Expr?) entry, [Var -> Type] env)
-    {
-      new_env = if entry.cond? then left(refine_env(entry.cond, env)) else env;
-      arg0, arg1, arg2 = entry.args;
-      return (
-        arg_types: (
-          expr_type(arg0, new_env),
-          expr_type(arg1, new_env),
-          expr_type(arg2, new_env)
-        ),
-        optional:  entry.cond?
-      );
-    }
+    return type_tern_rel(rel_sgns, nonempty);
   }
 
 
@@ -321,30 +297,17 @@ implicit
   }
 
 
-  Type bin_rel_comp_expr_type((Expr, Expr) exprs, Clause source, [Var -> Type] env)
-  {
-    new_env = generate_env(source, env);
-    arg0_type = expr_type(exprs(0), new_env);
-    arg1_type = expr_type(exprs(1), new_env);
-    nonempty = always_yields_results(source, env);
-    if arg0_type == empty_type or arg1_type == empty_type:
-      return if nonempty then empty_type else empty_bin_rel_type;
-    ;
-    return type_bin_rel(arg0_type, arg1_type, nonempty);
+  Type bin_rel_comp_expr_type((Expr, Expr) exprs, Clause source, [Var -> Type] env) {
+    iter_tree = full_iter_tree(source, env);
+    expr1, expr2 = exprs;
+    return bin_rel_comp_type(iter_tree, expr1, expr2);
   }
 
 
-  Type tern_rel_comp_expr_type((Expr, Expr, Expr) exprs, Clause source, [Var -> Type] env)
-  {
-    new_env = generate_env(source, env);
-    arg0_type = expr_type(exprs(0), new_env);
-    arg1_type = expr_type(exprs(1), new_env);
-    arg2_type = expr_type(exprs(2), new_env);
-    nonempty = always_yields_results(source, env);
-    if arg0_type == empty_type or arg1_type == empty_type or arg2_type == empty_type:
-      return if nonempty then empty_type else empty_tern_rel_type;
-    ;
-    return type_tern_rel(arg0_type, arg1_type, arg2_type, nonempty);
+  Type tern_rel_comp_expr_type((Expr, Expr, Expr) exprs, Clause source, [Var -> Type] env) {
+    iter_tree = full_iter_tree(source, env);
+    expr0, expr1, expr2 = exprs;
+    return tern_rel_comp_type(iter_tree, expr0, expr1, expr2);
   }
 
 
@@ -883,8 +846,7 @@ implicit
 type IterTree = never, once([Var -> Type]), repeated(IterTree), any([+IterTree]), all(IterTree+);
 
 
-implicit
-{
+implicit {
   typedefs    : [TypeName -> NeType],
   signatures  : [(FnFamilyId, Nat) -> SgnSet],
   closures    : [ClsVar -> ClsType],
@@ -965,18 +927,17 @@ implicit
     assert all(((v == nil) != (a == nil) : v, a <- zip(maybe_vars, args)));
 
     return match (maybe_vars)
-      (v1?, v2?)      = bin_rel_clause_iter_tree(src_type, v1, v2, env, tail),
-      (v1?, v2?, v3?) = tern_rel_clause_iter_tree(src_type, v1, v2, v3, env, tail);
+      (v1?, v2?)  = bin_rel_clause_iter_tree(src_type, v1, v2, env, tail),
+      (_, _, _)   = tern_rel_clause_iter_tree(src_type, maybe_vars, env, tail);
   }
 
 
-  IterTree bin_rel_clause_iter_tree(Type src_type, Maybe[StdVar] var1, Maybe[StdVar] var2, [Var -> Type] env, ([Var -> Type] -> IterTree) tail)
-  {
+  IterTree bin_rel_clause_iter_tree(Type src_type, Maybe[StdVar] var1, Maybe[StdVar] var2, [Var -> Type] env, ([Var -> Type] -> IterTree) tail) {
     return match (src_type)
-      ne_map_type()       |
-      ne_bin_rel_type()   = :repeated(tail(env & env_delta(src_type, var1, var2))),
+      ne_map_type()       = :repeated(tail(env & env_delta((src_type.key_type, src_type.value_type), var1, var2))),
+      ne_bin_rel_type()   = :repeated(:any([tail(env & env_delta(s, var1, var2)) : s <- src_type.signatures])),
       ne_record_type(fs?) = :all(rand_sort([{
-                                tree = tail(env & env_delta(l, f.type, var1, var2));
+                                tree = tail(env & env_delta((symb_type(l), f.type), var1, var2));
                                 tree = :any([:never, tree]) if f.optional;
                                 return tree;
                               } : l, f <- fs
@@ -987,42 +948,19 @@ implicit
       empty_type          = :never;
 
 
-    [Var -> Type] env_delta(NeMapType src_type, Maybe[StdVar] key_var, Maybe[StdVar] value_var) = [
-        value(key_var)   -> src_type.key_type   if key_var != nil,
-        value(value_var) -> src_type.value_type if value_var != nil
-      ];
-
-
-    [Var -> Type] env_delta(NeBinRelType src_type, Maybe[StdVar] left_var, Maybe[StdVar] right_var) = [
-        value(left_var)  -> left(src_type.args_types)  if left_var != nil,
-        value(right_var) -> right(src_type.args_types) if right_var != nil
-      ];
-
-
-    [Var -> Type] env_delta(SymbObj label, NeType field_type, Maybe[StdVar] label_var, Maybe[StdVar] value_var) = [
-        value(label_var) -> symb_type(label) if label_var != nil,
-        value(value_var) -> field_type       if value_var != nil
-      ];
-  }
-
-
-  IterTree tern_rel_clause_iter_tree(Type src_type, Maybe[StdVar] var1, Maybe[StdVar] var2, Maybe[StdVar] var3, [Var -> Type] env, ([Var -> Type] -> IterTree) tail)
-  {
-    assert type_contains_obj(src_type, [::]) == is_subset(empty_tern_rel_type, src_type);
-
-    return :never if is_subset(src_type, empty_tern_rel_type);
-
-    type1, type2, type3 = tern_rel_args_supertypes(src_type);
-    env_delta = [
-      value(var1) -> type1 if var1 != nil,
-      value(var2) -> type2 if var2 != nil,
-      value(var3) -> type3 if var3 != nil
+    [Var -> Type] env_delta((NeType, NeType) types, Maybe[StdVar] left_var, Maybe[StdVar] right_var) = [
+        value(left_var)  -> left(types)  if left_var != nil,
+        value(right_var) -> right(types) if right_var != nil
     ];
-
-    tree = :repeated(tail(env & env_delta));
-    tree = :any([:never, tree]) if type_contains_obj(src_type, [::]);
-    return tree;
   }
+
+
+  IterTree tern_rel_clause_iter_tree(Type src_type, (Maybe[StdVar], Maybe[StdVar], Maybe[StdVar]) vars, [Var -> Type] env, ([Var -> Type] -> IterTree) tail) =
+    empty_tern_rel_type = :never,
+    ne_tern_rel_type()  = :repeated(:any([tail(env & [value(v) -> s(i) : v @ i <~ vars, v != nil]) : s <- src_type.signatures])),
+    union_type(ts?)     = :any([tern_rel_clause_iter_tree(t, vars, env, tail) : t <- ts]),
+    type_ref(ts?)       = tern_rel_clause_iter_tree(expand_type_ref(ts, typedefs), vars, env, tail),
+    empty_type          = :never;
 
 
   IterTree relvar_clause_iter_tree(StdVar+ vars, AnyRelVar rel_var, Maybe[Expr]+ args, [Var -> Type] env, ([Var -> Type] -> IterTree) tail)
@@ -1056,6 +994,57 @@ implicit
 
     return ne_map_type(key_type: type1, value_type: type2);
   }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  BinRelCompType bin_rel_comp_type(IterTree tree, Expr expr1, Expr expr2) =
+    never         = empty_bin_rel_type,
+    once(e?)      = once_bin_rel_comp_type(e, expr1, expr2),
+    repeated(t?)  = repeated_bin_rel_comp_type(bin_rel_comp_type(t, expr1, expr2)),
+    any(ts?)      = bin_rel_comp_union_type([bin_rel_comp_type(t, expr1, expr2) : t <- ts]),
+    //## BUG BUG BUG: THERE IS A HUGE BUG HERE. bin_rel_both SHOULD NOT BE CALLABLE AT
+    //## ALL IN THIS CONTEXT IF IT HAS IMPLICIT ARGUMENTS THAT ARE NOT EXPLICITLY PROVIDED
+    //## IN THIS CASE IT SHOULDN'T HAVE ANY, BUT I ACCIDENTALLY DECLARED IT IN A IMPLICIT BLOCK
+    //## ALSO, OMITTING THE ARGUMENTS ($a, $b) CRASHES THE COMPILER, IF bin_rel_both HAS IMPLICIT ARGUMENTS
+    all(ts?)      = fold((bin_rel_comp_type(t, expr1, expr2) : t <- ts), bin_rel_both($a, $b));
+
+
+  BinRelCompType once_bin_rel_comp_type([Var -> Type] env, Expr expr1, Expr expr2) {
+    type1 = expr_type(expr1, env);
+    type2 = expr_type(expr2, env);
+
+    //## HANDLE THIS CASE
+    return empty_bin_rel_type if type1 == empty_type or type2 == empty_type;
+
+    return ne_bin_rel_type_nonvoid([(type1, type2)]);
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  TernRelCompType tern_rel_comp_type(IterTree tree, Expr expr0, Expr expr1, Expr expr2) =
+    never         = empty_tern_rel_type,
+    once(e?)      = once_tern_rel_comp_type(e, expr0, expr1, expr2),
+    repeated(t?)  = repeated_tern_rel_comp_type(tern_rel_comp_type(t, expr0, expr1, expr2)),
+    any(ts?)      = tern_rel_comp_union_type([tern_rel_comp_type(t, expr0, expr1, expr2) : t <- ts]),
+    //## BUG BUG BUG: THERE IS A HUGE BUG HERE. tern_rel_both SHOULD NOT BE CALLABLE AT
+    //## ALL IN THIS CONTEXT IF IT HAS IMPLICIT ARGUMENTS THAT ARE NOT EXPLICITLY PROVIDED
+    //## IN THIS CASE IT SHOULDN'T HAVE ANY, BUT I ACCIDENTALLY DECLARED IT IN A IMPLICIT BLOCK
+    //## ALSO, OMITTING THE ARGUMENTS ($a, $b, $c) CRASHES THE COMPILER, IF tern_rel_both HAS IMPLICIT ARGUMENTS
+    all(ts?)      = fold((tern_rel_comp_type(t, expr0, expr1, expr2) : t <- ts), tern_rel_both);
+
+
+  TernRelCompType once_tern_rel_comp_type([Var -> Type] env, Expr expr0, Expr expr1, Expr expr2) {
+    type0 = expr_type(expr0, env);
+    type1 = expr_type(expr1, env);
+    type2 = expr_type(expr2, env);
+
+    //## HANDLE THIS CASE
+    return empty_tern_rel_type if type0 == empty_type or type1 == empty_type or type2 == empty_type;
+
+    return ne_tern_rel_type_nonvoid([(type0, type1, type2)]);
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1065,6 +1054,10 @@ type MapCompType  = empty_bin_rel_type,
                     ne_map_type(key_type: NeType, value_type: NeType),
                     ne_record_type(RecordTypeFields),
                     union_type([+MapCompType]);
+
+type BinRelCompType = empty_bin_rel_type, NeBinRelType, union_type([+<empty_bin_rel_type, NeBinRelType>]);
+
+type TernRelCompType = empty_tern_rel_type, NeTernRelType, union_type([+<empty_tern_rel_type, NeTernRelType>]);
 
 
 MapCompType map_comp_union_type([+MapCompType] ts)
@@ -1077,6 +1070,32 @@ MapCompType map_comp_union_type([+MapCompType] ts)
     _                = [type];
 }
 
+
+BinRelCompType bin_rel_comp_union_type([+BinRelCompType] types) {
+  nu_types = nonempty(union([
+    match (t)
+      empty_bin_rel_type  |
+      ne_bin_rel_type()   = [t],
+      union_type(ts?)     = ts
+    : t <- types
+  ]));
+  return if size(nu_types) == 1 then only(nu_types) else :union_type(nu_types);
+}
+
+
+TernRelCompType tern_rel_comp_union_type([+TernRelCompType] types) {
+  nu_types = nonempty(union([
+    match(t)
+      empty_tern_rel_type |
+      ne_tern_rel_type()  = [t],
+      union_type(ts?)     = ts
+    : t <- types
+  ]));
+  return if size(nu_types) == 1 then only(nu_types) else :union_type(nu_types);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 
 implicit typedefs : [TypeName -> NeType]
 {
@@ -1176,6 +1195,61 @@ implicit typedefs : [TypeName -> NeType]
       } : l <- keys(fs1) & keys(fs2)
     ]);
 }
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+BinRelCompType repeated_bin_rel_comp_type(BinRelCompType type) =
+  empty_bin_rel_type    |
+  ne_bin_rel_type()     = type,
+  union_type(ts?)       = repeated_bin_rel_comp_type_union(ts);
+
+
+BinRelCompType repeated_bin_rel_comp_type_union([+<empty_bin_rel_type, NeBinRelType>] types) {
+  sgns = union([t.signatures : t <- types, t != empty_bin_rel_type]);
+  return empty_bin_rel_type if sgns == [];
+  rep_type = ne_bin_rel_type_nonvoid(sgns);
+  rep_type = bin_rel_comp_union_type([empty_bin_rel_type, rep_type]) if types(empty_bin_rel_type);
+  return rep_type;
+}
+
+
+BinRelCompType bin_rel_both(BinRelCompType type1, BinRelCompType type2) =
+  empty_bin_rel_type,   empty_bin_rel_type  = empty_bin_rel_type,
+  empty_bin_rel_type,   ne_bin_rel_type()   = type2,
+  ne_bin_rel_type(),    ne_bin_rel_type()   = ne_bin_rel_type_nonvoid(nonempty(type1.signatures & type2.signatures)),
+  empty_bin_rel_type |
+  ne_bin_rel_type(),    union_type(ts?)     = bin_rel_comp_union_type([bin_rel_both(type1, t) : t <- ts]),
+  union_type(ts1?),     union_type(ts2?)    = bin_rel_comp_union_type([bin_rel_both(t1, t2) : t1 <- ts1, t2 <- ts2]),
+  _,                    _                   = bin_rel_both(type2, type1);
+
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+TernRelCompType repeated_tern_rel_comp_type(TernRelCompType type) =
+  empty_tern_rel_type   |
+  ne_tern_rel_type()    = type,
+  union_type(ts?)       = repeated_tern_rel_comp_type_union(ts);
+
+
+TernRelCompType repeated_tern_rel_comp_type_union([+<empty_tern_rel_type, NeTernRelType>] types) {
+  sgns = union([t.signatures : t <- types, t != empty_tern_rel_type]);
+  return empty_tern_rel_type if sgns == [];
+  rep_type = ne_tern_rel_type_nonvoid(sgns);
+  rep_type = tern_rel_comp_union_type([empty_tern_rel_type, rep_type]) if types(empty_tern_rel_type);
+  return rep_type;
+}
+
+
+TernRelCompType tern_rel_both(TernRelCompType type1, TernRelCompType type2) =
+  empty_tern_rel_type,  empty_tern_rel_type = empty_tern_rel_type,
+  empty_tern_rel_type,  ne_tern_rel_type()  = type2,
+  ne_tern_rel_type(),   ne_tern_rel_type()  = ne_tern_rel_type_nonvoid(nonempty(type1.signatures & type2.signatures)),
+  empty_tern_rel_type |
+  ne_tern_rel_type(),   union_type(ts?)     = tern_rel_comp_union_type([tern_rel_both(type1, t) : t <- ts]),
+  union_type(ts1?),     union_type(ts2?)    = tern_rel_comp_union_type([tern_rel_both(t1, t2) : t1 <- ts1, t2 <- ts2]),
+  _,                    _                   = tern_rel_both(type2, type1);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
