@@ -430,134 +430,87 @@ implicit
   String* compile_to_c(Instr* instrs, <Nat, nil> block_id) = join((compile_to_c(instr, block_id) : instr <- instrs));
 
   String* compile_to_c(Instr instr, <Nat, nil> block_id) =
-
     init_stream(v?)       = mk_call("init", (v)),
     append()              = mk_call("append", (instr.stream, instr.obj)),
-
-    // get_at()              = mk_call(instr.var, "get_at", [instr.seq, instr.idx]),
-
     set_at()              = mk_call("set_at", (instr.var, instr.idx, instr.value)),
-
     lookup()              = mk_call(
                               instr.var,
                               "lookup",
                               (instr.map, instr.key, instr.success_var if instr.success_var?)
                             ),
-
     //## BAD BAD IT'S ALMOST THE SAME AS THE EXPRESSION ABOVE
     ext_lookup()          = mk_call(
                               instr.var,
                               "ext_lookup",
                               (instr.map, instr.key, instr.success_var if instr.success_var?)
                             ),
-
     get_set_iter()        = mk_call("get_set_iter", (instr.var, instr.src)),
     get_seq_iter()        = mk_call("get_seq_iter", (instr.var, instr.src)),
-
     get_bin_rel_iter()    = compile_get_bin_rel_iter_to_c(instr.var, instr.src, instr.args),
     get_tern_rel_iter()   = compile_get_tern_rel_iter_to_c(instr.var, instr.src, instr.args),
-
     move_forward(v?)      = compile_move_forward_to_c(v),
-
     set_var()             = compile_set_var_to_c(instr.var, instr.value),
-
     set_bvar()            |
     set_ivar()            = mk_assignment(instr.var, instr.value),
-
     set_rc_var()          = compile_to_c(instr.value, instr.var),
-
     init_memb_var()       = (to_c_var_ref_name(instr.var) & " = " & to_c_const(instr.new_state) & ";"),
     reset_memb_var()      = (to_c_var_ref_name(instr.var) & " = " & to_c_const(instr.new_state) & ";"),
     clear_loc_var(v?)     = (to_c_var_ref_name(v) & " = make_null_obj();"),
-
     terminate             = ("fail();"),
-
     add_ref(v?)           = mk_call("add_ref", (v)),
     release(v?)           = mk_call("release", (v)),
-
     print_obj()           = mk_call("print", (instr.obj)),
-
     ret_val(e?)           = ("return " & to_c_expr(e) & ";"),
-
     no_op                 = (),
-
     repeat(body?)         = compile_repeat_to_c(body, block_id),
-
     break_loop            = ("break;"),
-
-
     execute_block(body?)  = { new_block_id = _counter_(nil);
                               body_code = compile_to_c(body, new_block_id);
                               label = ("block_" & printed(new_block_id) & "_end:;");
                               return body_code & label;
                             },
-
     try_block()           = compile_try_block_to_c(instr.var, instr.body, block_id),
-
     exit_block            = { fail if block_id == nil; //assert block_id != nil; //## BAD
                               return ("goto block_" & printed(block_id) & "_end;");
                             },
-
     switch_on_nat()       = compile_switch_on_nat_to_c(instr.value, instr.cases, block_id),
-
     symb_switch()         = compile_symb_switch_to_c(instr.value, instr.cases, instr.else, block_id),
-
     call_proc()           = compile_call_proc_to_c(if instr.var? then just(instr.var) else nil, instr.name, instr.args, block_id),
-
     call_cls()            = mk_cls_call(instr.cls_var, instr.var, instr.args), //## INLINE THE FUNCTION
-
     push_call_info()      = { fn_name = (printed(fn_name_to_str(instr.fn_name)));
                               params = (if p == nil then :blank_obj else value(p) : p <- instr.params);
                               return (mk_gen_call("push_call_info_wrapper", fn_name, params, ()));
                             },
-
     pop_call_info         = mk_call("pop_call_info", ()),
-
     runtime_check()       = compile_runtime_check_to_c(instr.cond, instr.file, instr.line, instr.text, instr.vars),
-
     branch()              = compile_branch_to_c(instr.cond, instr.when_true, instr.when_false, block_id),
-
     queue_update()        = (queue_update_method_name(instr.id, instr.type) & "(self);"),
-
     queue_cond_update()   = (queue_update_method_name(instr.id, instr.type) & "(self, " & to_c_expr(instr.inval_cache) & ");"),
-
     insert_timer()        = (insert_timer_method_name(instr.type) & "(self, " & to_c_expr(instr.idx) & ", " & to_c_expr(instr.time) & ");"),
-
     clear_timer()         = (clear_timer_method_name(instr.type) & "(self, " & to_c_expr(instr.idx) & ");"),
-
     auto_pre_init()       = (pre_init_method_name(instr.type) & "(&" & to_c_var_ref_name(instr.var) & ", env);"),
-
     auto_cleanup()        = (cleanup_method_name(instr.type) & "(&" & to_c_var_ref_name(instr.var) & ");"),
-
     set_input()           = { value_str = to_c_expr(instr.value);
                               method_name = input_set_method_name(instr.type, instr.input);
                               return (method_name & "(&" & to_c_var_ref_name(instr.var) & ", " & value_str & ");");
                             },
-
     clear_input()         = { method_name = input_set_method_name(instr.type, instr.input);
                               return (method_name & "(&" & to_c_var_ref_name(instr.var) & ", make_null_obj());");
                             },
-
     auto_update_node()    = compile_auto_update_node_to_c(instr.type, instr.node, if instr.time_var? then just(instr.time_var) else nil),
-
     auto_apply()          = compile_auto_apply_to_c(if instr.var? then just(instr.var) else nil, instr.type),
-
     init_db()             = (compile_init_db_to_c(instr.db_var, instr.type)),
     cleanup_db()          = (compile_cleanup_db_to_c(instr.db_var, instr.type)),
     send_msg()            = (compile_send_msg_to_c(instr.db_var, instr.type, instr.msg, instr.is_root, if instr.res_var? then just(instr.res_var) else nil)),
     try_update()          = (compile_try_update_to_c(instr.type, instr.update_id, instr.args)),
     set_state()           = (compile_set_state_to_c(instr.state, instr.db_var, instr.type, if instr.res_var? then just(instr.res_var) else nil)),
-
     invoke_auto_method()  = (compile_invoke_method_to_c(instr.res_var, if instr.auto_var? then just(instr.auto_var) else nil, instr.type, instr.method_id, instr.args)),
     invoke_db_method()    = (compile_invoke_method_to_c(instr.res_var, if instr.db_var? then just(instr.db_var) else nil, instr.type, instr.method_id, instr.args)),
-
     init_value_store()    = mk_call("value_store_init", (instr.store)),
     cleanup_value_store() = mk_call("value_store_cleanup", (instr.store)),
     init_table()          = compile_init_table_to_c(instr.rel_var, instr.table),
     cleanup_table()       = compile_cleanup_table_to_c(instr.rel_var, instr.table),
-
     set_table()           = compile_set_table_to_c(instr.relvar, instr.table, instr.state, instr.perm),
-
     get_table_iter()      = compile_get_table_iter_to_c(instr.it_var, instr.table, instr.args),
     queue_deletes()       = compile_queue_deletes_to_c(instr.rel_var, instr.args),
     queue_insert_value()  = (mk_gen_call(instr.res_var, "value_store_insert", (to_c_expr(instr.store), aux_struct_var_ref_name(instr.store)), (instr.value), ())),
@@ -888,9 +841,7 @@ implicit
     copy_table()                = compile_copy_table_to_c(var, expr.relvar, expr.table, expr.perm),
 
     lookup_surrogate()          = mk_call(var, "lookup_surrogate",    (expr.store, expr.surrogate)),
-    read_pending_var(v?)        = (to_c_var_ref_name(var) & " = " & to_c_var_ref_name(v) & ";"),
-    add_attachment()            = mk_call(var, "add_attachment",      (expr.target, expr.data)),
-    fetch_attachments(e?)       = mk_call(var, "fetch_attachments",   (e));
+    read_pending_var(v?)        = (to_c_var_ref_name(var) & " = " & to_c_var_ref_name(v) & ";");
 
 
   String compile_copy_state_to_c(WriteObjVar res_var, AnyDBVar db_var, DBSymbol type)
