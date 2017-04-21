@@ -64,23 +64,21 @@ implicit
   }
 
 
-  [TypeCheckingError] typecheck_loop_stmt(Statement+ body, Type exp_type, [Var -> Type] env)
-  {
-    mutable_vars = intersection(keys(env), new_vars(body));
+  [TypeCheckingError] typecheck_loop_stmt(Statement+ body, Type exp_type, [Var -> Type] env) {
+    out_of_loop_vars = keys(env);
     entry_env = env;
     for 2:
       errs = typecheck(body, exp_type, entry_env);
       return errs if errs != [];
-      env_delta = select_by_key(update_env(body, entry_env), mutable_vars);
-      return [] if not (v, t <- env_delta : not is_subset(t, entry_env(v)));
-      entry_env = update(entry_env, merge_envs(entry_env, env_delta));
+      exit_env = select_by_key(update_env(body, entry_env), out_of_loop_vars);
+      return [] if not (v, t <- exit_env : not is_subset(t, entry_env(v)));
+      entry_env = exit_env;
     ;
     return [loop_did_not_converge(2)];
   }
 
 
-  [TypeCheckingError] typecheck_foreach_stmt(Var+ vars, Maybe[Var] maybe_idx_var, Expr values, Statement+ body, Type exp_type, [Var -> Type] env)
-  {
+  [TypeCheckingError] typecheck_foreach_stmt(Var+ vars, Maybe[Var] maybe_idx_var, Expr values, Statement+ body, Type exp_type, [Var -> Type] env) {
     nvars = nz_nat(length(vars));
     exp_src_type = if nvars == 1 then type_seq else type_seq(type_tuple(nvars));
     errs = typecheck(values, exp_src_type, env);
@@ -98,28 +96,26 @@ implicit
     ;
     loop_vars = loop_vars & [value(maybe_idx_var) -> type_nat] if maybe_idx_var != nil;
 
-    mutable_vars = intersection(keys(env), new_vars(body));
+    out_of_loop_vars = keys(env);
 
-    entry_env = update(env, loop_vars);
+    entry_env = env & loop_vars;
     for 2:
       errs = typecheck(body, exp_type, entry_env);
       return errs if errs != [];
-      env_delta = select_by_key(update_env(body, entry_env), mutable_vars);
-      return [] if not (v, t <- env_delta : not is_subset(t, entry_env(v)));
-      entry_env = update(entry_env, merge_envs(entry_env, env_delta));
+      exit_env = select_by_key(update_env(body, entry_env), out_of_loop_vars);
+      return [] if not (v, t <- exit_env : not is_subset(t, entry_env(v)));
+      entry_env = exit_env & loop_vars;
     ;
 
     return [loop_did_not_converge(2)];
   }
 
 
-  [TypeCheckingError] typecheck_for_stmt(Maybe[Var] maybe_var, Expr start_val, Expr end_val, Bool end_val_incl,
-    Statement+ body, Type exp_type, [Var -> Type] env)
-  {
+  [TypeCheckingError] typecheck_for_stmt(Maybe[Var] maybe_var, Expr start_val, Expr end_val, Bool end_val_incl, Statement+ body, Type exp_type, [Var -> Type] env) {
     errs = typecheck(start_val, integer, env) & typecheck(end_val, integer, env);
     return errs if errs != [];
 
-    entry_env = env & [
+    loop_vars = [
       value(maybe_var) ->
         loop_var_type(
           expr_type(start_val, env),
@@ -128,14 +124,15 @@ implicit
         ) if maybe_var != nil
     ];
 
-    mutable_vars = intersection(keys(env), new_vars(body));
+    out_of_loop_vars = keys(env);
 
+    entry_env = env & loop_vars;
     for 2:
       errs = typecheck(body, exp_type, entry_env);
       return errs if errs != [];
-      env_delta = select_by_key(update_env(body, entry_env), mutable_vars);
-      return [] if not (v, t <- env_delta : not is_subset(t, entry_env(v)));
-      entry_env = update(entry_env, merge_envs(entry_env, env_delta));
+      exit_env = select_by_key(update_env(body, entry_env), out_of_loop_vars);
+      return [] if not (v, t <- exit_env : not is_subset(t, entry_env(v)));
+      entry_env = exit_env & loop_vars;
     ;
     return [loop_did_not_converge(2)];
   }
