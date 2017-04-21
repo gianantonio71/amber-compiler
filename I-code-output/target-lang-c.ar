@@ -338,7 +338,7 @@ implicit
     db_vars = rand_sort(keys(db_vars_types));
     db_vars_decls = (to_c_name(db_vars_types[v]) & " " & to_c_var_decl_name(v) & ";" : v <- db_vars);
 
-    comp_body = compile_to_c(body, nil);
+    comp_body = compile_to_c(body, nothing);
 
     has_var_decls = var_decls != () or auto_var_decls != () or db_vars_decls != ();
     code = (signature & " {") & indent_lines(var_decls) & indent_lines(auto_var_decls) &
@@ -421,15 +421,15 @@ implicit
     signature = "OBJ cls_" & printed(id) & "(" & append(par_list, ", ") & ")";
 
     vars_decls = gen_vars_decls(cd.body);
-    comp_body = compile_to_c(cd.body, nil);
+    comp_body = compile_to_c(cd.body, nothing);
 
     return (signature & " {") & indent_lines(vars_decls) & ("") & indent_lines(comp_body) & ("}");
   }
 
 
-  String* compile_to_c(Instr* instrs, <Nat, nil> block_id) = join((compile_to_c(instr, block_id) : instr <- instrs));
+  String* compile_to_c(Instr* instrs, Maybe[Nat] block_id) = join((compile_to_c(instr, block_id) : instr <- instrs));
 
-  String* compile_to_c(Instr instr, <Nat, nil> block_id) =
+  String* compile_to_c(Instr instr, Maybe[Nat] block_id) =
     init_stream(v?)       = mk_call("init", (v)),
     append()              = mk_call("append", (instr.stream, instr.obj)),
     set_at()              = mk_call("set_at", (instr.var, instr.idx, instr.value)),
@@ -464,21 +464,19 @@ implicit
     no_op                 = (),
     repeat(body?)         = compile_repeat_to_c(body, block_id),
     break_loop            = ("break;"),
-    execute_block(body?)  = { new_block_id = _counter_(nil);
-                              body_code = compile_to_c(body, new_block_id);
+    execute_block(body?)  = { new_block_id = _counter_(:any_value_will_do);
+                              body_code = compile_to_c(body, just(new_block_id));
                               label = ("block_" & printed(new_block_id) & "_end:;");
                               return body_code & label;
                             },
     try_block()           = compile_try_block_to_c(instr.var, instr.body, block_id),
-    exit_block            = { fail if block_id == nil; //assert block_id != nil; //## BAD
-                              return ("goto block_" & printed(block_id) & "_end;");
-                            },
+    exit_block            = ("goto block_" & printed(value_unsafe(block_id)) & "_end;"),
     switch_on_nat()       = compile_switch_on_nat_to_c(instr.value, instr.cases, block_id),
     symb_switch()         = compile_symb_switch_to_c(instr.value, instr.cases, instr.else, block_id),
-    call_proc()           = compile_call_proc_to_c(if instr.var? then just(instr.var) else nil, instr.name, instr.args, block_id),
+    call_proc()           = compile_call_proc_to_c(if instr.var? then just(instr.var) else nothing, instr.name, instr.args, block_id),
     call_cls()            = mk_cls_call(instr.cls_var, instr.var, instr.args), //## INLINE THE FUNCTION
     push_call_info()      = { fn_name = (printed(fn_name_to_str(instr.fn_name)));
-                              params = (if p == nil then :blank_obj else value(p) : p <- instr.params);
+                              params = (if p == nothing then :blank_obj else value(p) : p <- instr.params);
                               return (mk_gen_call("push_call_info_wrapper", fn_name, params, ()));
                             },
     pop_call_info         = mk_call("pop_call_info", ()),
@@ -497,15 +495,15 @@ implicit
     clear_input()         = { method_name = input_set_method_name(instr.type, instr.input);
                               return (method_name & "(&" & to_c_var_ref_name(instr.var) & ", make_null_obj());");
                             },
-    auto_update_node()    = compile_auto_update_node_to_c(instr.type, instr.node, if instr.time_var? then just(instr.time_var) else nil),
-    auto_apply()          = compile_auto_apply_to_c(if instr.var? then just(instr.var) else nil, instr.type),
+    auto_update_node()    = compile_auto_update_node_to_c(instr.type, instr.node, if instr.time_var? then just(instr.time_var) else nothing),
+    auto_apply()          = compile_auto_apply_to_c(if instr.var? then just(instr.var) else nothing, instr.type),
     init_db()             = (compile_init_db_to_c(instr.db_var, instr.type)),
     cleanup_db()          = (compile_cleanup_db_to_c(instr.db_var, instr.type)),
-    send_msg()            = (compile_send_msg_to_c(instr.db_var, instr.type, instr.msg, instr.is_root, if instr.res_var? then just(instr.res_var) else nil)),
+    send_msg()            = (compile_send_msg_to_c(instr.db_var, instr.type, instr.msg, instr.is_root, if instr.res_var? then just(instr.res_var) else nothing)),
     try_update()          = (compile_try_update_to_c(instr.type, instr.update_id, instr.args)),
-    set_state()           = (compile_set_state_to_c(instr.state, instr.db_var, instr.type, if instr.res_var? then just(instr.res_var) else nil)),
-    invoke_auto_method()  = (compile_invoke_method_to_c(instr.res_var, if instr.auto_var? then just(instr.auto_var) else nil, instr.type, instr.method_id, instr.args)),
-    invoke_db_method()    = (compile_invoke_method_to_c(instr.res_var, if instr.db_var? then just(instr.db_var) else nil, instr.type, instr.method_id, instr.args)),
+    set_state()           = (compile_set_state_to_c(instr.state, instr.db_var, instr.type, if instr.res_var? then just(instr.res_var) else nothing)),
+    invoke_auto_method()  = (compile_invoke_method_to_c(instr.res_var, if instr.auto_var? then just(instr.auto_var) else nothing, instr.type, instr.method_id, instr.args)),
+    invoke_db_method()    = (compile_invoke_method_to_c(instr.res_var, if instr.db_var? then just(instr.db_var) else nothing, instr.type, instr.method_id, instr.args)),
     init_value_store()    = mk_call("value_store_init", (instr.store)),
     cleanup_value_store() = mk_call("value_store_cleanup", (instr.store)),
     init_table()          = compile_init_table_to_c(instr.rel_var, instr.table),
@@ -540,23 +538,23 @@ implicit
 
   String* compile_get_bin_rel_iter_to_c(BinRelItVar var, AtomicExpr src, (Maybe[AtomicExpr], Maybe[AtomicExpr]) args) =
     match (args)
-      (nil,       nil)        = mk_call("get_bin_rel_iter",   (var, src)),
-      (just(a0?), nil)        = mk_call("get_bin_rel_iter_0", (var, src, a0)),
-      (nil,       just(a1?))  = mk_call("get_bin_rel_iter_1", (var, src, a1));
+      (nothing,   nothing)    = mk_call("get_bin_rel_iter",   (var, src)),
+      (just(a0?), nothing)    = mk_call("get_bin_rel_iter_0", (var, src, a0)),
+      (nothing,   just(a1?))  = mk_call("get_bin_rel_iter_1", (var, src, a1));
 
 
   String* compile_get_tern_rel_iter_to_c(TernRelItVar var, AtomicExpr src, (Maybe[AtomicExpr], Maybe[AtomicExpr], Maybe[AtomicExpr]) args) =
     match (args)
-      (nil,       nil,       nil)         = mk_call("get_tern_rel_iter",    (var, src)),
-      (just(a0?), nil,       nil)         = mk_call("get_tern_rel_iter_by", (var, src, 0, a0)),
-      (nil,       just(a1?), nil)         = mk_call("get_tern_rel_iter_by", (var, src, 1, a1)),
-      (nil,       nil,       just(a2?))   = mk_call("get_tern_rel_iter_by", (var, src, 2, a2)),
-      (just(a0?), just(a1?), nil)         = mk_call("get_tern_rel_iter_by", (var, src, 0, a0, a1)),
-      (just(a0?), nil,       just(a2?))   = mk_call("get_tern_rel_iter_by", (var, src, 2, a2, a0)),
-      (nil,       just(a1?), just(a2?))   = mk_call("get_tern_rel_iter_by", (var, src, 1, a1, a2));
+      (nothing,   nothing,   nothing)     = mk_call("get_tern_rel_iter",    (var, src)),
+      (just(a0?), nothing,   nothing)     = mk_call("get_tern_rel_iter_by", (var, src, 0, a0)),
+      (nothing,   just(a1?), nothing)     = mk_call("get_tern_rel_iter_by", (var, src, 1, a1)),
+      (nothing,   nothing,   just(a2?))   = mk_call("get_tern_rel_iter_by", (var, src, 2, a2)),
+      (just(a0?), just(a1?), nothing)     = mk_call("get_tern_rel_iter_by", (var, src, 0, a0, a1)),
+      (just(a0?), nothing,   just(a2?))   = mk_call("get_tern_rel_iter_by", (var, src, 2, a2, a0)),
+      (nothing,   just(a1?), just(a2?))   = mk_call("get_tern_rel_iter_by", (var, src, 1, a1, a2));
 
 
-  String* compile_try_block_to_c(LocVar var, Instr+ body, <Nat, nil> block_id)
+  String* compile_try_block_to_c(LocVar var, Instr+ body, Maybe[Nat] block_id)
   {
     var_name = to_c_var_ref_name(var);
     body_code = compile_to_c(body, block_id);
@@ -623,10 +621,10 @@ implicit
 
   String* compile_queue_deletes_to_c(RelVar rel_var, Maybe[IntVar]+ args)
   {
-    fn_name = fn_names_by_args[(a != nil : a <- args)];
+    fn_name = fn_names_by_args[(a != nothing : a <- args)];
     table_arg_str = "&" & to_c_var_ref_name(rel_var);
     updates_arg_str = "&" & pending_updates_var_ref_name(rel_var);
-    return (mk_gen_call(fn_name, (table_arg_str, updates_arg_str), (value(a) : a <- args, a != nil), ()));
+    return (mk_gen_call(fn_name, (table_arg_str, updates_arg_str), (value(a) : a <- args, a != nothing), ()));
 
     [Bool+ -> String] fn_names_by_args = [
       (true)                  -> "unary_table_delete",
@@ -662,8 +660,8 @@ implicit
 
   String* compile_get_table_iter_to_c(TableItVar it_var, AnyRelVar table, Maybe[IntVar]+ args)
   {
-    fn_name = fn_names_by_args[(a != nil : a <- args)];
-    return mk_call(fn_name, (table, it_var) & (value(a) : a <- args, a != nil));
+    fn_name = fn_names_by_args[(a != nothing : a <- args)];
+    return mk_call(fn_name, (table, it_var) & (value(a) : a <- args, a != nothing));
 
     [Bool+ -> String] fn_names_by_args = [
       (false)                 -> "unary_table_get_iter",
@@ -681,7 +679,7 @@ implicit
   }
 
 
-  String* compile_repeat_to_c(Instr+ body, <Nat, nil> block_id)
+  String* compile_repeat_to_c(Instr+ body, Maybe[Nat] block_id)
   {
     head = body(0);
     if head :: <branch(cond: BoolExpr, when_true: (<break_loop>), when_false: ())>:
@@ -708,7 +706,7 @@ implicit
     if is_root:
       name_str = update_entry_point_name(type);
       db_var_str = "&" & to_c_var_ref_name(db_var);
-      return if maybe_res_var == nil
+      return if maybe_res_var == nothing
         then mk_gen_call(name_str, (db_var_str), (msg), ("env"))
         else mk_gen_call(value(maybe_res_var), name_str, (db_var_str), (msg), ("env"));
     else
@@ -729,7 +727,7 @@ implicit
 
   String compile_set_state_to_c(AtomicExpr state, AnyDBVar db_var, DBSymbol type, Maybe[StdVar] maybe_res_var)
   {
-    if maybe_res_var != nil:
+    if maybe_res_var != nothing:
       proc_name_str = set_state_entry_point_name(type);
       db_var_str = "&" & to_c_var_ref_name(db_var);
       return mk_gen_call(value(maybe_res_var), proc_name_str, (db_var_str), (state), ("env"));
@@ -746,7 +744,7 @@ implicit
     <AutoSymbol, DBSymbol> type, MethodId id, AtomicExpr* args)
   {
     name_str = user_def_method_name(type, id);
-    target_var_str = if maybe_target_var != nil then "&" & to_c_var_ref_name(value(maybe_target_var)) else "self";
+    target_var_str = if maybe_target_var != nothing then "&" & to_c_var_ref_name(value(maybe_target_var)) else "self";
     return mk_gen_call(res_var, name_str, (target_var_str), args, ("env"));
   }
 
@@ -770,14 +768,14 @@ implicit
 
   String* compile_auto_update_node_to_c(AutoSymbol type, BlockNodeId node, Maybe[IntVar] maybe_time_var)
   {
-    time_arg = if maybe_time_var != nil then ", " & to_c_var_ref_name(value(maybe_time_var)) else "";
+    time_arg = if maybe_time_var != nothing then ", " & to_c_var_ref_name(value(maybe_time_var)) else "";
     return (node_update_method_name(type, node) & "(self" & time_arg & ", self_aux, env);");
   }
 
 
   //## BUG BUG BUG: IF THERE IS INSIDE ONE OF THE CASES A BREAK STATEMENT MEANT TO
   //## TERMINATE AN OUTER LOOP, THAT BREAK WILL TERMINATE THE SWITCH/CASE INSTEAD.
-  String* compile_switch_on_nat_to_c(IntExpr value, Instr*+ cases, <Nat, nil> block_id)
+  String* compile_switch_on_nat_to_c(IntExpr value, Instr*+ cases, Maybe[Nat] block_id)
   {
     cases_code = (
       ("case " & printed(i) & ":") & indent_lines((compile_to_c(c, block_id) | "break;", ""))
@@ -789,7 +787,7 @@ implicit
 
   //## BUG BUG BUG: IF THERE IS INSIDE ONE OF THE CASES A BREAK STATEMENT MEANT TO
   //## TERMIMATE AN OUTER LOOP, THAT BREAK WILL TERMINATE THE SWITCH/CASE INSTEAD.
-  String* compile_symb_switch_to_c(ObjExpr value, [+([+Atom], Instr+)] cases, Instr* else, <Nat, nil> block_id)
+  String* compile_symb_switch_to_c(ObjExpr value, [+([+Atom], Instr+)] cases, Instr* else, Maybe[Nat] block_id)
   {
     value_str = match (value)
       get_tag(tag_obj?)   = "get_tag_idx(" & to_c_expr(tag_obj) & ")",
@@ -809,7 +807,7 @@ implicit
 
   String* compile_auto_apply_to_c(Maybe[AnyAutoVar] var, AutoSymbol type)
   {
-    var_str = if var != nil then "&" & to_c_var_ref_name(value(var)) else "self";
+    var_str = if var != nothing then "&" & to_c_var_ref_name(value(var)) else "self";
     name_str = apply_method_name(type);
     return (mk_gen_call(name_str, (var_str), (), ("env")));
   }
@@ -880,11 +878,11 @@ implicit
 
   ///////////////////////////////////////////////////////////////////////////////
 
-  String* compile_call_proc_to_c(Maybe[ObjVar] var, ObjFnName name, <ObjExpr, BoundCls>* params, <Nat, nil> block_id)
+  String* compile_call_proc_to_c(Maybe[ObjVar] var, ObjFnName name, <ObjExpr, BoundCls>* params, Maybe[Nat] block_id)
   {
     pars_info = (gen_par_info(p) : p <- params);
     code_frags, args = unzip(pars_info);
-    call_code = if var != nil
+    call_code = if var != nothing
       then mk_fn_call(value(var), to_c_fn_name(name, length(params)), args)
       else mk_fn_call(to_c_fn_name(name, length(params)), args);
     return join(code_frags) & call_code;
@@ -895,7 +893,7 @@ implicit
     (String*, FnCallParam) gen_par_info(BoundCls p) =
       AnyClsVar   = ((), p),
       // fn_ref()    = {
-      //   par_id = _counter_(nil);
+      //   par_id = _counter_(:any_value_will_do);
       //   par_var = cls_var(par_id);
       //   par_name = to_c_expr(par_var);
       //   code = [
@@ -907,7 +905,7 @@ implicit
       // },
       bound_cls() = {
         //## BAD: THE FIRST LINES OF CODE ARE THE SAME AS ABOVE...
-        par_id = _counter_(nil);
+        par_id = _counter_(:any_value_will_do);
         par_var = cls_var(par_id);
         par_name = to_c_expr(par_var);
         code = (
@@ -950,7 +948,7 @@ implicit
   }
 
 
-  String* compile_branch_to_c(BoolExpr cond, Instr* when_true, Instr* when_false, <Nat, nil> block_id)
+  String* compile_branch_to_c(BoolExpr cond, Instr* when_true, Instr* when_false, Maybe[Nat] block_id)
   {
     assert when_true != ();
     code = ("if (" & to_c_expr(cond) & ") {")     &
@@ -965,7 +963,7 @@ implicit
 
   String* compile_runtime_check_to_c(AtomicExpr cond, String file, NzNat line, Maybe[String] text, <StdVar, ImplArg>* vars)
   {
-    text_arg = if text != nil then printed(value(text)) else "0";
+    text_arg = if text != nothing then printed(value(text)) else "0";
     header = (
       "if (is_symb(" & to_c_expr(cond) & ", symb_idx_false)) {",
       "  print_assertion_failed_msg(" & printed(file) & ", " & printed(line) & ", " & text_arg & ");"

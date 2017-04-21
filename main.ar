@@ -19,7 +19,7 @@ String* create_error_msg(ParserError err, String filename) =
   unexpected_token()        = ("Unexpected token", error_pos_msg(filename, err.found.line, err.found.col)),
   all_choices_failed()      = create_error_msg(err.error, filename),
   neg_rule_match()          = { pos = source_file_location(err.match.rule_match);
-                                return ("Syntax error in file " & filename, "The exact location of the error is unknown") if pos == nil;
+                                return ("Syntax error in file " & filename, "The exact location of the error is unknown") if pos == nothing;
                                 start_pos, end_pos = value(pos);
                                 start_line, start_col = start_pos;
                                 return ("Syntax error", error_pos_msg(filename, start_line, start_col));
@@ -32,7 +32,7 @@ Maybe[CCodeOutput] Compile(
   Bool ignore_assertions, Bool print_intermediate, Bool print_times, Bool wait_for_key
 )
 {
-  t0 = _ticks_(nil);
+  t0 = _ticks_(:any_value_will_do);
 
   decls = ();
   for fn <- rand_sort(keys(src_files)):
@@ -42,12 +42,12 @@ Maybe[CCodeOutput] Compile(
     else
       err_msg = create_error_msg(get_error(res), fn);
       Print(append(err_msg, "\n") & "\n");
-      return nil;
+      return nothing;
     ;
   ;
   syn_prg = syn_prg(parsed_src_files: merge(decls));
 
-  t1 = _ticks_(nil);
+  t1 = _ticks_(:any_value_will_do);
 
   Print("Source files parsed\n");
   if wait_for_key:
@@ -60,7 +60,7 @@ Maybe[CCodeOutput] Compile(
 
   errs = prg_wf_errors(syn_prg=syn_prg);
 
-  t2 = _ticks_(nil);
+  t2 = _ticks_(:any_value_will_do);
 
   if errs == ():
     Print("Program is well-formed\n");
@@ -75,11 +75,11 @@ Maybe[CCodeOutput] Compile(
       ;
       Print("\n");
     ;
-    return nil;
+    return nothing;
   ;
 
   prg = desugared_prg(syn_prg=syn_prg);
-  t3 = _ticks_(nil);
+  t3 = _ticks_(:any_value_will_do);
   Print("Syntax removed\n");
   if wait_for_key:
     unused_var = GetChar();
@@ -108,15 +108,15 @@ Maybe[CCodeOutput] Compile(
         Print("\n");
       ;
       Print("Number of functions with typechecking errors: " & printed(size(errs)) & "\n");
-      return nil;
+      return nothing;
     ;
   ;
 
-  t4 = _ticks_(nil);
+  t4 = _ticks_(:any_value_will_do);
 
   options = compilation_options(ignore_assertions: ignore_assertions);
   code = compiled_program(program=prg, options=options);
-  t5 = _ticks_(nil);
+  t5 = _ticks_(:any_value_will_do);
   Print("Code generated\n");
   if wait_for_key:
     unused_var = GetChar();
@@ -134,7 +134,7 @@ Maybe[CCodeOutput] Compile(
     trans_blocks: [remove_dead_code(b)  : b <- code.trans_blocks],
     int_seqs:     code.int_seqs
   );
-  t6 = _ticks_(nil);
+  t6 = _ticks_(:any_value_will_do);
   Print("Dead code removed\n");
   if wait_for_key:
     unused_var = GetChar();
@@ -161,14 +161,14 @@ Maybe[CCodeOutput] Compile(
     rc_code = opt_code;
   ;
 
-  t7 = _ticks_(nil);
+  t7 = _ticks_(:any_value_will_do);
 
   if print_intermediate:
     FileWrite("dump_rc_code.txt", false, raw_str(printed(rc_code, 100)));
   ;
 
   c_code  = compile_to_c(rc_code);
-  t8 = _ticks_(nil);
+  t8 = _ticks_(:any_value_will_do);
   Print("C code generated\n");
   if wait_for_key:
     unused_var = GetChar();
@@ -220,7 +220,7 @@ Nat* trim_spaces(Nat* line)
     skip_back = skip_back + 1;
   ;
   assert skip_front + skip_back < len;
-  return subseq(line, skip_front, nil, skip_back);
+  return subseq(line, skip_front, :blank, skip_back);
 }
 
 
@@ -268,7 +268,7 @@ Int Main(String* args)
   ;
 
   read_res = FileRead(fname);
-  if read_res == nil:
+  if read_res == nothing:
     Print("File not found: " & fname & "\n");
     return 1;
   ;
@@ -281,7 +281,7 @@ Int Main(String* args)
   src_files = [:];
   for fn <- src_file_names:
     fc = FileRead(fn);
-    if fc == nil:
+    if fc == nothing:
       Print("Can't read file: " & fn & "\n");
       return 1;
     ;
@@ -291,7 +291,7 @@ Int Main(String* args)
   output = Compile(src_files, run_typechecking, add_ref_counting, ignore_assertions,
                    print_intermediate, print_times, wait_for_key_at_every_step);
 
-  if output != nil:
+  if output != nothing:
     output = value(output);
     body = append(output.body, "\n");
     FileWrite("generated.cpp", false, _obj_(body));
@@ -305,5 +305,5 @@ Int Main(String* args)
     unused_var = GetChar();
   ;
 
-  return if output != nil then 0 else 1;
+  return if output != nothing then 0 else 1;
 }

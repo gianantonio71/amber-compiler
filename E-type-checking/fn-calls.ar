@@ -14,9 +14,9 @@ SgnSet preprocess_signatures([+FnType] signatures, [TypeName -> NeType] tdefs)
   agg_sgns = aggregate_signatures(signatures, tdefs) - signatures;
   if size(sgns_by_ret_type) == 1:
     ret_type = an_elem(only(sgns_by_ret_type)).ret_type;
-    maybe_ret_type = if is_param_type(ret_type) then nil else just(ret_type);
+    maybe_ret_type = if is_param_type(ret_type) then nothing else just(ret_type);
   else
-    maybe_ret_type = nil;
+    maybe_ret_type = nothing;
   ;
   disp_arg_idxs = dispatch_args(signatures, tdefs);
   let typedefs = tdefs:
@@ -35,7 +35,7 @@ SgnSet preprocess_signatures([+FnType] signatures, [TypeName -> NeType] tdefs)
   Maybe[Nat+] dispatch_args([+FnType] signatures, [TypeName -> NeType] tdefs)
   {
     a_sgn = an_elem(signatures);
-    return nil if arity(a_sgn) == 0 or (s <- signatures : is_param_type(s));
+    return nothing if arity(a_sgn) == 0 or (s <- signatures : is_param_type(s));
     sgns = rand_sort(signatures);
     for t @ i <- a_sgn.args:
       return just((i)) if t :: Type and is_dispatch_arg(i, sgns, tdefs);
@@ -143,13 +143,13 @@ implicit
     fn_key = (name, length(args));
     sgn_set = signatures[fn_key];
     ret_type = sgn_set.ret_type;
-    return value(ret_type) if ret_type != nil;
+    return value(ret_type) if ret_type != nothing;
 
     sgns = sgn_set.sgns;
 
     // Now we see if there's one parameter that can "decide" the dispatch
     maybe_idxs = sgn_set.disp_arg_idxs;
-    if maybe_idxs != nil:
+    if maybe_idxs != nothing:
       idxs = value(maybe_idxs);
       if length(idxs) == 1:
         // This is treated as a special case for better performance.
@@ -159,7 +159,7 @@ implicit
         fail if not disp_arg :: Expr;
         arg_type = expr_type(disp_arg, env);
         arg_ptype = pseudotype(arg_type, typedefs);
-        // I can do this because if disp_arg_idx != nil then none of the polymorphic signatures is parametric
+        // I can do this because if disp_arg_idx != nothing then none of the polymorphic signatures is parametric
         ret_types = [s.ret_type : s <- sgns, may_match(s.args(idx), arg_ptype)];
         return union_type(ret_types);
       else
@@ -167,7 +167,7 @@ implicit
         fail if not disp_args :: Expr+;
         arg_types = (expr_type(e, env) : e <- disp_args);
         arg_ptypes = (pseudotype(t, typedefs) : t <- arg_types);
-        // I can do this because if disp_arg_idx != nil then none of the polymorphic signatures is parametric
+        // I can do this because if disp_arg_idx != nothing then none of the polymorphic signatures is parametric
         ret_types = [s.ret_type : s <- sgns, may_match((s.args(i) : i <- idxs), arg_ptypes)];
         return union_type(ret_types);
       ;
@@ -197,14 +197,14 @@ implicit
       //## THIS IS THE OLD IMPLEMENTATION, STILL USED FOR PARAMETRIC FUNCTIONS.
       //## IT STILL HAS THE POLYMORPHIC RETURN VALUE BUG
       fn_key = (name, length(args));
-      param_maybe_types = (if p :: Expr then just(expr_type(p, env)) else nil : p <- args);
+      param_maybe_types = (if p :: Expr then just(expr_type(p, env)) else nothing : p <- args);
       sgn_set = signatures[fn_key];
       candidate_signatures = [s : s <- sgn_set.sgns, will_dispatch_to(s, args, env)];
       if candidate_signatures == []:
         candidate_signatures = [s : s <- sgn_set.agg_sgns, will_dispatch_to(s, args, env)];
       ;
 
-      // assert size(candidate_signatures) == 1 or (t <~ param_maybe_types : t != nil and is_subset(value(t), empty_type));
+      // assert size(candidate_signatures) == 1 or (t <~ param_maybe_types : t != nothing and is_subset(value(t), empty_type));
 
       return empty_type if size(candidate_signatures) > 1;
       signature = only(candidate_signatures);
@@ -288,13 +288,13 @@ implicit
 
     // Here we try to determine the (possibly aggregated) signature
     // of the polymorphic functions that may be actually called
-    arg_types = (if a :: Expr then just(expr_type(a, env)) else nil : a <- args);
+    arg_types = (if a :: Expr then just(expr_type(a, env)) else nothing : a <- args);
 
     candidate_signatures = [s : s <- all_sgns, will_dispatch_to(s, args, env)];
     if candidate_signatures == []:
       candidate_signatures = [s : s <- agg_sgns, will_dispatch_to(s, args, env)];
       if candidate_signatures == []:
-        arg_types = (if a :: Expr then just(expr_type(a, env)) else nil : a <- args);
+        arg_types = (if a :: Expr then just(expr_type(a, env)) else nothing : a <- args);
         avail_sgns = nonempty(all_sgns & [cls_to_fn_type(rs) : rs <- req_sgns]);
         return [no_dispatchable_function_found(name, nz_nat(length(args)), avail_sgns, nonempty(arg_types))];
       ;

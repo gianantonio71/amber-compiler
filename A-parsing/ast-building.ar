@@ -168,18 +168,18 @@ implicit filename : String, lines : Nat**
     assert is_annotated_token(nodes(0), lower) and is_annotated_token(nodes(2), double_dot) and is_annotated_token(nodes(4), greater);
     min_node = nodes(1);
     max_node = nodes(3);
-    min = bound(get_rule_name(min_node), get_rule_match(min_node));
-    max = bound(get_rule_name(max_node), get_rule_match(max_node));
-    return match (min, max)
-             nil,   nil   = integer,
-             nil,   *     = low_ints(max),
-             *,     nil   = high_ints(min),
-             *,     *     = syn_int_range(min, max);
+    maybe_min = bound(get_rule_name(min_node), get_rule_match(min_node));
+    maybe_max = bound(get_rule_name(max_node), get_rule_match(max_node));
+    return match (maybe_min, maybe_max)
+      nothing,    nothing     = integer,
+      nothing,    just(max?)  = low_ints(max),
+      just(min?), nothing     = high_ints(min),
+      just(min?), just(max?)  = syn_int_range(min, max);
 
-    <Int, nil> bound(Atom bound_type, RuleMatch mtc) =
-      asterisk      = nil,
-      integer       = get_integer(mtc),
-      neg_integer   = -get_integer(mtc, 1),
+    Maybe[Int] bound(Atom bound_type, RuleMatch mtc) =
+      asterisk      = nothing,
+      integer       = just(get_integer(mtc)),
+      neg_integer   = just(-get_integer(mtc, 1)),
       _             = {fail;};
   }
 
@@ -439,7 +439,7 @@ implicit filename : String, lines : Nat**
       res_type = just(build_type_ast(ns[0]));
       name = proc_symbol(get_lowercase_id(ns[1]));
     else
-      res_type = nil;
+      res_type = nothing;
       name = proc_symbol(get_lowercase_id(get_rule_match(nodes(0))));
     ;
 
@@ -680,7 +680,7 @@ implicit filename : String, lines : Nat**
         return just(build_expr_ast(get_rule_match(mtc)));
       else
         assert label == :any;
-        return nil;
+        return nothing;
       ;
     }
   }
@@ -725,7 +725,6 @@ implicit filename : String, lines : Nat**
       float               = get_float_lit(inner_match),
       true                = object(true),
       false               = object(false),
-      nil                 = object(nil),
       set                 = build_set_expr_ast(block_node(inner_match)),
       empty_bin_rel       = syn_bin_rel_expr(()),
       map                 = build_map_expr_ast(inner_match),
@@ -775,7 +774,7 @@ implicit filename : String, lines : Nat**
     assert length(arg_sect_nodes) == 4;
     pre_args = (build_expr_ast(rule_seq_node(n, 0)) : n <- rep_rule_nodes(arg_sect_nodes(0)));
     post_args = (build_expr_ast(n) : n <- rep_rule_nodes(arg_sect_nodes(3)));
-    all_args = (just(a) : a <- pre_args) & (nil) & (just(a) : a <- post_args);
+    all_args = (just(a) : a <- pre_args) & (nothing) & (just(a) : a <- post_args);
     return syn_rel_lookup(nonempty(symbol_chain), nonempty(all_args));
   }
 
@@ -900,7 +899,7 @@ implicit filename : String, lines : Nat**
       ns = rule_seq_nodes(nodes(4));
       sel_expr = just(build_expr_ast(ns[1]));
     else
-      sel_expr = nil;
+      sel_expr = nothing;
     ;
 
     var_and_type_node = nodes(2);
@@ -911,14 +910,14 @@ implicit filename : String, lines : Nat**
         sub_ns = rule_seq_nodes(ns[1]);
         idx_var = just(var(get_lowercase_id(sub_ns[1])));
       else
-        idx_var = nil;
+        idx_var = nothing;
       ;
       return seq_comp(
         expr:       expr,
         vars:       nonempty(vars),
-        idx_var:    value(idx_var) if idx_var != nil,
+        idx_var:    value(idx_var) if idx_var != nothing,
         src_expr:   src_expr,
-        sel_expr:   value(sel_expr) if sel_expr != nil
+        sel_expr:   value(sel_expr) if sel_expr != nothing
       );
 
     else
@@ -928,7 +927,7 @@ implicit filename : String, lines : Nat**
       op = get_token(ns[1]);
       assert op == lower or op == lower_eq;
       inclusive = op == lower_eq;
-      return range_comp(expr: expr, var: var, bound_expr: src_expr, inclusive: inclusive, sel_expr: value(sel_expr) if sel_expr != nil);
+      return range_comp(expr: expr, var: var, bound_expr: src_expr, inclusive: inclusive, sel_expr: value(sel_expr) if sel_expr != nothing);
     ;
   }
 
@@ -1350,7 +1349,7 @@ implicit filename : String, lines : Nat**
       cond_line = lines[start_line-1];
       cond_text = just(string(subseq(cond_line, start_col-1, end_col-start_col+1)));
     else
-      cond_text = nil;
+      cond_text = nothing;
     ;
     return syn_assert_stmt(cond, filename, start_line, cond_text);
   }
@@ -1421,7 +1420,7 @@ implicit filename : String, lines : Nat**
       label = get_rule_name(mtc);
       content = get_rule_match(mtc);
       assert label == :value or label == :any;
-      return if label == :value then just(build_expr_ast(content)) else nil;
+      return if label == :value then just(build_expr_ast(content)) else nothing;
     }
   }
 
@@ -1584,10 +1583,10 @@ implicit filename : String, lines : Nat**
     nodes = rule_seq_nodes(mtc);
     assert length(nodes) == 4;
     vars = (
-      if get_token(n) == underscore then nil else just(get_lowercase_id(n))
+      if get_token(n) == underscore then nothing else just(get_lowercase_id(n))
       : n <- rep_rule_nodes(nodes(0))
     );
-    idx_var = if nodes(1) != null_match then just(get_lowercase_id(nodes(1), 1)) else nil;
+    idx_var = if nodes(1) != null_match then just(get_lowercase_id(nodes(1), 1)) else nothing;
     src = build_expr_ast(nodes(3));
     return syn_seq_clause(nonempty(vars), idx_var, src);
   }
@@ -2123,7 +2122,7 @@ implicit filename : String, lines : Nat**
     if cond_node != null_match:
       cond = just(build_expr_ast(rule_seq_node(cond_node, 1)));
     else
-      cond = nil;
+      cond = nothing;
     ;
 
     signals_node = nodes(4);

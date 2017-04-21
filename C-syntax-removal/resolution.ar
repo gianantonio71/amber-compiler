@@ -140,7 +140,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
   {
     pre_resols = resolve_symbol_chain(symbols, def_vars);
     relvar_resols = [r : r <- pre_resols, r :: AnyRelVar];
-    expr_resols = [value(er) : r <- pre_resols, er = try_resolve_as_expr(r), er != nil];
+    expr_resols = [value(er) : r <- pre_resols, er = try_resolve_as_expr(r), er != nothing];
     return min_by(relvar_resols & expr_resols, resol_priority($));
   }
 
@@ -158,7 +158,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
   resolve_by_priority_as_expr(Atom+ symbols, [Var] def_vars)
   {
     resols = resolve_symbol_chain(symbols, def_vars);
-    expr_resols = [value(er) : r <- resols, er = try_resolve_as_expr(r), er != nil];
+    expr_resols = [value(er) : r <- resols, er = try_resolve_as_expr(r), er != nothing];
     return min_by(expr_resols, resol_priority($)); //## BAD BAD: WORKAROUND FOR TYPECHECKING BUG
   }
 
@@ -196,13 +196,13 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
   Just[SymbChainExpr] try_resolve_as_expr(SymbChainExpr expr) = just(expr);
 
 
-  Nil try_resolve_as_expr(<ClsVar, AnyAutoVar, AnyDBVar, AnyRelVar>) = nil;
+  Nothing try_resolve_as_expr(<ClsVar, AnyAutoVar, AnyDBVar, AnyRelVar>) = nothing;
 
 
   Maybe[FnCallExpr] try_resolve_as_expr(FnFamilyId fn_symb) =
     if function_exists(fn_symb, 0)
       then just(fn_call(fn_symb, (), [:]))
-      else nil;
+      else nothing;
 
 
   Maybe[AutoMethodCall] try_resolve_as_expr(PreAutoCall precall)
@@ -214,7 +214,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
         return just(auto_method_call(var: precall.var if precall.var?, name: precall.method, args: ()));
       ;
     ;
-    return nil;
+    return nothing;
   }
 
 
@@ -227,7 +227,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
         return just(db_method_call(var: precall.var if precall.var?, name: precall.method, args: ()));
       ;
     ;
-    return nil;
+    return nothing;
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -238,20 +238,20 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
   {
     resols = resolve_symbol(head(symbols), def_vars);
     for s <- tail(symbols):
-      resols = [value(nr) : r <- resols, nr = try_resolve_accessor(r, s), nr != nil];
+      resols = [value(nr) : r <- resols, nr = try_resolve_accessor(r, s), nr != nothing];
     ;
     return resols;
 
 
-    Nil try_resolve_accessor(<ClsVar, AnyRelVar>, Atom) = nil;
+    Nothing try_resolve_accessor(<ClsVar, AnyRelVar>, Atom) = nothing;
 
 
     Maybe[SymbChainExpr] try_resolve_accessor(<FnFamilyId, PreCall> target, Atom field)
     {
       maybe_resol_target = try_resolve_as_expr(target);
-      return if maybe_resol_target != nil
+      return if maybe_resol_target != nothing
         then just(accessor(expr: value(maybe_resol_target), field: object(field)))
-        else nil;
+        else nothing;
     }
 
 
@@ -274,7 +274,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
       elif method_ids_by_automaton_id[bare_id(auto_type)](field):
         return just(pre_auto_method_call(target, method_symbol(field)));
       else
-        return nil;
+        return nothing;
       ;
     }
 
@@ -292,7 +292,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
       elif method_ids_by_db_id[bare_id(target_type)](field):
         return just(pre_db_method_call(target, method_symbol(field)));
       else
-        return nil;
+        return nothing;
       ;
     }
   }
@@ -336,7 +336,7 @@ implicit syn_prg : SynPrg
         interface = auto_interfaces[auto_symbol(v.type)];
         resol = loc_auto_var(symbol);
         def_output = interface.default_output;
-        resol = qual_auto_memb_var(loc_auto_var(symbol), memb_var(value(def_output))) if def_output != nil;
+        resol = qual_auto_memb_var(loc_auto_var(symbol), memb_var(value(def_output))) if def_output != nothing;
         resols = resols & [resol];
       ;
     ;
@@ -355,7 +355,7 @@ implicit syn_prg : SynPrg
     if internals.nested_autos(symbol, ?):
       auto_type = auto_symbol(internals.nested_autos[symbol]);
       interface = auto_interfaces[auto_type];
-      resol = if interface.default_output == nil then memb_auto_var(symbol) else memb_var(symbol);
+      resol = if interface.default_output == nothing then memb_auto_var(symbol) else memb_var(symbol);
       resols = resols & [resol];
     ;
 

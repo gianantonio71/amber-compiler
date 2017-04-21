@@ -31,16 +31,17 @@ type Bit            = <0..1>;
 type Byte           = <0..255>;
 type String         = string(Nat*);
 
-type Nil            = nil;
+type Nothing        = nothing;
 type Just[T]        = just(T);
-type Maybe[T]       = nil, just(T);
+type Maybe[T]       = nothing, just(T);
 
 type Result[TS, TF] = success(TS), failure(TF);
 
-type List[T]        = nil, list(head: T, tail: List[T]);
-type Stack[T]       = nil, stack(top: T, rest: Stack[T]);
+type Stack[T]       = empty_stack, stack(top: T, rest: Stack[T]);
 
-////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
+
+<empty_stack> empty_stack = :empty_stack;
 
 Stack[T] push(Stack[T] stack, T item) = stack(top: item, rest: stack);
 
@@ -61,6 +62,8 @@ Stack[T] replace_top(Stack[T] stack, T new_top) =
 // Replace this with === or ~=
 Bool is_eq(T x, Maybe[T] maybe) = maybe == :just(x);
 
+Nothing nothing = :nothing;
+
 Just[T] just(T x) = :just(x);
 
 T value(Just[T]) =
@@ -70,15 +73,15 @@ T value_unsafe(Maybe[T]) =
   just(x?)  = x,
   _         = {fail;};
 
-Maybe[T] maybe(T x, Bool cond) = if cond then :just(x) else nil;
+Maybe[T] maybe(T x, Bool cond) = if cond then :just(x) else nothing;
 
-T* values(Maybe[T]* maybe_seq) = (value(maybe_value) : maybe_value <- maybe_seq, maybe_value != nil);
+T* values(Maybe[T]* maybe_seq) = (value(maybe_value) : maybe_value <- maybe_seq, maybe_value != nothing);
 
-[T] values([Maybe[T]] maybe_seq) = [value(maybe_value) : maybe_value <- maybe_seq, maybe_value != nil];
+[T] values([Maybe[T]] maybe_seq) = [value(maybe_value) : maybe_value <- maybe_seq, maybe_value != nothing];
 
 Maybe[T2] apply(Maybe[T1] m, (T1 -> T2) f) =
   just(x?)  = just(f(x)),
-  nil       = nil;
+  nothing   = nothing;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -288,12 +291,12 @@ T* right_subseq(T* seq, Int first) = _slice_(seq, first, length(seq) - first);
 // [T] subseq([T] seq, Nat first, Nat count) = _slice_(seq, first, count);
 T* subseq(T* seq, Int first, Int count) = _slice_(seq, first, count);
 
-// [T] subseq([T] s, <nil>, Nat m, Nat r) = subseq(s, length(s)-m-r, m);
-T* subseq(T* s, <nil>, Int m, Int r) = subseq(s, length(s)-m-r, m);
-// [T] subseq([T] s, Nat l, <nil>, Nat r) = subseq(s, l, length(s)-l-r);
-T* subseq(T* s, Int l, <nil>, Int r) = subseq(s, l, length(s)-l-r);
-// [T] subseq([T] s, Nat l, Nat m, <nil>) = subseq(s, l, m);
-T* subseq(T* s, Int l, Int m, <nil>) = subseq(s, l, m);
+// [T] subseq([T] s, <blank>, Nat m, Nat r) = subseq(s, length(s)-m-r, m);
+T* subseq(T* s, <blank>, Int m, Int r) = subseq(s, length(s)-m-r, m);
+// [T] subseq([T] s, Nat l, <blank>, Nat r) = subseq(s, l, length(s)-l-r);
+T* subseq(T* s, Int l, <blank>, Int r) = subseq(s, l, length(s)-l-r);
+// [T] subseq([T] s, Nat l, Nat m, <blank>) = subseq(s, l, m);
+T* subseq(T* s, Int l, Int m, <blank>) = subseq(s, l, m);
 
 
 T** split(T* seq, T sep)
@@ -318,7 +321,7 @@ Maybe[Nat] left_search(Seq seq, Seq subseq)
   for i < max(0, last_idx+1):
     return just(i) if subseq_matches(seq, subseq, i);
   ;
-  return nil;
+  return nothing;
 
   Bool subseq_matches(Seq seq, Seq subseq, Nat offset)
   {
@@ -349,7 +352,7 @@ Bool* bit_map(Int* idxs, Nat len) = (in(i, idxs) : i < len); //## BAD: HORRIBLY 
 //## BAD: THE NAME IS TOTALLY MEANINGLESS
 [Nat -> Nat] packed_seq_idxs(Bool* bs)
 {
-  idxs : <Nat, nil>*;
+  idxs : <Nat, none>*;
 
   idxs = ();
   idx = 0;
@@ -358,11 +361,11 @@ Bool* bit_map(Int* idxs, Nat len) = (in(i, idxs) : i < len); //## BAD: HORRIBLY 
       idxs = (idxs | idx);
       idx = nat(idx + 1);
     else
-      idxs = (idxs | nil);
+      idxs = (idxs | :none);
     ;
-    // idxs = idxs & (if b then just(length(idxs)) else nil);
+    // idxs = idxs & (if b then just(length(idxs)) else :none);
   ;
-  return merge(([j -> i] : i @ j <- idxs, i != nil));
+  return merge(([j -> i] : i @ j <- idxs, i != :none));
 }
 
 Nat count(T* xs, (T -> Bool) p) = nat(sum((bit(p(x)) : x <- xs)));
@@ -432,7 +435,7 @@ T2 (_[_])([T1 -> T2] map, T1 key) = map(key);
 
 T2 lookup([T1 -> T2] map, T1 key, T2 default) = if has_key(map, key) then map[key] else default;
 
-Maybe[T2] maybe_lookup([T1 -> T2] map, T1 key) = if has_key(map, key) then just(map[key]) else nil;
+Maybe[T2] maybe_lookup([T1 -> T2] map, T1 key) = if has_key(map, key) then just(map[key]) else nothing;
 
 [T1 -> T2] update([T1 -> T2] map, [T1 -> T2] diffs) = [k -> map[k] : k <- keys(map) - keys(diffs)] & diffs;
 
@@ -558,12 +561,12 @@ String append(String* ss, String sep)    = string(join(intermix((raw_str(s) : s 
 String reverse(String s)                  = string(reverse(_obj_(s)));
 String substr(String s, Int n, Int m)     = string(subseq(_obj_(s), n, m));
 
-String substr(String s, <nil> l, Int m, Int r) = string(subseq(raw_str(s), l, m, r));
-String substr(String s, Int l, <nil> m, Int r) = string(subseq(raw_str(s), l, m, r));
-String substr(String s, Int l, Int m, <nil> r) = string(subseq(raw_str(s), l, m, r));
+String substr(String s, <blank> l, Int m, Int r) = string(subseq(raw_str(s), l, m, r));
+String substr(String s, Int l, <blank> m, Int r) = string(subseq(raw_str(s), l, m, r));
+String substr(String s, Int l, Int m, <blank> r) = string(subseq(raw_str(s), l, m, r));
 
 String (_*_) (Nat len, String str)    = string(len * raw_str(str));
-<Nat, nil> at(String str, Int idx)    = at(raw_str(str), idx, nil);
+// <Nat, n i l> at(String str, Int idx)    = at(raw_str(str), idx, n i l);
 
 Bool (_<_)(String str1, String str2)
 {
@@ -775,7 +778,7 @@ T only(T* seq)
 Maybe[T] maybe_only(T* seq)
 {
   fail if length(seq) > 1;
-  return if seq != () then just(seq[0]) else nil;
+  return if seq != () then just(seq[0]) else nothing;
 }
 
 
@@ -815,7 +818,7 @@ T reduce(T+ xs, (T T -> T) f)
 //   for (x1 @ i1 : seq)
 //     for (i2 = i1+1 .. len)
 //       maybe = f(x1, seq[x2]);
-//       res = [res | value(maybe)] if maybe != nil;
+//       res = [res | value(maybe)] if maybe != nothing;
 //     ;
 //   ;
 //   return res;

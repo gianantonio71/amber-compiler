@@ -12,13 +12,13 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef
 
     // Desugaring plain rules, which can have implicit repeated conditions
     plain_rules_output = [desugar_plain_rule(r) : r <- syn_plain_rules];
-    rules = merge([value(r) : o <- plain_rules_output, r = left(o), r != nil]);
-    rep_actions_1 = [value(a) : o <- plain_rules_output, a = right(o), a != nil];
+    rules = merge([value(r) : o <- plain_rules_output, r = left(o), r != nothing]);
+    rep_actions_1 = [value(a) : o <- plain_rules_output, a = right(o), a != nothing];
 
     // Desugaring conditional rules, which can have additional repeated conditions
     cond_rule_output = [desugar_cond_rule(r) : r <- syn_cond_rules];
-    actions = [value(a) : o <- cond_rule_output, a = left(o), a != nil];
-    rep_actions_2 = [value(a) : o <- cond_rule_output, a = right(o), a != nil];
+    actions = [value(a) : o <- cond_rule_output, a = left(o), a != nothing];
+    rep_actions_2 = [value(a) : o <- cond_rule_output, a = right(o), a != nothing];
 
     // Foreach rules can only lead to repeated actions
     rep_actions_3 = [foreach_rule_to_repeated_action(r) : r <- syn_foreach_rules];
@@ -41,14 +41,14 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef
     // Creating shadow member variables for automata with default output
     def_output_rules = [
       na.name -> qual_auto_memb_var(memb_auto_var(na.name), memb_var(value(intf.default_output)))
-      : na <- syn_nested_autos, intf = auto_interfaces[auto_symbol(na.auto_name)], intf.default_output != nil
+      : na <- syn_nested_autos, intf = auto_interfaces[auto_symbol(na.auto_name)], intf.default_output != nothing
     ];
 
     // Desugaring method calls on nested automata
     all_msg_send_actions = [msg_send_to_action(c) : c <- syn_msg_sends];
-    cond_method_calls = [value(ca) : a <- all_msg_send_actions, ca = left(a), ca != nil];
+    cond_method_calls = [value(ca) : a <- all_msg_send_actions, ca = left(a), ca != nothing];
     actions = actions & cond_method_calls;
-    rep_method_calls = [value(ra) : a <- all_msg_send_actions, ra = right(a), ra != nil];
+    rep_method_calls = [value(ra) : a <- all_msg_send_actions, ra = right(a), ra != nothing];
     rep_actions = rep_actions & rep_method_calls;
 
     // // Identifying and separating constant rules
@@ -114,30 +114,30 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef
     msg_send = msg_send(target, message);
 
     maybe_syn_cond = syn_msg_send.cond;
-    maybe_cond = if maybe_syn_cond != nil
+    maybe_cond = if maybe_syn_cond != nothing
                    then just(desugar_auto_expr(value(maybe_syn_cond), []))
-                   else nil;
+                   else nothing;
 
     // If the list of discrete signals is not given explicitly, we search
     // the parameter list and the condition for discrete signals
     if syn_msg_send.signals != ():
       signals = (memb_var(a) : a <- syn_msg_send.signals);
     else
-      all_signals = union([auto_expr_extern_vars(e) : e <- [message, value(maybe_cond) if maybe_cond != nil]]);
+      all_signals = union([auto_expr_extern_vars(e) : e <- [message, value(maybe_cond) if maybe_cond != nothing]]);
       signals = rand_sort([s : s <- all_signals, s :: <MembVar, QualAutoMembVar>, signal_is_discrete(s)]);
     ;
     signals_set_conds = (is_set(s) : s <- signals);
 
-    if maybe_cond != nil:
+    if maybe_cond != nothing:
       cond = value(maybe_cond);
       // If no discrete signals are involved, this is a (non-repeated) conditional action
-      return (just(cond_action(cond, [msg_send], [])), nil) if signals_set_conds == ();
+      return (just(cond_action(cond, [msg_send], [])), nothing) if signals_set_conds == ();
       cond = and_expr((signals_set_conds | cond));
     else
       cond = and_expr(nonempty(signals_set_conds));
     ;
 
-    return (nil, just(rep_action(cond, [msg_send], [])));
+    return (nothing, just(rep_action(cond, [msg_send], [])));
   }
 
 
@@ -166,12 +166,12 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef
     // If a plain rule does not contain any discrete signals,
     // then it defines a continuous intermediate signal
     assert not rule.discrete or discrete_signals != [];
-    return (just([rule.name -> expr]), nil) if discrete_signals == [];
+    return (just([rule.name -> expr]), nothing) if discrete_signals == [];
 
     // Now it's either a discrete signals definition or a state variable update
     cond = and_expr((is_set(v) : v <- rand_sort(discrete_signals)));
     action = if rule.discrete then discrete_signal_def(rule.name, expr) else state_update(rule.name, expr);
-    return (nil, just(rep_action(cond, [action], [])));
+    return (nothing, just(rep_action(cond, [action], [])));
   }
 
 
@@ -198,11 +198,11 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef
           inner_cond = and_expr((is_set(s) : s <- dss));
           cond = and_expr(inner_cond, cond);
         ;
-        return (nil, just(rep_action(outer_cond, [rep_action(cond, [action], [])], [])));
+        return (nothing, just(rep_action(outer_cond, [rep_action(cond, [action], [])], [])));
       ;
     ;
 
-    return (just(cond_rule_to_action(target, branches, rule.discrete)), nil);
+    return (just(cond_rule_to_action(target, branches, rule.discrete)), nothing);
   }
 
 

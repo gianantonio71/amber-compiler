@@ -319,7 +319,7 @@ implicit
 
     if not expr.sel_expr?:
       maybe_src_tuple_types_set = maybe_tuple_types_union(src_type);
-      if maybe_src_tuple_types_set != nil:
+      if maybe_src_tuple_types_set != nothing:
         src_tuple_types_set = value(maybe_src_tuple_types_set);
         tuple_types = [({
               env_delta = asgnm_env_updates(expr.vars, field_type);
@@ -616,12 +616,12 @@ implicit
     nvars = nz_nat(length(vars));
     if nvars == 1:
       var = vars(0);
-      env_delta = [value(var) -> elem_type if var != nil];
+      env_delta = [value(var) -> elem_type if var != nothing];
     else
       types = tuple_field_supertypes(elem_type, nvars);
-      env_delta = merge(([value(v) -> t] : v, t <- zip(vars, types), v != nil));
+      env_delta = merge(([value(v) -> t] : v, t <- zip(vars, types), v != nothing));
     ;
-    env_delta = env_delta & [value(idx_var) -> type_nat] if idx_var != nil;
+    env_delta = env_delta & [value(idx_var) -> type_nat] if idx_var != nothing;
 
     return env & env_delta;
   }
@@ -630,15 +630,15 @@ implicit
   [Var -> Type] gen_rel_clause_env(StdVar+ vars, Expr src, Maybe[Expr]+ args, [Var -> Type] env)
   {
     assert length(args) == 2 or length(args) == 3;
-    assert length(vars) == count(args, $ == nil);
+    assert length(vars) == count(args, $ == nothing);
 
     src_expr_type = expr_type(src, env);
     rel_arity = length(args);
     args_types = if rel_arity == 2
       then bin_rel_args_supertypes(src_expr_type)
       else tern_rel_args_supertypes(src_expr_type);
-    idxs = packed_seq_idxs((a == nil : a <- args));
-    env_delta = merge(([vars(idxs(i)) -> args_types(i)] : a @ i <- args, a == nil));
+    idxs = packed_seq_idxs((a == nothing : a <- args));
+    env_delta = merge(([vars(idxs(i)) -> args_types(i)] : a @ i <- args, a == nothing));
     return env & env_delta;
   }
 
@@ -742,14 +742,14 @@ implicit
     lower_bound = lower_bound(lower_bound_type);
     upper_bound = upper_bound(upper_bound_type);
 
-    if lower_bound == nil:
-      if upper_bound == nil:
+    if lower_bound == nothing:
+      if upper_bound == nothing:
         return integer;
       else
         return low_ints(value(upper_bound) + upper_bound_adj);
       ;
     else
-      if upper_bound == nil:
+      if upper_bound == nothing:
         return high_ints(value(lower_bound));
       else
         return int_range(value(lower_bound), value(upper_bound) + upper_bound_adj);
@@ -758,23 +758,23 @@ implicit
 
 
     Maybe[Int] lower_bound(NeType type) =
-      integer           = nil,
-      low_ints()        = nil,
+      integer           = nothing,
+      low_ints()        = nothing,
       high_ints()       = just(type.min),
       int_range()       = just(type.min),
       union_type(ts?)   = { lbs = [lower_bound(t) : t <- ts];
-                            return if in(nil, lbs) then nil else just(min([value_unsafe(lb) : lb <- lbs]));
+                            return if in(nothing, lbs) then nothing else just(min([value_unsafe(lb) : lb <- lbs]));
                           },
       type_ref(ts?)     = lower_bound(cast_ne_type(expand_type_ref(ts, typedefs))); //## BUG BUG BUG: THE CAST IS WRONG
 
 
     Maybe[Int] upper_bound(NeType type) =
-      integer           = nil,
+      integer           = nothing,
       low_ints()        = just(type.max),
-      high_ints()       = nil,
+      high_ints()       = nothing,
       int_range()       = just(max(type)),
       union_type(ts?)   = { ubs = [upper_bound(t) : t <- ts];
-                            return if in(nil, ubs) then nil else just(max([value_unsafe(ub) : ub <- ubs]));
+                            return if in(nothing, ubs) then nothing else just(max([value_unsafe(ub) : ub <- ubs]));
                           },
       type_ref(ts?)     = upper_bound(cast_ne_type(expand_type_ref(ts, typedefs))); //## BUG BUG BUG: THE CAST IS WRONG
   }
@@ -838,7 +838,7 @@ implicit
     supertype = match (args)
       (_, _)    = type_ne_bin_rel,
       (_, _, _) = type_ne_tern_rel;
-    return is_subset(expr_type(src, env), supertype) and all((a == nil : a <- args));
+    return is_subset(expr_type(src, env), supertype) and all((a == nothing : a <- args));
   }
 }
 
@@ -904,12 +904,12 @@ implicit {
     nvars = nz_nat(length(vars));
     if nvars == 1:
       var = vars(0);
-      env_delta = [value(var) -> elem_type if var != nil];
+      env_delta = [value(var) -> elem_type if var != nothing];
     else
       types = tuple_field_supertypes(elem_type, nvars);
-      env_delta = merge(([value(v) -> t] : v, t <- zip(vars, types), v != nil));
+      env_delta = merge(([value(v) -> t] : v, t <- zip(vars, types), v != nothing));
     ;
-    env_delta = env_delta & [value(idx_var) -> type_nat] if idx_var != nil;
+    env_delta = env_delta & [value(idx_var) -> type_nat] if idx_var != nothing;
     new_env = env & env_delta;
     tree = :repeated(tail(new_env));
     tree = :any([:never, tree]) if is_subset(empty_seq_type, src_type);
@@ -920,13 +920,13 @@ implicit {
   IterTree rel_clause_iter_tree(StdVar+ vars, Expr src, Maybe[Expr]+ args, [Var -> Type] env, ([Var -> Type] -> IterTree) tail)
   {
     assert length(args) == 2 or length(args) == 3;
-    assert length(vars) == count(args, $ == nil);
+    assert length(vars) == count(args, $ == nothing);
 
     src_type = expr_type(src, env);
 
-    idxs = packed_seq_idxs((a == nil : a <- args));
-    maybe_vars = (if a == nil then just(vars(idxs(i))) else nil : a @ i <- args);
-    assert all(((v == nil) != (a == nil) : v, a <- zip(maybe_vars, args)));
+    idxs = packed_seq_idxs((a == nothing : a <- args));
+    maybe_vars = (if a == nothing then just(vars(idxs(i))) else nothing : a @ i <- args);
+    assert all(((v == nothing) != (a == nothing) : v, a <- zip(maybe_vars, args)));
 
     return match (maybe_vars)
       (v1?, v2?)  = bin_rel_clause_iter_tree(src_type, v1, v2, env, tail),
@@ -951,15 +951,15 @@ implicit {
 
 
     [Var -> Type] env_delta((NeType, NeType) types, Maybe[StdVar] left_var, Maybe[StdVar] right_var) = [
-        value(left_var)  -> left(types)  if left_var != nil,
-        value(right_var) -> right(types) if right_var != nil
+      value(left_var)  -> left(types)  if left_var != nothing,
+      value(right_var) -> right(types) if right_var != nothing
     ];
   }
 
 
   IterTree tern_rel_clause_iter_tree(Type src_type, (Maybe[StdVar], Maybe[StdVar], Maybe[StdVar]) vars, [Var -> Type] env, ([Var -> Type] -> IterTree) tail) =
     empty_tern_rel_type = :never,
-    ne_tern_rel_type()  = :repeated(:any([tail(env & [value(v) -> s(i) : v @ i <~ vars, v != nil]) : s <- src_type.signatures])),
+    ne_tern_rel_type()  = :repeated(:any([tail(env & [value(v) -> s(i) : v @ i <~ vars, v != nothing]) : s <- src_type.signatures])),
     union_type(ts?)     = :any([tern_rel_clause_iter_tree(t, vars, env, tail) : t <- ts]),
     type_ref(ts?)       = tern_rel_clause_iter_tree(expand_type_ref(ts, typedefs), vars, env, tail),
     empty_type          = :never;
@@ -1283,8 +1283,8 @@ implicit
     return_stmt(e?)     = expr_type(e, env),
     if_stmt()           = if_stmt_return_type(stmt.cond, stmt.body, stmt.else, env),
     loop_stmt(ss?)      = loop_stmt_return_type(ss, env),
-    foreach_stmt()      = foreach_stmt_return_type(stmt.vars, if stmt.idx_var? then just(stmt.idx_var) else nil, stmt.values, stmt.body, env),
-    for_stmt()          = for_stmt_return_type(if stmt.var? then just(stmt.var) else nil, stmt.start_val, stmt.end_val, stmt.end_val_incl, stmt.body, env),
+    foreach_stmt()      = foreach_stmt_return_type(stmt.vars, if stmt.idx_var? then just(stmt.idx_var) else nothing, stmt.values, stmt.body, env),
+    for_stmt()          = for_stmt_return_type(if stmt.var? then just(stmt.var) else nothing, stmt.start_val, stmt.end_val, stmt.end_val_incl, stmt.body, env),
     let_stmt()          = let_stmt_return_type(stmt.asgnms, stmt.body, env),
     break_stmt          = empty_type,
     fail_stmt           = empty_type,
@@ -1318,7 +1318,7 @@ implicit
   {
     elem_type = seq_elem_supertype(expr_type(values, env));
     assert elem_type != empty_type;
-    env_delta = asgnm_env_updates(vars, elem_type) & [value(maybe_idx_var) -> type_nat if maybe_idx_var != nil];
+    env_delta = asgnm_env_updates(vars, elem_type) & [value(maybe_idx_var) -> type_nat if maybe_idx_var != nothing];
     env_0 = update(env, env_delta);
     env_1 = update_env(body, env_0);
     ret_type_0 = return_type(body, env_0);
@@ -1329,7 +1329,7 @@ implicit
 
   Type for_stmt_return_type(Maybe[Var] maybe_var, Expr start_val, Expr end_val, Bool end_val_incl, Statement+ body, [Var -> Type] env)
   {
-    env_0 = env & [value(maybe_var) -> type_nat if maybe_var != nil];
+    env_0 = env & [value(maybe_var) -> type_nat if maybe_var != nothing];
     env_1 = update_env(body, env_0);
     ret_type_0 = return_type(body, env_0);
     ret_type_1 = return_type(body, env_1);
@@ -1364,8 +1364,8 @@ implicit
     return_stmt(e?)     = unreachable_env(env),
     if_stmt()           = if_stmt_update_env(stmt.cond, stmt.body, stmt.else, env),
     loop_stmt(ss?)      = loop_stmt_update_env(ss, env),
-    foreach_stmt()      = foreach_stmt_update_env(stmt.vars, if stmt.idx_var? then just(stmt.idx_var) else nil, stmt.values, stmt.body, env),
-    for_stmt()          = for_stmt_update_env(if stmt.var? then just(stmt.var) else nil, stmt.start_val, stmt.end_val, stmt.end_val_incl, stmt.body, env),
+    foreach_stmt()      = foreach_stmt_update_env(stmt.vars, if stmt.idx_var? then just(stmt.idx_var) else nothing, stmt.values, stmt.body, env),
+    for_stmt()          = for_stmt_update_env(if stmt.var? then just(stmt.var) else nothing, stmt.start_val, stmt.end_val, stmt.end_val_incl, stmt.body, env),
     let_stmt()          = let_stmt_update_env(stmt.asgnms, stmt.body, env),
     break_stmt          = unreachable_env(env),
     fail_stmt           = unreachable_env(env),
@@ -1419,7 +1419,7 @@ implicit
   {
     elem_type = seq_elem_supertype(expr_type(values, env));
     // assert elem_type != empty_type;
-    loop_vars = set(vars) & [value(maybe_idx_var) if maybe_idx_var != nil];
+    loop_vars = set(vars) & [value(maybe_idx_var) if maybe_idx_var != nothing];
     assert disjoint(keys(env), loop_vars);
     nvars = nz_nat(length(vars));
     if nvars == 1:
@@ -1428,7 +1428,7 @@ implicit
       field_types = tuple_field_supertypes(elem_type, nvars);
       non_idx_typed_loop_vars = merge(([v -> t] : v, t <- zip(vars, field_types)));
     ;
-    env_0 = env & non_idx_typed_loop_vars & [value(maybe_idx_var) -> type_nat if maybe_idx_var != nil];
+    env_0 = env & non_idx_typed_loop_vars & [value(maybe_idx_var) -> type_nat if maybe_idx_var != nothing];
     env_1 = update_env(body, env_0);
     return merge_envs([env, remove_keys(env_1, loop_vars), break_env(body, env_0), break_env(body, env_1)]);
   }
@@ -1437,7 +1437,7 @@ implicit
   [Var -> Type] for_stmt_update_env(Maybe[Var] maybe_var, Expr start_val, Expr end_val, Bool end_val_incl, Statement+ body, [Var -> Type] env)
   {
     var_type = loop_var_type(expr_type(start_val, env), expr_type(end_val, env), end_val_incl);
-    env_0 = env & [value(maybe_var) -> var_type if maybe_var != nil];
+    env_0 = env & [value(maybe_var) -> var_type if maybe_var != nothing];
     env_1 = update_env(body, env_0);
     return merge_envs([env, env_1, break_env(body, env_0), break_env(body, env_1)]);
   }

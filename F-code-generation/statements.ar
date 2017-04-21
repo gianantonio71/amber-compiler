@@ -23,10 +23,10 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
     assignment_stmt()         = gen_code_for_assignment_stmt(stmt.vars, stmt.value, res_var),
     imp_update_stmt()         = gen_code_for_imp_update_stmt(stmt.obj, stmt.idx, stmt.value, res_var),
     if_stmt()                 = gen_code_for_if_stmt(stmt.cond, stmt.body, stmt.else, res_var),
-    for_stmt()                = gen_code_for_for_stmt(if stmt.var? then just(stmt.var) else nil, stmt.start_val, stmt.end_val, stmt.end_val_incl, stmt.body, res_var),
-    foreach_stmt()            = gen_code_for_foreach_stmt(stmt.vars, if stmt.idx_var? then just(stmt.idx_var) else nil, stmt.values, stmt.body, res_var),
+    for_stmt()                = gen_code_for_for_stmt(if stmt.var? then just(stmt.var) else nothing, stmt.start_val, stmt.end_val, stmt.end_val_incl, stmt.body, res_var),
+    foreach_stmt()            = gen_code_for_foreach_stmt(stmt.vars, if stmt.idx_var? then just(stmt.idx_var) else nothing, stmt.values, stmt.body, res_var),
     return_stmt               = (exit_block),
-    proc_call_stmt()          = gen_code_for_proc_call_stmt(if stmt.res_var? then just(stmt.res_var) else nil, stmt.proc_name, stmt.params),
+    proc_call_stmt()          = gen_code_for_proc_call_stmt(if stmt.res_var? then just(stmt.res_var) else nothing, stmt.proc_name, stmt.params),
 
     send_msg_stmt()           = gen_code_for_send_msg_stmt(stmt.target, stmt.msg),
     try_update_stmt()         = gen_code_for_try_update_stmt(stmt.name, stmt.args),
@@ -70,9 +70,9 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
     args_perm = relvar_cols_perm(rel_var);
     table_args = (relvar_args(i) : i <- args_perm);
 
-    filtered_idxs = idxs_into_filtered_seq((a != nil : a <- table_args));
-    unfiltered_idxs = (i : a @ i <- table_args, a != nil);
-    set_args = (value(a) : a <- table_args, a != nil);
+    filtered_idxs = idxs_into_filtered_seq((a != nothing : a <- table_args));
+    unfiltered_idxs = (i : a @ i <- table_args, a != nothing);
+    set_args = (value(a) : a <- table_args, a != nothing);
     info = gen_eval_info(set_args);
 
     surr_vars, var_gen = next_int_vars(info.next_var_gen, length(set_args));
@@ -122,7 +122,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
     if force:
       deletion_code = ({
           value_cond = and([neg(is_new_val_vars(i)) : i <- as]);
-          surr_args = (if as(i) then just(surr_vars(i)) else nil : i < arity);
+          surr_args = (if as(i) then just(surr_vars(i)) else nothing : i < arity);
           return do_if(value_cond, queue_deletes(rel_var, surr_args));
         } : as <- rand_sort(keys)
       );
@@ -287,7 +287,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
       repeat(
         nonempty(
           ( break_if(if end_val_incl then is_gt(idx_var, end_var) else is_ge(idx_var, end_var)),
-            set_var(value(maybe_var), int_obj(idx_var)) if maybe_var != nil
+            set_var(value(maybe_var), int_obj(idx_var)) if maybe_var != nothing
           ) & body_code &
           (increment(idx_var))
         )
@@ -318,7 +318,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
       var_set_code = var_set_code & (set_var(v, at(tmp_var, i)) : v @ i <- vars);
     ;
 
-    if maybe_idx_var != nil:
+    if maybe_idx_var != nothing:
       idx_var, var_gen = next_int_var(var_gen);
       var_set_code = (var_set_code | set_var(value(maybe_idx_var), int_obj(idx_var)));
       idx_var_init_instr = set_ivar(idx_var, 0);
@@ -350,7 +350,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   Instr+ gen_code_for_proc_call_stmt(Maybe[StdVar] maybe_res_var, ProcSymbol proc_name, Expr* params)
   {
     pars_info = gen_eval_info(params);
-    call_code = (call_proc(var: value(maybe_res_var) if maybe_res_var != nil, name: proc_name, args: pars_info.exprs));
+    call_code = (call_proc(var: value(maybe_res_var) if maybe_res_var != nothing, name: proc_name, args: pars_info.exprs));
     return nonempty(pars_info.eval_code & call_code);
   }
 }

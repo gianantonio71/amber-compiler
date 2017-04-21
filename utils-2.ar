@@ -118,8 +118,8 @@ Bool is_param_type(FnType type) = (t <~ type.args : is_param_type(t)) or is_para
   cls_call()              = seq_union((retrieve(p) : p <- expr.args)),
   builtin_call()          = seq_union((retrieve(p) : p <- expr.args)),
   unary_pseudo_call()     = retrieve(expr.target) & retrieve(expr.arg),
-  rel_memb_test()         = retrieve(expr.rel) & seq_union((retrieve(value(a)) : a <- expr.args, a != nil)),
-  relvar_memb_test()      = seq_union((retrieve(value(a)) : a <- expr.args, a != nil)),
+  rel_memb_test()         = retrieve(expr.rel) & seq_union((retrieve(value(a)) : a <- expr.args, a != nothing)),
+  relvar_memb_test()      = seq_union((retrieve(value(a)) : a <- expr.args, a != nothing)),
   relvar_lookup()         = seq_union((retrieve(e) : e <- expr.set_args)),
   singl_only_elem()       = retrieve(expr.set),
   and_expr()              = retrieve(expr.left) & retrieve(expr.right),
@@ -176,7 +176,7 @@ Bool is_param_type(FnType type) = (t <~ type.args : is_param_type(t)) or is_para
   send_msg_stmt()           = retrieve(stmt.msg),
   try_update_stmt()         = seq_union((retrieve(a) : a <- stmt.args)),
   set_memb_var_stmt()       = retrieve(stmt.value), //## NOT SURE ABOUT THIS ONE, IT MIGHT BE NECESSARY TO ALSO RETRIEVE THE TARGET VARIABLE IN ORDER TO MAKE extern_vars() WORK. BUT WHAT ABOUT THE ASSIGNMENT STATEMENTS THEN?
-  delete_stmt()             = seq_union((retrieve(value(a)) : a <- stmt.fields, a != nil)),
+  delete_stmt()             = seq_union((retrieve(value(a)) : a <- stmt.fields, a != nothing)),
   insert_stmt()             = seq_union((retrieve(e) : e <- stmt.fields)),
   set_input_ctrl_stmt()     = retrieve(stmt.value),
   clear_input_ctrl_stmt()   = [],
@@ -192,8 +192,8 @@ Bool is_param_type(FnType type) = (t <~ type.args : is_param_type(t)) or is_para
 
 [T] retrieve_from_nested_exprs(Clause cls, (Expr -> [T]) retrieve) =
   set_clause()      = retrieve(cls.src),
-  rel_clause()      = retrieve(cls.src) & seq_union((retrieve(value(a)) : a <- cls.args, a != nil)),
-  relvar_clause()   = seq_union((retrieve(value(a)) : a <- cls.args, a != nil)),
+  rel_clause()      = retrieve(cls.src) & seq_union((retrieve(value(a)) : a <- cls.args, a != nothing)),
+  relvar_clause()   = seq_union((retrieve(value(a)) : a <- cls.args, a != nothing)),
   seq_clause()      = retrieve(cls.src),
   and_clause()      = retrieve_from_nested_exprs(cls.left, retrieve) & retrieve_from_nested_exprs(cls.right, retrieve),
   or_clause()       = retrieve_from_nested_exprs(cls.left, retrieve) & retrieve_from_nested_exprs(cls.right, retrieve),
@@ -629,7 +629,7 @@ Clause replace_external_vars_in_relvar_clause(StdVar+ vars, AnyRelVar src, Maybe
 
 Clause replace_external_vars_in_seq_clause(Maybe[StdVar]+ vars, Maybe[StdVar] idx_var, Expr src, [Var -> Var] subst_map)
 {
-  assert none((subst_map(value(v), ?) : v <- vars, v != nil));
+  assert none((subst_map(value(v), ?) : v <- vars, v != nothing));
   new_src = replace_external_vars(src, subst_map);
   return seq_clause(vars, idx_var, new_src);
 }
@@ -706,7 +706,7 @@ Bool is_pattern_any(Pattern ptrn) =
   set_clause()      = [cls.var],
   rel_clause()      = set(cls.vars),
   relvar_clause()   = set(cls.vars),
-  seq_clause()      = [value(v) : v <~ (cls.vars | cls.idx_var), v != nil],
+  seq_clause()      = [value(v) : v <~ (cls.vars | cls.idx_var), v != nothing],
   and_clause()      = new_vars(cls.left) & new_vars(cls.right),
   or_clause()       = intersection(new_vars(cls.left), new_vars(cls.right)),
   match_clause()    = new_vars(cls.ptrn),
@@ -795,8 +795,8 @@ Bool is_pattern_any(Pattern ptrn) =
 
 [Var] clause_extern_vars(Clause cls) =
   set_clause()        = extern_vars(cls.src),
-  rel_clause()        = extern_vars(cls.src) & seq_union((extern_vars(value(a)) : a <- cls.args, a != nil)),
-  relvar_clause()     = seq_union((extern_vars(value(a)) : a <- cls.args, a != nil)),
+  rel_clause()        = extern_vars(cls.src) & seq_union((extern_vars(value(a)) : a <- cls.args, a != nothing)),
+  relvar_clause()     = seq_union((extern_vars(value(a)) : a <- cls.args, a != nothing)),
   seq_clause()        = extern_vars(cls.src),
   and_clause()        = clause_extern_vars(cls.left) & {clause_extern_vars(cls.right) - new_vars(cls.left)},
   or_clause()         = clause_extern_vars(cls.left) & clause_extern_vars(cls.right),
