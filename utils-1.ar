@@ -85,7 +85,7 @@ NeType desugar_prot_aware_type(SynType type, [Atom -> TypeVar] subst_map) =
     type,
     match ($)
       type_var()                = $,
-      type_ref(type_symbol(a?)) = if subst_map(a, ?) then subst_map(a) else $,
+      type_ref(type_symbol(a?)) = if subst_map(a) then subst_map[a] else $,
       type_ref()                = desugar_type_ref($, desugar_prot_aware_type($, subst_map))
   );
 
@@ -186,7 +186,7 @@ PseudoType syn_pseudotype(SynType type, [TypeName -> Type] typedefs) = pseudotyp
   os = [:falls_through];
   for s <- stmts:
     os = {os - [:falls_through]} & syn_outcomes(s);
-    break if not in(:falls_through, os);
+    break if not os(:falls_through);
   ;
   return nonempty(os);
 }
@@ -201,7 +201,7 @@ PseudoType syn_pseudotype(SynType type, [TypeName -> Type] typedefs) = pseudotyp
                                   ),
   loop_stmt(body?)              = loop_stmt_syn_outcomes(stmt.skip_first, stmt.body),
   inf_loop_stmt(ss?)            = inf_loop_stmt_syn_outcomes(ss),
-  for_stmt()                    = [:fails, :falls_through, :returns if in(:returns, syn_outcomes(stmt.body))],
+  for_stmt()                    = [:fails, :falls_through, :returns if syn_outcomes(stmt.body)(:returns)],
   let_stmt()                    = nonempty([:fails] & syn_outcomes(stmt.body)),
   break_stmt                    = [:breaks],
   fail_stmt                     = [:fails],
@@ -228,8 +228,8 @@ PseudoType syn_pseudotype(SynType type, [TypeName -> Type] typedefs) = pseudotyp
 {
   os = syn_outcomes(body);
   return [
-    :falls_through  if in(:falls_through, os) or in(:breaks, os) or not skip_first,
-    :returns        if in(:returns, os),
+    :falls_through  if os(:falls_through) or os(:breaks) or not skip_first,
+    :returns        if os(:returns),
     :fails
   ];
 }
@@ -239,17 +239,17 @@ PseudoType syn_pseudotype(SynType type, [TypeName -> Type] typedefs) = pseudotyp
 {
   os = syn_outcomes(body);
   return nonempty([
-    :falls_through  if in(:breaks, os),
-    :returns        if in(:returns, os),
-    :fails          if in(:fails, os) or in(:falls_through, os)
+    :falls_through  if os(:breaks),
+    :returns        if os(:returns),
+    :fails          if os(:fails) or os(:falls_through)
   ]);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Bool syn_may_fall_through(SynStmt stmt) = in(:falls_through, syn_outcomes(stmt));
+Bool syn_may_fall_through(SynStmt stmt) = syn_outcomes(stmt)(:falls_through);
 
-Bool syn_may_fall_through(SynStmt* stmts) = in(:falls_through, syn_outcomes(stmts));
+Bool syn_may_fall_through(SynStmt* stmts) = syn_outcomes(stmts)(:falls_through);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -260,12 +260,12 @@ Bool already_def(Var var, [Var] vars) =
   var(n?)       = already_def(n, vars),
   impl_arg(n?)  = already_def(n, vars),
   memb_var(n?)  = already_def(n, vars),
-  _             = in(var, vars);
+  _             = vars(var);
 
 Bool already_def(Atom var_name, [Var] vars) =
-  in(var(var_name), vars)       or
-  in(impl_arg(var_name), vars)  or
-  in(memb_var(var_name), vars);
+  vars(var(var_name))       or
+  vars(impl_arg(var_name))  or
+  vars(memb_var(var_name));
 
 FnSymbol impl_arg_to_fn_symb(ImplArg p) =
   impl_arg(n?)   = fn_symbol(n);
@@ -310,9 +310,9 @@ Atom rule_id(RuleDecl decl) =
 
     overriding_ids = [rule_id(d) : d <~ child.rules & child.consts];
 
-    inherited_inputs = (i : i <- parent.inputs, not in(i.name, overriding_ids));
-    inherited_consts = (c : c <- parent.consts, not in(c.name, overriding_ids));
-    inherited_rules  = (r : r <- parent.rules,  not in(rule_id(r), overriding_ids));
+    inherited_inputs = (i : i <- parent.inputs, not overriding_ids(i.name));
+    inherited_consts = (c : c <- parent.consts, not overriding_ids(c.name));
+    inherited_rules  = (r : r <- parent.rules,  not overriding_ids(rule_id(r)));
 
     return syn_auto_def(
       name:       child.name,

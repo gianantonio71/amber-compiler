@@ -23,9 +23,9 @@ implicit
     bin_rel_expr(es?)     = bin_rel_expr_type(es, env),
     tern_rel_expr(es?)    = tern_rel_expr_type(es, env),
     tag_obj_expr()        = tag_obj_expr_type(expr.tag, expr.obj, env),
-    Var                   = env(expr),
+    Var                   = env[expr],
     fn_call()             = fn_call_expr_type(expr.name, expr.args, expr.impl_args, env),
-    cls_call()            = closures(cast_cls_var(expr.name)).out_type,
+    cls_call()            = closures[cast_cls_var(expr.name)].out_type,
     builtin_call()        = builtin_call_expr_type(expr.name, expr.args, env),
     unary_pseudo_call()   = unary_pseudo_call_expr_type(expr.target, expr.arg, env),
     rel_memb_test()       = type_bool,
@@ -228,7 +228,7 @@ implicit
     target_type = expr_type(target, env);
 
     return empty_type if target_type == empty_type;
-    return type_bool  if is_subset(target_type, type_set);
+    return type_bool  if is_subset(target_type, type_set) or is_subset(target_type, type_map);
 
     arg_type = expr_type(arg, env);
 
@@ -239,12 +239,9 @@ implicit
         return union_type([tag_obj_type(symb_type(s), arg_type) : s <- finite_symb_set_enum(target_type)]);
       ;
 
-    elif is_subset(target_type, type_seq):
-      return restricted_seq_elem_supertype(target_type, arg_type);
-
     else
-      assert is_subset(target_type, type_map);
-      return restricted_bin_rel_arg1_supertype(target_type, arg_type);
+      assert is_subset(target_type, type_seq);
+      return restricted_seq_elem_supertype(target_type, arg_type);
     ;
   }
 
@@ -419,8 +416,8 @@ implicit
   ([Var -> Type], [Var -> Type]) refine_fn_call_env(FnCallExpr expr, [Var -> Type] env)
   {
     fn_key = (expr.name, length(expr.args));
-    return (env, env) if not signatures(fn_key, ?);
-    sgn_set = signatures(fn_key);
+    return (env, env) if not signatures(fn_key);
+    sgn_set = signatures[fn_key];
     return (env, env) if not sgn_set.refines_env;
 
     sgns_envs = [s -> refine_fn_env(expr, s, env) : s <- sgn_set.sgns];
@@ -449,7 +446,7 @@ implicit
       env_delta = [v -> type : v <- var_group(obj)];
 
     elif obj :: VarField:
-      var_type = env(obj.expr);
+      var_type = env[obj.expr];
       new_var_type = if var_type != empty_type
         then update_mandatory_field_type(var_type, obj.field, type)
         else empty_type;
@@ -485,14 +482,14 @@ implicit
     ([Var -> Type], [Var -> Type]) refine(Var var, Expr expr, [Var -> Type] env)
     {
       vars = var_group(var);
-      eq_type, not_eq_type = eq_refine(env(var), expr_type(expr, env));
+      eq_type, not_eq_type = eq_refine(env[var], expr_type(expr, env));
       return ([v -> eq_type : v <- vars], [v -> not_eq_type : v <- vars]);
     }
 
 
     ([Var -> Type], [Var -> Type]) refine(Var var, SymbObj field, Expr expr, [Var -> Type] env)
     {
-      var_type = env(var);
+      var_type = env[var];
       vars = var_group(var);
       field_type = accessor_expr_type(var, field, env);
       field_type_eq, field_type_not_eq = eq_refine(field_type, expr_type(expr, env));
@@ -551,7 +548,7 @@ implicit
       ne_set_type()           = (empty_type, type),
       ne_map_type()           = (type, type),
       ne_record_type(fs?)     =
-        if has_key(fs, field)
+        if fs(field)
           then (record_type([l -> (type: f.type, optional: l != field and f.optional) : l, f <- fs]), type)
           else (empty_type, type),
       tuple_type()            = (empty_type, type),
@@ -638,7 +635,7 @@ implicit
       then bin_rel_args_supertypes(src_expr_type)
       else tern_rel_args_supertypes(src_expr_type);
     idxs = packed_seq_idxs((a == nothing : a <- args));
-    env_delta = merge(([vars(idxs(i)) -> args_types(i)] : a @ i <- args, a == nothing));
+    env_delta = merge(([vars(idxs[i]) -> args_types(i)] : a @ i <- args, a == nothing));
     return env & env_delta;
   }
 
@@ -925,7 +922,7 @@ implicit {
     src_type = expr_type(src, env);
 
     idxs = packed_seq_idxs((a == nothing : a <- args));
-    maybe_vars = (if a == nothing then just(vars(idxs(i))) else nothing : a @ i <- args);
+    maybe_vars = (if a == nothing then just(vars(idxs[i])) else nothing : a @ i <- args);
     assert all(((v == nothing) != (a == nothing) : v, a <- zip(maybe_vars, args)));
 
     return match (maybe_vars)
@@ -1187,10 +1184,10 @@ implicit typedefs : [TypeName -> NeType]
 
   RecordTypeFields merge_fields(RecordTypeFields fs1, RecordTypeFields fs2) =
     nonempty([l -> {
-        return fs2(l) if not fs1(l, ?);
-        return fs1(l) if not fs2(l, ?);
-        f1 = fs1(l);
-        f2 = fs2(l);
+        return fs2[l] if not fs1(l);
+        return fs1[l] if not fs2(l);
+        f1 = fs1[l];
+        f2 = fs2[l];
         type = union_superset(f1.type, f2.type);
         fail if type == empty_type;
         return (type: type, optional: f1.optional and f2.optional);

@@ -106,10 +106,6 @@ TF get_error(Result[TS, TF]) =
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// Still not ideal, both of them. No need to always evaluate all arguments.
-Bool some([+Bool] bs) = (b <- bs : b);
-Bool all([+Bool] bs)  = not (b <- bs : not b);
-
 // No element is false
 Bool all(Bool* s)   = not in(false, s);
 
@@ -431,26 +427,26 @@ T only_element_or_def_if_empty([T] set, T default)
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
-T2 (_[_])([T1 -> T2] map, T1 key) = map(key);
+T2 (_[_])([T1 -> T2] map, T1 key) = only([value : value <- map(key, ?)]);
 
-T2 lookup([T1 -> T2] map, T1 key, T2 default) = if has_key(map, key) then map[key] else default;
+T2 lookup([T1 -> T2] map, T1 key, T2 default) = if map(key) then map[key] else default;
 
-Maybe[T2] maybe_lookup([T1 -> T2] map, T1 key) = if has_key(map, key) then just(map[key]) else nothing;
+Maybe[T2] maybe_lookup([T1 -> T2] map, T1 key) = if map(key) then just(map[key]) else nothing;
 
 [T1 -> T2] update([T1 -> T2] map, [T1 -> T2] diffs) = [k -> map[k] : k <- keys(map) - keys(diffs)] & diffs;
 
 [T1 -> T2] update([T1 -> T2] map, T1 key, T2 new_val) = update(map, [key -> new_val]);
 
-[T1] keys([T1 -> T2] map) = [k : k, unused_var <- map];
+Bool is_key(Any key, [Any -> Any] map) = map(key);
 
-Bool has_key([T1 -> T2] map, T1 key) = map(key, ?);
+[T1] keys([T1 -> T2] map) = [k : k, unused_var <- map];
 
 [T1 -> T2] (_&_)([T1 -> T2] map1, [T1 -> T2] map2) = [k -> v : k, v <- map1 | k, v <- map2];
 
 [K -> [+V]] merge_values([[K -> V]] maps)
 {
   all_keys = union([keys(m) : m <- maps]);
-  return [k -> nonempty([m[k] : m <- maps, has_key(m, k)]) : k <- all_keys];
+  return [k -> nonempty([m[k] : m <- maps, m(k)]) : k <- all_keys];
 }
 
 //## BUG: ACTUAL SIGNATURE IS (K => V+) merge_value_sets((K => V+)* maps). FIX.
@@ -460,7 +456,7 @@ Bool has_key([T1 -> T2] map, T1 key) = map(key, ?);
 [K -> V+] merge_sorted_values([K -> V]* maps)
 {
   all_keys = seq_union((keys(m) : m <- maps));
-  return [k -> nonempty((m[k] : m <- maps, has_key(m, k))) : k <- all_keys];
+  return [k -> nonempty((m[k] : m <- maps, m(k))) : k <- all_keys];
 }
 
 [T1 -> T2] merge([[T1 -> T2]] maps) = [k -> v : m <- maps, k, v <- m];

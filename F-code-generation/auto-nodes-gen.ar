@@ -247,7 +247,7 @@ implicit program : Program, automaton : Automaton
   {
     core_id = get_inner_id(node_id);
 
-    if has_key(automaton.nested_dbs, memb_db_var(core_id)):
+    if automaton.nested_dbs(memb_db_var(core_id)):
       msg = nested_msg_sends[core_id];
       output_dep_nodes = lookup(nested_db_vars_trigger_down_nodes_map, node_id, [:]);
       //## WHAT DOES THIS ASSERTION DO?
@@ -258,11 +258,11 @@ implicit program : Program, automaton : Automaton
     dep_nodes = lookup(trigger_down_nodes_map, node_id, []);
     assert disjoint(dep_nodes, [std_block_node_id(id) : id <- state_vars_ids]);
 
-    if has_key(automaton.rules, core_id):
+    if automaton.rules(core_id):
       return derived(node_id, automaton.rules[core_id], dep_nodes, level);
     ;
 
-    if has_key(automaton.time_rules, core_id):
+    if automaton.time_rules(core_id):
       time_cond = automaton.time_rules[core_id];
       return match (time_cond)
         time_varying_boolean_cond()   = time_varying_node(node_id, time_cond.expr, time_cond.time_expr, :boolean, dep_nodes, level),
@@ -270,7 +270,7 @@ implicit program : Program, automaton : Automaton
         time_varying_since_cond()     = discrete_time_varying_node(node_id, time_cond.signals, time_cond.time_expr, time_cond.starts_at_time_0, dep_nodes, level);
     ;
 
-    if has_key(automaton.state, core_id):
+    if automaton.state(core_id):
       return state(
         node_id,
         lookup(state_vars_and_discrete_signals_update_values, core_id, ()),
@@ -290,9 +290,9 @@ implicit program : Program, automaton : Automaton
 
   AutoNode create_auto_node(CondNodeId node_id, Nat level)
   {
-    assert has_key(cond_nodes_by_id, node_id) or has_key(repeated_cond_nodes_by_id, node_id);
+    assert cond_nodes_by_id(node_id, ?) or repeated_cond_nodes_by_id(node_id, ?);
 
-    is_rep = has_key(repeated_cond_nodes_by_id, node_id);
+    is_rep = repeated_cond_nodes_by_id(node_id, ?);
     cond_info = if is_rep then repeated_cond_nodes_by_id[node_id] else cond_nodes_by_id[node_id];
 
     then_actions = actions(cond_info, true);
@@ -326,7 +326,7 @@ implicit program : Program, automaton : Automaton
   AutoNode create_auto_node(NestedAutoNodeId node_id, Nat level)
   {
     core_id = get_inner_id(node_id);
-    assert automaton.nested_autos(core_id, ?);
+    assert automaton.nested_autos(core_id);
     output_dep_nodes = lookup(output_trigger_down_nodes_map, node_id, [:]);
     //## WHAT DOES THIS ASSERTION DO?
     assert not (o, ns <- output_dep_nodes : not disjoint(ns, [std_block_node_id(id) : id <- state_vars_ids]));
@@ -336,7 +336,7 @@ implicit program : Program, automaton : Automaton
 
   AutoNode create_auto_node(NestedAutoInputNodeId node_id, Nat level)
   {
-    assert has_key(automaton.nested_autos, node_id.auto);
+    assert automaton.nested_autos(node_id.auto);
 
     expr = nested_auto_inputs[node_id];
     is_disc = input_is_discrete(automaton.nested_autos[node_id.auto].type, node_id.input);
