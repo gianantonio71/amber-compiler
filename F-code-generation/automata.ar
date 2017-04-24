@@ -22,7 +22,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
                    rand_sort([cleanup_db(var, type) : var, type <- automaton.nested_dbs]);
 
     // Generating methods for queuing updates
-    queue_update_code = [n.id -> gen_queue_update_method(n, nodes_indexes[n.id], levels_sizes[n.level]) : n <~ nodes];
+    queue_update_code = [n.id -> gen_queue_update_method(n, nodes_indexes[n.id], item(levels_sizes, n.level)) : n <~ nodes];
 
     assert {
       inputs_count = size(automaton.inputs);
@@ -73,7 +73,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
     nodes = gen_auto_nodes;
     level_marked_nodes_counts = count_vector((n.level : n <- nodes, needs_initial_update(n)), length(levels_sizes));
     node_specific_vars = seq_union((memb_int_vars(n) : n <- nodes));
-    level_specific_vars = [(update_count_var(l), level_marked_nodes_counts[l]) : s @ l <~ levels_sizes, s > 2];
+    level_specific_vars = [(update_count_var(l), level_marked_nodes_counts(l)) : s @ l <~ levels_sizes, s > 2];
     // Not adding the arrays used to store the trigger heaps
     // That is done in the target language code generation phase
     global_time_vars =
@@ -160,7 +160,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
 
     // Initializing variables that contain the list of nodes that must be updated.
     code_3 = join((
-      (set_ivar(nodes_to_update_var(l, i), nodes_indexes[n]) : n @ i <- rand_sort(marked_nodes_by_level[l]))
+      (set_ivar(nodes_to_update_var(l, i), nodes_indexes[n]) : n @ i <- rand_sort(marked_nodes_by_level(l)))
       : ns @ l <- nodes_ids_by_level, size(ns) > 2
     ));
 
@@ -194,11 +194,11 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
       ) : id <- sorted_memb_copy_vars_ids
     ));
 
-    levels_code = (gen_level_code(rand_sort(ids), i, levels_offsets[i], node_idx_var, node_count_var, curr_time_var) : ids @ i <- nodes_ids_by_level);
+    levels_code = (gen_level_code(rand_sort(ids), i, item(levels_offsets, i), node_idx_var, node_count_var, curr_time_var) : ids @ i <- nodes_ids_by_level);
 
     first_pass_finish_code = (set_bvar(is_new, false));
     if discrete_inputs_ids != []:
-      if levels_sizes[0] > 2:
+      if item(levels_sizes, 0) > 2:
         counter_var = ivar(0); //## ivar(0) IS ALREADY USED ELSEWHERE
         first_pass_finish_code = (first_pass_finish_code | set_ivar(counter_var, 0));
         for id <- rand_sort(discrete_inputs_ids):
@@ -314,7 +314,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
       );
 
     else
-      code = (do_if_not(up_to_date_var(nodes_ids[i]), nodes_code[i]) : i < node_count);
+      code = (do_if_not(up_to_date_var(nodes_ids(i)), nodes_code(i)) : i < node_count);
     ;
 
     code = (do_if(is_eq(curr_time_var, update_time), code)) if level_idx == 0 and is_time_sensitive and code != ();
@@ -361,7 +361,7 @@ Instr* gen_dispatch_auto_method_body(AutoSymbol auto_type, Method+ methods, [Typ
 
   cases = ({
       ptrns = if i < count-1
-        then (type_to_pseudotype_pattern(m.args[j](0), typedefs) : j <- disp_args)
+        then (type_to_pseudotype_pattern(m.args(j)(0), typedefs) : j <- disp_args)
         else (ptrn_any : unused_var <- disp_args);
       code = (
         invoke_auto_method(
