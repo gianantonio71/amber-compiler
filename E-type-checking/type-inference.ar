@@ -375,7 +375,7 @@ implicit
 
   Bool will_dispatch_to(ClsType signature, AnyExpr* args, [Var -> Type] env) =
     all((
-      is_scalar_expr(a) and is_subset(expr_type(a, env), t)
+      is_expr(a) and is_subset(expr_type(a, env), t)
       : a, t <- zip(args, signature.in_types)
     ));
 
@@ -691,24 +691,35 @@ implicit
   }
 
 
-  [TypeVar -> Type] instantiate_type_vars(AnyExpr* args, AnyType* param_types, [Var -> Type] env)
-  {
+  [TypeVar -> Type] instantiate_type_vars(AnyExpr* args, AnyType* args_types, [Var -> Type] env) {
     actual_types = ();
     formal_types = ();
-    for p, t <- zip(args, param_types):
-      if p :: Expr and t :: Type:
-        actual_types = (actual_types | expr_type(p, env));
+    cls_args = ();
+    cls_types = ();
+    for e, t <- zip(args, args_types):
+      assert is_expr(e) == is_type(t);
+      if is_expr(e) and is_type(t):
+        actual_types = (actual_types | expr_type(e, env));
         formal_types = (formal_types | t);
+      elif is_cls_expr(e) and is_cls_type(t):
+        cls_args = (cls_args | e);
+        cls_types = (cls_types | t);
       ;
     ;
-    type_var_insts = type_var_instantiations_for_subset(actual_types, formal_types);
 
-    cls_pars = ((p, t) : p, t <- zip(args, param_types), p :: ClsExpr and t :: ClsType);
+    return instantiate_type_vars(actual_types, formal_types, cls_args, cls_types, env);
+  }
+
+
+  [TypeVar -> Type] instantiate_type_vars(Type* actual_types, Type* formal_types, ClsExpr* cls_args, ClsType* cls_types, [Var -> Type] env) {
+    assert length(actual_types) == length(formal_types);
+    assert length(cls_args) == length(cls_types);
+    type_var_insts = type_var_instantiations_for_subset(actual_types, formal_types);
     loop
       new_type_pairs = ();
-      for p, t <- cls_pars:
-        rp = rewrite_cls_expr(p);
-        actual_ret_type = get_return_type(rp, t, type_var_insts, env);
+      for t @ i <- cls_types:
+        rwr_cls = rewrite_cls_expr(cls_args(i));
+        actual_ret_type = get_return_type(rwr_cls, t, type_var_insts, env);
         assert is_subset(actual_ret_type, replace_type_vars_with_type_any(t.out_type));
         new_type_pairs = (new_type_pairs | (actual_ret_type, t.out_type));
       ;
