@@ -5,8 +5,8 @@ type Float          = <^>;
 type Seq            = Any*;
 
 type Set            = [Any];
-type BinRel         = [Any,Any];
-type TernRel        = [Any,Any,Any];
+type BinRel         = [Any, Any];
+type TernRel        = [Any, Any, Any];
 
 type TagObj         = <+>(Any);
 
@@ -77,7 +77,7 @@ Maybe[T] maybe(T x, Bool cond) = if cond then :just(x) else nothing;
 
 T* values(Maybe[T]* maybe_seq) = (value(maybe_value) : maybe_value <- maybe_seq, maybe_value != nothing);
 
-[T] values([Maybe[T]] maybe_seq) = [value(maybe_value) : maybe_value <- maybe_seq, maybe_value != nothing];
+// [T] values([Maybe[T]] maybe_seq) = [value(maybe_value) : maybe_value <- maybe_seq, maybe_value != nothing];
 
 Maybe[T2] apply(Maybe[T1] m, (T1 -> T2) f) =
   just(x?)  = just(f(x)),
@@ -127,9 +127,9 @@ Nat nat(Int n) =
 NzNat nz_nat(Int n) =
   NzNat = n;
 
-T+          nonempty(T* s)          = if s != ()  then s else {fail;};
-[+T]        nonempty([T] s)         = if s != []  then s else {fail;};
-[+KT -> VT] nonempty([KT -> VT] m)  = if m != [:] then m else {fail;};
+T+          nonempty(T* s)              = if s != () then s else {fail;};
+[+T]        nonempty([T] s)             = if s != [] then s else {fail;};
+[+KT -> VT] nonempty_map([KT -> VT] m)  = if m != [] then m else {fail;};
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -377,7 +377,11 @@ Bool in(Any x, Set s) = s(x);
 [T] intersection([T] s1, [T] s2)     = [e : e <- s1, in(e, s2)];
 [T1] difference([T1] s1, [T2] s2)    = [e : e <- s1, not in(e, s2)];
 
-[T] (_&_)([T] s1, [T] s2)    = union(s1, s2);
+[]   (_&_)([],      [])       = [];
+[+T] (_&_)([+T] s,  [])       = s;
+[+T] (_&_)([],      [+T] s)   = s;
+[+T] (_&_)([+T] s1, [+T] s2)  = [x : x <- s1 | x <- s2];
+
 [T1] (_-_)([T1] s1, [T2] s2) = difference(s1, s2);
 
 Bool disjoint(Set s1, Set s2) = intersection(s1, s2) == [];
@@ -443,7 +447,9 @@ Bool is_key(Any key, [Any -> Any] map) = map(key);
 
 [T1] keys([T1 -> T2] map) = [k : k, unused_var <- map];
 
-[T1 -> T2] (_&_)([T1 -> T2] map1, [T1 -> T2] map2) = [k -> v : k, v <- map1 | k, v <- map2];
+[+T1 -> T2] (_&_)([], [+T1 -> T2] map)                = map;
+[+T1 -> T2] (_&_)([+T1 -> T2] map, [])                = map;
+[+T1 -> T2] (_&_)([+T1 -> T2] map1, [+T1 -> T2] map2) = [k -> v : k, v <- map1 | k, v <- map2];
 
 [K -> [+V]] merge_values([[K -> V]] maps)
 {
@@ -749,8 +755,8 @@ String* split(String str)
 
 [T2 -> T1] reverse([T1 -> T2] map) = merge([[v -> k] : k, v <- map]);
 
-[:] reverse_relation([:] map) = [:];
-[+T2 -> [+T1]] reverse_relation([+T1 -> T2] map) = nonempty(merge_values([[v -> k] : k, v <- map]));
+[] reverse_relation([] map) = [];
+[+T2 -> [+T1]] reverse_relation([+T1 -> T2] map) = nonempty_map(merge_values([[v -> k] : k, v <- map]));
 
 [T2 -> [+T1]] reverse_multi([T1 -> [T2]] map) = merge_values([[v -> k : v <- vs] : k, vs <- map]);
 
@@ -827,7 +833,7 @@ T reduce(T+ xs, (T T -> T) f)
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-T* array_map([Nat -> T] map) = if map == [:] then () else (map[i] : i <= max(nonempty(keys(map))));
+T* array_map([Nat -> T] map) = if map == [] then () else (map[i] : i <= max(nonempty(keys(map))));
 
 //## WOULD NEED SUBSIGNATURES HERE: [Nat] -> [Nat], [Int] -> [Int], [Float -> Float]
 //## AND THE TYPE OF THE ELEMENTS SHOULD BE PARAMETRIC

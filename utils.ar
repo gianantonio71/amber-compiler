@@ -45,9 +45,9 @@ String capitalize(String s, Bool keep_underscores)
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-String user_repr(Type type) = user_repr(type, false, false, false, false, false);
+String user_repr(Type type) = user_repr(type, false, false, false);
 
-String user_repr(Type type, Bool inside_type_union, Bool incl_empty_seq, Bool incl_empty_set, Bool incl_empty_bin_rel, Bool incl_empty_tern_rel) =
+String user_repr(Type type, Bool inside_type_union, Bool incl_empty_seq, Bool incl_empty_rel) =
   empty_type                = "</>",
   atom_type                 = "<+>",
   symb_type(object(a?))     = {res = _str_(a); res = "<" & res & ">" if not inside_type_union; return res;},
@@ -57,19 +57,17 @@ String user_repr(Type type, Bool inside_type_union, Bool incl_empty_seq, Bool in
   int_range()               = "<" & printed(type.min) & ".." & printed(type.min + type.size - 1) & ">",
   float_type                = "<^>",
   empty_seq_type            = "()",
-  empty_set_type            = "[]",
-  empty_bin_rel_type        = "[:]",
-  empty_tern_rel_type       = "[::]",
+  empty_rel_type            = "[]",
   type_var(Atom a?)         = upper_camel_case(a) & "'",
   type_var(* n?)            = "<" & printed(n) & "'>",
   type_ref(ts?)             = user_repr(ts),
   ne_seq_type()             = user_repr(type.elem_type) & if incl_empty_seq then "*" else "+",
-  ne_set_type()             = "[" & {if incl_empty_set then "" else "+"} & user_repr(type.elem_type) & "]",
-  ne_map_type()             = "[" & {if incl_empty_bin_rel then "" else "+"} &
+  ne_set_type()             = "[" & {if incl_empty_rel then "" else "+"} & user_repr(type.elem_type) & "]",
+  ne_map_type()             = "[" & {if incl_empty_rel then "" else "+"} &
                               user_repr(type.key_type) & " -> " & user_repr(type.value_type) & "]",
-  ne_bin_rel_type()         = "[" & {if incl_empty_bin_rel then "" else "+"} &
+  ne_bin_rel_type()         = "[" & {if incl_empty_rel then "" else "+"} &
                               append((append((user_repr(t) : t <- s), ", ") : s <- rand_sort(type.signatures)), " | ") & "]",
-  ne_tern_rel_type()        = "[" & {if incl_empty_tern_rel then "" else "+"} &
+  ne_tern_rel_type()        = "[" & {if incl_empty_rel then "" else "+"} &
                               append((append((user_repr(t) : t <- s), ", ") : s <- rand_sort(type.signatures)), " | ") & "]",
   ne_record_type(fs?)       = ne_record_type_user_repr(fs),
   tuple_type(ts?)           = "(" & append((user_repr(t) : t <- ts), ", ") & ")",
@@ -90,21 +88,17 @@ String ne_record_type_user_repr(RecordTypeFields fields)
 String union_type_user_repr([+NeType] types)
 {
   incl_empty_seq = in(empty_seq_type, types);
-  incl_empty_set = in(empty_set_type, types);
-  incl_empty_bin_rel = in(empty_bin_rel_type, types);
-  incl_empty_tern_rel = in(empty_tern_rel_type, types);
+  incl_empty_rel = in(empty_rel_type, types);
 
   types_to_exclude = [
     empty_seq_type if (t <- types : match (t) ne_seq_type() = true, _ = false),
-    empty_set_type if (t <- types : match (t) ne_set_type() = true, _ = false),
-    empty_bin_rel_type if (t <- types : repr_includes_empty_bin_rel(t)),
-    empty_tern_rel_type if (t <- types : match (t) ne_tern_rel_type() = true, _ = false)
+    empty_rel_type if (t <- types : repr_includes_empty_rel(t))
   ];
 
   types_left_sorted = rand_sort(types - types_to_exclude);
   is_still_union = length(types_left_sorted) > 1;
   types_reprs = (
-    user_repr(t, is_still_union, incl_empty_seq, incl_empty_set, incl_empty_bin_rel, incl_empty_tern_rel)
+    user_repr(t, is_still_union, incl_empty_seq, incl_empty_rel)
     : t <- types_left_sorted
   );
   repr_str = append(types_reprs, ", ");
@@ -112,9 +106,11 @@ String union_type_user_repr([+NeType] types)
   return repr_str;
 
 
-  Bool repr_includes_empty_bin_rel(NeType type) =
+  Bool repr_includes_empty_rel(NeType type) =
+    ne_set_type()         |
     ne_map_type()         |
-    ne_bin_rel_type()     = true,
+    ne_bin_rel_type()     |
+    ne_tern_rel_type()    = true,
     ne_record_type(fs?)   = not (l, f <- fs : not f.optional),
     _                     = false;
 }
@@ -188,14 +184,12 @@ String user_repr(Pattern ptrn) =
   ptrn_symbol         = "+",
   ptrn_float          = "*",
   ptrn_empty_seq      = "()",
-  ptrn_ne_seq         = "(?)",
-  ptrn_empty_set      = "[]",
-  ptrn_ne_set         = "[?]",
-  ptrn_empty_bin_rel  = "[:]",
+  ptrn_ne_seq         = "()",
+  ptrn_empty_rel      = "[]",
+  ptrn_ne_set         = "[]",
   ptrn_ne_map         = "[->]",
-  ptrn_ne_bin_rel     = "[?:?]",
-  ptrn_empty_tern_rel = "[::]",
-  ptrn_ne_tern_rel    = "[?:?:?]",
+  ptrn_ne_bin_rel     = "[,]",
+  ptrn_ne_tern_rel    = "[,,]",
   ptrn_any            = "_",
   ptrn_symbol(s?)     = _str_(match (s) object(a?) = a),
   ptrn_integer(t?)    = user_repr(t),

@@ -173,13 +173,13 @@ implicit next_var_gen : VarGen
 
     if tag_obj_cases != ():
       tag_ptypes_to_ptrn = ((tag_ptypes_to_ptrn(value_unsafe(p)), c) : p, c <- tag_obj_cases);
-      cases_by_tag = [:];
+      cases_by_tag = [];
       any_tag_cases = ();
       for pt, code @ i <- tag_ptypes_to_ptrn:
         if pt(:symbols):
           //## TODO: IMPLEMENT HANDLING
           assert keys(pt) == [:symbols]; //## REMOVE THIS ASSERTION AS SOON AS POSSIBLE
-          let loc_bound_vars=[], on_match_code=code, tag_vars=[:]:
+          let loc_bound_vars=[], on_match_code=code, tag_vars=[]:
             mtc_code = gen_ptrn_matching_code(pt[:symbols], expr, pseudotype_tag_objs);
           ;
           cases_by_tag = [a -> nonempty(c & mtc_code) : a, c <- cases_by_tag];
@@ -187,7 +187,7 @@ implicit next_var_gen : VarGen
         else
           for spt <- rand_sort(keys(pt)):
             tag_symb = match (spt) symbol(a?) = a;
-            let loc_bound_vars=[], on_match_code=code, tag_vars=[:]:
+            let loc_bound_vars=[], on_match_code=code, tag_vars=[]:
               mtc_code = gen_ptrn_matching_code(pt[spt], expr, pseudotype_tag_obj(tag_symb));
             ;
             updated_case = nonempty(lookup(cases_by_tag, tag_symb, ()) & mtc_code);
@@ -206,8 +206,8 @@ implicit next_var_gen : VarGen
     ptypes_info = (
       // (symb_cases,      pseudotype_symbols,   is_symb(expr)),
       // (seq_cases,       pseudotype_seqs,      or([inline_is_eq(expr, :empty_seq), is_ne_seq(expr)])),
-      // (set_cases,       pseudotype_sets,      or([inline_is_eq(expr, :empty_set), is_ne_set(expr)])),
-      // (map_cases,       pseudotype_maps,      or([inline_is_eq(expr, :empty_bin_rel), is_ne_map(expr)]))
+      // (set_cases,       pseudotype_sets,      or([inline_is_eq(expr, :empty_rel), is_ne_set(expr)])),
+      // (map_cases,       pseudotype_maps,      or([inline_is_eq(expr, :empty_rel), is_ne_map(expr)]))
       // (tag_obj_cases,   pseudotype_tag_objs,  is_tagged_obj(expr)),
       (symb_cases,      pseudotype_any,       true),
       (int_cases,       pseudotype_integers,  is_int(expr)),
@@ -221,7 +221,7 @@ implicit next_var_gen : VarGen
     for ptype_cases, pseudotype, memb_expr <- ptypes_info:
       ptype_code = ();
       for p, c <- ptype_cases:
-        let loc_bound_vars=[], on_match_code=c, tag_vars=[:]:
+        let loc_bound_vars=[], on_match_code=c, tag_vars=[]:
           ptype_code = ptype_code & gen_ptrn_matching_code(value_unsafe(p), expr, pseudotype);
         ;
       ;
@@ -259,7 +259,7 @@ implicit next_var_gen : VarGen
       return code if exprs == () or ptrns == (); // Shutting up the typechecker...
 
       next_step_code = gen_guarded_case_eval_code(tail(exprs), tail(ptrns), code);
-      let loc_bound_vars=[], on_match_code=next_step_code, tag_vars=[:]:
+      let loc_bound_vars=[], on_match_code=next_step_code, tag_vars=[]:
         res = gen_ptrn_matching_code(head(ptrns), head(exprs), pseudotype_any);
       ;
       return nonempty(res);
@@ -272,9 +272,9 @@ implicit next_var_gen : VarGen
 [+Pattern] easy_check_ptrns = [
     ptrn_float,
     ptrn_empty_seq, ptrn_ne_seq,
-    ptrn_empty_set, ptrn_ne_set,
-    ptrn_empty_bin_rel, ptrn_ne_bin_rel, ptrn_ne_map,
-    ptrn_empty_tern_rel, ptrn_ne_tern_rel
+    ptrn_empty_rel, ptrn_ne_set,
+    ptrn_ne_bin_rel, ptrn_ne_map,
+    ptrn_ne_tern_rel
   ];
 
 [+Pattern] normalize_patterns([+Pattern] ptrns) = ptrns; //## IMPLEMENT FOR REAL
@@ -286,12 +286,10 @@ BoolExpr gen_ptrn_matching_expr(Pattern ptrn, AtomicExpr obj, PseudoType ptype) 
   ptrn_float                    = if_subset(ptype, pseudotype_floats,         is_float(obj)),
   ptrn_empty_seq                = if_subset(ptype, pseudotype_empty_seq,      is_eq(obj, empty_seq)),
   ptrn_ne_seq                   = if_subset(ptype, pseudotype_ne_seqs,        is_ne_seq(obj)),
-  ptrn_empty_set                = if_subset(ptype, pseudotype_empty_set,      is_eq(obj, empty_set)),
+  ptrn_empty_rel                = if_subset(ptype, pseudotype_empty_rel,      is_eq(obj, empty_rel)),
   ptrn_ne_set                   = if_subset(ptype, pseudotype_ne_sets,        is_ne_set(obj)),
-  ptrn_empty_bin_rel            = if_subset(ptype, pseudotype_empty_bin_rel,  is_eq(obj, empty_bin_rel)),
   ptrn_ne_map                   = is_ne_map(obj),
   ptrn_ne_bin_rel               = if_subset(ptype, pseudotype_ne_bin_rels,    is_ne_bin_rel(obj)),
-  ptrn_empty_tern_rel           = if_subset(ptype, pseudotype_empty_tern_rel, is_eq(obj, empty_tern_rel)),
   ptrn_ne_tern_rel              = if_subset(ptype, pseudotype_ne_tern_rels,   is_ne_tern_rel(obj)),
   ptrn_symbol(object(s?) so?)   = if_subset(ptype, pseudotype_symbol(s),      is_eq(obj, so)),
   ptrn_integer(integer)         = if_subset(ptype, pseudotype_integers,       is_int(obj)),

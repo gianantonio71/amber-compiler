@@ -55,7 +55,7 @@ DBMethodCall apply_args(PreDBCall pre_call, Expr* args) =
 ////////////////////////////////////////////////////////////////////////////////
 
 [[+TypeVar -> Atom]] typevar_bindings(TypeVarDecl decl) =
-  [nonempty(merge(([type_var(v) -> t] : v, t <- zip(decl.type_vars, types)))) : types <~ decl.prot_types];
+  [nonempty_map(merge(([type_var(v) -> t] : v, t <- zip(decl.type_vars, types)))) : types <~ decl.prot_types];
 
 
 implicit syn_prg : SynPrg
@@ -82,7 +82,7 @@ implicit syn_prg : SynPrg
       assert fn_def.typevars == [];
       tvars = seq_union((syn_type_vars(a.type) : a <- fn_def.args));
       assert subset(syn_type_vars(fn_def.res_type), tvars);
-      local_tvar_binds = [fb : b <- tvar_binds, fb = [v -> t : v, t <- b, tvars(v)], fb != [:]];
+      local_tvar_binds = [fb : b <- tvar_binds, fb = [v -> t : v, t <- b, tvars(v)], fb != []];
       local_fns = (transfer(process_fn_def(fd, tvar_binds), fd) : fd <- fn_def.local_fns);
       new_fn_def = syn_fn_def(
         name:       fn_def.name,
@@ -209,7 +209,7 @@ implicit syn_prg : SynPrg
     remaining = [a : a <- syn_auto_defs, a.parent?];
     loop
       newly_resolved = [a.name -> (p) & resolved[p] : a <- remaining, p = auto_symbol(a.parent), resolved(p)];
-      break if newly_resolved == [:];
+      break if newly_resolved == [];
       remaining = [a : a <- remaining, p = auto_symbol(a.parent), not resolved(p)];
       resolved = resolved & newly_resolved;
     ;
@@ -421,20 +421,20 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact
   [LocAutoVar -> AutoSymbol] loc_auto_vars =
     match (syn_artifact)
       syn_proc_def()  = [loc_auto_var(v.var) -> auto_symbol(v.type) : v <~ syn_artifact.auto_vars],
-      _               = [:];
+      _               = [];
 
 
   [LocDBVar -> DBSymbol] loc_db_vars =
     match (syn_artifact)
       syn_proc_def()  = [loc_db_var(v.var) -> db_symbol(v.type) : v <~ syn_artifact.db_vars],
-      _               = [:];
+      _               = [];
 
 
   [MembAutoVar -> AutoSymbol] memb_auto_vars =
     match (syn_artifact)
       syn_auto_def()    = memb_auto_vars(syn_artifact.name),
       auto_method_def() = memb_auto_vars(auto_symbol(syn_artifact.target)),
-      _                 = [:];
+      _                 = [];
 
 
   [MembDBVar -> DBSymbol] memb_db_vars =
@@ -445,7 +445,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact
       handler_def()             |
       using_block_method_def()  |
       using_block_update_def()  = memb_db_vars(db_symbol(syn_artifact.target)),
-      _                         = [:];
+      _                         = [];
 
   //////////////////////////////////////////////////////////////////////////////
 
@@ -453,7 +453,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact
   {
     db_vars = loc_db_vars & memb_db_vars;
     last_round = db_vars;
-    while last_round != [:]:
+    while last_round != []:
       new_round = merge([nested_db_vars(v, t) : v, t <- last_round]);
       db_vars = db_vars & new_round;
       last_round = new_round;
@@ -481,7 +481,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact
 
     unqual_rel_vars_arities = if has_self_db
       then [rel_var(v) -> a : v, a <- db_interfaces[self_db_type].rel_vars]
-      else [:];
+      else [];
 
     qual_rel_vars_arities = [
       qual_rel_var(dbv, rel_var(rv)) -> a
@@ -553,7 +553,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact
       [fd.name -> [arity(fd) -> (arity(a) : a <- fd.args)]]
       : fd <- local_fn_defs]
     );
-    return [sgn -> nonempty(merge(pas)) : sgn, pas <- arities];
+    return [sgn -> nonempty_map(merge(pas)) : sgn, pas <- arities];
   }
 
 
@@ -561,7 +561,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact
     match (syn_artifact)
       top_level_fn_def()  = [cls_var(a.name) -> syn_type_arity(a.type) : a <~ syn_artifact.fndef.args, cls_arg() ?= a],
       nested_fn_def()     = [cls_var(a.name) -> syn_type_arity(a.type) : a <~ syn_artifact.fndef.args, cls_arg() ?= a],
-      _                   = [:];
+      _                   = [];
 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////

@@ -162,7 +162,7 @@ implicit
       value_type = union_superset([e.value_type : e <- entries]);
       nonempty = (e <- entries : not e.optional);
       if key_type == empty_type or value_type == empty_type:
-        return if nonempty then empty_type else empty_bin_rel_type;
+        return if nonempty then empty_type else empty_rel_type;
       ;
       return type_map(key_type, value_type, nonempty);
     ;
@@ -187,7 +187,7 @@ implicit
       } : e <- raw_entries
     ];
     rel_sgns = [(t0, t1) : e <- entries, (t0?, t1?) ?= e.types, t0 != empty_type, t1 != empty_type];
-    return empty_bin_rel_type if rel_sgns == [];
+    return empty_rel_type if rel_sgns == [];
     nonempty = (e <- entries : not e.optional);
     return type_bin_rel(rel_sgns, nonempty);
   }
@@ -203,7 +203,7 @@ implicit
       (t0, t1, t2) : e <- entries, (t0?, t1?, t2?) ?= e.types,
         t0 != empty_type, t1 != empty_type, t2 != empty_type
     ];
-    return empty_tern_rel_type if rel_sgns == [];
+    return empty_rel_type if rel_sgns == [];
     nonempty = (e <- entries : not e.optional);
     return type_tern_rel(rel_sgns, nonempty);
   }
@@ -220,7 +220,7 @@ implicit
   Type builtin_call_expr_type(BuiltIn name, Expr+ params, [Var -> Type] env) =
     obj   = untagged_objs_supertype(expr_type(params(0), env)),
     tag   = tag_supertype(expr_type(params(0), env)),
-    _     = fn_call_type(builtin_to_fn_type(builtin_signature(name)), params, [:], env);
+    _     = fn_call_type(builtin_to_fn_type(builtin_signature(name)), params, [], env);
 
 
   Type unary_pseudo_call_expr_type(Expr target, Expr arg, [Var -> Type] env)
@@ -453,7 +453,7 @@ implicit
       env_delta = [v -> new_var_type : v <- var_group(obj.expr)];
 
     else
-      env_delta = [:];
+      env_delta = [];
     ;
 
     //## HERE MAYBE I COULD TRY TO REFINE THE FALSE BRANCH AS WELL...
@@ -474,7 +474,7 @@ implicit
       elif right :: VarField
         then refine(right.expr, right.field, left, env)
       else
-        ([:], [:]);
+        ([], []);
 
     return (update(env, env_delta_eq), update(env, env_delta_not_eq));
 
@@ -493,7 +493,7 @@ implicit
       vars = var_group(var);
       field_type = accessor_expr_type(var, field, env);
       field_type_eq, field_type_not_eq = eq_refine(field_type, expr_type(expr, env));
-      return ([:], [:]) if var_type == empty_type or field_type_eq == empty_type or field_type_not_eq == empty_type;
+      return ([], []) if var_type == empty_type or field_type_eq == empty_type or field_type_not_eq == empty_type;
       var_type_eq = update_mandatory_field_type(var_type, field, field_type_eq);
       var_type_not_eq = update_mandatory_field_type(var_type, field, field_type_not_eq);
       return ([v -> var_type_eq : v <- vars], [v -> var_type_not_eq : v <- vars]);
@@ -505,14 +505,12 @@ implicit
         then (expr_type, subtract_obj_from_type(var_type, bare_obj(only_symb(expr_type))))
       else
         match (expr_type)
-          empty_set_type          = (empty_set_type,      subtract_obj_from_type(var_type, [])),
-          empty_seq_type          = (empty_seq_type,      subtract_obj_from_type(var_type, ())),
-          empty_bin_rel_type      = (empty_bin_rel_type,  subtract_obj_from_type(var_type, [:])),
-          empty_tern_rel_type     = (empty_tern_rel_type, subtract_obj_from_type(var_type, [::])),
-          int_range()             = (expr_type,           if expr_type.size == 1
-                                                            then subtract_obj_from_type(var_type, expr_type.min)
-                                                            else var_type),
-          _                       = (var_type,            var_type);
+          empty_seq_type  = (empty_seq_type,  subtract_obj_from_type(var_type, ())),
+          empty_rel_type  = (empty_rel_type,  subtract_obj_from_type(var_type, [])),
+          int_range()     = (expr_type,       if expr_type.size == 1
+                                                then subtract_obj_from_type(var_type, expr_type.min)
+                                                else var_type),
+          _               = (var_type,        var_type);
   }
 
 
@@ -899,7 +897,7 @@ implicit {
     return :never if elem_type == empty_type;
     new_env = env & [var -> elem_type];
     tree = :repeated(tail(new_env));
-    tree = :any([:never, tree]) if is_subset(empty_set_type, src_type);
+    tree = :any([:never, tree]) if is_subset(empty_rel_type, src_type);
     return tree;
   }
 
@@ -954,7 +952,7 @@ implicit {
                             ])),
       union_type(ts?)     = :any([bin_rel_clause_iter_tree(t, var1, var2, env, tail) : t <- ts]),
       type_ref(ts?)       = bin_rel_clause_iter_tree(expand_type_ref(ts, typedefs), var1, var2, env, tail),
-      empty_bin_rel_type  = :never,
+      empty_rel_type      = :never,
       empty_type          = :never;
 
 
@@ -966,7 +964,7 @@ implicit {
 
 
   IterTree tern_rel_clause_iter_tree(Type src_type, (Maybe[StdVar], Maybe[StdVar], Maybe[StdVar]) vars, [Var -> Type] env, ([Var -> Type] -> IterTree) tail) =
-    empty_tern_rel_type = :never,
+    empty_rel_type      = :never,
     ne_tern_rel_type()  = :repeated(:any([tail(env & [value(v) -> s(i) : v @ i <~ vars, v != nothing]) : s <- src_type.signatures])),
     union_type(ts?)     = :any([tern_rel_clause_iter_tree(t, vars, env, tail) : t <- ts]),
     type_ref(ts?)       = tern_rel_clause_iter_tree(expand_type_ref(ts, typedefs), vars, env, tail),
@@ -982,7 +980,7 @@ implicit {
   //////////////////////////////////////////////////////////////////////////////
 
   MapCompType map_comp_type(IterTree tree, Expr expr1, Expr expr2) =
-    never           = empty_bin_rel_type,
+    never           = empty_rel_type,
     once(e?)        = once_map_comp_type(e, expr1, expr2),
     repeated(t?)    = map_comp_type(t, expr1, expr2),
     any(ts?)        = map_comp_union_type([map_comp_type(t, expr1, expr2) : t <- ts]),
@@ -995,7 +993,7 @@ implicit {
     type2 = expr_type(expr2, env);
 
     //## HANDLE THIS CASE...
-    return empty_bin_rel_type if type1 == empty_type or type2 == empty_type;
+    return empty_rel_type if type1 == empty_type or type2 == empty_type;
 
     if is_symb_singl_type(type1):
       symb = only_symb(type1);
@@ -1009,7 +1007,7 @@ implicit {
   //////////////////////////////////////////////////////////////////////////////
 
   BinRelCompType bin_rel_comp_type(IterTree tree, Expr expr1, Expr expr2) =
-    never         = empty_bin_rel_type,
+    never         = empty_rel_type,
     once(e?)      = once_bin_rel_comp_type(e, expr1, expr2),
     repeated(t?)  = repeated_bin_rel_comp_type(bin_rel_comp_type(t, expr1, expr2)),
     any(ts?)      = bin_rel_comp_union_type([bin_rel_comp_type(t, expr1, expr2) : t <- ts]),
@@ -1025,7 +1023,7 @@ implicit {
     type2 = expr_type(expr2, env);
 
     //## HANDLE THIS CASE
-    return empty_bin_rel_type if type1 == empty_type or type2 == empty_type;
+    return empty_rel_type if type1 == empty_type or type2 == empty_type;
 
     return ne_bin_rel_type_nonvoid([(type1, type2)]);
   }
@@ -1034,7 +1032,7 @@ implicit {
   //////////////////////////////////////////////////////////////////////////////
 
   TernRelCompType tern_rel_comp_type(IterTree tree, Expr expr0, Expr expr1, Expr expr2) =
-    never         = empty_tern_rel_type,
+    never         = empty_rel_type,
     once(e?)      = once_tern_rel_comp_type(e, expr0, expr1, expr2),
     repeated(t?)  = repeated_tern_rel_comp_type(tern_rel_comp_type(t, expr0, expr1, expr2)),
     any(ts?)      = tern_rel_comp_union_type([tern_rel_comp_type(t, expr0, expr1, expr2) : t <- ts]),
@@ -1051,7 +1049,7 @@ implicit {
     type2 = expr_type(expr2, env);
 
     //## HANDLE THIS CASE
-    return empty_tern_rel_type if type0 == empty_type or type1 == empty_type or type2 == empty_type;
+    return empty_rel_type if type0 == empty_type or type1 == empty_type or type2 == empty_type;
 
     return ne_tern_rel_type_nonvoid([(type0, type1, type2)]);
   }
@@ -1060,14 +1058,14 @@ implicit {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-type MapCompType  = empty_bin_rel_type,
+type MapCompType  = empty_rel_type,
                     ne_map_type(key_type: NeType, value_type: NeType),
                     ne_record_type(RecordTypeFields),
                     union_type([+MapCompType]);
 
-type BinRelCompType = empty_bin_rel_type, NeBinRelType, union_type([+<empty_bin_rel_type, NeBinRelType>]);
+type BinRelCompType = empty_rel_type, NeBinRelType, union_type([+<empty_rel_type, NeBinRelType>]);
 
-type TernRelCompType = empty_tern_rel_type, NeTernRelType, union_type([+<empty_tern_rel_type, NeTernRelType>]);
+type TernRelCompType = empty_rel_type, NeTernRelType, union_type([+<empty_rel_type, NeTernRelType>]);
 
 
 MapCompType map_comp_union_type([+MapCompType] ts)
@@ -1084,7 +1082,7 @@ MapCompType map_comp_union_type([+MapCompType] ts)
 BinRelCompType bin_rel_comp_union_type([+BinRelCompType] types) {
   nu_types = nonempty(union([
     match (t)
-      empty_bin_rel_type  |
+      empty_rel_type      |
       ne_bin_rel_type()   = [t],
       union_type(ts?)     = ts
     : t <- types
@@ -1096,7 +1094,7 @@ BinRelCompType bin_rel_comp_union_type([+BinRelCompType] types) {
 TernRelCompType tern_rel_comp_union_type([+TernRelCompType] types) {
   nu_types = nonempty(union([
     match(t)
-      empty_tern_rel_type |
+      empty_rel_type      |
       ne_tern_rel_type()  = [t],
       union_type(ts?)     = ts
     : t <- types
@@ -1110,8 +1108,8 @@ TernRelCompType tern_rel_comp_union_type([+TernRelCompType] types) {
 implicit typedefs : [TypeName -> NeType]
 {
   MapCompType both(MapCompType type1, MapCompType type2) =
-    empty_bin_rel_type,     _                     = type2,
-    _,                      empty_bin_rel_type    = type1,
+    empty_rel_type,         _                     = type2,
+    _,                      empty_rel_type        = type1,
 
     union_type(ts1?),       union_type(ts2?)      = union_both(ts1, ts2),
     union_type(ts1?),       ne_record_type()      = union_both(ts1, [type2]),
@@ -1127,13 +1125,13 @@ implicit typedefs : [TypeName -> NeType]
 
   MapCompType union_both([+MapCompType] types1, [+MapCompType] types2)
   {
-    nonempty_types_1 = types1 - [empty_bin_rel_type];
-    nonempty_types_2 = types2 - [empty_bin_rel_type];
+    nonempty_types_1 = types1 - [empty_rel_type];
+    nonempty_types_2 = types2 - [empty_rel_type];
     if size(nonempty_types_1) == 1 and size(nonempty_types_2) == 1:
       ne_type_1 = only(nonempty_types_1);
       ne_type_2 = only(nonempty_types_2);
-      nonempty_1 = not types1(empty_bin_rel_type);
-      nonempty_2 = not types2(empty_bin_rel_type);
+      nonempty_1 = not types1(empty_rel_type);
+      nonempty_2 = not types2(empty_rel_type);
       return match (ne_type_1, ne_type_2)
         ne_record_type(fs1?), ne_record_type(fs2?)  = union_both_special_case(fs1, fs2, nonempty_1, nonempty_2),
         _,                    _                     = union_both_default(types1, types2);
@@ -1158,11 +1156,11 @@ implicit typedefs : [TypeName -> NeType]
       elif nonempty_1 and nonempty_2:
         fs = merge_fields(fs1, fs2);
         nonempty = (l, f <- fs : not f.optional);
-        return map_comp_union_type([empty_bin_rel_type if not nonempty, ne_record_type(fs)]);
+        return map_comp_union_type([empty_rel_type if not nonempty, ne_record_type(fs)]);
 
       else
-        rec_types_1 = [empty_bin_rel_type if not nonempty_1, ne_record_type(fs1)];
-        rec_types_2 = [empty_bin_rel_type if not nonempty_2, ne_record_type(fs2)];
+        rec_types_1 = [empty_rel_type if not nonempty_1, ne_record_type(fs1)];
+        rec_types_2 = [empty_rel_type if not nonempty_2, ne_record_type(fs2)];
         return union_both_default(rec_types_1, rec_types_2);
       ;
     }
@@ -1182,53 +1180,53 @@ implicit typedefs : [TypeName -> NeType]
     //## INSTEAD OF FAILING?
     fail if key_type == empty_type or value_type == empty_type;
 
-    assert type_contains_obj(type1, [:]) == is_subset(empty_bin_rel_type, type1);
-    assert type_contains_obj(type2, [:]) == is_subset(empty_bin_rel_type, type2);
+    assert type_contains_obj(type1, []) == is_subset(empty_rel_type, type1);
+    assert type_contains_obj(type2, []) == is_subset(empty_rel_type, type2);
 
     type = ne_map_type(key_type, value_type);
-    if type_contains_obj(type1, [:]) and type_contains_obj(type2, [:]):
-      type = map_comp_union_type([empty_bin_rel_type, type]);
+    if type_contains_obj(type1, []) and type_contains_obj(type2, []):
+      type = map_comp_union_type([empty_rel_type, type]);
     ;
     return type;
   }
 
 
-  RecordTypeFields merge_fields(RecordTypeFields fs1, RecordTypeFields fs2) =
-    nonempty([l -> {
-        return fs2[l] if not fs1(l);
-        return fs1[l] if not fs2(l);
-        f1 = fs1[l];
-        f2 = fs2[l];
-        type = union_superset(f1.type, f2.type);
-        fail if type == empty_type;
-        return (type: type, optional: f1.optional and f2.optional);
-      } : l <- keys(fs1) & keys(fs2)
-    ]);
+  RecordTypeFields merge_fields(RecordTypeFields fs1, RecordTypeFields fs2) = [
+    l -> {
+      return fs2[l] if not fs1(l);
+      return fs1[l] if not fs2(l);
+      f1 = fs1[l];
+      f2 = fs2[l];
+      type = union_superset(f1.type, f2.type);
+      fail if type == empty_type;
+      return (type: type, optional: f1.optional and f2.optional);
+    } : l, unused_var <- fs1 | l, unused_var <- fs2
+  ];
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
 BinRelCompType repeated_bin_rel_comp_type(BinRelCompType type) =
-  empty_bin_rel_type    |
-  ne_bin_rel_type()     = type,
-  union_type(ts?)       = repeated_bin_rel_comp_type_union(ts);
+  empty_rel_type      |
+  ne_bin_rel_type()   = type,
+  union_type(ts?)     = repeated_bin_rel_comp_type_union(ts);
 
 
-BinRelCompType repeated_bin_rel_comp_type_union([+<empty_bin_rel_type, NeBinRelType>] types) {
-  sgns = union([t.signatures : t <- types, t != empty_bin_rel_type]);
-  return empty_bin_rel_type if sgns == [];
+BinRelCompType repeated_bin_rel_comp_type_union([+<empty_rel_type, NeBinRelType>] types) {
+  sgns = union([t.signatures : t <- types, t != empty_rel_type]);
+  return empty_rel_type if sgns == [];
   rep_type = ne_bin_rel_type_nonvoid(sgns);
-  rep_type = bin_rel_comp_union_type([empty_bin_rel_type, rep_type]) if types(empty_bin_rel_type);
+  rep_type = bin_rel_comp_union_type([empty_rel_type, rep_type]) if types(empty_rel_type);
   return rep_type;
 }
 
 
 BinRelCompType bin_rel_both(BinRelCompType type1, BinRelCompType type2) =
-  empty_bin_rel_type,   empty_bin_rel_type  = empty_bin_rel_type,
-  empty_bin_rel_type,   ne_bin_rel_type()   = type2,
+  empty_rel_type,       empty_rel_type      = empty_rel_type,
+  empty_rel_type,       ne_bin_rel_type()   = type2,
   ne_bin_rel_type(),    ne_bin_rel_type()   = ne_bin_rel_type_nonvoid(nonempty(type1.signatures & type2.signatures)),
-  empty_bin_rel_type |
+  empty_rel_type |
   ne_bin_rel_type(),    union_type(ts?)     = bin_rel_comp_union_type([bin_rel_both(type1, t) : t <- ts]),
   union_type(ts1?),     union_type(ts2?)    = bin_rel_comp_union_type([bin_rel_both(t1, t2) : t1 <- ts1, t2 <- ts2]),
   _,                    _                   = bin_rel_both(type2, type1);
@@ -1238,25 +1236,25 @@ BinRelCompType bin_rel_both(BinRelCompType type1, BinRelCompType type2) =
 ////////////////////////////////////////////////////////////////////////////////
 
 TernRelCompType repeated_tern_rel_comp_type(TernRelCompType type) =
-  empty_tern_rel_type   |
+  empty_rel_type        |
   ne_tern_rel_type()    = type,
   union_type(ts?)       = repeated_tern_rel_comp_type_union(ts);
 
 
-TernRelCompType repeated_tern_rel_comp_type_union([+<empty_tern_rel_type, NeTernRelType>] types) {
-  sgns = union([t.signatures : t <- types, t != empty_tern_rel_type]);
-  return empty_tern_rel_type if sgns == [];
+TernRelCompType repeated_tern_rel_comp_type_union([+<empty_rel_type, NeTernRelType>] types) {
+  sgns = union([t.signatures : t <- types, t != empty_rel_type]);
+  return empty_rel_type if sgns == [];
   rep_type = ne_tern_rel_type_nonvoid(sgns);
-  rep_type = tern_rel_comp_union_type([empty_tern_rel_type, rep_type]) if types(empty_tern_rel_type);
+  rep_type = tern_rel_comp_union_type([empty_rel_type, rep_type]) if types(empty_rel_type);
   return rep_type;
 }
 
 
 TernRelCompType tern_rel_both(TernRelCompType type1, TernRelCompType type2) =
-  empty_tern_rel_type,  empty_tern_rel_type = empty_tern_rel_type,
-  empty_tern_rel_type,  ne_tern_rel_type()  = type2,
+  empty_rel_type,       empty_rel_type      = empty_rel_type,
+  empty_rel_type,       ne_tern_rel_type()  = type2,
   ne_tern_rel_type(),   ne_tern_rel_type()  = ne_tern_rel_type_nonvoid(nonempty(type1.signatures & type2.signatures)),
-  empty_tern_rel_type |
+  empty_rel_type |
   ne_tern_rel_type(),   union_type(ts?)     = tern_rel_comp_union_type([tern_rel_both(type1, t) : t <- ts]),
   union_type(ts1?),     union_type(ts2?)    = tern_rel_comp_union_type([tern_rel_both(t1, t2) : t1 <- ts1, t2 <- ts2]),
   _,                    _                   = tern_rel_both(type2, type1);
