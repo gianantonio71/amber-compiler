@@ -25,7 +25,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
     queue_update_code = [n.id -> gen_queue_update_method(n, nodes_indexes[n.id], item(levels_sizes, n.level)) : n <~ nodes];
 
     assert {
-      inputs_count = size(automaton.inputs);
+      inputs_count = |automaton.inputs|;
       for n @ i <- nodes:
         is_input = match (n)
           input()  = true,
@@ -39,7 +39,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
       return true;
     };
 
-    sorted_input_ids = (match (n.id) std_block_node_id(a?) = a : n <- subseq(nodes, 0, size(automaton.inputs))); //## BAD: RUNTIME TYPE CHECKING SHOULD NOT BE NEEDED HERE
+    sorted_input_ids = (match (n.id) std_block_node_id(a?) = a : n <- subseq(nodes, 0, |automaton.inputs|)); //## BAD: RUNTIME TYPE CHECKING SHOULD NOT BE NEEDED HERE
 
     memb_vars = [left(v) : v <- memb_bool_vars] &
                 [left(v) : v <- memb_int_vars] &
@@ -63,7 +63,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
       queue_update_code:    queue_update_code,
       methods:              methods,
       const_data:           const_data,
-      time_rules_count:     size(time_varying_nodes_indexes)
+      time_rules_count:     |time_varying_nodes_indexes|
     );
   }
 
@@ -71,7 +71,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
   [(MembIntVar, Int)] auto_memb_int_vars
   {
     nodes = gen_auto_nodes;
-    level_marked_nodes_counts = count_vector((n.level : n <- nodes, needs_initial_update(n)), length(levels_sizes));
+    level_marked_nodes_counts = count_vector((n.level : n <- nodes, needs_initial_update(n)), |levels_sizes|);
     node_specific_vars = seq_union((memb_int_vars(n) : n <- nodes));
     level_specific_vars = [(update_count_var(l), level_marked_nodes_counts(l)) : s @ l <~ levels_sizes, s > 2];
     // Not adding the arrays used to store the trigger heaps
@@ -88,7 +88,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
   [MembIntVectVar] memb_int_vect_vars
   {
     vars = [nodes_to_update_vect_var(l, nz_nat(s)) : s @ l <~ levels_sizes, s > 2];
-    outputs_count = size(automaton.outputs);
+    outputs_count = |automaton.outputs|;
     vars = vars & [changed_outputs(outputs_count)] if outputs_count != 0;
     return vars;
   }
@@ -98,15 +98,15 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
   //## COMPILATION OF METHODS FOR BOTH TYPES OF AUTOMATA IS ALMOST IDENTICAL, CAN WE SHARE SOME CODE HERE?
   [MethodId -> CompiledMethod] compiled_methods([Method] methods)
   {
-    return merge([compiled(ms) : unused_var, ms <- group_by(methods, ($.name, length($.args)))]);
+    return merge([compiled(ms) : unused_var, ms <- group_by(methods, ($.name, |$.args|))]);
 
 
     [MethodId -> CompiledMethod] compiled([+Method] methods)
     {
       a_method = an_elem(methods);
       name = a_method.name;
-      arity = length(a_method.args);
-      return [method_id(name, arity) -> compiled(a_method)] if size(methods) == 1;
+      arity = |a_method.args|;
+      return [method_id(name, arity) -> compiled(a_method)] if |methods| == 1;
 
       sorted_methods = rand_sort(methods);
       comp_methods = merge(([method_id(m.name, arity, i) -> compiled(m)] : m @ i <- sorted_methods));
@@ -161,7 +161,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
     // Initializing variables that contain the list of nodes that must be updated.
     code_3 = join((
       (set_ivar(nodes_to_update_var(l, i), nodes_indexes[n]) : n @ i <- rand_sort(marked_nodes_by_level(l)))
-      : ns @ l <- nodes_ids_by_level, size(ns) > 2
+      : ns @ l <- nodes_ids_by_level, |ns| > 2
     ));
 
     // Now initializing all parameters.
@@ -249,7 +249,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
                   switch_on_nat(
                     a_free_int_var,
                     ( (mark_for_update(time_varying_nodes_by_idx[i]))
-                      : i < nz_nat(size(time_varying_nodes_by_idx))
+                      : i < nz_nat(|time_varying_nodes_by_idx|)
                     )
                   ),
                   clear_timer(automaton.name, a_free_int_var),
@@ -282,7 +282,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
     is_time_sensitive = is_time_sensitive(automaton.name);
 
     update_count_var = update_count_var(level_idx);
-    node_count = length(nodes_ids);
+    node_count = |nodes_ids|;
 
     nodes_code = (
       { code = (
@@ -344,18 +344,18 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
 
 Instr* gen_dispatch_auto_method_body(AutoSymbol auto_type, Method+ methods, [TypeName -> Type] typedefs)
 {
-  assert length(methods) > 1;                         // There must be more than one method
-  assert size([m.name : m <~ methods]) == 1;          // All methods must have the same name
-  assert size([length(m.args) : m <~ methods]) == 1;  // All methods have the same arity
-  assert length(head(methods).args) > 0;              // No-argument methods cannot be polymorphic
+  assert |methods| > 1;                     // There must be more than one method
+  assert |[m.name : m <~ methods]| == 1;    // All methods must have the same name
+  assert |[|m.args| : m <~ methods]| == 1;  // All methods have the same arity
+  assert |head(methods).args| > 0;          // No-argument methods cannot be polymorphic
 
   l0 = lvar(0);
 
-  count = length(methods);
+  count = |methods|;
 
   a_method  = head(methods);
   name      = a_method.name;
-  arity     = length(a_method.args);
+  arity     = |a_method.args|;
 
   disp_args = choose_disp_args(((t : t, unused_var <- nonempty(m.args)) : m <- methods), typedefs);
 

@@ -18,6 +18,8 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
     cls_call()          = gen_eval_code_for_cls_call(expr.name, expr.args, res_var),
     builtin_call()      = gen_eval_code_for_builtin_call(expr.name, expr.args, res_var),
 
+    size_expr()         = gen_eval_code_for_size_expr(expr.coll, res_var),
+
     unary_pseudo_call() = gen_eval_code_for_unary_pseudo_call_expr(expr.target, expr.arg, res_var),
 
     rel_memb_test()     = gen_eval_code_for_rel_memb_test(expr.rel, expr.args, res_var),
@@ -86,7 +88,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
       code = seq_info.eval_code;
       for e @ i <- tail:
         info = gen_eval_info(e);
-        target_var = if i < length(tail) - 1 then tmp_var else res_var;
+        target_var = if i < |tail| - 1 then tmp_var else res_var;
         seq_var = if i == 0 then seq_info.expr else tmp_var;
         code = code & info.eval_code & (append_to_seq(target_var, seq_var, info.expr));
       ;
@@ -111,7 +113,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   // {
   //   return (set_var(res_var, empty_rel)) if entries == [];
 
-  //   count = nz_nat(size(entries));
+  //   count = nz_nat(|entries|);
 
   //   keys_var, var_gen = next_vector_var(next_var_gen, count);
   //   values_var, var_gen = next_vector_var(var_gen, count);
@@ -160,7 +162,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
     non_cond_entries = rand_sort([e : e <- entries, not e.cond?]);
     cond_entries = rand_sort([e : e <- entries, e.cond?]);
 
-    count = nz_nat(size(entries));
+    count = nz_nat(|entries|);
 
     col1_var, var_gen = next_vector_var(next_var_gen, count);
     col2_var, var_gen = next_vector_var(var_gen, count);
@@ -182,7 +184,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
       curr_arg2_slot_var = evar(col2_var.id, count_var);
 
       count_expr = count_var;
-      code = (code | set_ivar(count_var, length(non_cond_entries)));
+      code = (code | set_ivar(count_var, |non_cond_entries|));
 
       let next_var_gen = var_gen:
         for e @ i <- cond_entries:
@@ -209,7 +211,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
     non_cond_entries = rand_sort([e : e <- entries, not e.cond?]);
     cond_entries = rand_sort([e : e <- entries, e.cond?]);
 
-    count = nz_nat(size(entries));
+    count = nz_nat(|entries|);
 
     col1_var, var_gen = next_vector_var(next_var_gen, count);
     col2_var, var_gen = next_vector_var(var_gen, count);
@@ -237,7 +239,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
 
       count_expr = count_var;
 
-      code = (code | set_ivar(count_var, length(non_cond_entries)));
+      code = (code | set_ivar(count_var, |non_cond_entries|));
 
       let next_var_gen = var_gen:
         for e @ i <- cond_entries:
@@ -346,14 +348,18 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
       le          = bool_obj(is_le(get_int_val(ps(0)), get_int_val(ps(1)))),
       gt          = bool_obj(is_gt(get_int_val(ps(0)), get_int_val(ps(1)))),
       ge          = bool_obj(is_ge(get_int_val(ps(0)), get_int_val(ps(1)))),
-      len         = int_obj(get_seq_len(ps(0))),
-      size        = int_obj(get_size(ps(0))),
       tag         = get_tag(ps(0)),
       mantissa    = int_obj(mantissa(ps(0))),
       dec_exp     = int_obj(dec_exp(ps(0))),
       rand_nat    = int_obj(rand_nat(ps(0))),
       counter     = int_obj(unique_nat),
       ticks       = int_obj(ticks);
+  }
+
+
+  Instr+ gen_eval_code_for_size_expr(Expr coll, EvalDestVar res_var) {
+    info = gen_eval_info(coll);
+    return (info.eval_code | set_var(res_var, int_obj(get_size(info.expr))));
   }
 
 
@@ -373,7 +379,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
 
   Instr+ gen_eval_code_for_rel_memb_test(Expr rel, Maybe[Expr]+ args, EvalDestVar res_var)
   {
-    assert length(args) == 2 or length(args) == 3;
+    assert |args| == 2 or |args| == 3;
 
     rel_info = gen_eval_info(rel);
     args_info = gen_eval_info((value(a) : a <- args, a != nothing), next_var_gen = rel_info.next_var_gen);
@@ -411,8 +417,8 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
     set_args = (value(a) : a <- table_args, a != nothing);
     info = gen_eval_info(set_args);
 
-    surr_vars, var_gen = next_int_vars(info.next_var_gen, length(set_args));
-    it_var, var_gen = next_table_it_var(var_gen, length(table_args));
+    surr_vars, var_gen = next_int_vars(info.next_var_gen, |set_args|);
+    it_var, var_gen = next_table_it_var(var_gen, |table_args|);
 
     surr_args = (apply(mi, surr_vars($)) : mi <- filtered_idxs);
 
@@ -456,7 +462,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
           assert k != unknown_arg_idx;
           h = k - bit(k > unknown_arg_idx); // Index of the argument in the list of set arguments before permutation
           return h;
-        } : i < length(set_args)
+        } : i < |set_args|
       );
       set_table_args_2 = (set_args(i) : i <- set_args_perm);
       return set_table_args == set_table_args_2;
@@ -468,7 +474,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
 
   Instr+ gen_eval_code_for_relvar_lookup_after_perm(AnyRelVar rel_var, Expr+ set_args, Nat unknown_arg_idx, EvalDestVar res_var)
   {
-    arity = length(set_args) + 1;
+    arity = |set_args| + 1;
 
     info = gen_eval_info(set_args);
 
@@ -592,7 +598,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
       res_var:    res_var,
       auto_var:   expr.var if expr.var?,
       type:       if expr.var? then var_type(expr.var) else this_auto_symbol,
-      method_id:  method_id(expr.name, length(expr.args)),
+      method_id:  method_id(expr.name, |expr.args|),
       args:       args_eval_info.exprs
     );
     return (args_eval_info.eval_code | invoke_method_instr);
@@ -606,7 +612,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
       res_var:    res_var,
       db_var:     expr.var if expr.var?,
       type:       if expr.var? then var_type(expr.var) else this_db_symbol,
-      method_id:  method_id(expr.name, length(expr.args)),
+      method_id:  method_id(expr.name, |expr.args|),
       args:       args_eval_info.exprs
     );
     return (args_eval_info.eval_code | invoke_method_instr);
@@ -727,7 +733,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
 
     needs_idx_var = not expr.sel_expr? or expr.idx_var?;
 
-    if length(expr.vars) == 1:
+    if |expr.vars| == 1:
       var_set_code = (set_var(expr.vars(0), get_curr_obj(it_var)));
     else
       // tmp_var is only needed during a destructuring assignment, it can be safely reused elsewhere
@@ -739,7 +745,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
 
     loop_code = (
       if knows_size
-        then mk_array(res_var, get_seq_len(src_info.expr))
+        then mk_array(res_var, get_size(src_info.expr))
         else init_stream(strm_var),
       get_iter(it_var, src_info.expr),
       maybe_op(set_ivar(idx_var, 0), needs_idx_var),

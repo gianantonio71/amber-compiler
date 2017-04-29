@@ -28,6 +28,8 @@ IntType low_ints(Int max) = low_ints(max: max);
 IntType high_ints(Int min) = high_ints(min: min);
 IntType int_range(Int min, Int max) = int_range(min: min, size: nz_nat(max-min+1)); //## BUG: WHAT HAPPENS IF max IS LOWER THAN min?
 
+IntType singleton_type(Int n) = int_range(min: n, size: 1);
+
 TypeRef type_ref(TypeSymbol s) = :type_ref(s);
 
 TypeVar type_var(<Atom, Nat> n) = :type_var(n);
@@ -91,7 +93,7 @@ TagObjType   tag_obj_type(TagType tt, NeType ot) = tag_obj_type(tag_type: tt, ob
 NeType ne_union_type([+NeType] ts)
 {
   nu_ts = union([nu_types(t) : t <- ts]);
-  return if size(nu_ts) == 1 then only(nu_ts) else :union_type(nonempty(nu_ts));
+  return if |nu_ts| == 1 then only(nu_ts) else :union_type(nonempty(nu_ts));
 
   [+NeType] nu_types(NeType type) =
     union_type(ts?)  = nonempty(union([nu_types(t) : t <- ts])),
@@ -101,9 +103,9 @@ NeType ne_union_type([+NeType] ts)
 Type union_type([Type] ts)
 {
   nu_ts = union([nu_types(t) : t <- ts, t != empty_type]);
-  return if   nu_ts == []       then empty_type
-         elif size(nu_ts) == 1  then only(nu_ts)
-                                else :union_type(nu_ts);
+  return if   nu_ts   == [] then empty_type
+         elif |nu_ts| == 1  then only(nu_ts)
+                            else :union_type(nu_ts);
 
   [+NeType] nu_types(NeType type) =
     union_type(ts?)  = nonempty(union([nu_types(t) : t <- ts])),
@@ -156,7 +158,7 @@ Pattern ptrn_var(StdVar v, Pattern p)           = ptrn_var(var: v, ptrn: p);
 
 Pattern ptrn_union([+Pattern] ps)
 {
-  return only(ps) if size(ps) == 1;
+  return only(ps) if |ps| == 1;
   return ptrn_any if in(ptrn_any, ps);
   norm_ps = union([patterns(p) : p <- ps]);
   //## HERE I SHOULD LOOK OUT FOR THE CASE WHEN THE SET OF PATTERNS COLLECTIVELY FORM A PATTERN "ANY"
@@ -237,6 +239,8 @@ FnCallExpr fn_call(FnFamilyId n, AnyExpr* as, [ImplArg -> Expr] nas) = fn_call(n
 Expr builtin_call(BuiltIn n, Expr+ as)  = builtin_call(name: n, args: as);
 Expr cls_call(AnyClsVar v, Expr+ as)    = cls_call(name: v, args: as);
 
+SizeExpr size_expr(Expr e) = size_expr(coll: e);
+
 UnaryPseudoCall unary_pseudo_call(Expr c, Expr v) = unary_pseudo_call(target: c, arg: v);
 
 RelMembTest rel_memb_test(Expr r, Maybe[Expr]+ as) = rel_memb_test(rel: r, args: as);
@@ -254,7 +258,7 @@ Expr not_expr(Expr e) = :not_expr(e);
 Expr and_expr(Expr+ es)
 {
   expr = last(es);
-  for i = 1..length(es):
+  for i = 1..|es|:
     expr = and_expr(rev_at(es, i), expr);
   ;
   return expr;
@@ -263,7 +267,7 @@ Expr and_expr(Expr+ es)
 Expr or_expr(Expr+ es)
 {
   expr = last(es);
-  for i = 1..length(es):
+  for i = 1..|es|:
     expr = or_expr(rev_at(es, i), expr);
   ;
   return expr;
@@ -325,13 +329,13 @@ Clause filter_clause(Expr e)                = :filter_clause(e);
 
 Clause rel_clause(StdVar+ vs, Expr e, Maybe[Expr]+ as)
 {
-  assert length(vs) == count(as, $ == nothing) and (length(as) == 2 or length(as) == 3);
+  assert |vs| == count(as, $ == nothing) and (|as| == 2 or |as| == 3);
   return rel_clause(vars: vs, src: e, args: as);
 }
 
 Clause relvar_clause(StdVar+ vs, AnyRelVar rv, Maybe[Expr]+ as)
 {
-  assert length(vs) == count(as, $ == nothing) and length(as) >= 1 and length(as) <= 3;
+  assert |vs| == count(as, $ == nothing) and |as| >= 1 and |as| <= 3;
   return relvar_clause(vars: vs, rel_var: rv, args: as);
 }
 

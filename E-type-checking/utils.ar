@@ -85,7 +85,7 @@ implicit typedefs : [TypeName -> NeType]
     ne_seq_type(),      _                 = empty_type,
 
     tuple_type(ts?),    ptrn_ne_seq       = type,
-    tuple_type(ts?),    ptrn_tuple(ps?)   = if length(ts) == length(ps)
+    tuple_type(ts?),    ptrn_tuple(ps?)   = if |ts| == |ps|
                                             then tuple_type((type_pattern_intersection_superset(t, p) : t, p <- nonempty(zip(ts, ps))))
                                             else empty_type,
     tuple_type(ts?),    _                 = empty_type,
@@ -120,7 +120,7 @@ implicit typedefs : [TypeName -> NeType]
 
     union_type(ts?),    _                 = { int_types = [it : t <- ts, it = type_pattern_intersection_superset(t, ptrn), it != empty_type];
                                               return empty_type if int_types == [];
-                                              // return only(int_types) if size(int_types) == 1;
+                                              // return only(int_types) if |int_types| == 1;
                                               // The types here are all union-compatible, since they are all
                                               // subsets of types that were union-compatible to begin with
                                               return union_type(int_types);
@@ -197,7 +197,7 @@ implicit typedefs : [TypeName -> NeType]
                                     not (k, v <- obj : not is_key(k, fs) or not type_contains_obj(fs[k].type, v)),
     ne_record_type(fs?),  _       = false,
 
-    tuple_type(ts?),      ()      = length(ts) == length(obj) and all((type_contains_obj(t, e) : t, e <- zip(ts, obj))),
+    tuple_type(ts?),      ()      = |ts| == |obj| and all((type_contains_obj(t, e) : t, e <- zip(ts, obj))),
     tuple_type(ts?),      _       = false,
 
     tag_obj_type(),       t?(o?)  = type_contains_obj(type.tag_type, t) and type_contains_obj(type.obj_type, o),
@@ -265,8 +265,6 @@ BuiltInType builtin_signature(BuiltIn) =
 
   str             = builtin_type((atom_type),                          type_string),
   symb            = builtin_type((type_string),                        atom_type),
-  len             = builtin_type((type_seq),                           high_ints(0)),
-  size            = builtin_type((type_set_rel),                       high_ints(0)),
   slice           = builtin_type((type_seq_t, integer, integer),       type_seq_t),
   cat             = builtin_type((type_seq_t, type_seq_t),             type_seq_t),
   rev             = builtin_type((type_seq_t),                         type_seq_t),
@@ -326,6 +324,8 @@ NeType type_bin_rel = type_bin_rel([(type_any, type_any)], false);
 NeType type_tern_rel = type_tern_rel([(type_any, type_any, type_any)], false);
 
 NeType type_set_rel = ne_union_type([type_set, type_bin_rel, type_tern_rel]);
+
+NeType type_coll = ne_union_type([type_seq, type_set, type_bin_rel, type_tern_rel]);
 
 NeType type_unary_pseudocall_target = ne_union_type([atom_type, type_seq, type_set, type_map]);
 

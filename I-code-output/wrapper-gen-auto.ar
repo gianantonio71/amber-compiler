@@ -23,7 +23,7 @@ implicit block : Block, typedefs : [TypeName -> NeType]
 
   //   decl = "  void " & meth_name & "(" & append(args_types, ", ") & ");";
 
-  //   size_str = printed(length(ord_fields));
+  //   size_str = printed(|ord_fields|);
   //   impl = (
   //     "",
   //     "void " & auto_class_name & "::" & meth_name & "(" & append(args_decls, ", ") & ") {",
@@ -60,13 +60,13 @@ implicit block : Block, typedefs : [TypeName -> NeType]
   //   impl = (
   //     "",
   //     "void " & auto_class_name & "::set_" & name & "(" & append(args_list, ", ") & ") {",
-  //     "  OBJ fields[" & printed(length(field_types)) & "];"
+  //     "  OBJ fields[" & printed(|field_types|) & "];"
   //   );
   //   for it @ i <- inter_types:
   //     args_names = input_args_names(it, i);
   //     impl = (impl | "  fields[" & printed(i) & "] = " & constructor_function(it) & "(" & append(args_names, ", ") & ");");
   //   ;
-  //   ctor_expr = "build_seq(fields, " & printed(length(field_types)) & ")";
+  //   ctor_expr = "build_seq(fields, " & printed(|field_types|) & ")";
   //   ctor_expr = "build_tagged_obj(" & to_c_expr(value(maybe_tag)) & ", " & ctor_expr & ")" if maybe_tag != nothing;
   //   impl = impl & (
   //     "  internal_set_input(" & uc_name & ", " & ctor_expr & ");",
@@ -378,11 +378,11 @@ implicit typedefs : [TypeName -> NeType]
     ret_val_str = return_value_type(inter_ret_type);
     args_decls = append((input_arg_type(it) & " arg" & printed(i) : it @ i <- args_inter_types), ", ");
 
-    arity = length(method.args_types);
+    arity = |method.args_types|;
     memb_preds = method.args_memb_preds;
     args_types_by_pos = ([ps(i) : ps <- memb_preds] : i < arity);
-    mono_args = ((i, only(ts)) : ts @ i <- args_types_by_pos, size(ts) == 1);
-    poly_args = rand_sort([i : ts @ i <~ args_types_by_pos, size(ts) != 1]);
+    mono_args = ((i, only(ts)) : ts @ i <- args_types_by_pos, |ts| == 1);
+    poly_args = rand_sort([i : ts @ i <~ args_types_by_pos, |ts| != 1]);
 
     decl = "  " & ret_val_str & "call_" & base_name & "(" & args_types_str & ");";
 
@@ -401,16 +401,16 @@ implicit typedefs : [TypeName -> NeType]
       poly_conds = ((to_c_fn_name(ps(i)) & "(obj" & printed(i) & ")" : i <- poly_args) : ps <- rand_sort(memb_preds));
       anded_conds = ({
           c = append(cs, " && ");
-          c = "(" & c & ")" if length(cs) > 1;
+          c = "(" & c & ")" if |cs| > 1;
           return c;
         } : cs <- poly_conds
       );
       poly_cond = append(anded_conds, " || ");
-      poly_cond = "(" & poly_cond & ")" if length(anded_conds) > 1;
+      poly_cond = "(" & poly_cond & ")" if |anded_conds| > 1;
       conds = (conds | poly_cond);
     ;
     cond = append(conds, " && ");
-    cond = "(" & cond & ")" if length(conds) > 1;
+    cond = "(" & cond & ")" if |conds| > 1;
 
     if cond != "":
       release_stmts = ("    release(obj" & printed(i) & ");" : i < arity);

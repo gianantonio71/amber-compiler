@@ -3,16 +3,16 @@ type CCodeOutput = (body: String*, header: String*);
 CCodeOutput compile_to_c(CompiledPrg prg)
 {
   symbs = used_symbols(prg);
-  assert length(symbs) <= 64 * 1024; //## IMPLEMENT PROPERLY
+  assert |symbs| <= 64 * 1024; //## IMPLEMENT PROPERLY
 
   symb_names = ("symb_idx_" & printed(match (s) object(a?) = a) : s <- symbs);
 
   symb_strs = (to_c_expr(s) : s <- symbs);
 
-  c_code = ("const uint16 " & symb_names(i) & " = " & printed(i) & ";" : i < length(symbs)) & 4 * ("") &
-           ("const OBJ " & symb_strs(i) & " = make_symb(" & symb_names(i) & ");" : i < length(symbs)) & 4 * ("");
+  c_code = ("const uint16 " & symb_names(i) & " = " & printed(i) & ";" : i < |symbs|) & 4 * ("") &
+           ("const OBJ " & symb_strs(i) & " = make_symb(" & symb_names(i) & ");" : i < |symbs|) & 4 * ("");
 
-  symb_decls = ("const uint32 EMB_SYMB_COUNT = " & printed(length(symbs)) & ";") & 4 * ("");
+  symb_decls = ("const uint32 EMB_SYMB_COUNT = " & printed(|symbs|) & ";") & 4 * ("");
   c_code = c_code & symb_decls;
 
   symb_strs  = ("  \"" & _str_(_obj_(s)) & "\"," : s <- symbs);
@@ -39,7 +39,7 @@ CCodeOutput compile_to_c(CompiledPrg prg)
 
   sorted_cls_defs = rand_sort(cls_defs);
 
-  int_seqs_types_and_lengths = ((int_type_c_name(min(s), max(s)), length(s)) : s <- prg.int_seqs);
+  int_seqs_types_and_lengths = ((int_type_c_name(min(s), max(s)), |s|) : s <- prg.int_seqs);
 
   proc_code = compile_to_c(
     rand_sort(prg.procs),
@@ -170,17 +170,17 @@ Int pow(Int b, Nat e)
 
   type_name = int_type_c_name(min_elem, max_elem);
 
-  sgn = "const " & type_name & " " & const_int_seq_c_name(seq_id) & "[" & printed(length(int_seq)) & "]";
+  sgn = "const " & type_name & " " & const_int_seq_c_name(seq_id) & "[" & printed(|int_seq|) & "]";
 
   decl = "extern " & sgn & ";";
 
   strs = (printed(n) : n <- int_seq);
-  total_len = sum((length(s) : s <- strs)) + 2 * length(strs);
+  total_len = sum((length(s) : s <- strs)) + 2 * |strs|;
   if total_len < 60:
     def = (sgn & " = {" & append(strs, ", ") & "};");
   else
     max_len = nat(max((length(printed(n)) : n <- (min_elem, max_elem))));
-    last_idx = length(int_seq) - 1;
+    last_idx = |int_seq| - 1;
     strs = (align_text(s, max_len, ascii_space) & if i != last_idx then ", " else "" : s @ i <- strs);
     cont_lines = ("  " & append(ss) : ss <- split_into_groups(strs, nz_nat(100 / {max_len + 2})));
     def = (sgn & " = {") & cont_lines & ("};");
@@ -191,7 +191,7 @@ Int pow(Int b, Nat e)
 
   T+* split_into_groups(T+ items, NzNat max_group_size)
   {
-    len = length(items);
+    len = |items|;
     num_of_comp_groups = len / max_group_size;
     comp_groups_total_size = num_of_comp_groups * max_group_size;
     last_group_size = len - comp_groups_total_size;
@@ -647,7 +647,7 @@ implicit
 
   String* compile_queue_insert_tuple_to_c(RelVar rel_var, IntVar+ tuple)
   {
-    fn_name = fn_names_by_arity[length(tuple)];
+    fn_name = fn_names_by_arity[|tuple|];
     return (mk_gen_call(fn_name, ("&" & pending_updates_var_ref_name(rel_var)), tuple, ()));
 
     [NzNat -> String] fn_names_by_arity = [
@@ -883,8 +883,8 @@ implicit
     pars_info = (gen_par_info(p) : p <- params);
     code_frags, args = unzip(pars_info);
     call_code = if var != nothing
-      then mk_fn_call(value(var), to_c_fn_name(name, length(params)), args)
-      else mk_fn_call(to_c_fn_name(name, length(params)), args);
+      then mk_fn_call(value(var), to_c_fn_name(name, |params|), args)
+      else mk_fn_call(to_c_fn_name(name, |params|), args);
     return join(code_frags) & call_code;
 
 
@@ -914,9 +914,9 @@ implicit
         );
 
         if p.capt_vars != ():
-          if length(p.capt_vars) > 1:
+          if |p.capt_vars| > 1:
             var_name = "cd_" & printed(par_id);
-            code = code & ("OBJ " & var_name & "[" & printed(length(p.capt_vars)) & "];");
+            code = code & ("OBJ " & var_name & "[" & printed(|p.capt_vars|) & "];");
             for v @ i <- p.capt_vars:
               code = code & (var_name & "[" & printed(i) & "] = " & to_c_expr(v) & ";");
             ;
@@ -929,9 +929,9 @@ implicit
         ;
 
         if p.capt_cls_vars != ():
-          if length(p.capt_cls_vars) > 1:
+          if |p.capt_cls_vars| > 1:
             var_name = "cd_" & printed(par_id);
-            code = code & ("CLS " & var_name & "[" & printed(length(p.capt_cls_vars)) & "];");
+            code = code & ("CLS " & var_name & "[" & printed(|p.capt_cls_vars|) & "];");
             for v @ i <- p.capt_cls_vars:
               code = code & (var_name & "[" & printed(i) & "] = " & to_c_expr(v) & ";");
             ;
@@ -1009,7 +1009,7 @@ implicit
     //## NO NEED FOR NOW TO HANDLE THE CASE cls_var(Nat), AS THOSE VARIABLES ARE NEVER "CALLED", ONLY PASSED ON
     cls_var(+ symb?) | capt_cls_var(symb?) = {
       name = to_c_var_ref_name(cls_var);
-      return (mk_gen_call(var, name & ".fn_ptr_" & printed(length(args)), (), args, (name & ".data", name & ".cls", "env")));
+      return (mk_gen_call(var, name & ".fn_ptr_" & printed(|args|), (), args, (name & ".data", name & ".cls", "env")));
     };
 }
 

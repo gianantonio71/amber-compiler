@@ -78,7 +78,7 @@ implicit program : Program, database : DataBase, options : CompilationOptions
 
   Instr* database_copy_state_code
   {
-    count = nat(size(database.state_vars) + size(database.rel_vars) + size(database.nested_dbs));
+    count = nat(|database.state_vars| + |database.rel_vars| + |database.nested_dbs|);
     return () if count == 0;
 
     res_var, var_gen = next_obj_var(blank_var_gen);
@@ -111,7 +111,7 @@ implicit program : Program, database : DataBase, options : CompilationOptions
 
   Instr* database_set_state_code
   {
-    count = nat(size(database.state_vars) + size(database.rel_vars) + size(database.nested_dbs));
+    count = nat(|database.state_vars| + |database.rel_vars| + |database.nested_dbs|);
     return () if count == 0;
 
     state_var = fn_par(0);
@@ -134,7 +134,7 @@ implicit program : Program, database : DataBase, options : CompilationOptions
     rel_vars = rand_sort(keys(database.rel_vars));
     let artifact = database:
       for v <- rel_vars:
-        arity = nz_nat(length(an_elem(database.rel_vars[v].signatures)));
+        arity = nz_nat(|an_elem(database.rel_vars[v].signatures)|);
         code = (code |
           queue_deletes(v, (nothing : i < arity)),
           ext_lookup(tmp_var, state_var, object(bare_id(v))),
@@ -159,15 +159,15 @@ implicit program : Program, database : DataBase, options : CompilationOptions
   //## COMPILATION OF METHODS FOR BOTH TYPES OF AUTOMATA IS ALMOST IDENTICAL, CAN WE SHARE SOME CODE HERE?
   [MethodId -> CompiledMethod] compiled_database_methods([Method] methods)
   {
-    return merge([compiled(ms) : unused_var, ms <- group_by(methods, ($.name, length($.args)))]);
+    return merge([compiled(ms) : unused_var, ms <- group_by(methods, ($.name, |$.args|))]);
 
 
     [MethodId -> CompiledMethod] compiled([+Method] methods)
     {
       a_method = an_elem(methods);
       name = a_method.name;
-      arity = length(a_method.args);
-      return [method_id(name, arity) -> compiled(a_method)] if size(methods) == 1;
+      arity = |a_method.args|;
+      return [method_id(name, arity) -> compiled(a_method)] if |methods| == 1;
 
       sorted_methods = rand_sort(methods);
       comp_methods = merge(([method_id(m.name, arity, i) -> compiled(m)] : m @ i <- sorted_methods));
@@ -205,15 +205,15 @@ implicit program : Program, database : DataBase, options : CompilationOptions
 
   [UpdateId -> Instr*] compiled_database_updates([Update] updates)
   {
-    return merge([gen_updates_code(ms) : unused_var, ms <- group_by(updates, ($.name, length($.args)))]);
+    return merge([gen_updates_code(ms) : unused_var, ms <- group_by(updates, ($.name, |$.args|))]);
 
 
     [UpdateId -> Instr*] gen_updates_code([+Update] updates)
     {
       a_method = an_elem(updates);
       name = a_method.name;
-      arity = length(a_method.args);
-      return [update_id(name, arity) -> gen_update_code(a_method)] if size(updates) == 1;
+      arity = |a_method.args|;
+      return [update_id(name, arity) -> gen_update_code(a_method)] if |updates| == 1;
       sorted_updates = rand_sort(updates);
       comp_updates = merge(([update_id(m.name, arity, i) -> gen_update_code(m)] : m @ i <- sorted_updates));
       disp_method_code = update_dispatch_code(database.name, sorted_updates, program.typedefs);
@@ -237,7 +237,7 @@ implicit program : Program, database : DataBase, options : CompilationOptions
   [UpdateId -> Instr*] compiled_database_handlers([Handler] handlers)
   {
     return [] if handlers == [];
-    return [main_handler -> gen_handler_code(only(handlers))] if size(handlers) == 1;
+    return [main_handler -> gen_handler_code(only(handlers))] if |handlers| == 1;
     sorted_handlers = rand_sort(handlers);
     comp_handlers = merge(([handler_id(i) -> gen_handler_code(h)] : h @ i <- sorted_handlers));
     disp_method_code = update_dispatch_code(database.name, sorted_handlers, program.typedefs);
@@ -286,7 +286,7 @@ implicit program : Program, database : DataBase //## program IS NOT REALLY NEEDE
 
     [Nat] range(Nat n) = set((i : i < n));
 
-    NzNat arity([+NeType+] signatures) = only([length(s) : s <- signatures]); //## BAD BAD BAD: THIS THING IS PRETTY UGLY AND UNSAFE...
+    NzNat arity([+NeType+] signatures) = only([|s| : s <- signatures]); //## BAD BAD BAD: THIS THING IS PRETTY UGLY AND UNSAFE...
 
     NeType+ col_types([+NeType+] signatures, [[+Nat]] keys) {
       arity = arity(signatures);
@@ -303,18 +303,18 @@ implicit program : Program, database : DataBase //## program IS NOT REALLY NEEDE
 //## THIS IS AN ALMOST PERFECT DUPLICATE OF gen_dispatch_auto_method_body().
 Instr* gen_db_dispatch_method_body(DBSymbol db_type, Method+ methods, [TypeName -> Type] typedefs)
 {
-  assert length(methods) > 1;
-  assert size([m.name : m <~ methods]) == 1;         // All methods must have the same name
-  assert size([length(m.args) : m <~ methods]) == 1; // All methods have the same arity
-  assert length(head(methods).args) > 0;                  // No-argument methods cannot be polymorphic
+  assert |methods| > 1;
+  assert |[m.name : m <~ methods]| == 1;    // All methods must have the same name
+  assert |[|m.args| : m <~ methods]| == 1;  // All methods have the same arity
+  assert |head(methods).args| > 0;          // No-argument methods cannot be polymorphic
 
   l0 = lvar(0);
 
-  count = length(methods);
+  count = |methods|;
 
   a_method  = head(methods);
   name      = a_method.name;
-  arity     = length(a_method.args);
+  arity     = |a_method.args|;
 
   disp_args = choose_disp_args(((t : t, unused_var <- nonempty(m.args)) : m <- methods), typedefs);
 
@@ -343,12 +343,12 @@ Instr* gen_db_dispatch_method_body(DBSymbol db_type, Method+ methods, [TypeName 
 
 Instr* update_dispatch_code(DBSymbol db_type, <Update+, Handler+> updates, [TypeName -> Type] typedefs)
 {
-  assert length(updates) > 1;
-  assert size([name(u) : u <~ updates]) == 1;   // All updates must have the same name
-  assert size([arity(u) : u <~ updates]) == 1;  // All updates have the same arity
-  assert arity(head(updates)) > 0;              // No-argument updates cannot be polymorphic
+  assert |updates| > 1;
+  assert |[name(u) : u <~ updates]| == 1;   // All updates must have the same name
+  assert |[arity(u) : u <~ updates]| == 1;  // All updates have the same arity
+  assert arity(head(updates)) > 0;          // No-argument updates cannot be polymorphic
 
-  count = length(updates);
+  count = |updates|;
 
   an_update = head(updates);
   name      = name(an_update);
@@ -383,7 +383,7 @@ Maybe[UpdateSymbol] name(<Update, Handler>) =
   handler()     = nothing;
 
 NzNat arity(<Update, Handler>) =
-  update() u?   = nz_nat(length(u.args)),
+  update() u?   = nz_nat(|u.args|),
   handler()     = 1;
 
 NeType+ arg_types(<Update, Handler>) =

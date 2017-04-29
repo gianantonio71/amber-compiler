@@ -11,15 +11,15 @@ implicit next_var_gen : VarGen, loc_bound_vars : [StdVar], on_match_code : Instr
   Instr* gen_ptrn_tuple_matching_code(Pattern+ field_ptrns, AtomicExpr obj, PseudoType ptype)
   {
     code = gen_ptrn_tuple_matching_code(field_ptrns, obj, 0);
-    code = (do_if(is_eq(get_seq_len(obj), length(field_ptrns)), code));
+    code = (do_if(is_eq(get_size(obj), |field_ptrns|), code));
     code = (do_if(is_ne_seq(obj), code)) if not is_subset(ptype, pseudotype_seqs);
     return code;
 
 
     Instr* gen_ptrn_tuple_matching_code(Pattern+ field_ptrns, AtomicExpr obj, Nat offset)
     {
-      assert offset <= length(field_ptrns);
-      return on_match_code if offset == length(field_ptrns);
+      assert offset <= |field_ptrns|;
+      return on_match_code if offset == |field_ptrns|;
       code = gen_ptrn_tuple_matching_code(field_ptrns, obj, nat(offset+1));
       tmp_var, var_gen = next_obj_var(next_var_gen);
       let next_var_gen = var_gen, on_match_code = nonempty(code):
@@ -111,7 +111,7 @@ implicit next_var_gen : VarGen, loc_bound_vars : [StdVar], on_match_code : Instr
     ptrns_left = ptrns_left - easy_tag_ptrns;
     easy_tags = [_obj_(tag) : p <- easy_tag_ptrns, tag = p.tag, tag :: <ptrn_symbol(SymbObj)>];
 
-    if size(easy_tags) == 1:
+    if |easy_tags| == 1:
       tag = only(easy_tags);
       check_expr = if is_subset(ptype, pseudotype_tag_obj(_obj_(tag)))
         then true
@@ -121,7 +121,7 @@ implicit next_var_gen : VarGen, loc_bound_vars : [StdVar], on_match_code : Instr
 
     code = if check_exprs != () then opt_do_if(or_else(check_exprs), on_match_code) else ();
 
-    if size(easy_tags) > 1:
+    if |easy_tags| > 1:
       tag_var, unused_var = next_obj_var(next_var_gen);
       tag_check_expr = or_else(nonempty((inline_is_eq(tag_var, tag) : tag <- rand_sort(easy_tags))));
       inner_code = (set_var(tag_var, get_tag(obj))) & opt_do_if(tag_check_expr, on_match_code);
@@ -162,14 +162,14 @@ implicit next_var_gen : VarGen
     ;
 
     //## BAD BAD BAD: THERE MUST BE A BETTER WAY TO WRITE THIS KIND OF THINGS...
-    symb_cases      = ((restrict(p, pseudotype_symbols),   c) : p, c <- cases, matches(p, pseudotype_symbols));
-    int_cases       = ((restrict(p, pseudotype_integers),  c) : p, c <- cases, matches(p, pseudotype_integers));
-    float_cases     = ((restrict(p, pseudotype_floats),    c) : p, c <- cases, matches(p, pseudotype_floats));
-    seq_cases       = ((restrict(p, pseudotype_seqs),      c) : p, c <- cases, matches(p, pseudotype_seqs));
-    set_cases       = ((restrict(p, pseudotype_sets),      c) : p, c <- cases, matches(p, pseudotype_sets));
-    bin_rel_cases   = ((restrict(p, pseudotype_bin_rels),  c) : p, c <- cases, matches(p, pseudotype_bin_rels));
-    tern_rel_cases  = ((restrict(p, pseudotype_tern_rels), c) : p, c <- cases, matches(p, pseudotype_tern_rels));
-    tag_obj_cases   = ((restrict(p, pseudotype_tag_objs),  c) : p, c <- cases, matches(p, pseudotype_tag_objs));
+    symb_cases      = ((restrict(p, pseudotype_symbols),      c) : p, c <- cases, matches(p, pseudotype_symbols));
+    int_cases       = ((restrict(p, pseudotype_integers),     c) : p, c <- cases, matches(p, pseudotype_integers));
+    float_cases     = ((restrict(p, pseudotype_floats),       c) : p, c <- cases, matches(p, pseudotype_floats));
+    seq_cases       = ((restrict(p, pseudotype_seqs),         c) : p, c <- cases, matches(p, pseudotype_seqs));
+    set_cases       = ((restrict(p, pseudotype_sets),         c) : p, c <- cases, matches(p, pseudotype_sets));
+    bin_rel_cases   = ((restrict(p, pseudotype_ne_bin_rels),  c) : p, c <- cases, matches(p, pseudotype_ne_bin_rels));
+    tern_rel_cases  = ((restrict(p, pseudotype_ne_tern_rels), c) : p, c <- cases, matches(p, pseudotype_ne_tern_rels));
+    tag_obj_cases   = ((restrict(p, pseudotype_tag_objs),     c) : p, c <- cases, matches(p, pseudotype_tag_objs));
 
     if tag_obj_cases != ():
       tag_ptypes_to_ptrn = ((tag_ptypes_to_ptrn(value_unsafe(p)), c) : p, c <- tag_obj_cases);
@@ -240,7 +240,7 @@ implicit next_var_gen : VarGen
 
   Instr+ gen_switch_code(ExprEvalRes+ exprs, (ptrns: Pattern+, code: Instr+)+ cases)
   {
-    if length(head(cases).ptrns) == 1:
+    if |head(cases).ptrns| == 1:
       return gen_single_ptrn_switch_code(only(exprs), ((only(c.ptrns), c.code) : c <- cases));
     else
       code = ();
@@ -254,7 +254,7 @@ implicit next_var_gen : VarGen
 
     Instr+ gen_guarded_case_eval_code(AtomicExpr* exprs, Pattern* ptrns, Instr+ code)
     {
-      assert length(exprs) == length(ptrns);
+      assert |exprs| == |ptrns|;
 
       return code if exprs == () or ptrns == (); // Shutting up the typechecker...
 

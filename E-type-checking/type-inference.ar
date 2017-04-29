@@ -27,6 +27,7 @@ implicit
     fn_call()             = fn_call_expr_type(expr.name, expr.args, expr.impl_args, env),
     cls_call()            = closures[cast_cls_var(expr.name)].out_type,
     builtin_call()        = builtin_call_expr_type(expr.name, expr.args, env),
+    size_expr()           = size_expr_type(expr.coll, env),
     unary_pseudo_call()   = unary_pseudo_call_expr_type(expr.target, expr.arg, env),
     rel_memb_test()       = type_bool,
     singl_only_elem()     = set_elem_supertype(expr_type(expr.set, env)),
@@ -223,6 +224,23 @@ implicit
     _     = fn_call_type(builtin_to_fn_type(builtin_signature(name)), params, [], env);
 
 
+  Type size_expr_type(Expr coll_expr, [Var -> Type] env) {
+    coll_type = expr_type(coll_expr, env);
+    return empty_type if coll_type == empty_type;
+
+    return singleton_type(0) if is_subset(coll_type, empty_seq_type) or is_subset(coll_type, empty_rel_type);
+
+    maybe_tuple_types = maybe_tuple_types_union(coll_type);
+    if maybe_tuple_types != nothing:
+      sizes = [|ts| : ts <- value(maybe_tuple_types)];
+      return int_range(min(sizes), max(sizes));
+    ;
+
+    may_be_empty = is_subset(empty_seq_type, coll_type) or is_subset(empty_rel_type, coll_type);
+    return high_ints(if may_be_empty then 0 else 1);
+  }
+
+
   Type unary_pseudo_call_expr_type(Expr target, Expr arg, [Var -> Type] env)
   {
     target_type = expr_type(target, env);
@@ -359,7 +377,7 @@ implicit
 
   Bool will_dispatch_to(FnType signature, AnyExpr* params, [Var -> Type] env)
   {
-    assert length(params) == arity(signature); //## MAYBE I SHOULD RETURN FALSE IF THE TWO DON'T MATCH
+    assert |params| == arity(signature); //## MAYBE I SHOULD RETURN FALSE IF THE TWO DON'T MATCH
 
     for e, t <- zip(params, signature.args):
       //## THIS IS A CHECK THAT SHOULD BE PERFORMED ELSEWHERE.
@@ -415,7 +433,7 @@ implicit
 
   ([Var -> Type], [Var -> Type]) refine_fn_call_env(FnCallExpr expr, [Var -> Type] env)
   {
-    fn_key = (expr.name, length(expr.args));
+    fn_key = (expr.name, |expr.args|);
     return (env, env) if not signatures(fn_key);
     sgn_set = signatures[fn_key];
     return (env, env) if not sgn_set.refines_env;
@@ -608,7 +626,7 @@ implicit
     src_expr_type = expr_type(src, env);
     elem_type = seq_elem_supertype(src_expr_type);
 
-    nvars = nz_nat(length(vars));
+    nvars = nz_nat(|vars|);
     if nvars == 1:
       var = vars(0);
       env_delta = [value(var) -> elem_type if var != nothing];
@@ -624,11 +642,11 @@ implicit
 
   [Var -> Type] gen_rel_clause_env(StdVar+ vars, Expr src, Maybe[Expr]+ args, [Var -> Type] env)
   {
-    assert length(args) == 2 or length(args) == 3;
-    assert length(vars) == count(args, $ == nothing);
+    assert |args| == 2 or |args| == 3;
+    assert |vars| == count(args, $ == nothing);
 
     src_expr_type = expr_type(src, env);
-    rel_arity = length(args);
+    rel_arity = |args|;
     args_types = if rel_arity == 2
       then bin_rel_args_supertypes(src_expr_type)
       else tern_rel_args_supertypes(src_expr_type);
@@ -649,7 +667,7 @@ implicit
   // We assume the assignment typechecks
   [Var -> Type] asgnm_env_updates(Var+ vars, Type value_type)
   {
-    nvars = nz_nat(length(vars));
+    nvars = nz_nat(|vars|);
     if nvars == 1:
       return [vars(0) -> value_type];
     else
@@ -710,8 +728,8 @@ implicit
 
 
   [TypeVar -> Type] instantiate_type_vars(Type* actual_types, Type* formal_types, ClsExpr* cls_args, ClsType* cls_types, [Var -> Type] env) {
-    assert length(actual_types) == length(formal_types);
-    assert length(cls_args) == length(cls_types);
+    assert |actual_types| == |formal_types|;
+    assert |cls_args| == |cls_types|;
     type_var_insts = type_var_instantiations_for_subset(actual_types, formal_types);
     loop
       new_type_pairs = ();
@@ -790,7 +808,7 @@ implicit
 
   [Var -> Type] update_env(Expr+ exprs, Pattern+ ptrns, [Var -> Type] env)
   {
-    assert length(exprs) == length(ptrns);
+    assert |exprs| == |ptrns|;
     new_env = env;
     for expr, ptrn <- zip(exprs, ptrns):
       new_env = update_env(expr, ptrn, new_env);
@@ -907,7 +925,7 @@ implicit {
     src_type = expr_type(src, env);
     elem_type = seq_elem_supertype(src_type);
     return :never if elem_type == empty_type;
-    nvars = nz_nat(length(vars));
+    nvars = nz_nat(|vars|);
     if nvars == 1:
       var = vars(0);
       env_delta = [value(var) -> elem_type if var != nothing];
@@ -925,8 +943,8 @@ implicit {
 
   IterTree rel_clause_iter_tree(StdVar+ vars, Expr src, Maybe[Expr]+ args, [Var -> Type] env, ([Var -> Type] -> IterTree) tail)
   {
-    assert length(args) == 2 or length(args) == 3;
-    assert length(vars) == count(args, $ == nothing);
+    assert |args| == 2 or |args| == 3;
+    assert |vars| == count(args, $ == nothing);
 
     src_type = expr_type(src, env);
 
@@ -1071,7 +1089,7 @@ type TernRelCompType = empty_rel_type, NeTernRelType, union_type([+<empty_rel_ty
 MapCompType map_comp_union_type([+MapCompType] ts)
 {
   nu_ts = nonempty(union([nu_types(t) : t <- ts]));
-  return if size(nu_ts) == 1 then only(nu_ts) else :union_type(nu_ts);
+  return if |nu_ts| == 1 then only(nu_ts) else :union_type(nu_ts);
 
   [+MapCompType] nu_types(MapCompType type) =
     union_type(ts?)  = nonempty(union([nu_types(t) : t <- ts])),
@@ -1087,7 +1105,7 @@ BinRelCompType bin_rel_comp_union_type([+BinRelCompType] types) {
       union_type(ts?)     = ts
     : t <- types
   ]));
-  return if size(nu_types) == 1 then only(nu_types) else :union_type(nu_types);
+  return if |nu_types| == 1 then only(nu_types) else :union_type(nu_types);
 }
 
 
@@ -1099,7 +1117,7 @@ TernRelCompType tern_rel_comp_union_type([+TernRelCompType] types) {
       union_type(ts?)     = ts
     : t <- types
   ]));
-  return if size(nu_types) == 1 then only(nu_types) else :union_type(nu_types);
+  return if |nu_types| == 1 then only(nu_types) else :union_type(nu_types);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1127,7 +1145,7 @@ implicit typedefs : [TypeName -> NeType]
   {
     nonempty_types_1 = types1 - [empty_rel_type];
     nonempty_types_2 = types2 - [empty_rel_type];
-    if size(nonempty_types_1) == 1 and size(nonempty_types_2) == 1:
+    if |nonempty_types_1| == 1 and |nonempty_types_2| == 1:
       ne_type_1 = only(nonempty_types_1);
       ne_type_2 = only(nonempty_types_2);
       nonempty_1 = not types1(empty_rel_type);
@@ -1145,11 +1163,11 @@ implicit typedefs : [TypeName -> NeType]
 
     MapCompType union_both_special_case(RecordTypeFields fs1, RecordTypeFields fs2, Bool nonempty_1, Bool nonempty_2)
     {
-      if not nonempty_1 and (size(fs1) == 1 or not (l, f <- fs1 : not f.optional)):
+      if not nonempty_1 and (|fs1| == 1 or not (l, f <- fs1 : not f.optional)):
         adj_fs1 = [l -> (type: f.type, optional: true) : l, f <- fs1];
         return union_both_special_case(adj_fs1, fs2, true, nonempty_2);
 
-      elif not nonempty_2 and (size(fs2) == 1 or not (l, f <- fs2 : not f.optional)):
+      elif not nonempty_2 and (|fs2| == 1 or not (l, f <- fs2 : not f.optional)):
         adj_fs2 = [l -> (type: f.type, optional: true) : l, f <- fs2];
         return union_both_special_case(fs1, adj_fs2, nonempty_1, true);
 
@@ -1427,7 +1445,7 @@ implicit
     // assert elem_type != empty_type;
     loop_vars = set(vars) & [value(maybe_idx_var) if maybe_idx_var != nothing];
     assert disjoint(keys(env), loop_vars);
-    nvars = nz_nat(length(vars));
+    nvars = nz_nat(|vars|);
     if nvars == 1:
       non_idx_typed_loop_vars = [vars(0) -> elem_type];
     else

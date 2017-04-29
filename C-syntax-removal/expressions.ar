@@ -22,11 +22,10 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
     unary_op_call()     = fn_call(op_symbol(expr.op), (desugar_expr(expr.expr, def_vars))),
     binary_op_call()    = fn_call(op_symbol(expr.op), (desugar_expr(expr.left_arg, def_vars), desugar_expr(expr.right_arg, def_vars))),
     builtin_call()      = builtin_call(expr.name, (desugar_expr(e, def_vars) : e <- expr.args)),
-
+    size_expr()         = size_expr(desugar_expr(expr.coll, def_vars)),
     call_lookalike()    = desugar_call_lookalike(expr.target, expr.args, def_vars),
     rel_memb_test()     = desugar_rel_memb_test(expr.target, expr.args, def_vars),
     rel_lookup()        = desugar_rel_lookup(expr.target, expr.args, def_vars),
-
     singl_only_elem()   = singl_only_elem(desugar_expr(expr.set, def_vars)),
     and()               = and_expr(desugar_expr(expr.left, def_vars), desugar_expr(expr.right, def_vars)),
     or()                = or_expr(desugar_expr(expr.left, def_vars), desugar_expr(expr.right, def_vars)),
@@ -62,7 +61,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
 
   Expr desugar_call_lookalike(<StdVar, MembVar, QualAutoMembVar, QualDBMembVar, SymbChainAcc> var, Expr+ args)
   {
-    arity = length(args);
+    arity = |args|;
     assert arity :: <1..3>;
     return if arity == 1
       then unary_pseudo_call(var, args(0))
@@ -71,7 +70,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
 
   Expr desugar_call_lookalike(ImplArg var, Expr+ args)
   {
-    assert length(args) :: <1..3>;
+    assert |args| :: <1..3>;
     return match (args)
       (a?)  = unary_pseudo_call(var, a),
       _     = rel_memb_test(var, (just(a) : a <- args));
@@ -81,7 +80,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
 
   Expr desugar_call_lookalike(AnyRelVar var, Expr+ args)
   {
-    arity = length(args);
+    arity = |args|;
     rel_var_arity = rel_vars_arities[var];
     if arity == rel_var_arity:
       return relvar_memb_test(var, (just(a) : a <- args));
@@ -103,7 +102,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
 
   Expr desugar_call_lookalike(SynExpr syn_target, SynExpr+ syn_args, [StdVar] def_vars)
   {
-    arity = length(syn_args);
+    arity = |syn_args|;
     if syn_target :: IdChain:
       symbols = destructure_id_chain(syn_target);
       target = only(resolve_by_priority_as_call_lookalike_target(symbols, arity, def_vars));
@@ -147,7 +146,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
 
     Expr desugar(Expr target, Maybe[Expr]+ args)
     {
-      assert length(args) == 2 or length(args) == 3;
+      assert |args| == 2 or |args| == 3;
       return rel_memb_test(target, args);
     }
   }
@@ -215,7 +214,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
 
   Expr desugar_impl_args_call_expr(Atom name, SynExpr* syn_args, (ImplArg, SynExpr)+ syn_impl_args, [StdVar] def_vars)
   {
-    arity = length(syn_args);
+    arity = |syn_args|;
     res_name = only(resolve_by_priority_as_fn_name(name, arity, def_vars));
     arg_arities = arg_arities(res_name, arity);
     args = (desugar_fn_arg(a, ea, def_vars) : a, ea <- zip(syn_args, arg_arities));
@@ -304,7 +303,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
 
   Expr desugar_match_expr(SynExpr+ exprs, SynCase+ cases, [StdVar] def_vars)
   {
-    n  = length(cases(0).patterns);
+    n  = |cases(0).patterns|;
     es = nonempty((desugar_expr(e, def_vars) : e <- subseq(exprs, 0, n)));
     cs = ({
       ps = (desugar_ptrn(p) : p <- c.patterns);
@@ -327,7 +326,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
   {
     rev_exprs = reverse(exprs);
     expr = rev_exprs(0);
-    for i = 1..length(exprs):
+    for i = 1..|exprs|:
       expr = and_expr(rev_exprs(i), expr);
     ;
     return expr;
@@ -347,7 +346,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
     assert {
       rev_cs = reverse(cs);
       ref_clause = rev_cs(0);
-      for i = 1..length(clauses):
+      for i = 1..|clauses|:
         ref_clause = and_clause(rev_cs(i), ref_clause);
       ;
       foldr_clause = foldr(nonempty(cs), and_clause);
@@ -387,7 +386,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
         syn_target = syn_src_expr.target;
         if syn_target :: IdChain:
           symbols = destructure_id_chain(syn_target);
-          resols = resolve_by_priority_as_memb_test_target(symbols, nz_nat(length(args)), def_vars);
+          resols = resolve_by_priority_as_memb_test_target(symbols, nz_nat(|args|), def_vars);
           if resols != []:
             resol = only(resols);
             return relvar_clause(vars, resol, args) if resol :: AnyRelVar;
@@ -399,7 +398,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
       elif syn_src_expr :: IdChain:
         symbols = destructure_id_chain(syn_src_expr);
         resols = resolve_by_priority_as_memb_test_target(symbols, def_vars);
-        if size(resols) == 1:
+        if |resols| == 1:
           resol = only(resols);
           if resol :: AnyRelVar:
             return relvar_clause(vars, resol, (nothing : unused_var <- vars)); //## UGLY UGLY UGLY
@@ -408,7 +407,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
       ;
 
       src_expr = desugar_expr(syn_src_expr, def_vars);
-      return if length(vars) == 1
+      return if |vars| == 1
         then set_clause(only(vars), src_expr)
         else rel_clause(vars, src_expr, (nothing : unused_var <- vars)); //## UGLY UGLY UGLY
     }
@@ -488,7 +487,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
     branch = head(branches);
     cond = desugar_expr(branch.cond, def_vars);
     body = desugar_stmts(branch.body, def_vars);
-    else_body = if length(branches) > 1
+    else_body = if |branches| > 1
       then (desugar_if_stmt(nonempty(tail(branches)), syn_else_body, def_vars))
       else desugar_stmts(syn_else_body, def_vars);
     return if_stmt(cond, body, else_body);
@@ -522,7 +521,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
   {
     iter = head(iters);
     body_vars = def_vars & syn_new_vars(iter);
-    body = if length(iters) == 1
+    body = if |iters| == 1
       then desugar_stmts(syn_body, body_vars)
       else (desugar_for_stmt(nonempty(tail(iters)), syn_body, body_vars));
     return desugar(iter, body, def_vars);

@@ -30,6 +30,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg], ac
     unary_op_call()     = expr_wf_errors(expr.expr, def_vars),
     binary_op_call()    = expr_wf_errors(expr.left_arg, def_vars) & expr_wf_errors(expr.right_arg, def_vars),
     builtin_call()      = join((expr_wf_errors(e, def_vars) : e <- expr.args)),
+    size_expr()         = expr_wf_errors(expr.coll, def_vars),
     call_lookalike()    = if not expr.target :: IdChain
                             then join((expr_wf_errors(e, def_vars) : e <- (expr.target) & expr.args))
                             else (),
@@ -113,12 +114,12 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg], ac
     cls_par(n?)         = (undef_impl_cls_arg(expr) if n >= actual_arg_arity),
     call_lookalike()    = if expr :: <call_lookalike(target: IdChain, args: SynExpr+)> //## BAD BAD: WORKING AROUND TYPE CHECKING "BUG"
                             then call_lookalike_local_wf_errors(expr, def_vars)
-                            else (wrong_pseudocall_arity(expr) if not in(length(expr.args), [1, 2])),
+                            else (wrong_pseudocall_arity(expr) if not in(|expr.args|, [1, 2])),
     rel_memb_test()     = rel_memb_test_local_wf_errors(expr, def_vars),
     unary_op_call()     = unary_op_call_local_wf_errors(expr.op, expr.expr, def_vars),
     binary_op_call()    = binary_op_call_local_wf_errors(expr.op, expr.left_arg, expr.right_arg, def_vars),
     impl_args_call()    = impl_args_call_local_wf_errors(expr, def_vars),
-    builtin_call()      = (wrong_builtin_arity(expr.name, expr.args) if length(expr.args) != builtin_arities[expr.name]),
+    builtin_call()      = (wrong_builtin_arity(expr.name, expr.args) if |expr.args| != builtin_arities[expr.name]),
     seq_comp()          = seq_comp_expr_local_wf_errors(expr, def_vars),
     range_comp()        = (already_def_var(expr.var) if already_def(expr.var, def_vars)), //## BUG BUG BUG
     match_expr()        = match_expr_local_wf_errors(expr, def_vars),
@@ -146,11 +147,11 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg], ac
     return (invalid_expr(expr)) if all((a == nothing : a <- expr.args));
 
     target = expr.target;
-    arity = nz_nat(length(expr.args));
+    arity = nz_nat(|expr.args|);
     if target :: IdChain:
       symbols = destructure_id_chain(target);
       resols = resolve_by_priority_as_memb_test_target(symbols, arity, def_vars);
-      return (ambiguous_expr(expr, resols)) if size(resols) > 1;
+      return (ambiguous_expr(expr, resols)) if |resols| > 1;
 
       if resols == []:
         //## BAD BAD BAD: USING A FIXED MAXIMUM ARITY
@@ -184,11 +185,11 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg], ac
   ExprWFError* call_lookalike_local_wf_errors(<call_lookalike(target: IdChain, args: SynExpr+)> expr, [DefVar] def_vars)
   {
     target = expr.target;
-    arity = length(expr.args);
+    arity = |expr.args|;
     symbols = destructure_id_chain(target);
 
     resols = resolve_by_priority_as_call_lookalike_target(symbols, arity, def_vars);
-    return (ambiguous_expr(target, resols)) if size(resols) > 1;
+    return (ambiguous_expr(target, resols)) if |resols| > 1;
 
     if resols == []:
       //## BAD BAD BAD: USING A FIXED MAXIMUM ARITY
@@ -209,7 +210,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg], ac
   ExprWFError* const_or_var_local_wf_errors(Atom symbol, [DefVar] def_vars)
   {
     resols = resolve_by_priority_as_expr((symbol), def_vars);
-    return (ambiguous_expr(const_or_var(symbol), resols) if size(resols) > 1) if resols != [];
+    return (ambiguous_expr(const_or_var(symbol), resols) if |resols| > 1) if resols != [];
     invalid_resols = resolve_symbol_chain((symbol), def_vars);
     return if invalid_resols != []
       then (not_an_object(const_or_var(symbol), invalid_resols))
@@ -221,16 +222,16 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg], ac
   {
     symbols = destructure_id_chain(expr);
     resols = resolve_by_priority_as_expr(symbols, def_vars);
-    return (ambiguous_expr(expr, resols) if size(resols) > 1) if resols != [];
+    return (ambiguous_expr(expr, resols) if |resols| > 1) if resols != [];
 
     invalid_resols = resolve_symbol_chain(symbols, def_vars);
     return (not_an_object(expr, invalid_resols)) if invalid_resols != [];
 
-    for i = 1 .. length(symbols):
+    for i = 1 .. |symbols|:
       symbols_prefix = nonempty(subseq(symbols, 0, :blank, i));
       resols = resolve_symbol_chain(symbols_prefix, def_vars);
       if resols != []:
-        if size(resols) == 1:
+        if |resols| == 1:
           resol = only(resols);
           next_symb = symbols(i);
           return (wf_error(expr, resol, next_symb));
