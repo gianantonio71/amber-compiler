@@ -54,7 +54,7 @@ implicit
     size_expr()         = typecheck(expr.coll, type_coll, env),
     unary_pseudo_call() = pre_typecheck_unary_pseudo_call(expr.target, expr.arg, env),
     rel_memb_test()     = pre_typecheck_rel_memb_test(expr.rel, expr.args, env),
-    singl_only_elem()   = typecheck(expr.set, type_set, env),
+    rel_lookup()        = pre_typecheck_rel_lookup(expr, env),
     and_expr()          = pre_typecheck_and_expr(expr.left, expr.right, env),
     or_expr()           = pre_typecheck_or_expr(expr.left, expr.right, env),
     not_expr(e?)        = typecheck(e, type_bool, env),
@@ -162,6 +162,39 @@ implicit
       rel_type = expr_type(rel, env);
       exp_args_types = if rel_type != empty_type then tern_rel_args_supertypes(rel_type) else (type_any : i < 3);
       return seq_union((typecheck(value(a), t, env) : a, t <- zip(args, exp_args_types), a != nothing));
+    }
+  }
+
+
+  [TypeCheckingError] pre_typecheck_rel_lookup(RelLookup expr, [Var -> Type] env) {
+    args = expr.set_args;
+    return typecheck(expr.rel, type_set, env) if args == ();
+    return match(args)
+      (a?)        = pre_typecheck(expr.rel, a, expr.unknown_arg_idx, env),
+      (a1?, a2?)  = pre_typecheck(expr.rel, a1, a2, expr.unknown_arg_idx, env);
+
+
+    [TypeCheckingError] pre_typecheck(Expr rel, Expr known_arg, Nat unknown_arg_idx, [Var -> Type] env) {
+      errs = typecheck(rel, type_bin_rel, env);
+      return errs if errs != [];
+      rel_type = expr_type(rel, env);
+      assert unknown_arg_idx == 0 or unknown_arg_idx == 1;
+      known_arg_idx = if unknown_arg_idx == 0 then 1 else 0;
+      exp_arg_type = bin_rel_arg_supertype(rel_type, known_arg_idx);
+      return typecheck(known_arg, exp_arg_type, env);
+    }
+
+
+    [TypeCheckingError] pre_typecheck(Expr rel, Expr known_arg_1, Expr known_arg_2, Nat unknown_arg_idx, [Var -> Type] env) {
+      errs = typecheck(rel, type_tern_rel, env);
+      return errs if errs != [];
+      rel_type = expr_type(rel, env);
+      assert unknown_arg_idx :: <0..2>;
+      arg_1_idx = if unknown_arg_idx == 0 then 1 else 0;
+      arg_2_idx = if unknown_arg_idx == 2 then 1 else 2;
+      exp_arg_1_type = tern_rel_arg_supertype(rel_type, arg_1_idx);
+      exp_arg_2_type = tern_rel_arg_supertype(rel_type, arg_2_idx);
+      return typecheck(known_arg_1, exp_arg_1_type, env) & typecheck(known_arg_2, exp_arg_2_type, env);
     }
   }
 

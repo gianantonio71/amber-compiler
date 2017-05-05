@@ -23,11 +23,10 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
     unary_pseudo_call() = gen_eval_code_for_unary_pseudo_call_expr(expr.target, expr.arg, res_var),
 
     rel_memb_test()     = gen_eval_code_for_rel_memb_test(expr.rel, expr.args, res_var),
+    rel_lookup()        = gen_eval_code_for_rel_lookup(expr, res_var),
 
     relvar_memb_test()  = gen_eval_code_for_relvar_memb_test(expr.rel_var, expr.args, res_var),
     relvar_lookup()     = gen_eval_code_for_relvar_lookup(expr.rel_var, expr.set_args, expr.unknown_arg_idx, res_var),
-
-    singl_only_elem()   = gen_eval_code_for_singl_only_elem(expr.set, res_var),
 
     and_expr()          = gen_eval_code_for_and_expr(expr.left, expr.right, res_var),
     or_expr()           = gen_eval_code_for_or_expr(expr.left, expr.right, res_var),
@@ -363,17 +362,18 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_eval_code_for_unary_pseudo_call_expr(Expr target, Expr arg, EvalDestVar res_var)
-  {
+  Instr+ gen_eval_code_for_unary_pseudo_call_expr(Expr target, Expr arg, EvalDestVar res_var) {
     info = gen_eval_info((target, arg));
     target_expr = info.exprs(0);
     arg_expr = info.exprs(1);
-    pseudo_call_instr = branch(
-      is_symb(target_expr),
-      (mk_tagged_obj(res_var, target_expr, arg_expr)),
-      (set_var(res_var, search_or_lookup(target_expr, arg_expr)))
-    );
-    return (info.eval_code | pseudo_call_instr);
+
+    seq_instr = set_var(res_var, at(target_expr, get_int_val(arg_expr)));
+    set_instr = set_var(res_var, bool_obj(has_elem(target_expr, arg_expr)));
+    symb_instr = mk_tagged_obj(res_var, target_expr, arg_expr);
+
+    instr = branch(is_seq(target_expr), (seq_instr), is_set_value(target_expr), (set_instr), (symb_instr));
+
+    return (info.eval_code | instr);
   }
 
 
@@ -404,6 +404,51 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
     ;
 
     return nonempty(rel_info.eval_code & args_info.eval_code & code);
+  }
+
+
+  Instr+ gen_eval_code_for_rel_lookup(RelLookup expr, EvalDestVar res_var) {
+    info = gen_eval_info(expr.rel);
+    code = info.eval_code;
+    known_args = expr.set_args;
+    if known_args == ():
+      code = code & (check(is_eq(get_size(info.expr), 1)), set_var(res_var, rand_elem(info.expr)));
+    elif |known_args| == 1:
+      arg_info = gen_eval_info(only(known_args), next_var_gen=info.next_var_gen);
+      code = code & arg_info.eval_code;
+      if expr.unknown_arg_idx == 1:
+        code = code & (set_var(res_var, lookup(info.expr, arg_info.expr)));
+      else
+        it_var, unused_var = next_bin_rel_it_var(arg_info.next_var_gen);
+        code = code & (
+          get_iter(it_var, info.expr, (nothing, just(arg_info.expr))),
+          check(neg(is_out_of_range(it_var))),
+          set_var(res_var, get_curr_arg(it_var, 0)),
+          move_forward(it_var),
+          check(is_out_of_range(it_var))
+        );
+      ;
+    else
+      assert |known_args| == 2;
+      args_info = gen_eval_info(known_args, next_var_gen=info.next_var_gen);
+      it_var, unused_var = next_tern_rel_it_var(args_info.next_var_gen);
+      unknown_arg_idx = expr.unknown_arg_idx;
+      fail if not unknown_arg_idx :: <0..2>;
+      args_maybe_exprs = (
+          if i < unknown_arg_idx     then just(args_info.exprs(i))
+          elif i == unknown_arg_idx  then nothing
+                                     else just(args_info.exprs(i-1))
+        : i <- (0, 1, 2)
+      );
+      code = code & args_info.eval_code & (
+        get_iter(it_var, info.expr, args_maybe_exprs),
+        check(neg(is_out_of_range(it_var))),
+        set_var(res_var, get_curr_arg(it_var, unknown_arg_idx)),
+        move_forward(it_var),
+        check(is_out_of_range(it_var))
+      );
+    ;
+    return nonempty(code);
   }
 
 
@@ -444,8 +489,12 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_eval_code_for_relvar_lookup(AnyRelVar rel_var, Expr+ set_args, Nat unknown_arg_idx, EvalDestVar res_var)
+  Instr+ gen_eval_code_for_relvar_lookup(AnyRelVar rel_var, Expr* set_args, Nat unknown_arg_idx, EvalDestVar res_var)
   {
+    if set_args == ():
+      fail; //## IMPLEMENT IMPLEMENT IMPLEMENT
+    ;
+
     args_perm = relvar_cols_perm(rel_var);
     args_rev_perm = reverse_perm(args_perm);
 
@@ -514,13 +563,6 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_eval_code_for_singl_only_elem(Expr set, EvalDestVar res_var)
-  {
-    info = gen_eval_info(set);
-    return (info.eval_code | check(is_eq(get_size(info.expr), 1)), set_var(res_var, rand_elem(info.expr)));
-  }
-
-
   Instr+ gen_eval_code_for_and_expr(Expr left_expr, Expr right_expr, EvalDestVar res_var)
   {
     tmp_var, var_gen = pick_temp_var(res_var);
@@ -569,25 +611,15 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_eval_code_for_accessor_expr(Expr expr, SymbObj field, EvalDestVar res_var)
-  {
+  Instr+ gen_eval_code_for_accessor_expr(Expr expr, SymbObj field, EvalDestVar res_var) {
     info = gen_eval_info(expr);
-    info_expr = info.expr;
-    fail if not info_expr :: StdObjVar;
-    code = (ext_lookup(res_var, info_expr, field));
-    return nonempty(info.eval_code & code);
+    return (info.eval_code | lookup_field(res_var, info.expr, field));
   }
 
 
-  Instr+ gen_eval_code_for_accessor_test_expr(Expr expr, SymbObj field, EvalDestVar res_var)
-  {
+  Instr+ gen_eval_code_for_accessor_test_expr(Expr expr, SymbObj field, EvalDestVar res_var) {
     info = gen_eval_info(expr);
-    bvar, var_gen = next_bool_var(next_var_gen);
-    unused_tmp_var, var_gen = next_obj_var(next_var_gen);
-    info_expr = info.expr;
-    fail if not info_expr :: StdObjVar; //## BAD BAD BAD: REVIEW THIS AND ALL SIMILAR PIECES OF CODE
-    code = (ext_lookup(bvar, unused_tmp_var, info_expr, field), set_var(res_var, bool_obj(bvar)));
-    return nonempty(info.eval_code & code);
+    return (info.eval_code | set_var(res_var, bool_obj(has_field(info.expr, field))));
   }
 
 

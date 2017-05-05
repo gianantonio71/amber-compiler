@@ -39,6 +39,7 @@ type ExprSpecWFError    = already_def_var(Var),
                           wrong_fn_arity(expr: SynImplArgsCall, actual_arities: [+Nat]),
                           wrong_arity(expr: <call_lookalike(target: IdChain, args: SynExpr+)>, actual_arities: [+Nat]),
                           wrong_rel_test_arity(expr: SynRelMembTest, actual_arities: [+Nat]),
+                          wrong_rel_lookup_arity(target: Atom+, actual_arities: [+Nat]),
                           wrong_pseudocall_arity(expr: SynCallLookalike),
                           unknown_function(expr: SynImplArgsCall),
                           unknown_function_or_method(expr: <call_lookalike(target: IdChain, args: SynExpr+)>),
@@ -161,6 +162,7 @@ ExprSpecWFError duplicate_impl_args(SynImplArgsCall c, [+ImplArg] ps)   = duplic
 ExprSpecWFError wrong_fn_arity(SynImplArgsCall c, [+Nat] as)            = wrong_fn_arity(expr: c, actual_arities: as);
 ExprSpecWFError wrong_arity(<call_lookalike(target: IdChain, args: SynExpr+)> c, [+Nat] as) = wrong_arity(expr: c, actual_arities: as);
 ExprSpecWFError wrong_rel_test_arity(SynRelMembTest e, [+Nat] as)       = wrong_rel_test_arity(expr: e, actual_arities: as);
+ExprSpecWFError wrong_rel_lookup_arity(Atom+ t, [+Nat] as)              = wrong_rel_lookup_arity(target: t, actual_arities: as);
 ExprSpecWFError wrong_pseudocall_arity(SynCallLookalike c)              = wrong_pseudocall_arity(expr: c);
 ExprSpecWFError unknown_function(SynImplArgsCall c)                     = unknown_function(expr: c);
 ExprSpecWFError unknown_function_or_method(<call_lookalike(target: IdChain, args: SynExpr+)> c) = unknown_function_or_method(expr: c);
@@ -228,6 +230,7 @@ Any anchor_obj(ExprSpecWFError err) =
   wrong_fn_arity()                    = err.expr,
   wrong_arity()                       = err.expr,
   wrong_rel_test_arity()              = err.expr,
+  wrong_rel_lookup_arity()            = err.target,
   wrong_pseudocall_arity()            = err.expr,
   unknown_function()                  = err.expr,
   unknown_function_or_method()        = err.expr,
@@ -479,7 +482,7 @@ String* basic_err_msg(ExprSpecWFError err) =
   undef_var_or_const(a?)      = ("Undefined variable or constant: " & _str_(a)),
   not_an_object()             = ("Expression resolves to something other than an object"),
   ambiguous_expr()            = ("Ambiguous expression", printed(err.resols)),
-  invalid_expr()              = ("Invalid expression. Due to an internal error, I am unable to be more specific than that"),
+  invalid_expr()              = ("Invalid expression"),
   wrong_builtin_arity()       = ("Wrong builtin function arity: " & user_repr(err.name)),
   invalid_impl_arg(p?)        = ("Invalid implicit argument: " & user_repr(p)),
   missing_impl_arg(p?)        = ("Undefined implicit argument: " & user_repr(p)),
@@ -505,6 +508,8 @@ String* basic_err_msg(ExprSpecWFError err) =
                                   arities = append((printed(a) : a <- rand_sort(err.actual_arities)), ", ");
                                   return (msg & "ctual arity: " & arities);
                                 },
+  wrong_rel_lookup_arity()    = ("Wrong number of arguments: " & append((_str_(s) : s <- err.target), ".") &
+                                "(..), actual_arity: " & append((printed(a) : a <- rand_sort(err.actual_arities)))),
   wrong_pseudocall_arity()    = ("Too many arguments for set/map membership test or map lookup"),
   unknown_function()          = ("Unknown function: " & user_repr(fn_symbol(err.expr.name))),
   unknown_function_or_method() = { symbs = destructure_id_chain(err.expr.target);

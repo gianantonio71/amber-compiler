@@ -10,47 +10,21 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg], ac
     filter_clause()     = expr_wf_errors(cls.cond, def_vars);
 
 
-  ExprWFError* iter_clause_wf_errors(StdVar+ vars, SynExpr src_expr, [DefVar] def_vars)
-  {
+  ExprWFError* iter_clause_wf_errors(StdVar+ vars, [DefVar] def_vars) {
     arity = |vars|;
     dupl_vars = dupl_elems(vars);
     errs  = (already_def_var(v) : v <- vars, already_def(v, def_vars)) &
             (dupl_var_mult_asgnm(v) : v <- rand_sort(dupl_vars)) &
             (iter_clause_wrong_arity(vars, [1, 2, 3]) if not in(arity, [1, 2, 3]));
+    return errs;
+  }
+
+
+  ExprWFError* iter_clause_wf_errors(StdVar+ vars, SynExpr src_expr, [DefVar] def_vars) {
+    errs = iter_clause_wf_errors(vars, def_vars);
     return errs if errs != ();
 
-    if src_expr :: SynRelMembTest and (a <~ src_expr.args : a == nothing):
-      target = src_expr.target;
-      args = src_expr.args;
-
-      // Checking the arguments first
-      args_errs = join((expr_wf_errors(value(a), def_vars) : a <- args, a != nothing));
-      return args_errs if args_errs != ();
-
-      exp_clause_arity = nz_nat(count(args, $ == nothing));
-      return (iter_clause_wrong_arity(vars, [exp_clause_arity])) if |vars| != exp_clause_arity;
-
-      // Now checking one particular case: target identify a relvar
-      if target :: IdChain:
-        symbols = destructure_id_chain(target);
-        resols = resolve_by_priority_as_memb_test_target(symbols, nz_nat(|args|), def_vars);
-        return (ambiguous_expr(target, resols)) if |resols| > 1;
-        if resols != []:
-          resol = only(resols);
-          if resol :: AnyRelVar:
-            relvar_arity = relvar_arity(resol);
-            exp_clause_arity = nz_nat(count(args, $ == nothing));
-            return if |args| != relvar_arity
-              then (invalid_rel_var_arity(last(symbols), |args|, relvar_arity))
-              else ();
-          ;
-        ;
-      ;
-
-      // Since we are here, target can only be a normal (relation-valued) expression
-      return expr_wf_errors(target, def_vars);
-
-    elif src_expr :: IdChain:
+    if src_expr :: IdChain:
       symbols = destructure_id_chain(src_expr);
       resols = resolve_by_priority_as_memb_test_target(symbols, def_vars);
       if |resols| == 1:
@@ -63,6 +37,44 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg], ac
     ;
 
     return expr_wf_errors(src_expr, def_vars);
+  }
+
+
+  ExprWFError* iter_clause_wf_errors(StdVar+ vars, SynProj src_expr, [DefVar] def_vars) {
+    errs = iter_clause_wf_errors(vars, def_vars);
+    return errs if errs != ();
+
+    target = src_expr.target;
+    args = src_expr.args;
+
+    //## BAD BAD RETURNING THE WRONG ERRORS...
+    return (invalid_expr(const_or_var(last(target)))) if not (s <~ args : s != nothing);
+
+    // Checking the arguments first
+    args_errs = join((expr_wf_errors(value(a), def_vars) : a <- args, a != nothing));
+    return args_errs if args_errs != ();
+
+    exp_clause_arity = nz_nat(count(args, $ == nothing));
+    return (iter_clause_wrong_arity(vars, [exp_clause_arity])) if |vars| != exp_clause_arity;
+
+    // Trying to resolve the relation name
+    resols = resolve_by_priority_as_memb_test_target(target, |args|, def_vars);
+    //## BAD BAD RETURNING THE WRONG ERRORS...
+    return (undef_var_or_const(last(target))) if resols == [];
+    return (ambiguous_expr(const_or_var(last(target)), resols)) if |resols| != 1;
+    resol = only(resols);
+
+    // Now checking one particular case: target identify a relvar
+    if resol :: AnyRelVar:
+      relvar_arity = relvar_arity(resol);
+      exp_clause_arity = nz_nat(count(args, $ == nothing));
+      return if |args| != relvar_arity
+        then (invalid_rel_var_arity(last(target), |args|, relvar_arity)) //## BAD BAD RETURNING THE WRONG ERRORS
+        else ();
+    ;
+
+    // Since we are here, target can only be a normal (relation-valued) expression
+    return ();
   }
 
 

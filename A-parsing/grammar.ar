@@ -689,7 +689,7 @@ ParsingRule rule_delete_stmt =
     comma_sep_seq(
       rule_seq((
         rule_id,
-        par_rule(comma_sep_seq(rule_choice(((:value, rule_expr), (:any, rule_question_mark)))))
+        par_rule(comma_sep_seq(rule_choice(((:value, rule_expr), (:any, rule_asterisk)))))
       ))
     ),
     rule_semicolon
@@ -794,11 +794,28 @@ ParsingRule rule_head_clause =
 
 ParsingRule rule_iter_clause =
   rep_rule(
-    rule_seq((comma_sep_seq(rule_id), rule_left_arrow, rule_ref_expr)),
+    rule_seq((comma_sep_seq(rule_id), rule_left_arrow, rule_iter_clause_src)),
     rule_pipe,
     true,
     false
   );
+
+ParsingRule rule_iter_clause_src = rule_choice(((:proj, rule_projection), (:expr, rule_ref_expr)));
+
+ParsingRule rule_projection =
+  rule_seq((
+    dot_sep_seq(rule_id),
+    par_rule(
+      rule_seq((
+        rep_rule(rule_seq((rule_ref_expr, rule_comma))),
+        rule_question_mark,
+        rep_rule(rule_seq((
+          rule_comma,
+          rule_choice(((:any, rule_question_mark), (:value, rule_ref_expr)))
+        )))
+      ))
+    )
+  ));
 
 ParsingRule rule_seq_clause =
   rule_seq((
@@ -827,15 +844,14 @@ ParsingRule rule_expr_1b  = rule_seq((rule_expr_0, rep_rule(rule_chainable_expr)
 ParsingRule rule_dot_or_rel_memb_test =
   rule_choice((
     (:dot_test,   rule_seq((rule_dot, rule_lc_id, rule_question_mark))),
-    (:rel_test,   par_rule(comma_sep_seq(rule_choice(((:any, rule_question_mark), (:value, rule_ref_expr))))))
+    (:rel_test,   par_rule(comma_sep_seq(rule_choice(((:any, rule_asterisk), (:value, rule_ref_expr))))))
   ));
 
 ParsingRule rule_chainable_expr =
   rule_choice((
     (:dot,        rule_seq((rule_dot, rule_lc_id, rule_neg(rule_question_mark)))),
     (:sub,        bracket_rule(rule_ref_expr)),
-    (:pcall,      par_rule(comma_sep_seq(rule_ref_expr))),
-    (:only_elem,  par_rule(rule_tilde))
+    (:pcall,      par_rule(comma_sep_seq(rule_ref_expr)))
   ));
 
 ParsingRule rule_expr_0 =
@@ -908,9 +924,8 @@ ParsingRule rule_rel_lookup_expr =
     dot_sep_seq(rule_id),
     par_rule_seq((
       rep_rule_seq((rule_ref_expr, rule_comma)),
-      rule_asterisk,
-      rule_comma,
-      comma_sep_seq(rule_ref_expr)
+      rule_bang, rule_bang,
+      rep_rule_seq((rule_comma, rule_ref_expr))
     ))
   ));
 

@@ -36,7 +36,6 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg], ac
                             else (),
     rel_memb_test()     = join((expr_wf_errors(value(e), def_vars) : e <- expr.args, e != nothing)),
     rel_lookup()        = join((expr_wf_errors(value(a), def_vars) : a <- expr.args, a != nothing)),
-    singl_only_elem()   = expr_wf_errors(expr.set, def_vars),
     and()               = expr_wf_errors(expr.left, def_vars) & expr_wf_errors(expr.right, def_vars),
     or()                = expr_wf_errors(expr.left, def_vars) & expr_wf_errors(expr.right, def_vars),
     not(e?)             = expr_wf_errors(e, def_vars),
@@ -116,6 +115,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg], ac
                             then call_lookalike_local_wf_errors(expr, def_vars)
                             else (wrong_pseudocall_arity(expr) if not in(|expr.args|, [1, 2])),
     rel_memb_test()     = rel_memb_test_local_wf_errors(expr, def_vars),
+    rel_lookup()        = rel_lookup_local_wf_errors(expr, def_vars),
     unary_op_call()     = unary_op_call_local_wf_errors(expr.op, expr.expr, def_vars),
     binary_op_call()    = binary_op_call_local_wf_errors(expr.op, expr.left_arg, expr.right_arg, def_vars),
     impl_args_call()    = impl_args_call_local_wf_errors(expr, def_vars),
@@ -142,6 +142,28 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg], ac
   }
 
 
+  ExprWFError* rel_lookup_local_wf_errors(SynRelLookup expr, [DefVar] def_vars) {
+    assert count(expr.args, $ == nothing) == 1;
+
+    arity = |expr.args|;
+    return (wrong_rel_lookup_arity(expr.target, [1, 2, 3])) if arity > 3;
+
+    resols = resolve_by_priority_as_memb_test_target(expr.target, arity, def_vars);
+    return (ambiguous_expr(expr, resols)) if |resols| > 1;
+
+    if resols == []:
+      //## BAD BAD BAD: USING A FIXED MAXIMUM ARITY
+      // Now passing and empty set of defined vars, so we avoid unary or binary pseudocalls
+      valid_arities = set((a : a < 20, resolve_by_priority_as_memb_test_target(expr.target, arity, def_vars) != []));
+      return if valid_arities != []
+        then (wrong_rel_lookup_arity(expr.target, valid_arities))
+        else (invalid_expr(expr));
+    ;
+
+    return ();
+  }
+
+
   ExprWFError* rel_memb_test_local_wf_errors(SynRelMembTest expr, [DefVar] def_vars)
   {
     return (invalid_expr(expr)) if all((a == nothing : a <- expr.args));
@@ -162,7 +184,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg], ac
           else (invalid_expr(expr));
       ;
 
-      return () if is_rel_var(resols(~));
+      return () if is_rel_var(only(resols));
 
     else
       errs = expr_wf_errors(target, def_vars);
@@ -175,11 +197,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg], ac
         then (invalid_expr(expr))
       else
         ();
-
-
-    True  is_rel_var(AnyRelVar) = true;
-    False is_rel_var(Expr)      = false;
- }
+  }
 
 
   ExprWFError* call_lookalike_local_wf_errors(<call_lookalike(target: IdChain, args: SynExpr+)> expr, [DefVar] def_vars)
@@ -313,7 +331,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg], ac
     return ();
     // fail;
     // //## HERE I SHOULD ALSO CHECK THAT THE AUTOMATON DOES HAVE THAT SPECIFIC OUTPUT.
-    // return (auto_var_not_defined(var, already_def(bare_id(var), def_vars)) if not auto_vars(var, ?));
+    // return (auto_var_not_defined(var, already_def(bare_id(var), def_vars)) if not auto_vars(var, *));
   }
 
 

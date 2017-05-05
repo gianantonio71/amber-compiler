@@ -26,7 +26,6 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
     call_lookalike()    = desugar_call_lookalike(expr.target, expr.args, def_vars),
     rel_memb_test()     = desugar_rel_memb_test(expr.target, expr.args, def_vars),
     rel_lookup()        = desugar_rel_lookup(expr.target, expr.args, def_vars),
-    singl_only_elem()   = singl_only_elem(desugar_expr(expr.set, def_vars)),
     and()               = and_expr(desugar_expr(expr.left, def_vars), desugar_expr(expr.right, def_vars)),
     or()                = or_expr(desugar_expr(expr.left, def_vars), desugar_expr(expr.right, def_vars)),
     not(e?)             = not_expr(desugar_expr(e, def_vars)),
@@ -152,12 +151,14 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
   }
 
 
-  Expr desugar_rel_lookup(Atom+ symbols, Maybe[SynExpr]+ syn_args, [StdVar] def_vars)
-  {
-    rel_var = only(resolve_by_priority_as_rel_var(symbols, def_vars));
+  Expr desugar_rel_lookup(Atom+ symbols, Maybe[SynExpr]+ syn_args, [StdVar] def_vars) {
+    target = only(resolve_by_priority_as_memb_test_target(symbols, def_vars));
     args = (desugar_expr(value(a), def_vars) : a <- syn_args, a != nothing);
-    unknown_arg_idx = only((i : a @ i <- syn_args, a == nothing));
-    return relvar_lookup(rel_var, nonempty(args), unknown_arg_idx);
+    target_arg_idx = only((i : a @ i <- syn_args, a == nothing));
+    return desugar(target, args, target_arg_idx);
+
+    Expr desugar(AnyRelVar target, Expr* args, Nat target_arg_idx) = relvar_lookup(target, args, target_arg_idx);
+    Expr desugar(Expr target, Expr* args, Nat target_arg_idx) = rel_lookup(target, args, target_arg_idx);
   }
 
 
@@ -376,26 +377,8 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
       filter_clause()   = filter_clause(desugar_expr(cls.cond, def_vars));
 
 
-    Clause desugar_iter_clause(StdVar+ vars, SynExpr syn_src_expr, [StdVar] def_vars)
-    {
-      if syn_src_expr :: SynRelMembTest and (a <~ syn_src_expr.args : a == nothing):
-        if all((a == nothing : a <- syn_src_expr.args)):
-          return desugar_iter_clause(vars, syn_src_expr.target, def_vars);
-        ;
-        args = (apply(a, desugar_expr($, def_vars)) : a <- syn_src_expr.args);
-        syn_target = syn_src_expr.target;
-        if syn_target :: IdChain:
-          symbols = destructure_id_chain(syn_target);
-          resols = resolve_by_priority_as_memb_test_target(symbols, nz_nat(|args|), def_vars);
-          if resols != []:
-            resol = only(resols);
-            return relvar_clause(vars, resol, args) if resol :: AnyRelVar;
-          ;
-        ;
-        target = desugar_expr(syn_target, def_vars);
-        return rel_clause(vars, target, args);
-
-      elif syn_src_expr :: IdChain:
+    Clause desugar_iter_clause(StdVar+ vars, SynExpr syn_src_expr, [StdVar] def_vars) {
+      if syn_src_expr :: IdChain:
         symbols = destructure_id_chain(syn_src_expr);
         resols = resolve_by_priority_as_memb_test_target(symbols, def_vars);
         if |resols| == 1:
@@ -411,6 +394,17 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
         then set_clause(only(vars), src_expr)
         else rel_clause(vars, src_expr, (nothing : unused_var <- vars)); //## UGLY UGLY UGLY
     }
+
+
+    Clause desugar_iter_clause(StdVar+ vars, SynProj syn_src_expr, [StdVar] def_vars) {
+      assert (a <~ syn_src_expr.args : a != nothing);
+      args = (apply(a, desugar_expr($, def_vars)) : a <- syn_src_expr.args);
+      resol = only(resolve_by_priority_as_memb_test_target(syn_src_expr.target, |args|, def_vars));
+      return rel_or_relvar_clause(vars, resol, args);
+    }
+
+    Clause rel_or_relvar_clause(StdVar+ vars, AnyRelVar src, Maybe[Expr]+ args) = relvar_clause(vars, src, args);
+    Clause rel_or_relvar_clause(StdVar+ vars, Expr src, Maybe[Expr]+ args) = rel_clause(vars, src, args);
   }
 
   ////////////////////////////////////////////////////////////////////////////////

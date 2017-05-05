@@ -118,9 +118,9 @@ Bool is_param_type(FnType type) = (t <~ type.args : is_param_type(t)) or is_para
   size_expr()             = retrieve(expr.coll),
   unary_pseudo_call()     = retrieve(expr.target) & retrieve(expr.arg),
   rel_memb_test()         = retrieve(expr.rel) & seq_union((retrieve(value(a)) : a <- expr.args, a != nothing)),
+  rel_lookup()            = retrieve(expr.rel) & seq_union((retrieve(a) : a <- expr.set_args)),
   relvar_memb_test()      = seq_union((retrieve(value(a)) : a <- expr.args, a != nothing)),
   relvar_lookup()         = seq_union((retrieve(e) : e <- expr.set_args)),
-  singl_only_elem()       = retrieve(expr.set),
   and_expr()              = retrieve(expr.left) & retrieve(expr.right),
   or_expr()               = retrieve(expr.left) & retrieve(expr.right),
   not_expr(e?)            = retrieve(e),
@@ -297,9 +297,9 @@ Expr replace_nested_exprs(Expr expr, (Expr -> Expr) replace) =
   size_expr()         = size_expr(replace(expr.coll)),
   unary_pseudo_call() = unary_pseudo_call(replace(expr.target), replace(expr.arg)),
   rel_memb_test()     = rel_memb_test(replace(expr.rel), (apply(a, replace) : a <- expr.args)),
+  rel_lookup()        = rel_lookup(replace(expr.rel), (replace(a) : a <- expr.set_args), expr.unknown_arg_idx),
   relvar_memb_test()  = relvar_memb_test(expr.rel_var, (apply(a, replace) : a <- expr.args)),
   relvar_lookup()     = relvar_lookup(expr.rel_var, (replace(a) : a <- expr.set_args), expr.unknown_arg_idx),
-  singl_only_elem()   = singl_only_elem(replace(expr.set)),
   and_expr()          = and_expr(replace(expr.left), replace(expr.right)),
   or_expr()           = or_expr(replace(expr.left), replace(expr.right)),
   not_expr(e?)        = not_expr(replace(e)),
@@ -604,7 +604,7 @@ Clause replace_external_vars_in_clause(Clause clause, [Var -> Var] subst_map) =
 
 Clause replace_external_vars_in_set_clause(StdVar var, Expr src, [Var -> Var] subst_map)
 {
-  assert not subst_map(var, ?);
+  assert not subst_map(var, *);
   new_src = replace_external_vars(src, subst_map);
   return set_clause(var, new_src);
 }
@@ -612,7 +612,7 @@ Clause replace_external_vars_in_set_clause(StdVar var, Expr src, [Var -> Var] su
 
 Clause replace_external_vars_in_rel_clause(StdVar+ vars, Expr src, Maybe[Expr]+ args, [Var -> Var] subst_map)
 {
-  assert none((subst_map(v, ?) : v <- vars));
+  assert none((subst_map(v, *) : v <- vars));
   new_src = replace_external_vars(src, subst_map);
   new_args = (apply(a, replace_external_vars($, subst_map)) : a <- args);
   return rel_clause(vars, new_src, new_args);
@@ -621,7 +621,7 @@ Clause replace_external_vars_in_rel_clause(StdVar+ vars, Expr src, Maybe[Expr]+ 
 
 Clause replace_external_vars_in_relvar_clause(StdVar+ vars, AnyRelVar src, Maybe[Expr]+ args, [Var -> Var] subst_map)
 {
-  assert none((subst_map(v, ?) : v <- vars));
+  assert none((subst_map(v, *) : v <- vars));
   new_args = (apply(a, replace_external_vars($, subst_map)) : a <- args);
   return relvar_clause(vars, src, new_args);
 }
@@ -629,7 +629,7 @@ Clause replace_external_vars_in_relvar_clause(StdVar+ vars, AnyRelVar src, Maybe
 
 Clause replace_external_vars_in_seq_clause(Maybe[StdVar]+ vars, Maybe[StdVar] idx_var, Expr src, [Var -> Var] subst_map)
 {
-  assert none((subst_map(value(v), ?) : v <- vars, v != nothing));
+  assert none((subst_map(value(v), *) : v <- vars, v != nothing));
   new_src = replace_external_vars(src, subst_map);
   return seq_clause(vars, idx_var, new_src);
 }
@@ -654,7 +654,7 @@ Clause replace_external_vars_in_or_clause(Clause left_clause, Clause right_claus
 
 Clause replace_external_vars_in_match_clause(Pattern ptrn, Expr expr, [Var -> Var] subst_map)
 {
-  assert not (v <- new_vars(ptrn) : subst_map(v, ?));
+  assert not (v <- new_vars(ptrn) : subst_map(v, *));
   new_expr = replace_external_vars(expr, subst_map);
   return match_clause(ptrn, expr);
 }
@@ -662,7 +662,7 @@ Clause replace_external_vars_in_match_clause(Pattern ptrn, Expr expr, [Var -> Va
 
 Clause replace_external_vars_in_asgnm_clause(StdVar var, Expr expr, [Var -> Var] subst_map)
 {
-  assert not subst_map(var, ?);
+  assert not subst_map(var, *);
   new_expr = replace_external_vars(expr, subst_map);
   return asgnm_clause(var, new_expr);
 }
@@ -873,14 +873,14 @@ Expr replace_cls_vars_in_cls_call(ClsCall expr, [ClsVar -> CaptClsVar] subst_map
 {
   //## BUG BUG BUG: WHAT HAPPENS WITH IMPLICIT CLOSURE ARGUMENTS?
   name = expr.name; //## BAD: WORKAROUND FOR TYPECHECKER LIMITATION
-  new_name = if name :: ClsVar and subst_map(name, ?) then subst_map[name] else name;
+  new_name = if name :: ClsVar and subst_map(name, *) then subst_map[name] else name;
   new_args = (replace_cls_vars(a, subst_map) : a <- expr.args);
   return cls_call(new_name, new_args);
 }
 
 
 ClsExpr replace_cls_vars(ClsExpr expr, [ClsVar -> CaptClsVar] subst_map) =
-  cls_var()       = if subst_map(expr, ?) then subst_map[expr] else expr,
+  cls_var()       = if subst_map(expr, *) then subst_map[expr] else expr,
   capt_cls_var()  = {fail;}, //## THIS IS NOT SUPPOSED TO HAPPEN. FIX IT ANYWAY...
   fn_ptr()        = expr,
   cls_expr()      = cls_expr(expr.args, replace_cls_vars(expr.expr, subst_map));

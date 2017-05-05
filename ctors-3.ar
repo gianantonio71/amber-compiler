@@ -92,6 +92,8 @@ NatBoolOp inline_is_eq(ObjExpr e, InlineObj v)            = inline_is_eq(expr: e
 NatBoolOp is_out_of_range(ItVar v)                        = :is_out_of_range(v);
 NatBoolOp is_blank(<MembVar, QualAutoMembVar, LocVar> v)  = :is_blank(v);
 NatBoolOp is_null(AnyNullableVar v)                       = :is_null(v);
+NatBoolOp has_elem(ObjExpr s, ObjExpr e)                  = has_elem(set: s, elt: e);
+NatBoolOp has_field(ObjExpr r, SymbObj f)                 = has_field(record: r, field: f);
 NatBoolOp contains(ObjExpr r, ObjExpr+ t)                 = contains(coll: r, entry: t);
 NatBoolOp table_contains(AnyRelVar rv, IntVar+ vs)        = table_contains(table: rv, tuple: vs);
 
@@ -118,18 +120,19 @@ NatIntOp unique_nat                                     = :unique_nat;
 NatIntOp rand_nat(ObjExpr e)                            = :rand_nat(get_int_val(e));
 NatIntOp ticks                                          = :ticks;
 
-NatObjOp at(ObjExpr s, IntExpr i)                       = at(seq: s, idx: i);
-NatObjOp search_or_lookup(ObjExpr c, ObjExpr v)         = search_or_lookup(collection: c, value: v);
-NatObjOp get_tag(ObjExpr e)                             = :get_tag(e);
-NatObjOp get_inner_obj(ObjExpr e)                       = :get_inner_obj(e);
-NatObjOp bool_obj(BoolExpr e)                           = :bool_obj(e);
-NatObjOp int_obj(IntExpr e)                             = :int_obj(e);
-NatObjOp obj_neg(ObjExpr e)                             = :obj_neg(e);
-NatObjOp to_symb(ObjExpr e)                             = :to_symb(e);
-NatObjOp get_curr_obj(<SetItVar, SeqItVar> it)          = :get_curr_obj(it);
-NatObjOp get_curr_arg(BinRelItVar v, <0..1> a)          = get_curr_arg(var: v, arg: a);
-NatObjOp get_curr_arg(TernRelItVar v, <0..2> a)         = get_curr_arg(var: v, arg: a);
-NatObjOp rand_elem(ObjExpr s)                           = :rand_elem(s);
+NatObjOp at(ObjExpr s, IntExpr i)                 = at(seq: s, idx: i);
+NatObjOp lookup(ObjExpr r, ObjExpr k)             = lookup(rel: r, key: k);
+NatObjOp lookup_field(ObjExpr r, SymbObj f)       = lookup_field(record: r, field: f);
+NatObjOp get_tag(ObjExpr e)                       = :get_tag(e);
+NatObjOp get_inner_obj(ObjExpr e)                 = :get_inner_obj(e);
+NatObjOp bool_obj(BoolExpr e)                     = :bool_obj(e);
+NatObjOp int_obj(IntExpr e)                       = :int_obj(e);
+NatObjOp obj_neg(ObjExpr e)                       = :obj_neg(e);
+NatObjOp to_symb(ObjExpr e)                       = :to_symb(e);
+NatObjOp get_curr_obj(<SetItVar, SeqItVar> it)    = :get_curr_obj(it);
+NatObjOp get_curr_arg(BinRelItVar v, <0..1> a)    = get_curr_arg(var: v, arg: a);
+NatObjOp get_curr_arg(TernRelItVar v, <0..2> a)   = get_curr_arg(var: v, arg: a);
+NatObjOp rand_elem(ObjExpr s)                     = :rand_elem(s);
 
 BoolExpr neg(BoolExpr e) =
   neg(ne?)  = ne,
@@ -189,10 +192,7 @@ Instr join_seqs(WriteObjVar v, AtomicExpr l, AtomicExpr r)              = set_va
 Instr rev_seq(WriteObjVar v, AtomicExpr s)                              = set_var(v, rev_seq(seq: s));
 Instr set_at(WriteObjVar v, IntExpr i, AtomicExpr x)                    = set_at(var: v, idx: i, value: x);
 
-Instr lookup(BoolVar sv, WriteObjVar v, StdObjVar m, AtomicExpr k)     = lookup(success_var: sv, var: v, map: m, key: k);
-Instr lookup(WriteObjVar v, StdObjVar m, AtomicExpr k)                 = lookup(var: v, map: m, key: k);
-Instr ext_lookup(BoolVar sv, WriteObjVar v, StdObjVar m, SymbObj k)    = ext_lookup(success_var: sv, var: v, map: m, key: k);
-Instr ext_lookup(WriteObjVar v, StdObjVar m, SymbObj k)                = ext_lookup(var: v, map: m, key: k);
+Instr lookup_field(WriteObjVar v, ObjExpr r, SymbObj f) = set_var(v, lookup_field(r, f));
 
 Instr internal_sort(WriteObjVar v, AtomicExpr s) = set_var(v, internal_sort(set: s));
 
@@ -399,6 +399,9 @@ BoolExpr or_else(BoolExpr e1, BoolExpr e2, BoolExpr e3)  = or_else((e1, e2, e3))
 BoolExpr is_empty_seq(ObjExpr e)  = is_eq(e, empty_seq);
 BoolExpr is_empty_rel(ObjExpr e)  = is_eq(e, empty_rel);
 
+BoolExpr is_seq(ObjExpr e)  = or(is_empty_seq(e), is_ne_seq(e));
+BoolExpr is_set_value(ObjExpr e)  = or(is_empty_rel(e), is_ne_set(e)); // Renamed because of conflict with is_set() constructors
+
 BoolExpr is_not_blank(<MembVar, QualAutoMembVar, LocVar> v) = neg(is_blank(v));
 BoolExpr is_not_null(AnyNullableVar v)                      = neg(is_null(v));
 BoolExpr is_neither_blank_nor_null(<MembVar, LocVar> v)     = neg(or(is_null(v), is_blank(v)));
@@ -433,6 +436,8 @@ Instr* opt_do_if(BoolExpr cond, Instr* instrs) = if   instrs == ()  then ()
                                                  elif cond == true  then instrs
                                                  elif cond == false then ()
                                                                     else (do_if(cond, instrs));
+
+Instr branch(BoolExpr c1, Instr+ b1, BoolExpr c2, Instr+ b2, Instr+ e) = branch(c1, b1, (branch(c2, b2, e)));
 
 // Instr do_if_in(AtomicExpr val, SymbObj+ values, [Instr] instrs) =
 //   symbol_switch(
