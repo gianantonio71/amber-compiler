@@ -9,6 +9,7 @@ type WFError            = dupl_typedef((SynAnyTypedef, SynAnyTypedef)),
                           fndef_errors(fndef: SynFnDef, errors: FnDefWFError+),
                           proc_def_errors(proc_def: SynProcDef, errors: ProcDefWFError+),
                           auto_method_def_errors(meth_def: AutoMethodDef, errors: FnDefWFError+),
+                          db_def_errors(db: SynDBDef, errors: ExprWFError+),
                           db_method_def_errors(db: SynDBDef, method: DBMethodDef, errors: FnDefWFError+),
                           update_def_errs(db: SynDBDef, update: UpdateDef, errors: UpdateDefWFError+),
                           handler_def_errs(handler: HandlerDef, errors: UpdateDefWFError+),
@@ -22,6 +23,11 @@ type TypeWFError        = invalid_int_range(<syn_int_range(min: Int, max: Int)>)
                           dupl_record_field((SynRecordField, SynRecordField)),
                           type_var_in_union(TypeVar),
                           type_vars_not_allowed(type: SynType, vars: [+TypeVar]);
+
+type SchemaSpecWFError  = duplicate_schema_decl(<DataBaseDecl, AttrRelVar>, <DataBaseDecl, AttrRelVar>),
+                          invalid_relvar_arity(RelVarsDecl),
+                          invalid_relvar_keys(RelVarsDecl),
+                          incomp_relvar_decls(relvars: [RelVarsDecl], attr_relvars: [(RelVarsDecl, Nat)]);
 
 type ExprSpecWFError    = already_def_var(Var),
                           undef_var_or_const(Atom),
@@ -94,7 +100,7 @@ type FnDefSpecWFError   = invalid_cls_type_vars(par_idx: Nat, var_name: Atom, ty
 
 type ProcDefSpecWFError = builtin_proc_redef, wrong_main_proc_arity;
 
-type ExprWFError        = TypeWFError, ExprSpecWFError;
+type ExprWFError        = TypeWFError, SchemaSpecWFError, ExprSpecWFError;
 type FnDefWFError       = ExprWFError, GenDefSpecWFError, FnDefSpecWFError;
 type ProcDefWFError     = ExprWFError, GenDefSpecWFError, ProcDefSpecWFError;
 
@@ -112,6 +118,7 @@ WFError overlapping_pos_args_types(SynFnDef fd1, SynFnDef fd2)  = :overlapping_p
 WFError incomp_impl_args(SynFnDef fd1, SynFnDef fd2, [Atom] nas1, [Atom] nas2) = incomp_impl_args(fd1: fd1, fd2: fd2, nargs1: nas1, nargs2: nas2);
 WFError fndef_errors(SynFnDef fd, FnDefWFError+ errs)           = fndef_errors(fndef: fd, errors: errs);
 WFError auto_method_def_errors(AutoMethodDef m, FnDefWFError+ es) = auto_method_def_errors(meth_def: m, errors: es);
+WFError db_def_errors(SynDBDef db, ExprWFError+ es)             = db_def_errors(db: db, errors: es);
 WFError db_method_def_errors(SynDBDef db, DBMethodDef m, FnDefWFError+ es)  = db_method_def_errors(db: db, method: m, errors: es);
 WFError update_def_errs(SynDBDef db, UpdateDef u, UpdateDefWFError+ es) = update_def_errs(db: db, update: u, errors: es);
 WFError handler_def_errs(HandlerDef h, UpdateDefWFError+ es)    = handler_def_errs(handler: h, errors: es);
@@ -129,6 +136,13 @@ TypeWFError undef_type_arity(BasicTypeSymbol ts, Nat a, [+Nat] as)    = undef_ty
 TypeWFError dupl_record_field(SynRecordField f1, SynRecordField f2)   = :dupl_record_field((f1, f2));
 TypeWFError type_var_in_union(TypeVar v)                              = :type_var_in_union(v);
 TypeWFError type_vars_not_allowed(SynType t, [+TypeVar] vs)           = type_vars_not_allowed(type: t, vars: vs);
+
+////////////////////////////////////////////////////////////////////////////////
+
+SchemaSpecWFError duplicate_schema_decl(<DataBaseDecl, AttrRelVar> d1, <DataBaseDecl, AttrRelVar> d2) = :duplicate_schema_decl(d1, d2);
+SchemaSpecWFError invalid_relvar_arity(RelVarsDecl d) = :invalid_relvar_arity(d);
+SchemaSpecWFError invalid_relvar_keys(RelVarsDecl d) = :invalid_relvar_keys(d);
+SchemaSpecWFError incomp_relvar_decls([RelVarsDecl] rvs, [(RelVarsDecl, Nat)] arvs) = incomp_relvar_decls(relvars: rvs, attr_relvars: arvs);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -214,6 +228,13 @@ ExprSpecWFError annotated_syn_stmt_error(ExprWFError er, SynStmt s) = annotated_
 ////////////////////////////////////////////////////////////////////////////////
 
 Any anchor_obj(TypeWFError err)     = :none;
+
+
+Any anchor_obj(SchemaSpecWFError err) =
+  duplicate_schema_decl()   = :none,
+  invalid_relvar_arity(d?)  = d,
+  invalid_relvar_keys(d?)   = d,
+  incomp_relvar_decls()     = :none;
 
 
 Any anchor_obj(ExprSpecWFError err) =
@@ -332,6 +353,8 @@ String user_name(SynFnDef fd)       = user_repr(fd.name) & "/" & printed(arity(f
 String user_name(AutoMethodDef md)  = user_repr(auto_symbol(md.target)) & "." & user_repr(method_symbol(md.name)) & "/" & printed(arity(md));
 String user_name(SynProcDef pd)     = capitalize(_str_(bare_id(pd.name)), false);
 
+String user_name(SynDBDef db)       = user_repr(db_symbol(db.name));
+
 String user_name(SynDBDef db, DBMethodDef meth) = user_repr(db_symbol(db.name)) & "." & user_repr(method_symbol(meth.name));
 String user_name(SynDBDef db, UpdateDef upd) = user_repr(db_symbol(db.name)) & "." & user_repr(update_symbol(upd.name)) & "/" & printed(arity(upd));
 
@@ -359,6 +382,7 @@ String* create_error_msg(WFError err) =
   fndef_errors()                      = create_fndef_errs_msg(err.fndef, err.errors),
   proc_def_errors()                   = create_proc_def_errs_msg(err.proc_def, err.errors),
   auto_method_def_errors()            = create_auto_method_def_err_msg(err.meth_def, err.errors),
+  db_def_errors()                     = create_db_def_err_msg(err.db, err.errors),
   db_method_def_errors()              = create_db_method_def_err_msg(err.db, err.method, err.errors),
   update_def_errs()                   = create_update_def_err_msg(err.db, err.update, err.errors),
   handler_def_errs()                  = create_handler_def_err_msg(err.handler, err.errors),
@@ -429,6 +453,11 @@ String* create_db_method_def_err_msg(SynDBDef db, DBMethodDef method, FnDefWFErr
   ("    " & l : l <- join((create_error_msg(e) : e <- errs)));
 
 
+String* create_db_def_err_msg(SynDBDef db, ExprWFError+ errs) =
+  ("Error" & plural(errs) & " in schema declaration: " & user_name(db), source_code_loc_str(db)) &
+  ("    " & l : l <- join((create_error_msg(e) : e <- errs)));
+
+
 String* create_update_def_err_msg(SynDBDef db, UpdateDef upd, UpdateDefWFError+ errs) =
   ("Error" & plural(errs) & " in update definition: " & user_name(db, upd), source_code_loc_str(upd)) &
   ("    " & l : l <- join((create_error_msg(e) : e <- errs)));
@@ -476,6 +505,26 @@ String* basic_err_msg(TypeWFError err) =
   type_var_in_union(v?)     = ("Type variables not allowed in union types: " & user_repr(v)),
   type_vars_not_allowed()   = ("Type variables not allowed here: " & append((user_repr(v) : v <- rand_sort(err.vars)), ", "));
 
+////////////////////////////////////////////////////////////////////////////////
+
+String* basic_err_msg(SchemaSpecWFError err) =
+  duplicate_schema_decl(d1?, d2?) = ("Duplicate declaration: " & _str_(d1.name)),
+  invalid_relvar_arity(d?)        = ("Invalid arity: " & _str_(d.name)),
+  invalid_relvar_keys(d?)         = ("Invalid keys: " & _str_(d.name)),
+  incomp_relvar_decls()           = incomp_relvar_decls_basic_err_msg(err.relvars, err.attr_relvars);
+
+
+String* incomp_relvar_decls_basic_err_msg([RelVarsDecl] relvars, [(RelVarsDecl, Nat)] attr_relvars) {
+  if relvars != []:
+    name = an_elem(relvars).name;
+  else
+    parent_relvar, idx = an_elem(nonempty(attr_relvars));
+    name = parent_relvar.attributes(idx).name;
+  ;
+  return ("Overloaded relation variables declarations are incompatible: " & _str_(name));
+}
+
+////////////////////////////////////////////////////////////////////////////////
 
 String* basic_err_msg(ExprSpecWFError err) =
   already_def_var(v?)         = ("Variable redefinition: " & user_repr(v)),
