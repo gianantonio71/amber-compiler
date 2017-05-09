@@ -67,8 +67,7 @@ TransBlock add_ref_counting(TransBlock block) =
 
 () add_ref_counting(()) = ();
 
-Instr+ add_ref_counting(Instr+ instrs)
-{
+Instr+ add_ref_counting(Instr+ instrs) {
   leaf_nodes, code_tree = build_root_code_graph(instrs);
   flow_map = build_flow_map(code_tree, leaf_nodes);
   no_end_node_flow_map = ((n : n <- ns, n != end_node) : ns <- flow_map);
@@ -124,8 +123,7 @@ Instr+ add_ref_counting(Instr+ instrs)
 
 // Let's say we go with the lazy release strategy.
 
-VarsState* entry_vars_states(NodeInfo* leaf_nodes, Nat** flow_map, [TrkVar]* live_vars_after_map)
-{
+VarsState* entry_vars_states(NodeInfo* leaf_nodes, Nat** flow_map, [TrkVar]* live_vars_after_map) {
   len = |leaf_nodes|;
 
   rev_flow_map = reverse_flow_map(flow_map);
@@ -201,10 +199,8 @@ VarsState* entry_vars_states(NodeInfo* leaf_nodes, Nat** flow_map, [TrkVar]* liv
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-implicit flow_map : NodeId**, live_vars_after_map : [TrkVar]*, entry_vars_states : VarsState*
-{
-  RCNodeInfo add_ref_counting(NodeInfo info, Nat idx)
-  {
+implicit flow_map : NodeId**, live_vars_after_map : [TrkVar]*, entry_vars_states : VarsState* {
+  RCNodeInfo add_ref_counting(NodeInfo info, Nat idx) {
     entry_state = entry_vars_states(idx);
     exit_state, pre_instrs, post_instrs = exit_vars_state(info, entry_state, live_vars_after_map(idx));
     return add_ref_counting(info, flow_map(idx), entry_state, exit_state, pre_instrs, post_instrs);
@@ -233,8 +229,7 @@ implicit flow_map : NodeId**, live_vars_after_map : [TrkVar]*, entry_vars_states
                                               };
 
 
-  RCNodeInfo rc_ret_node(<AtomicExpr, AtomicBoolExpr> expr, VarsState entry_state, Instr* pre_instrs) ## THE LAST PARAMETER SHOULD BE REMOVED BECAUSE IT'S RECALCULATED. IT IS ONLY USED FOR AN ASSERTION
-  {
+  RCNodeInfo rc_ret_node(<AtomicExpr, AtomicBoolExpr> expr, VarsState entry_state, Instr* pre_instrs) { ## THE LAST PARAMETER SHOULD BE REMOVED BECAUSE IT'S RECALCULATED. IT IS ONLY USED FOR AN ASSERTION
     state, unused_var = swallow_var(entry_state, maybe_var(expr), []);
     assert pre_instrs == unused_var;
     pre_instrs_2 = gen_state_switch_code(state, blank_vars_state);
@@ -242,24 +237,21 @@ implicit flow_map : NodeId**, live_vars_after_map : [TrkVar]*, entry_vars_states
   }
 
 
-  RCNodeInfo rc_break_or_exit_node(Instr instr, NodeId next_node, VarsState exit_state)
-  {
+  RCNodeInfo rc_break_or_exit_node(Instr instr, NodeId next_node, VarsState exit_state) {
     next_node_entry_state = entry_vars_state(next_node);
     state_switch_code = gen_state_switch_code(exit_state, next_node_entry_state);
     return std_node((state_switch_code | instr));
   }
 
 
-  RCNodeInfo rc_std_node(Instr instr, NodeId next_node, VarsState exit_state, Instr* pre_instrs, Instr* post_instrs)
-  {
+  RCNodeInfo rc_std_node(Instr instr, NodeId next_node, VarsState exit_state, Instr* pre_instrs, Instr* post_instrs) {
     next_node_entry_state = entry_vars_state(next_node);
     post_instrs_2 = gen_state_switch_code(exit_state, next_node_entry_state);
     return std_node(pre_instrs & (instr) & post_instrs & post_instrs_2);
   }
 
 
-  RCNodeInfo rc_branch_node(BoolExpr cond, NodeId if_next_node, NodeId then_next_node, VarsState exit_state)
-  {
+  RCNodeInfo rc_branch_node(BoolExpr cond, NodeId if_next_node, NodeId then_next_node, VarsState exit_state) {
     if_branch_entry_state = entry_vars_state(if_next_node);
     then_branch_entry_state = entry_vars_state(then_next_node);
     if_branch_post_instrs = gen_state_switch_code(exit_state, if_branch_entry_state);
@@ -268,15 +260,13 @@ implicit flow_map : NodeId**, live_vars_after_map : [TrkVar]*, entry_vars_states
   }
 
 
-  RCNodeInfo rc_nat_switch_node(IntExpr idx, NodeId+ next_nodes, VarsState exit_state)
-  {
+  RCNodeInfo rc_nat_switch_node(IntExpr idx, NodeId+ next_nodes, VarsState exit_state) {
     case_post_instrs = (gen_state_switch_code(exit_state, entry_vars_state(n)) : n <- next_nodes);
     return rc_nat_switch_node(idx, case_post_instrs);
   }
 
 
-  RCNodeInfo rc_symb_switch_node(ObjExpr expr, [+Atom]+ cases, NodeId+ next_nodes, VarsState exit_state)
-  {
+  RCNodeInfo rc_symb_switch_node(ObjExpr expr, [+Atom]+ cases, NodeId+ next_nodes, VarsState exit_state) {
     all_post_instrs = (gen_state_switch_code(exit_state, entry_vars_state(n)) : n <- next_nodes);
     cases_post_instrs = subseq(all_post_instrs, 0, :blank, 1);
     else_post_instrs = last(all_post_instrs);
@@ -284,8 +274,7 @@ implicit flow_map : NodeId**, live_vars_after_map : [TrkVar]*, entry_vars_states
   }
 
 
-  RCNodeInfo rc_set_cls_par_node(ImplArg var, BoundCls cls, NodeId next_node, VarsState exit_state)
-  {
+  RCNodeInfo rc_set_cls_par_node(ImplArg var, BoundCls cls, NodeId next_node, VarsState exit_state) {
     next_node_entry_state = entry_vars_state(next_node);
     post_instrs = gen_state_switch_code(exit_state, next_node_entry_state);
     return set_cls_par_node(var, cls, post_instrs);
@@ -293,8 +282,7 @@ implicit flow_map : NodeId**, live_vars_after_map : [TrkVar]*, entry_vars_states
 }
 
 
-implicit entry_vars_states : VarsState*
-{
+implicit entry_vars_states : VarsState* {
   VarsState entry_vars_state(NodeId next_node) =
     if next_node == end_node
       then blank_vars_state

@@ -1,9 +1,7 @@
-implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options : CompilationOptions
-{
+implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options : CompilationOptions {
   () gen_code((), EvalDestVar) = ();  ## BAD BAD: SHOULD BE A SUBSIGNATURE
 
-  Instr+ gen_code(Statement+ stmts, EvalDestVar res_var)
-  {
+  Instr+ gen_code(Statement+ stmts, EvalDestVar res_var) {
     code = ();
     for s <- stmts:
       code = code & gen_code(s, res_var);
@@ -43,30 +41,26 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
     restore_state_ctrl_stmt() = gen_code_for_restore_state_ctrl_stmt(stmt.res_var, stmt.db_var, stmt.state);
 
 
-  Instr+ gen_code_for_send_msg_stmt(MembDBVar target, Expr msg)
-  {
+  Instr+ gen_code_for_send_msg_stmt(MembDBVar target, Expr msg) {
     eval_info = gen_eval_info(msg);
     return (eval_info.eval_code | send_msg(target, var_type(target), eval_info.expr, false));
   }
 
 
-  Instr+ gen_code_for_try_update_stmt(UpdateSymbol name, Expr* args)
-  {
+  Instr+ gen_code_for_try_update_stmt(UpdateSymbol name, Expr* args) {
     eval_info = gen_eval_info(args);
     call_instr = try_update(this_db_symbol, update_id(name, |args|), eval_info.exprs);
     return (eval_info.eval_code | call_instr);
   }
 
 
-  Instr+ gen_code_for_set_memb_var_stmt(PendingStateVar var, Expr value)
-  {
+  Instr+ gen_code_for_set_memb_var_stmt(PendingStateVar var, Expr value) {
     eval_info = gen_eval_info(value);
     return (eval_info.eval_code | set_var(var, eval_info.expr));
   }
 
 
-  Instr+ gen_code_for_delete_stmt(RelVar rel_var, Maybe[Expr]+ relvar_args)
-  {
+  Instr+ gen_code_for_delete_stmt(RelVar rel_var, Maybe[Expr]+ relvar_args) {
     args_perm = relvar_cols_perm(rel_var);
     table_args = (relvar_args(i) : i <- args_perm);
 
@@ -93,8 +87,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_code_for_insert_stmt(RelVar rel_var, Expr+ relvar_args, Bool force)
-  {
+  Instr+ gen_code_for_insert_stmt(RelVar rel_var, Expr+ relvar_args, Bool force) {
     args_perm = relvar_cols_perm(rel_var);
     table_args = (relvar_args(i) : i <- args_perm);
 
@@ -136,31 +129,27 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_code_for_set_input_ctrl_stmt(LocAutoVar var, Atom input, Expr value)
-  {
+  Instr+ gen_code_for_set_input_ctrl_stmt(LocAutoVar var, Atom input, Expr value) {
     auto_type = var_type(var);
     val_info = gen_eval_info(value);
     return nonempty(val_info.eval_code & (set_input(var, auto_type, input, val_info.expr)));
   }
 
 
-  Instr+ gen_code_for_clear_input_ctrl_stmt(LocAutoVar var, Atom input)
-  {
+  Instr+ gen_code_for_clear_input_ctrl_stmt(LocAutoVar var, Atom input) {
     auto_type = var_type(var);
     return (clear_input(var, auto_type, input));
   }
 
 
-  Instr+ gen_code_for_set_elapsed_time_ctrl_stmt(LocAutoVar var, Expr time)
-  {
+  Instr+ gen_code_for_set_elapsed_time_ctrl_stmt(LocAutoVar var, Expr time) {
     time_eval_info = gen_eval_info(time);
     set_time_instr = set_ivar(elapsed_time(var), get_int_val(time_eval_info.expr));
     return (time_eval_info.eval_code | set_time_instr);
   }
 
 
-  Instr+ gen_code_for_apply_ctrl_stmt(LocAutoVar var, StdVar res_var)
-  {
+  Instr+ gen_code_for_apply_ctrl_stmt(LocAutoVar var, StdVar res_var) {
     auto_type = var_type(var);
     res_value = if is_time_sensitive(auto_type) then is_eq(elapsed_time(var), 0) else true;
     return (
@@ -170,8 +159,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_code_for_send_msg_ctrl_stmt(StdVar res_var, LocDBVar db_var, Expr msg)
-  {
+  Instr+ gen_code_for_send_msg_ctrl_stmt(StdVar res_var, LocDBVar db_var, Expr msg) {
     eval_info = gen_eval_info(msg);
     type = var_type(db_var);
     send_msg_instr = send_msg(db_var, type, eval_info.expr, true, res_var);
@@ -179,16 +167,14 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_code_for_restore_state_ctrl_stmt(StdVar res_var, LocDBVar db_var, Expr state)
-  {
+  Instr+ gen_code_for_restore_state_ctrl_stmt(StdVar res_var, LocDBVar db_var, Expr state) {
     eval_info = gen_eval_info(state);
     set_state_instr = set_state(res_var, eval_info.expr, db_var, var_type(db_var));
     return (eval_info.eval_code | set_state_instr);
   }
 
 
-  Instr+ gen_code_for_assert_stmt(Expr cond, [<StdVar, ImplArg>] env, String file, NzNat line, Maybe[String] text)
-  {
+  Instr+ gen_code_for_assert_stmt(Expr cond, [<StdVar, ImplArg>] env, String file, NzNat line, Maybe[String] text) {
     return (no_op) if options.ignore_assertions; ## WHY RETURNING (no_op) INSTEAD OF JUST []?
     info = gen_eval_info(cond);
     expr_vars = extern_vars(cond);
@@ -197,8 +183,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_code_for_let_stmt([ImplArg -> Expr] asgnms, Statement+ body, EvalDestVar res_var)
-  {
+  Instr+ gen_code_for_let_stmt([ImplArg -> Expr] asgnms, Statement+ body, EvalDestVar res_var) {
     ## THIS SHOULD BE CHECKED IN THE PROPER PLACE, BOTH IN LAYER 1 AND 2
     ## IT'S A TEMPORARY LIMITATION THAT SHOULD BE REMOVED
     assert subset(outcomes(body), [:fails, :falls_through]);
@@ -224,8 +209,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_code_for_assignment_stmt(StdVar+ vars, Expr value, EvalDestVar res_var)
-  {
+  Instr+ gen_code_for_assignment_stmt(StdVar+ vars, Expr value, EvalDestVar res_var) {
     if |vars| == 1:
       var = vars(0);
       if in(var, extern_vars(value)):
@@ -243,8 +227,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_code_for_imp_update_stmt(StdVar obj, Expr idx, Expr value, EvalDestVar res_var)
-  {
+  Instr+ gen_code_for_imp_update_stmt(StdVar obj, Expr idx, Expr value, EvalDestVar res_var) {
     idx_var, var_gen = next_obj_var(next_var_gen);
     idx_info = gen_eval_info(idx, idx_var, next_var_gen = var_gen);
 
@@ -261,8 +244,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_code_for_if_stmt(Expr cond, Statement+ body, Statement* else, EvalDestVar res_var)
-  {
+  Instr+ gen_code_for_if_stmt(Expr cond, Statement+ body, Statement* else, EvalDestVar res_var) {
     cond_info = gen_eval_info(cond);
     // The variable used to store the value of the condition is not
     // needed anymore here, so there's no need to update next_var_gen
@@ -273,8 +255,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_code_for_for_stmt(Maybe[StdVar] maybe_var, Expr start_val, Expr end_val, Bool end_val_incl, Statement+ body, EvalDestVar res_var)
-  {
+  Instr+ gen_code_for_for_stmt(Maybe[StdVar] maybe_var, Expr start_val, Expr end_val, Bool end_val_incl, Statement+ body, EvalDestVar res_var) {
     tmp_var, var_gen = next_obj_var(next_var_gen);
     start_eval_code = gen_eval_code(start_val, tmp_var, next_var_gen = var_gen);
     end_eval_code = gen_eval_code(end_val, tmp_var, next_var_gen = var_gen);
@@ -302,8 +283,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_code_for_foreach_stmt(StdVar+ vars, Maybe[StdVar] maybe_idx_var, Expr values, Statement+ body, EvalDestVar res_var)
-  {
+  Instr+ gen_code_for_foreach_stmt(StdVar+ vars, Maybe[StdVar] maybe_idx_var, Expr values, Statement+ body, EvalDestVar res_var) {
     src_var, var_gen = next_obj_var(next_var_gen);
     src_eval_code = gen_eval_code(values, src_var, next_var_gen = var_gen);
 
@@ -347,8 +327,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_code_for_proc_call_stmt(Maybe[StdVar] maybe_res_var, ProcSymbol proc_name, Expr* params)
-  {
+  Instr+ gen_code_for_proc_call_stmt(Maybe[StdVar] maybe_res_var, ProcSymbol proc_name, Expr* params) {
     pars_info = gen_eval_info(params);
     call_code = (call_proc(var: value(maybe_res_var) if maybe_res_var != nothing, name: proc_name, args: pars_info.exprs));
     return nonempty(pars_info.eval_code & call_code);

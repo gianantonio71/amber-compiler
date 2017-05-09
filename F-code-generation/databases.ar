@@ -1,7 +1,5 @@
-implicit program : Program, database : DataBase, options : CompilationOptions
-{
-  TransBlock compiled_database
-  {
+implicit program : Program, database : DataBase, options : CompilationOptions {
+  TransBlock compiled_database {
     value_stores, tables = value_stores_and_tables;
 
     methods = compiled_database_methods(database.methods);
@@ -29,8 +27,7 @@ implicit program : Program, database : DataBase, options : CompilationOptions
   }
 
 
-  Instr* database_init_code
-  {
+  Instr* database_init_code {
     state_vars = database.state_vars;
     nested_dbs = database.nested_dbs;
 
@@ -49,8 +46,7 @@ implicit program : Program, database : DataBase, options : CompilationOptions
   }
 
 
-  Instr* database_cleanup_code
-  {
+  Instr* database_cleanup_code {
     state_vars = database.state_vars;
     nested_dbs = database.nested_dbs;
 
@@ -76,8 +72,7 @@ implicit program : Program, database : DataBase, options : CompilationOptions
   //                     handlers:   [Handler]
   //                   );
 
-  Instr* database_copy_state_code
-  {
+  Instr* database_copy_state_code {
     count = nat(|database.state_vars| + |database.rel_vars| + |database.nested_dbs|);
     return () if count == 0;
 
@@ -109,8 +104,7 @@ implicit program : Program, database : DataBase, options : CompilationOptions
   }
 
 
-  Instr* database_set_state_code
-  {
+  Instr* database_set_state_code {
     count = nat(|database.state_vars| + |database.rel_vars| + |database.nested_dbs|);
     return () if count == 0;
 
@@ -157,13 +151,11 @@ implicit program : Program, database : DataBase, options : CompilationOptions
 
 
   ## COMPILATION OF METHODS FOR BOTH TYPES OF AUTOMATA IS ALMOST IDENTICAL, CAN WE SHARE SOME CODE HERE?
-  [MethodId -> CompiledMethod] compiled_database_methods([Method] methods)
-  {
+  [MethodId -> CompiledMethod] compiled_database_methods([Method] methods) {
     return merge([compiled(ms) : unused_var, ms <- group_by(methods, ($.name, |$.args|))]);
 
 
-    [MethodId -> CompiledMethod] compiled([+Method] methods)
-    {
+    [MethodId -> CompiledMethod] compiled([+Method] methods) {
       a_method = an_elem(methods);
       name = a_method.name;
       arity = |a_method.args|;
@@ -191,8 +183,7 @@ implicit program : Program, database : DataBase, options : CompilationOptions
       );
 
 
-    Instr* gen_code(Method method)
-    {
+    Instr* gen_code(Method method) {
       res_var, var_gen = next_obj_var(blank_var_gen);
       args_code = (set_var(value(v), fn_par(i)) : unused_var, v @ i <- method.args, v != nothing);
       body_code = gen_eval_code(method.expr, res_var, artifact = database, next_var_gen = var_gen);
@@ -203,13 +194,11 @@ implicit program : Program, database : DataBase, options : CompilationOptions
   }
 
 
-  [UpdateId -> Instr*] compiled_database_updates([Update] updates)
-  {
+  [UpdateId -> Instr*] compiled_database_updates([Update] updates) {
     return merge([gen_updates_code(ms) : unused_var, ms <- group_by(updates, ($.name, |$.args|))]);
 
 
-    [UpdateId -> Instr*] gen_updates_code([+Update] updates)
-    {
+    [UpdateId -> Instr*] gen_updates_code([+Update] updates) {
       a_method = an_elem(updates);
       name = a_method.name;
       arity = |a_method.args|;
@@ -221,8 +210,7 @@ implicit program : Program, database : DataBase, options : CompilationOptions
     }
 
 
-    Instr* gen_update_code(Update update)
-    {
+    Instr* gen_update_code(Update update) {
       // Compiling the body of the update
       update_body = update.body;
       return () if update_body == ();
@@ -234,8 +222,7 @@ implicit program : Program, database : DataBase, options : CompilationOptions
   }
 
 
-  [UpdateId -> Instr*] compiled_database_handlers([Handler] handlers)
-  {
+  [UpdateId -> Instr*] compiled_database_handlers([Handler] handlers) {
     return [] if handlers == [];
     return [main_handler -> gen_handler_code(only(handlers))] if |handlers| == 1;
     sorted_handlers = rand_sort(handlers);
@@ -244,8 +231,7 @@ implicit program : Program, database : DataBase, options : CompilationOptions
     return comp_handlers & [main_handler -> disp_method_code];
 
 
-    Instr* gen_handler_code(Handler handler)
-    {
+    Instr* gen_handler_code(Handler handler) {
       // Compiling the body of the handler
       handler_body = handler.body;
       return () if handler_body == ();
@@ -260,10 +246,8 @@ implicit program : Program, database : DataBase, options : CompilationOptions
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-implicit program : Program, database : DataBase ## program IS NOT REALLY NEEDED, BUT THE TYPECHECKER...
-{
-  ([ValueStoreId], [RelVar -> Table]) value_stores_and_tables
-  {
+implicit program : Program, database : DataBase { ## program IS NOT REALLY NEEDED, BUT THE TYPECHECKER...
+  ([ValueStoreId], [RelVar -> Table]) value_stores_and_tables {
     sorted_cols = rand_sort([(v, i) : v, info <- database.rel_vars, i <- range(arity(info.signatures))]);
     col_to_id_map = merge(([c -> i] : c @ i <- sorted_cols));
 
@@ -301,8 +285,7 @@ implicit program : Program, database : DataBase ## program IS NOT REALLY NEEDED,
 ////////////////////////////////////////////////////////////////////////////////
 
 ## THIS IS AN ALMOST PERFECT DUPLICATE OF gen_dispatch_auto_method_body().
-Instr* gen_db_dispatch_method_body(DBSymbol db_type, Method+ methods, [TypeName -> Type] typedefs)
-{
+Instr* gen_db_dispatch_method_body(DBSymbol db_type, Method+ methods, [TypeName -> Type] typedefs) {
   assert |methods| > 1;
   assert |[m.name : m <~ methods]| == 1;    // All methods must have the same name
   assert |[|m.args| : m <~ methods]| == 1;  // All methods have the same arity
@@ -341,8 +324,7 @@ Instr* gen_db_dispatch_method_body(DBSymbol db_type, Method+ methods, [TypeName 
 }
 
 
-Instr* update_dispatch_code(DBSymbol db_type, <Update+, Handler+> updates, [TypeName -> Type] typedefs)
-{
+Instr* update_dispatch_code(DBSymbol db_type, <Update+, Handler+> updates, [TypeName -> Type] typedefs) {
   assert |updates| > 1;
   assert |[name(u) : u <~ updates]| == 1;   // All updates must have the same name
   assert |[arity(u) : u <~ updates]| == 1;  // All updates have the same arity

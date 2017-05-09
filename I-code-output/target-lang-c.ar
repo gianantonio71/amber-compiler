@@ -1,7 +1,6 @@
 type CCodeOutput = (body: String*, header: String*);
 
-CCodeOutput compile_to_c(CompiledPrg prg)
-{
+CCodeOutput compile_to_c(CompiledPrg prg) {
   symbs = used_symbols(prg);
   assert |symbs| <= 64 * 1024; ## IMPLEMENT PROPERLY
 
@@ -110,8 +109,7 @@ CCodeOutput compile_to_c(CompiledPrg prg)
 }
 
 
-String* gen_env_decl(CompiledPrg prg)
-{
+String* gen_env_decl(CompiledPrg prg) {
   all_impl_args = union([p.impl_args : p <- prg.procs]);
 
   env_decl = ("struct ENV {") & ("  OBJ " & _str_(bare_id(a)) & "_V;" : a <- rand_sort(all_impl_args));
@@ -127,8 +125,7 @@ String* gen_env_decl(CompiledPrg prg)
 }
 
 
-String int_type_c_name(Int min_val, Int max_val)
-{
+String int_type_c_name(Int min_val, Int max_val) {
   for lb, up, type_name <- type_bounds:
     return type_name if min_val >= lb and max_val < up;
   ;
@@ -146,8 +143,7 @@ String int_type_c_name(Int min_val, Int max_val)
 );
 
 
-Int pow(Int b, Nat e)
-{
+Int pow(Int b, Nat e) {
   res = 1;
   for e:
     res = b * res;
@@ -156,15 +152,13 @@ Int pow(Int b, Nat e)
 }
 
 
-(String*, String*) gen_int_seqs_decl_and_def(Int+* int_seqs)
-{
+(String*, String*) gen_int_seqs_decl_and_def(Int+* int_seqs) {
   decls, defs = unzip((gen_int_seq_decl_and_def(s, i) : s @ i <- int_seqs));
   return (decls, join(intermix(defs, 2 * (""))));
 }
 
 
-(String, String*) gen_int_seq_decl_and_def(Int+ int_seq, Nat seq_id)
-{
+(String, String*) gen_int_seq_decl_and_def(Int+ int_seq, Nat seq_id) {
   min_elem = min(int_seq);
   max_elem = max(int_seq);
 
@@ -189,8 +183,7 @@ Int pow(Int b, Nat e)
   return (decl, def);
 
 
-  T+* split_into_groups(T+ items, NzNat max_group_size)
-  {
+  T+* split_into_groups(T+ items, NzNat max_group_size) {
     len = |items|;
     num_of_comp_groups = len / max_group_size;
     comp_groups_total_size = num_of_comp_groups * max_group_size;
@@ -201,16 +194,14 @@ Int pow(Int b, Nat e)
   }
 
 
-  String align_text(String str, Nat len, Nat filler)
-  {
+  String align_text(String str, Nat len, Nat filler) {
     str_len = length(str);
     return {if len >= str_len then string(nat(len-str_len) * (filler)) else ""} & str;
   }
 }
 
 
-String+ generate_push_call_info_wrapper(Nat arity)
-{
+String+ generate_push_call_info_wrapper(Nat arity) {
   signature = "void push_call_info_wrapper(const char *fn_name" & append((", OBJ p" & printed(i) : i < arity)) & ")";
   code = (signature & " {", "#ifndef NDEBUG");
   if arity == 0:
@@ -231,21 +222,18 @@ type FnCallParam  = blank_obj, ObjExpr, ElemVar, PendingInputVar, VecVar, BoolEx
                     ItVar, StreamVar, AnyClsVar, AnyRelVar, AnyValueStoreId;
 
 
-implicit sorted_cls_defs : ClsDef*
-{
+implicit sorted_cls_defs : ClsDef* {
   Nat cls2id(ClsDef cls) = index_first(cls, sorted_cls_defs);
 }
 
 
-implicit
-{
+implicit {
   sorted_cls_defs                 : ClsDef*,
   int_seqs_types_and_lengths      : (String, Nat)*,
   cached_semi_consts_by_impl_arg  : [ImplArg -> [+FnSymbol]];
 
 
-  CCodeOutput compile_to_c(ObjProcDef* obj_proc_defs, BoolProcDef* bool_proc_defs, ClsDef* cls_defs, Block* blocks, TransBlock* trans_blocks, Int+* int_seqs)
-  {
+  CCodeOutput compile_to_c(ObjProcDef* obj_proc_defs, BoolProcDef* bool_proc_defs, ClsDef* cls_defs, Block* blocks, TransBlock* trans_blocks, Int+* int_seqs) {
     type_checking_fn_decls = (gen_c_decl(pd) : pd <- bool_proc_defs) & 4 * ("");
     // print "Type checking function declarations generated";
 
@@ -291,30 +279,26 @@ implicit
   }
 
 
-  String gen_c_decl(ObjProcDef pd)
-  {
+  String gen_c_decl(ObjProcDef pd) {
     args_types = (if p == :obj then "OBJ" else "const CLS &" : p <- pd.args);
     args_list = append(args_types & ("ENV &"), ", ");
     return "OBJ " & to_c_fn_name(pd.name, in_arity(pd)) & "(" & args_list & ");";
   }
 
 
-  String gen_c_decl(BoolProcDef pd)
-  {
+  String gen_c_decl(BoolProcDef pd) {
     par_list = append(pd.arity * ("OBJ"), ", ");
     return "bool " & to_c_fn_name(pd.name) & "(" & par_list & ");";
   }
 
 
-  String gen_c_decl(ClsDef cd, Nat id)
-  {
+  String gen_c_decl(ClsDef cd, Nat id) {
     par_list = append(cd.arity * ("OBJ") & ("const OBJ *", "const CLS *", "ENV &"), ", ");
     return "OBJ cls_" & printed(id) & "(" & par_list & ");";
   }
 
 
-  String* compile_to_c(ProcDef pd)
-  {
+  String* compile_to_c(ProcDef pd) {
     cached = pd.cached? and pd.cached;
 
     fn_name = to_c_fn_name(pd.name, in_arity(pd));
@@ -393,8 +377,7 @@ implicit
   }
 
 
-  String* gen_vars_decls(Instr* body)
-  {
+  String* gen_vars_decls(Instr* body) {
     vars_to_decl = [v : v <- vars_to_declare(body), not v :: AuxVar];
 
     vector_vars = [v : v <- vars_to_decl, v :: VecVar];
@@ -415,8 +398,7 @@ implicit
 
 
   ## DUPLICATED CODE
-  String* compile_to_c(ClsDef cd, Nat id)
-  {
+  String* compile_to_c(ClsDef cd, Nat id) {
     par_list  = ("OBJ p" & printed(n) : n < cd.arity) & ("const OBJ *D", "const CLS *C", "ENV &env"); ## BAD
     signature = "OBJ cls_" & printed(id) & "(" & append(par_list, ", ") & ")";
 
@@ -504,8 +486,7 @@ implicit
     queue_insert_tuple()  = compile_queue_insert_tuple_to_c(instr.rel_var, instr.tuple);
 
 
-  String* compile_set_table_to_c(RelVar relvar, Table table, AtomicExpr state, Nat+ perm)
-  {
+  String* compile_set_table_to_c(RelVar relvar, Table table, AtomicExpr state, Nat+ perm) {
     fn_name = fn_names[arity(table)];
     perm_args = match (perm)
       (_)       = (),
@@ -543,8 +524,7 @@ implicit
       (nothing,   just(a1?), just(a2?))   = mk_call("get_tern_rel_iter_by", (var, src, 1, a1, a2));
 
 
-  String* compile_try_block_to_c(LocVar var, Instr+ body, Maybe[Nat] block_id)
-  {
+  String* compile_try_block_to_c(LocVar var, Instr+ body, Maybe[Nat] block_id) {
     var_name = to_c_var_ref_name(var);
     body_code = compile_to_c(body, block_id);
 
@@ -565,8 +545,7 @@ implicit
     );
   }
 
-  String* compile_init_table_to_c(RelVar rel_var, Table table)
-  {
+  String* compile_init_table_to_c(RelVar rel_var, Table table) {
     fn_name = fn_names_by_arity[arity(table)];
     return mk_call(fn_name, (rel_var));
 
@@ -578,8 +557,7 @@ implicit
   }
 
 
-  String* compile_cleanup_table_to_c(RelVar rel_var, Table table)
-  {
+  String* compile_cleanup_table_to_c(RelVar rel_var, Table table) {
     fn_name = fn_names_by_arity[arity(table)];
     return mk_call(fn_name, (rel_var));
 
@@ -595,8 +573,7 @@ implicit
     mk_call("move_forward", (it_var));
 
 
-  String* compile_move_forward_to_c(TableItVar var)
-  {
+  String* compile_move_forward_to_c(TableItVar var) {
     fn_name = fn_names_by_arity[var.arity];
     return mk_call(fn_name, (var));
 
@@ -608,8 +585,7 @@ implicit
   }
 
 
-  String* compile_queue_deletes_to_c(RelVar rel_var, Maybe[IntVar]+ args)
-  {
+  String* compile_queue_deletes_to_c(RelVar rel_var, Maybe[IntVar]+ args) {
     fn_name = fn_names_by_args[(a != nothing : a <- args)];
     table_arg_str = "&" & to_c_var_ref_name(rel_var);
     updates_arg_str = "&" & pending_updates_var_ref_name(rel_var);
@@ -634,8 +610,7 @@ implicit
   }
 
 
-  String* compile_queue_insert_tuple_to_c(RelVar rel_var, IntVar+ tuple)
-  {
+  String* compile_queue_insert_tuple_to_c(RelVar rel_var, IntVar+ tuple) {
     fn_name = fn_names_by_arity[|tuple|];
     return (mk_gen_call(fn_name, ("&" & pending_updates_var_ref_name(rel_var)), tuple, ()));
 
@@ -647,8 +622,7 @@ implicit
   }
 
 
-  String* compile_get_table_iter_to_c(TableItVar it_var, AnyRelVar table, Maybe[IntVar]+ args)
-  {
+  String* compile_get_table_iter_to_c(TableItVar it_var, AnyRelVar table, Maybe[IntVar]+ args) {
     fn_name = fn_names_by_args[(a != nothing : a <- args)];
     return mk_call(fn_name, (table, it_var) & (value(a) : a <- args, a != nothing));
 
@@ -668,8 +642,7 @@ implicit
   }
 
 
-  String* compile_repeat_to_c(Instr+ body, Maybe[Nat] block_id)
-  {
+  String* compile_repeat_to_c(Instr+ body, Maybe[Nat] block_id) {
     head = body(0);
     if head :: <branch(cond: BoolExpr, when_true: (<break_loop>), when_false: ())>:
       cond_str = to_c_expr(neg(head.cond));
@@ -690,8 +663,7 @@ implicit
     mk_gen_call(cleanup_method_name(type), ("&" & to_c_var_ref_name(db_var)));
 
 
-  String compile_send_msg_to_c(AnyDBVar db_var, DBSymbol type, AtomicExpr msg, Bool is_root, Maybe[StdVar] maybe_res_var)
-  {
+  String compile_send_msg_to_c(AnyDBVar db_var, DBSymbol type, AtomicExpr msg, Bool is_root, Maybe[StdVar] maybe_res_var) {
     if is_root:
       name_str = update_entry_point_name(type);
       db_var_str = "&" & to_c_var_ref_name(db_var);
@@ -714,8 +686,7 @@ implicit
     mk_gen_call(update_name(type, id), ("self, self_aux"), args, ("env"));
 
 
-  String compile_set_state_to_c(AtomicExpr state, AnyDBVar db_var, DBSymbol type, Maybe[StdVar] maybe_res_var)
-  {
+  String compile_set_state_to_c(AtomicExpr state, AnyDBVar db_var, DBSymbol type, Maybe[StdVar] maybe_res_var) {
     if maybe_res_var != nothing:
       proc_name_str = set_state_entry_point_name(type);
       db_var_str = "&" & to_c_var_ref_name(db_var);
@@ -730,16 +701,14 @@ implicit
 
 
   String compile_invoke_method_to_c(WriteObjVar res_var, Maybe[<AnyAutoVar, AnyDBVar>] maybe_target_var,
-    <AutoSymbol, DBSymbol> type, MethodId id, AtomicExpr* args)
-  {
+    <AutoSymbol, DBSymbol> type, MethodId id, AtomicExpr* args) {
     name_str = user_def_method_name(type, id);
     target_var_str = if maybe_target_var != nothing then "&" & to_c_var_ref_name(value(maybe_target_var)) else "self";
     return mk_gen_call(res_var, name_str, (target_var_str), args, ("env"));
   }
 
 
-  String* gen_cache_clearing_code(ImplArg arg)
-  {
+  String* gen_cache_clearing_code(ImplArg arg) {
     code = ();
     for fn_symb <- rand_sort(lookup(cached_semi_consts_by_impl_arg, arg, [])):
       cache_var_name = to_c_semi_const_memo_var_name(fn_symb);
@@ -755,8 +724,7 @@ implicit
     mk_assignment(var, value) & gen_cache_clearing_code(var);
 
 
-  String* compile_auto_update_node_to_c(AutoSymbol type, BlockNodeId node, Maybe[IntVar] maybe_time_var)
-  {
+  String* compile_auto_update_node_to_c(AutoSymbol type, BlockNodeId node, Maybe[IntVar] maybe_time_var) {
     time_arg = if maybe_time_var != nothing then ", " & to_c_var_ref_name(value(maybe_time_var)) else "";
     return (node_update_method_name(type, node) & "(self" & time_arg & ", self_aux, env);");
   }
@@ -764,8 +732,7 @@ implicit
 
   ## BUG BUG BUG: IF THERE IS INSIDE ONE OF THE CASES A BREAK STATEMENT MEANT TO
   ## TERMINATE AN OUTER LOOP, THAT BREAK WILL TERMINATE THE SWITCH/CASE INSTEAD.
-  String* compile_switch_on_nat_to_c(IntExpr value, Instr*+ cases, Maybe[Nat] block_id)
-  {
+  String* compile_switch_on_nat_to_c(IntExpr value, Instr*+ cases, Maybe[Nat] block_id) {
     cases_code = (
       ("case " & printed(i) & ":") & indent_lines((compile_to_c(c, block_id) | "break;", ""))
       : c @ i <- cases
@@ -776,8 +743,7 @@ implicit
 
   ## BUG BUG BUG: IF THERE IS INSIDE ONE OF THE CASES A BREAK STATEMENT MEANT TO
   ## TERMIMATE AN OUTER LOOP, THAT BREAK WILL TERMINATE THE SWITCH/CASE INSTEAD.
-  String* compile_symb_switch_to_c(ObjExpr value, [+([+Atom], Instr+)] cases, Instr* else, Maybe[Nat] block_id)
-  {
+  String* compile_symb_switch_to_c(ObjExpr value, [+([+Atom], Instr+)] cases, Instr* else, Maybe[Nat] block_id) {
     value_str = match (value)
       get_tag(tag_obj?)   = "get_tag_idx(" & to_c_expr(tag_obj) & ")",
       _                   = "get_symb_idx(" & to_c_expr(value) & ")";
@@ -794,8 +760,7 @@ implicit
   }
 
 
-  String* compile_auto_apply_to_c(Maybe[AnyAutoVar] var, AutoSymbol type)
-  {
+  String* compile_auto_apply_to_c(Maybe[AnyAutoVar] var, AutoSymbol type) {
     var_str = if var != nothing then "&" & to_c_var_ref_name(value(var)) else "self";
     name_str = apply_method_name(type);
     return (mk_gen_call(name_str, (var_str), (), ("env")));
@@ -831,16 +796,14 @@ implicit
     read_pending_var(v?)        = (to_c_var_ref_name(var) & " = " & to_c_var_ref_name(v) & ";");
 
 
-  String compile_copy_state_to_c(WriteObjVar res_var, AnyDBVar db_var, DBSymbol type)
-  {
+  String compile_copy_state_to_c(WriteObjVar res_var, AnyDBVar db_var, DBSymbol type) {
     proc_name_str = copy_state_proc_name(type);
     db_var_str = "&" & to_c_var_ref_name(db_var);
     return mk_gen_call(res_var, proc_name_str, (db_var_str), (), ());
   }
 
 
-  String* compile_copy_table_to_c(WriteObjVar res_var, RelVar relvar, Table table, Nat+ perm)
-  {
+  String* compile_copy_table_to_c(WriteObjVar res_var, RelVar relvar, Table table, Nat+ perm) {
     fn_name = fn_names[arity(table)];
     perm_args = match (perm)
       (_)       = (),
@@ -858,8 +821,7 @@ implicit
   }
 
 
-  String* compile_build_const_int_seq_to_c(Nat seq_id, ObjVar var)
-  {
+  String* compile_build_const_int_seq_to_c(Nat seq_id, ObjVar var) {
     type, len = int_seqs_types_and_lengths(seq_id);
     seq_name = const_int_seq_c_name(seq_id);
     return (mk_gen_call(var, "build_const_" & type & "_seq", (seq_name, printed(len))));
@@ -867,8 +829,7 @@ implicit
 
   ///////////////////////////////////////////////////////////////////////////////
 
-  String* compile_call_proc_to_c(Maybe[ObjVar] var, ObjFnName name, <ObjExpr, BoundCls>* params, Maybe[Nat] block_id)
-  {
+  String* compile_call_proc_to_c(Maybe[ObjVar] var, ObjFnName name, <ObjExpr, BoundCls>* params, Maybe[Nat] block_id) {
     pars_info = (gen_par_info(p) : p <- params);
     code_frags, args = unzip(pars_info);
     call_code = if var != nothing
@@ -937,8 +898,7 @@ implicit
   }
 
 
-  String* compile_branch_to_c(BoolExpr cond, Instr* when_true, Instr* when_false, Maybe[Nat] block_id)
-  {
+  String* compile_branch_to_c(BoolExpr cond, Instr* when_true, Instr* when_false, Maybe[Nat] block_id) {
     assert when_true != ();
     code = ("if (" & to_c_expr(cond) & ") {")     &
            indent_lines(compile_to_c(when_true, block_id)) &
@@ -950,8 +910,7 @@ implicit
   }
 
 
-  String* compile_runtime_check_to_c(AtomicExpr cond, String file, NzNat line, Maybe[String] text, <StdVar, ImplArg>* vars)
-  {
+  String* compile_runtime_check_to_c(AtomicExpr cond, String file, NzNat line, Maybe[String] text, <StdVar, ImplArg>* vars) {
     text_arg = if text != nothing then printed(value(text)) else "0";
     header = (
       "if (is_symb(" & to_c_expr(cond) & ", symb_idx_false)) {",
@@ -968,8 +927,7 @@ implicit
   ///////////////////////////////////////////////////////////////////////////////
   ///////////////////////////////////////////////////////////////////////////////
 
-  String to_c_arg(FnCallParam arg)
-  {
+  String to_c_arg(FnCallParam arg) {
     by_ref = arg :: <TableItVar, AnyRelVar>;
     return {if by_ref then "&" else ""} & to_c_expr(arg);
   }

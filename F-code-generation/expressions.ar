@@ -1,5 +1,4 @@
-implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options : CompilationOptions
-{
+implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options : CompilationOptions {
   Instr+ gen_eval_code(Expr expr, EvalDestVar res_var) =
     object()            |
     float_lit()         |
@@ -60,8 +59,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
     is_set(v?)          = (set_var(res_var, bool_obj(is_not_blank(v))));
 
 
-  Instr+ gen_eval_code_for_set_expr([SubExpr] subexprs, EvalDestVar res_var)
-  {
+  Instr+ gen_eval_code_for_set_expr([SubExpr] subexprs, EvalDestVar res_var) {
     return (set_var(res_var, empty_rel)) if subexprs == [];
     non_cond_exprs = [e : e <- subexprs, e :: Expr];
     cond_exprs = subexprs - non_cond_exprs;
@@ -71,16 +69,14 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_eval_code_for_seq_expr(SubExpr* subexprs, EvalDestVar res_var)
-  {
+  Instr+ gen_eval_code_for_seq_expr(SubExpr* subexprs, EvalDestVar res_var) {
     return (set_var(res_var, empty_seq)) if subexprs == ();
     info = gen_vector_eval_info(subexprs);
     return nonempty(info.code & (mk_seq(res_var, info.vect_var, info.count_expr)));
   }
 
 
-  Instr+ gen_eval_code_for_seq_tail_expr(Expr seq, Expr+ tail, EvalDestVar res_var)
-  {
+  Instr+ gen_eval_code_for_seq_tail_expr(Expr seq, Expr+ tail, EvalDestVar res_var) {
     tmp_var, var_gen = pick_temp_var(res_var);
     let next_var_gen = var_gen:
       seq_info = gen_eval_info(seq, tmp_var);
@@ -96,8 +92,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_eval_code_for_tuple_expr(Expr+ exprs, EvalDestVar res_var)
-  {
+  Instr+ gen_eval_code_for_tuple_expr(Expr+ exprs, EvalDestVar res_var) {
     if exprs :: IntObj+:
       int_seq = (match (e) object(n?) = n : e <- exprs);
       seq_id = int_seqs_ids[int_seq];
@@ -156,8 +151,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
     gen_eval_code_for_map_or_bin_rel_expr(mk_rel($a, $b, $c, $d), entries, res_var);
 
 
-  Instr+ gen_eval_code_for_map_or_bin_rel_expr((EvalDestVar VecVar VecVar IntExpr -> Instr) mk_coll, [+(args: (Expr, Expr), cond: Expr?)] entries, EvalDestVar res_var)
-  {
+  Instr+ gen_eval_code_for_map_or_bin_rel_expr((EvalDestVar VecVar VecVar IntExpr -> Instr) mk_coll, [+(args: (Expr, Expr), cond: Expr?)] entries, EvalDestVar res_var) {
     non_cond_entries = rand_sort([e : e <- entries, not e.cond?]);
     cond_entries = rand_sort([e : e <- entries, e.cond?]);
 
@@ -205,8 +199,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
 
   ## BAD BAD BAD: THIS CODE IS ALMOST IDENTICAL TO THE CODE ABOVE
   ## HOW COULD IT BE WRITTEN JUST ONCE, WHILE MAINTANING TYPE SAFETY?
-  Instr+ gen_eval_code_for_tern_rel_expr([+(args: (Expr, Expr, Expr), cond: Expr?)] entries, EvalDestVar res_var)
-  {
+  Instr+ gen_eval_code_for_tern_rel_expr([+(args: (Expr, Expr, Expr), cond: Expr?)] entries, EvalDestVar res_var) {
     non_cond_entries = rand_sort([e : e <- entries, not e.cond?]);
     cond_entries = rand_sort([e : e <- entries, e.cond?]);
 
@@ -259,15 +252,13 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_eval_code_for_tag_obj_expr(Expr tag_expr, Expr obj_expr, EvalDestVar res_var)
-  {
+  Instr+ gen_eval_code_for_tag_obj_expr(Expr tag_expr, Expr obj_expr, EvalDestVar res_var) {
     info = gen_eval_info((tag_expr, obj_expr));
     return nonempty(info.eval_code & (mk_tagged_obj(res_var, info.exprs(0), info.exprs(1))));
   }
 
 
-  Instr+ gen_eval_code_for_fn_call_expr(FnSymbol name, AnyExpr* params, [ImplArg -> Expr] impl_args, EvalDestVar res_var)
-  {
+  Instr+ gen_eval_code_for_fn_call_expr(FnSymbol name, AnyExpr* params, [ImplArg -> Expr] impl_args, EvalDestVar res_var) {
     if impl_args != []:
       ## BUG BUG BUG. THE ASSIGNMENTS ARE DONE IN RANDOM ORDER. FIX THIS
       var = an_elem(nonempty(keys(impl_args)));
@@ -295,16 +286,14 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_eval_code_for_cls_call(AnyClsVar name, Expr+ args, EvalDestVar res_var)
-  {
+  Instr+ gen_eval_code_for_cls_call(AnyClsVar name, Expr+ args, EvalDestVar res_var) {
     pars_info = gen_eval_info(args);
     call_code = (call_cls(res_var, name, nonempty(pars_info.exprs)));
     return nonempty(pars_info.eval_code & call_code);
   }
 
 
-  Instr+ gen_eval_code_for_builtin_call(BuiltIn name, Expr* params, EvalDestVar res_var)
-  {
+  Instr+ gen_eval_code_for_builtin_call(BuiltIn name, Expr* params, EvalDestVar res_var) {
     pars_info = gen_eval_info(params);
     call_code = gen_call_code(name, pars_info.exprs, res_var);
     return nonempty(pars_info.eval_code & call_code);
@@ -377,8 +366,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_eval_code_for_rel_memb_test(Expr rel, Maybe[Expr]+ args, EvalDestVar res_var)
-  {
+  Instr+ gen_eval_code_for_rel_memb_test(Expr rel, Maybe[Expr]+ args, EvalDestVar res_var) {
     assert |args| == 2 or |args| == 3;
 
     rel_info = gen_eval_info(rel);
@@ -452,8 +440,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_eval_code_for_relvar_memb_test(AnyRelVar rel_var, Maybe[Expr]+ relvar_args, EvalDestVar res_var)
-  {
+  Instr+ gen_eval_code_for_relvar_memb_test(AnyRelVar rel_var, Maybe[Expr]+ relvar_args, EvalDestVar res_var) {
     args_perm = relvar_cols_perm(rel_var);
     table_args = (relvar_args(i) : i <- args_perm);
 
@@ -489,8 +476,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_eval_code_for_relvar_lookup(AnyRelVar rel_var, Expr* set_args, Nat unknown_arg_idx, EvalDestVar res_var)
-  {
+  Instr+ gen_eval_code_for_relvar_lookup(AnyRelVar rel_var, Expr* set_args, Nat unknown_arg_idx, EvalDestVar res_var) {
     if set_args == ():
       fail; ## IMPLEMENT IMPLEMENT IMPLEMENT
     ;
@@ -521,8 +507,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_eval_code_for_relvar_lookup_after_perm(AnyRelVar rel_var, Expr+ set_args, Nat unknown_arg_idx, EvalDestVar res_var)
-  {
+  Instr+ gen_eval_code_for_relvar_lookup_after_perm(AnyRelVar rel_var, Expr+ set_args, Nat unknown_arg_idx, EvalDestVar res_var) {
     arity = |set_args| + 1;
 
     info = gen_eval_info(set_args);
@@ -563,8 +548,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_eval_code_for_and_expr(Expr left_expr, Expr right_expr, EvalDestVar res_var)
-  {
+  Instr+ gen_eval_code_for_and_expr(Expr left_expr, Expr right_expr, EvalDestVar res_var) {
     tmp_var, var_gen = pick_temp_var(res_var);
     let next_var_gen = var_gen:
       left_info = gen_eval_info(left_expr, tmp_var);
@@ -575,8 +559,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_eval_code_for_or_expr(Expr left_expr, Expr right_expr, EvalDestVar res_var)
-  {
+  Instr+ gen_eval_code_for_or_expr(Expr left_expr, Expr right_expr, EvalDestVar res_var) {
     tmp_var, var_gen = pick_temp_var(res_var);
     let next_var_gen = var_gen:
       left_info = gen_eval_info(left_expr, tmp_var);
@@ -587,23 +570,20 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_eval_code_for_not_expr(Expr expr, EvalDestVar res_var)
-  {
+  Instr+ gen_eval_code_for_not_expr(Expr expr, EvalDestVar res_var) {
     tmp_var, var_gen = next_obj_var(next_var_gen);
     info = gen_eval_info(expr, tmp_var, next_var_gen = var_gen);
     return (info.eval_code | set_var(res_var, obj_neg(info.expr)));
   }
 
 
-  Instr+ gen_eval_code_for_eq_expr(Expr left_expr, Expr right_expr, EvalDestVar res_var)
-  {
+  Instr+ gen_eval_code_for_eq_expr(Expr left_expr, Expr right_expr, EvalDestVar res_var) {
     info = gen_eval_info((left_expr, right_expr));
     return nonempty(info.eval_code & (set_var(res_var, bool_obj(is_eq(info.exprs(0), info.exprs(1))))));
   }
 
 
-  Instr+ gen_eval_code_for_membership_expr(Expr expr, Type type, EvalDestVar res_var)
-  {
+  Instr+ gen_eval_code_for_membership_expr(Expr expr, Type type, EvalDestVar res_var) {
     info = gen_eval_info(expr);
     pred = memb_test_preds_map[type];
     pred_call_instr = set_var(res_var, bool_obj(eval_bool_fn(pred, (info.expr))));
@@ -623,8 +603,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ get_eval_code_for_auto_method_call(AutoMethodCall expr, EvalDestVar res_var)
-  {
+  Instr+ get_eval_code_for_auto_method_call(AutoMethodCall expr, EvalDestVar res_var) {
     args_eval_info = gen_eval_info(expr.args);
     invoke_method_instr = invoke_auto_method(
       res_var:    res_var,
@@ -637,8 +616,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ get_eval_code_for_db_method_call(DBMethodCall expr, EvalDestVar res_var)
-  {
+  Instr+ get_eval_code_for_db_method_call(DBMethodCall expr, EvalDestVar res_var) {
     args_eval_info = gen_eval_info(expr.args);
     invoke_method_instr = invoke_db_method(
       res_var:    res_var,
@@ -651,16 +629,14 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_eval_code_for_if_expr(Expr cond, Expr then_expr, Expr else_expr, EvalDestVar res_var)
-  {
+  Instr+ gen_eval_code_for_if_expr(Expr cond, Expr then_expr, Expr else_expr, EvalDestVar res_var) {
     info = gen_eval_info(cond);
     branch_instr = branch(is_true(info.expr), gen_eval_code(then_expr, res_var), gen_eval_code(else_expr, res_var));
     return nonempty((info.eval_code | branch_instr));
   }
 
 
-  Instr+ gen_eval_code_for_match_expr(Expr+ exprs, (ptrns: Pattern+, expr: Expr)+ cases, EvalDestVar res_var)
-  {
+  Instr+ gen_eval_code_for_match_expr(Expr+ exprs, (ptrns: Pattern+, expr: Expr)+ cases, EvalDestVar res_var) {
     info = gen_eval_info(exprs);
     let next_var_gen = info.next_var_gen:
       semicomp_cases = ((ptrns: c.ptrns, code: (gen_eval_code(c.expr, res_var) | exit_block)) : c <- cases);
@@ -670,16 +646,14 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_eval_code_for_ex_qual_expr(Clause source, Expr cond, EvalDestVar res_var)
-  {
+  Instr+ gen_eval_code_for_ex_qual_expr(Clause source, Expr cond, EvalDestVar res_var) {
     action = match_action(filter_clause(cond), set_found_var_and_leave(res_var));
     code = gen_clause_code(source, [], action);
     return (set_var(res_var, obj_false), execute_block(code));
   }
 
 
-  Instr+ gen_eval_code_for_set_comp_expr(Expr expr, Clause source, EvalDestVar res_var)
-  {
+  Instr+ gen_eval_code_for_set_comp_expr(Expr expr, Clause source, EvalDestVar res_var) {
     strm_var, var_gen = next_stream_var(next_var_gen);
     action = eval_and_store(((expr, strm_var)));
     code = gen_clause_code(source, [], action, next_var_gen = var_gen);
@@ -687,8 +661,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_eval_code_for_map_comp_expr(Expr key_expr, Expr value_expr, Clause source, EvalDestVar res_var)
-  {
+  Instr+ gen_eval_code_for_map_comp_expr(Expr key_expr, Expr value_expr, Clause source, EvalDestVar res_var) {
     key_strm_var, var_gen = next_stream_var(next_var_gen);
     value_strm_var, var_gen = next_stream_var(var_gen);
 
@@ -702,8 +675,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_eval_code_for_bin_rel_comp((Expr, Expr) exprs, Clause source, EvalDestVar res_var)
-  {
+  Instr+ gen_eval_code_for_bin_rel_comp((Expr, Expr) exprs, Clause source, EvalDestVar res_var) {
     strm_var_1, var_gen = next_stream_var(next_var_gen);
     strm_var_2, var_gen = next_stream_var(var_gen);
 
@@ -718,8 +690,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_eval_code_for_tern_rel_comp((Expr, Expr, Expr) exprs, Clause source, EvalDestVar res_var)
-  {
+  Instr+ gen_eval_code_for_tern_rel_comp((Expr, Expr, Expr) exprs, Clause source, EvalDestVar res_var) {
     strm_var_1, var_gen = next_stream_var(next_var_gen);
     strm_var_2, var_gen = next_stream_var(var_gen);
     strm_var_3, var_gen = next_stream_var(var_gen);
@@ -735,8 +706,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_eval_code_for_seq_comp_expr(SeqCompExpr expr, EvalDestVar res_var)
-  {
+  Instr+ gen_eval_code_for_seq_comp_expr(SeqCompExpr expr, EvalDestVar res_var) {
     src_var, var_gen = next_obj_var(next_var_gen);
     item_var, var_gen = next_obj_var(var_gen);
     sel_var, var_gen = next_obj_var(var_gen);
@@ -796,8 +766,7 @@ implicit program : Program, artifact : Artifact, next_var_gen : VarGen, options 
   }
 
 
-  Instr+ gen_eval_code_for_range_comp_expr(RangeCompExpr expr, EvalDestVar res_var)
-  {
+  Instr+ gen_eval_code_for_range_comp_expr(RangeCompExpr expr, EvalDestVar res_var) {
     src_var, var_gen = next_obj_var(next_var_gen);
     item_var, var_gen = next_obj_var(var_gen);
     sel_var, var_gen = next_obj_var(var_gen);

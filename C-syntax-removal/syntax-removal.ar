@@ -1,5 +1,4 @@
-implicit syn_prg : SynPrg
-{
+implicit syn_prg : SynPrg {
   Program desugared_prg = program(
     typedefs:     typedefs,
     fndefs:       desugared_fn_defs,
@@ -11,8 +10,7 @@ implicit syn_prg : SynPrg
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  Procedure desugar_proc_def(SynProcDef pd)
-  {
+  Procedure desugar_proc_def(SynProcDef pd) {
     args = ((var: p.var, type: desugar_type(p.type)) : p <- pd.args);
     maybe_ret_type = if pd.res_type != nothing then just(desugar_type(value(pd.res_type))) else nothing;
     body = desugar_stmts(pd.body, [p.var : p <~ pd.args], syn_artifact = pd, impl_args = []);
@@ -32,14 +30,12 @@ implicit syn_prg : SynPrg
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  [Function] desugared_fn_defs
-  {
+  [Function] desugared_fn_defs {
     fn_defs_by_name_arity = group_by(ext_syn_fn_defs, (left($).name, |left($).args|));
     return union([desugar_fn_def_family(fds) : unused_var, fds <- fn_defs_by_name_arity]);
 
 
-    [Function] desugar_fn_def_family([+(SynFnDef, [ImplArgDecl])] fn_defs)
-    {
+    [Function] desugar_fn_def_family([+(SynFnDef, [ImplArgDecl])] fn_defs) {
       multiple = |fn_defs| > 1;
       return seq_union((
         desugar_fn_def(fd, if multiple then unique_fn_symbol(fd.name, i) else fd.name, ias)
@@ -48,8 +44,7 @@ implicit syn_prg : SynPrg
     }
 
 
-    [Function] desugar_fn_def(SynFnDef fn_def, BasicFnSymb final_name, [ImplArgDecl] impl_args)
-    {
+    [Function] desugar_fn_def(SynFnDef fn_def, BasicFnSymb final_name, [ImplArgDecl] impl_args) {
       // Grouping nested functions by name and arity
       nested_fn_def_groups = values(group_by(set(fn_def.local_fns), ($.name, |$.args|)));
       // Desugaring each group
@@ -62,8 +57,7 @@ implicit syn_prg : SynPrg
     }
 
 
-    [Function] desugar_nested_fn_def_family([+SynFnDef] fn_defs, SynFnDef outer_fn_def, BasicFnSymb outer_fn_name, [ImplArgDecl] impl_args)
-    {
+    [Function] desugar_nested_fn_def_family([+SynFnDef] fn_defs, SynFnDef outer_fn_def, BasicFnSymb outer_fn_name, [ImplArgDecl] impl_args) {
       multiple = |fn_defs| > 1;
       return [
         desugar_nested_fn_def(fd, maybe(i, multiple), outer_fn_def, outer_fn_name, impl_args)
@@ -72,8 +66,7 @@ implicit syn_prg : SynPrg
     }
 
 
-    Function desugar_nested_fn_def(SynFnDef fn_def, Maybe[Nat] maybe_idx, SynFnDef outer_fn_def, BasicFnSymb outer_fn_name, [ImplArgDecl] impl_args)
-    {
+    Function desugar_nested_fn_def(SynFnDef fn_def, Maybe[Nat] maybe_idx, SynFnDef outer_fn_def, BasicFnSymb outer_fn_name, [ImplArgDecl] impl_args) {
       local_name = fn_def.name;
       local_name = unique_fn_symbol(local_name, value(maybe_idx)) if maybe_idx != nothing;
       final_name = nested_fn_symbol(outer_fn_name, local_name);
@@ -87,11 +80,9 @@ implicit syn_prg : SynPrg
 
 ////////////////////////////////////////////////////////////////////////////////
 
-implicit syn_prg : SynPrg, syn_artifact : SynArtifact
-{
+implicit syn_prg : SynPrg, syn_artifact : SynArtifact {
   Function make_fn_def(FnSymbol name, SynArg* syn_args, [ImplArgDecl] syn_impl_args, SynType syn_res_type,
-    SynExpr syn_expr, [[+TypeVar -> Atom]] typevars)
-  {
+    SynExpr syn_expr, [[+TypeVar -> Atom]] typevars) {
     // Retrieving all protocol types referenced in the argument types (no need to look at the return type)
     sorted_prot_types = rand_sort(seq_union((refd_prot_types(a.type, protocol_types) : a <- syn_args)));
     assert subset(refd_prot_types(syn_res_type, protocol_types), set(sorted_prot_types));
@@ -128,8 +119,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact
       merge_value_sets_nonempty([constraints(bs) : bs <- binds]);
 
 
-    [AtomicFnSymb -> [+ClsType]] constraints([+TypeVar -> Atom] binds)
-    {
+    [AtomicFnSymb -> [+ClsType]] constraints([+TypeVar -> Atom] binds) {
       assert |[prot_decl_by_type[t] : unused_var, t <- binds]| == 1;
 
       bound_types = values(binds);
@@ -145,8 +135,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact
     }
 
 
-    [[+TypeVar -> Atom]] type_vars_bindings(Atom* sorted_prot_types)
-    {
+    [[+TypeVar -> Atom]] type_vars_bindings(Atom* sorted_prot_types) {
       var_type_pairs = seq_union(([(type_var(i), pt)] : pt @ i <- sorted_prot_types));
       var_type_by_prot = group_by(var_type_pairs, prot_decl_by_type[right($)]);
       return [[left(vt) -> right(vt) : vt <- vts] : p, vts <- var_type_by_prot];

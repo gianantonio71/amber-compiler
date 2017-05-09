@@ -1,7 +1,5 @@
-implicit program : Program, automaton : Automaton, options : CompilationOptions
-{
-  Block gen_auto_code
-  {
+implicit program : Program, automaton : Automaton, options : CompilationOptions {
+  Block gen_auto_code {
     nodes = gen_auto_nodes;
     fail if nodes == (); ## BUG BUG BUG
 
@@ -68,8 +66,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
   }
 
 
-  [(MembIntVar, Int)] auto_memb_int_vars
-  {
+  [(MembIntVar, Int)] auto_memb_int_vars {
     nodes = gen_auto_nodes;
     level_marked_nodes_counts = count_vector((n.level : n <- nodes, needs_initial_update(n)), |levels_sizes|);
     node_specific_vars = seq_union((memb_int_vars(n) : n <- nodes));
@@ -85,8 +82,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
   }
 
 
-  [MembIntVectVar] memb_int_vect_vars
-  {
+  [MembIntVectVar] memb_int_vect_vars {
     vars = [nodes_to_update_vect_var(l, nz_nat(s)) : s @ l <~ levels_sizes, s > 2];
     outputs_count = |automaton.outputs|;
     vars = vars & [changed_outputs(outputs_count)] if outputs_count != 0;
@@ -96,13 +92,11 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
   //////////////////////////////////////////////////////////////////////////////
 
   ## COMPILATION OF METHODS FOR BOTH TYPES OF AUTOMATA IS ALMOST IDENTICAL, CAN WE SHARE SOME CODE HERE?
-  [MethodId -> CompiledMethod] compiled_methods([Method] methods)
-  {
+  [MethodId -> CompiledMethod] compiled_methods([Method] methods) {
     return merge([compiled(ms) : unused_var, ms <- group_by(methods, ($.name, |$.args|))]);
 
 
-    [MethodId -> CompiledMethod] compiled([+Method] methods)
-    {
+    [MethodId -> CompiledMethod] compiled([+Method] methods) {
       a_method = an_elem(methods);
       name = a_method.name;
       arity = |a_method.args|;
@@ -130,8 +124,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
       );
 
 
-    Instr* gen_code(Method method)
-    {
+    Instr* gen_code(Method method) {
       res_var, var_gen = next_obj_var(blank_var_gen);
       args_code = (set_var(value(v), fn_par(i)) : unused_var, v @ i <- method.args, v != nothing);
       body_code = gen_eval_code(method.expr, res_var, artifact = automaton, next_var_gen = var_gen);
@@ -142,8 +135,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
   }
 
 
-  Instr* gen_pre_init_code([(MembBoolVar, Bool)] memb_bool_vars, [(MembIntVar, Int)] memb_int_vars, [(<MembVar, MembObjVar, PendingInputVar, PendingStateVar>, <blank, undefined>)] memb_obj_vars)
-  {
+  Instr* gen_pre_init_code([(MembBoolVar, Bool)] memb_bool_vars, [(MembIntVar, Int)] memb_int_vars, [(<MembVar, MembObjVar, PendingInputVar, PendingStateVar>, <blank, undefined>)] memb_obj_vars) {
     // Initializing all boolean member variables
     code_0 = (set_bvar(var, init_val) : var, init_val <- rand_sort(memb_bool_vars));
 
@@ -176,8 +168,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
   }
 
 
-  Instr* gen_apply_code(AutoNode+ nodes)
-  {
+  Instr* gen_apply_code(AutoNode+ nodes) {
     sorted_memb_copy_vars = rand_sort(memb_copy_vars);
     sorted_memb_copy_vars_ids = rand_sort(memb_copy_vars_ids);
 
@@ -231,8 +222,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
     return apply_code;
 
 
-    Instr* add_timer_code(Instr* core_code, IntVar curr_time_var, IntVar a_free_int_var)
-    {
+    Instr* add_timer_code(Instr* core_code, IntVar curr_time_var, IntVar a_free_int_var) {
       time_varying_nodes_by_idx = merge([[i -> a] : a, i <- time_varying_nodes_indexes]);
       assert time_varying_nodes_by_idx == reverse(time_varying_nodes_indexes);
 
@@ -277,15 +267,13 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
   }
 
 
-  Instr* gen_level_code(BlockNodeId* nodes_ids, Nat level_idx, Nat level_offset, IntVar node_idx_var, IntVar node_count_var, IntVar curr_time_var)
-  {
+  Instr* gen_level_code(BlockNodeId* nodes_ids, Nat level_idx, Nat level_offset, IntVar node_idx_var, IntVar node_count_var, IntVar curr_time_var) {
     is_time_sensitive = is_time_sensitive(automaton.name);
 
     update_count_var = update_count_var(level_idx);
     node_count = |nodes_ids|;
 
-    nodes_code = (
-      { code = (
+    nodes_code = ( { code = (
           if is_time_sensitive
             then auto_update_node(automaton.name, id, curr_time_var)
             else auto_update_node(automaton.name, id),
@@ -324,8 +312,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
 
   //////////////////////////////////////////////////////////////////////////////
 
-  Instr* gen_params_init_code
-  {
+  Instr* gen_params_init_code {
     param_ids = keys(automaton.params);
     dep_map = [a -> [if v :: MembVar then bare_id(v) else {fail;} : v <- extern_vars(p.value)] : a, p <- automaton.params];
     assert not (s, ts <- dep_map, t <- ts : not in(t, param_ids));
@@ -342,8 +329,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Instr* gen_dispatch_auto_method_body(AutoSymbol auto_type, Method+ methods, [TypeName -> Type] typedefs)
-{
+Instr* gen_dispatch_auto_method_body(AutoSymbol auto_type, Method+ methods, [TypeName -> Type] typedefs) {
   assert |methods| > 1;                     // There must be more than one method
   assert |[m.name : m <~ methods]| == 1;    // All methods must have the same name
   assert |[|m.args| : m <~ methods]| == 1;  // All methods have the same arity

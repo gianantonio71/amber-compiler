@@ -48,8 +48,7 @@ RCNodeInfo set_cls_par_node(ImplArg v, BoundCls c, Instr* is)   = set_cls_par_no
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-(NodeInfo+, CodeTree) build_root_code_graph(Instr+ instrs)
-{
+(NodeInfo+, CodeTree) build_root_code_graph(Instr+ instrs) {
   leaf_nodes, code_trees = build_code_graph(instrs, 0);
   return (leaf_nodes, root_node(code_trees));
 }
@@ -65,8 +64,7 @@ RCNodeInfo set_cls_par_node(ImplArg v, BoundCls c, Instr* is)   = set_cls_par_no
   try_block()             = build_try_block_code_graph(instr.var, instr.body, offset);
 
 
-(NodeInfo+, CodeTree) build_branch_code_graph(BoolExpr cond, Instr+ if_branch, Instr* else_branch, Nat offset)
-{
+(NodeInfo+, CodeTree) build_branch_code_graph(BoolExpr cond, Instr+ if_branch, Instr* else_branch, Nat offset) {
   if_branch_leaf_nodes, if_branch_code_trees = build_code_graph(if_branch, nat(offset+1));
   else_offset = nat(offset + 1 + |if_branch_leaf_nodes|);
   else_branch_leaf_nodes, else_branch_code_trees = build_code_graph(else_branch, else_offset);
@@ -76,8 +74,7 @@ RCNodeInfo set_cls_par_node(ImplArg v, BoundCls c, Instr* is)   = set_cls_par_no
 }
 
 
-(NodeInfo+, CodeTree) build_switch_on_nat_code_graph(IntExpr value, Instr*+ cases, Nat offset)
-{
+(NodeInfo+, CodeTree) build_switch_on_nat_code_graph(IntExpr value, Instr*+ cases, Nat offset) {
   leaf_nodes = (nat_switch_node(value));
   code_trees = ();
   for c <- cases:
@@ -89,8 +86,7 @@ RCNodeInfo set_cls_par_node(ImplArg v, BoundCls c, Instr* is)   = set_cls_par_no
 }
 
 
-(NodeInfo+, CodeTree) build_symb_switch_code_graph(ObjExpr value, [+([+Atom], Instr+)] cases, Instr* else, Nat offset)
-{
+(NodeInfo+, CodeTree) build_symb_switch_code_graph(ObjExpr value, [+([+Atom], Instr+)] cases, Instr* else, Nat offset) {
   case_values, case_instrs = unzip(rand_sort(cases));
   leaf_nodes = (symb_switch_node(value, nonempty(case_values)));
   case_code_trees = ();
@@ -105,22 +101,19 @@ RCNodeInfo set_cls_par_node(ImplArg v, BoundCls c, Instr* is)   = set_cls_par_no
 }
 
 
-(NodeInfo+, CodeTree) build_loop_code_graph(Instr+ body, Nat offset)
-{
+(NodeInfo+, CodeTree) build_loop_code_graph(Instr+ body, Nat offset) {
   leaf_nodes, code_trees = build_code_graph(body, offset);
   return (leaf_nodes, loop_node(code_trees));
 }
 
 
-(NodeInfo+, CodeTree) build_block_code_graph(Instr+ body, Nat offset)
-{
+(NodeInfo+, CodeTree) build_block_code_graph(Instr+ body, Nat offset) {
   leaf_nodes, code_trees = build_code_graph(body, offset);
   return (leaf_nodes, block_node(code_trees));
 }
 
 
-(NodeInfo+, CodeTree) build_try_block_code_graph(LocVar var, Instr+ body, Nat offset)
-{
+(NodeInfo+, CodeTree) build_try_block_code_graph(LocVar var, Instr+ body, Nat offset) {
   leaf_nodes, code_trees = build_code_graph(body, offset);
   return (leaf_nodes, try_block_node(var, code_trees));
 }
@@ -128,8 +121,7 @@ RCNodeInfo set_cls_par_node(ImplArg v, BoundCls c, Instr* is)   = set_cls_par_no
 
 ((), ()) build_code_graph((), Nat) = ((), ());
 
-(NodeInfo+, CodeTree+) build_code_graph(Instr+ instrs, Nat initial_offset)
-{
+(NodeInfo+, CodeTree+) build_code_graph(Instr+ instrs, Nat initial_offset) {
   offset = initial_offset;
   leaf_subnodes = ();
   code_trees = ();
@@ -158,8 +150,7 @@ Instr* reconstruct(CodeTree code_tree, RCNodeInfo+ rc_nodes) =
   root_node(ts?)      = reconstruct(ts, rc_nodes);
 
 
-Instr reconstruct_branch(Nat idx, CodeTree+ if_code_trees, CodeTree* else_code_trees, RCNodeInfo+ rc_nodes)
-{
+Instr reconstruct_branch(Nat idx, CodeTree+ if_code_trees, CodeTree* else_code_trees, RCNodeInfo+ rc_nodes) {
   cond, if_instrs, else_instrs = match (rc_nodes(idx)) branch_node() n? = (n.cond, n.if_post_instrs, n.else_post_instrs); ## UGLY UGLY UGLY
   if_body = if_instrs & reconstruct(if_code_trees, rc_nodes);
   else_body = else_instrs & reconstruct(else_code_trees, rc_nodes);
@@ -167,16 +158,14 @@ Instr reconstruct_branch(Nat idx, CodeTree+ if_code_trees, CodeTree* else_code_t
 }
 
 
-Instr reconstruct_nat_switch(Nat idx, CodeTree*+ case_code_trees, RCNodeInfo+ rc_nodes)
-{
+Instr reconstruct_nat_switch(Nat idx, CodeTree*+ case_code_trees, RCNodeInfo+ rc_nodes) {
   index, instrs = match (rc_nodes(idx)) nat_switch_node() n? = (n.index, n.cases_instrs); ## UGLY UGLY UGLY
   cases_code = (instrs(i) & reconstruct(ct, rc_nodes) : ct @ i <- case_code_trees);
   return switch_on_nat(index, cases_code);
 }
 
 
-Instr* reconstruct_symb_switch(Nat idx, CodeTree++ cases, CodeTree* else, RCNodeInfo+ rc_nodes)
-{
+Instr* reconstruct_symb_switch(Nat idx, CodeTree++ cases, CodeTree* else, RCNodeInfo+ rc_nodes) {
   expr, cases_values, cases_instrs, else_instrs = match (rc_nodes(idx)) symb_switch_node() n? = (n.value, n.cases, n.cases_instrs, n.else_instrs); ## UGLY UGLY UGLY
   cases_code = (nonempty(cases_instrs(i) & reconstruct(ct, rc_nodes)) : ct @ i <- cases);
   else_code = else_instrs & reconstruct(else, rc_nodes);

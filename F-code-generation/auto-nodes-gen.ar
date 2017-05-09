@@ -30,10 +30,8 @@ StdBlockNodeId auto_or_db_var_to_node_id(AnyDBVar var) =
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-implicit program : Program, automaton : Automaton
-{
-  AutoNode* gen_auto_nodes
-  {
+implicit program : Program, automaton : Automaton {
+  AutoNode* gen_auto_nodes {
     input_nodes = (
       input(
         std_block_node_id(i),
@@ -94,13 +92,11 @@ implicit program : Program, automaton : Automaton
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-implicit automaton : Automaton
-{
+implicit automaton : Automaton {
   //////////////////////////////////////////////////////////////////////////////
   /////////////////// Continuous and discrete condition nodes //////////////////
 
-  [CondNodeId -> CondInfo] cond_nodes_by_id
-  {
+  [CondNodeId -> CondInfo] cond_nodes_by_id {
     next_id = 0;
     cond_nodes = [];
     for a <- rand_sort(automaton.actions):
@@ -111,8 +107,7 @@ implicit automaton : Automaton
   }
 
 
-  [CondNodeId -> CondInfo] repeated_cond_nodes_by_id
-  {
+  [CondNodeId -> CondInfo] repeated_cond_nodes_by_id {
     already_used_ids = [get_inner_id(id) : id, unused_var <- cond_nodes_by_id];
     next_id = if already_used_ids != [] then nat(max(already_used_ids) + 1) else 0;
     rep_cond_nodes = [];
@@ -126,8 +121,7 @@ implicit automaton : Automaton
   //////////////////////////////////////////////////////////////////////////////
   ///////////////////// Partial upstream dependency maps ///////////////////////
 
-  [BlockNodeId -> [AutoNodeDependency]] common_up_nodes_map
-  {
+  [BlockNodeId -> [AutoNodeDependency]] common_up_nodes_map {
     // Creating node -> all nodes it depends on mapping
     cond_up_nodes                 = [id -> cond_deps(c) : id, c <- cond_nodes_by_id];
     rep_cond_up_nodes             = [id -> cond_deps(c) : id, c <- repeated_cond_nodes_by_id];
@@ -167,8 +161,7 @@ implicit automaton : Automaton
     ]);
 
 
-  [StdBlockNodeId -> [AutoNodeDependency]] nested_dbs_value_up_nodes
-  {
+  [StdBlockNodeId -> [AutoNodeDependency]] nested_dbs_value_up_nodes {
     all_args = merge_values([[bare_id(c.target) -> c.message] : a <- all_actions, c <- retrieve_msg_sends(a)]);
     return [std_block_node_id(a) -> union([expr_deps(e) : e <- es]) : a, es <- all_args];
   }
@@ -180,8 +173,7 @@ implicit automaton : Automaton
     common_up_nodes_map & state_trigger_up_nodes & nested_dbs_trigger_up_nodes;
 
 
-  [BlockNodeId -> [AutoNodeDependency]] value_up_nodes_map
-  {
+  [BlockNodeId -> [AutoNodeDependency]] value_up_nodes_map {
     all_state_up_nodes = merge_value_sets([state_trigger_up_nodes, state_value_up_nodes]);
     all_nested_dbs_up_nodes = merge_value_sets([nested_dbs_trigger_up_nodes, nested_dbs_value_up_nodes]);
     return common_up_nodes_map & all_state_up_nodes & all_nested_dbs_up_nodes;
@@ -190,8 +182,7 @@ implicit automaton : Automaton
   //////////////////////////////////////////////////////////////////////////////
   /////////////// Nodes (node ids, actually) sorted into layers ////////////////
 
-  [+BlockNodeId]* nodes_by_level
-  {
+  [+BlockNodeId]* nodes_by_level {
     level_0 = [std_block_node_id(a) : a <- keys(automaton.params) & keys(automaton.inputs)];
     coalesced_value_down_nodes_map = [s -> [dependency_to_node_id(t) : t <- ts] : s, ts <- value_up_nodes_map];
     return topological_sort([s -> new_ts : s, ts <- coalesced_value_down_nodes_map, new_ts = ts - level_0 - [s]]);
@@ -202,8 +193,7 @@ implicit automaton : Automaton
 
   ## TYPECHECKING BUG TYPECHECKING BUG TYPECHECKING BUG
   // [+BlockNodeId -> [+BlockNodeId]] trigger_down_nodes_map
-  [BlockNodeId -> [+BlockNodeId]] trigger_down_nodes_map
-  {
+  [BlockNodeId -> [+BlockNodeId]] trigger_down_nodes_map {
     // Reversing the dependency mapping: node -> all nodes that depend on it
     fat_map = reverse_multi(trigger_up_nodes_map);
     ## BAD BAD BAD: THIS IS SUPER SUPER UGLY
@@ -212,8 +202,7 @@ implicit automaton : Automaton
 
 
   ## TYPECHECKING BUG SAME AS ABOVE
-  [NestedAutoNodeId -> [MembVar -> [BlockNodeId]]] output_trigger_down_nodes_map
-  {
+  [NestedAutoNodeId -> [MembVar -> [BlockNodeId]]] output_trigger_down_nodes_map {
     // Reversing the dependency mapping: node -> all nodes that depend on it: [AutoNodeDependency -> [+BlockNodeId]]
     fat_map = reverse_multi(trigger_up_nodes_map);
     // Coalescing all the (automaton, output -> ...) into (automaton -> ...) entries
@@ -225,8 +214,7 @@ implicit automaton : Automaton
 
 
   ## TYPECHECKING BUG SAME AS ABOVE
-  [StdBlockNodeId -> [<MembVar, QualDBMembVar, AnyRelVar> -> [BlockNodeId]]] nested_db_vars_trigger_down_nodes_map
-  {
+  [StdBlockNodeId -> [<MembVar, QualDBMembVar, AnyRelVar> -> [BlockNodeId]]] nested_db_vars_trigger_down_nodes_map {
     // Reversing the dependency mapping: node -> all nodes that depend on it: [AutoNodeDependency -> [+BlockNodeId]]
     fat_map = reverse_multi(trigger_up_nodes_map);
     // Coalescing all the (automaton, output -> ...) into (automaton -> ...) entries
@@ -241,10 +229,8 @@ implicit automaton : Automaton
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-implicit program : Program, automaton : Automaton
-{
-  AutoNode create_auto_node(StdBlockNodeId node_id, Nat level)
-  {
+implicit program : Program, automaton : Automaton {
+  AutoNode create_auto_node(StdBlockNodeId node_id, Nat level) {
     core_id = get_inner_id(node_id);
 
     if automaton.nested_dbs(memb_db_var(core_id), *):
@@ -288,8 +274,7 @@ implicit program : Program, automaton : Automaton
   }
 
 
-  AutoNode create_auto_node(CondNodeId node_id, Nat level)
-  {
+  AutoNode create_auto_node(CondNodeId node_id, Nat level) {
     assert cond_nodes_by_id(node_id, *) or repeated_cond_nodes_by_id(node_id, *);
 
     is_rep = repeated_cond_nodes_by_id(node_id, *);
@@ -323,8 +308,7 @@ implicit program : Program, automaton : Automaton
   }
 
 
-  AutoNode create_auto_node(NestedAutoNodeId node_id, Nat level)
-  {
+  AutoNode create_auto_node(NestedAutoNodeId node_id, Nat level) {
     core_id = get_inner_id(node_id);
     assert automaton.nested_autos(core_id, *);
     output_dep_nodes = lookup(output_trigger_down_nodes_map, node_id, []);
@@ -334,8 +318,7 @@ implicit program : Program, automaton : Automaton
   }
 
 
-  AutoNode create_auto_node(NestedAutoInputNodeId node_id, Nat level)
-  {
+  AutoNode create_auto_node(NestedAutoInputNodeId node_id, Nat level) {
     assert automaton.nested_autos(node_id.auto, *);
 
     expr = nested_auto_inputs[node_id];
@@ -359,8 +342,7 @@ implicit program : Program, automaton : Automaton
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-([CondNodeId -> CondInfo], Nat) gen_action_nodes(<AutoCondAction, AutoRepAction> action, Nat root_id, Maybe[(id: CondNodeId, trigger: Bool)] parent)
-{
+([CondNodeId -> CondInfo], Nat) gen_action_nodes(<AutoCondAction, AutoRepAction> action, Nat root_id, Maybe[(id: CondNodeId, trigger: Bool)] parent) {
   next_id = nat(root_id + 1);
 
   updates = [];
@@ -402,15 +384,13 @@ implicit program : Program, automaton : Automaton
   time_varying_since_cond()     = union([expr_deps(s) : s <- cond.signals]);
 
 
-[AutoNodeDependency] cond_deps(CondInfo cond)
-{
+[AutoNodeDependency] cond_deps(CondInfo cond) {
   parent = cond.parent;
   return expr_deps(cond.cond) & [parent.id if parent != nothing];
 }
 
 
-[AutoNodeDependency] expr_deps(Expr expr)
-{
+[AutoNodeDependency] expr_deps(Expr expr) {
   vars = extern_vars(expr);
   var_deps = [
     match (v)
@@ -433,8 +413,7 @@ implicit program : Program, automaton : Automaton
     _                   = retrieve_from_nested_exprs(expr, nested_deps($)); ## BAD: WORKAROUND FOR TYPECHECKING BUG
 
 
-  [AutoNodeDependency] nested_deps(Clause cls)
-  {
+  [AutoNodeDependency] nested_deps(Clause cls) {
     rel_var_deps = match (cls)
       relvar_clause() = { match (cls.rel_var)
                             rel_var()       = [],

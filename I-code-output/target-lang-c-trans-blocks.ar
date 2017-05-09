@@ -1,12 +1,10 @@
-implicit
-{
+implicit {
   sorted_cls_defs                 : ClsDef*,
   int_seqs_types_and_lengths      : (String, Nat)*,
   cached_semi_consts_by_impl_arg  : [ImplArg -> [+FnSymbol]];
 
 
-  CCodeOutput compile_trans_block_to_c(TransBlock block)
-  {
+  CCodeOutput compile_trans_block_to_c(TransBlock block) {
     state_vars_decls = ["OBJ " & to_c_var_decl_name(v) & ";" : v, unused_var <- block.state_vars];
     value_store_decls = ["VALUE_STORE " & to_c_var_decl_name(v) & ";" : v <- block.value_stores];
     table_decls = [table_c_type(t) & " " & to_c_var_decl_name(v) & ";" : v, t <- block.tables];
@@ -77,8 +75,7 @@ implicit
   }
 
 
-  (String, String*) compile_init_code_to_c(DBSymbol name, Instr* init_code)
-  {
+  (String, String*) compile_init_code_to_c(DBSymbol name, Instr* init_code) {
     init_vars_decl = gen_vars_decls(init_code);
     init_vars_decl = init_vars_decl & ("") if init_vars_decl != ();
     init_body = init_vars_decl & compile_to_c(init_code, nothing);
@@ -89,8 +86,7 @@ implicit
   }
 
 
-  (String, String*) compile_cleanup_code_to_c(DBSymbol name, Instr* cleanup_code)
-  {
+  (String, String*) compile_cleanup_code_to_c(DBSymbol name, Instr* cleanup_code) {
     cleanup_body = compile_to_c(cleanup_code, nothing);
     cleanup_sgn = "void " & cleanup_method_name(name) & "(" & to_c_name(name) & " *self)";
     cleanup_decl = cleanup_sgn & ";";
@@ -99,8 +95,7 @@ implicit
   }
 
 
-  (String, String*) compile_copy_state_code_to_c(DBSymbol name, Instr* code)
-  {
+  (String, String*) compile_copy_state_code_to_c(DBSymbol name, Instr* code) {
     vars_decls = gen_vars_decls(code);
     body = vars_decls & ("" if vars_decls != ()) & compile_to_c(code, nothing);
     sgn = "OBJ " & copy_state_proc_name(name) & "(" & to_c_name(name) & " *self)";
@@ -108,8 +103,7 @@ implicit
   }
 
 
-  (String, String*) compile_set_state_code_to_c(DBSymbol name, Instr* code)
-  {
+  (String, String*) compile_set_state_code_to_c(DBSymbol name, Instr* code) {
     vars_decls = gen_vars_decls(code);
     body = vars_decls & ("" if vars_decls != ()) & compile_to_c(code, nothing);
     sgn = "OBJ " & set_state_proc_name(name) & "(" & to_c_name(name) & " *self, " &
@@ -118,8 +112,7 @@ implicit
   }
 
 
-  (String, String*) update_entry_point(DBSymbol block_name)
-  {
+  (String, String*) update_entry_point(DBSymbol block_name) {
     sgn = "OBJ " & update_entry_point_name(block_name) & "(" & to_c_name(block_name) & " *self, OBJ p0, ENV &env)";
 
     aux_var_decl = aux_struct_c_name(block_name) & " self_aux;";
@@ -160,8 +153,7 @@ implicit
   }
 
 
-  (String, String*) set_state_entry_point(DBSymbol block_name)
-  {
+  (String, String*) set_state_entry_point(DBSymbol block_name) {
     sgn = "OBJ " & set_state_entry_point_name(block_name) & "(" & to_c_name(block_name) & " *self, OBJ p0, ENV &env)";
 
     aux_var_decl = aux_struct_c_name(block_name) & " self_aux;";
@@ -194,8 +186,7 @@ implicit
   }
 
 
-  (String, String*) updates_check_code(TransBlock block)
-  {
+  (String, String*) updates_check_code(TransBlock block) {
     tables_check_code = [
       "ok &= " & mk_gen_call(fn_names[arity(t)][t.keys], (), (v), ("&" & pending_updates_var_ref_name(v)))
       : v, t <- block.tables, t.keys != []
@@ -233,8 +224,7 @@ implicit
   }
 
 
-  (String, String*) updates_copy_code(TransBlock block)
-  {
+  (String, String*) updates_copy_code(TransBlock block) {
     var_ids = (bare_id(v) : v <- rand_sort(keys(block.state_vars)));
     vars_copy_code = join((var_copy_code(id) : id <- var_ids));
 
@@ -257,8 +247,7 @@ implicit
   }
 
 
-  (String, String*) updates_apply_code(TransBlock block)
-  {
+  (String, String*) updates_apply_code(TransBlock block) {
     value_stores_apply_code = (
       mk_gen_call("value_store_apply", (), (vs), (aux_struct_var_ref_name(vs)))
       : vs <- rand_sort(block.value_stores)
@@ -291,8 +280,7 @@ implicit
   }
 
 
-  (String, String*) updates_finish_code(TransBlock block)
-  {
+  (String, String*) updates_finish_code(TransBlock block) {
     var_ids = (bare_id(v) : v <- rand_sort(keys(block.state_vars)));
     vars_copy_code = join((var_apply_code(id) : id <- var_ids));
 
@@ -323,8 +311,7 @@ implicit
   }
 
 
-  (String, String*) aux_struct_init_code(TransBlock block)
-  {
+  (String, String*) aux_struct_init_code(TransBlock block) {
     var_ids = (bare_id(v) : v <- rand_sort(keys(block.state_vars)));
     init_vars_code = (to_c_var_ref_name(pending_state_var(id)) & " = make_blank_obj();" : id <- var_ids);
 
@@ -358,8 +345,7 @@ implicit
   }
 
 
-  (String, String*) aux_struct_cleanup_code(TransBlock block)
-  {
+  (String, String*) aux_struct_cleanup_code(TransBlock block) {
     // var_ids = (bare_id(v) | v <- rand_sort(block.state_vars));
     // init_vars_code = (to_c_var_ref_name(pending_state_var(id)) & " = make_blank_obj();" | id <- var_ids);
 
@@ -390,15 +376,13 @@ implicit
   }
 
 
-  String* var_copy_code(Atom var_id)
-  {
+  String* var_copy_code(Atom var_id) {
     psv_str = to_c_var_ref_name(pending_state_var(var_id));
     return (psv_str & " = copy_obj(" & psv_str & ");");
   }
 
 
-  String* var_apply_code(Atom var_id)
-  {
+  String* var_apply_code(Atom var_id) {
     psv_str = to_c_var_ref_name(pending_state_var(var_id));
     mv_str = to_c_var_ref_name(memb_var(var_id));
     return (
@@ -410,8 +394,7 @@ implicit
   }
 
 
-  (String, String*) gen_user_def_method(DBSymbol block_name, MethodId method_id, Instr* body)
-  {
+  (String, String*) gen_user_def_method(DBSymbol block_name, MethodId method_id, Instr* body) {
     args_str = append((to_c_name(block_name) & " *self") & ("OBJ p" & printed(i) : i < method_id.arity), ", ");
     sgn = "OBJ " & user_def_method_name(block_name, method_id) & "(" & args_str & ", ENV &env)";
     vars_decls = gen_vars_decls(body);
@@ -420,8 +403,7 @@ implicit
   }
 
 
-  (String, String*) gen_update(DBSymbol block_name, UpdateId update_id, Instr* body)
-  {
+  (String, String*) gen_update(DBSymbol block_name, UpdateId update_id, Instr* body) {
     impl_args_strs = (to_c_name(block_name) & " *self", aux_struct_c_name(block_name) & " *self_aux");
     expl_args_strs = ("OBJ p" & printed(i) : i < arity(update_id));
     args_str = append(impl_args_strs & expl_args_strs, ", ");

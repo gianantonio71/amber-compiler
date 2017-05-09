@@ -28,17 +28,14 @@ Nat resol_priority(MembDBVar)                 = 1;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
-{
-  Bool arity_is_compatible(AtomicFnSymb fn_symb, Nat arity)
-  {
+implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg] {
+  Bool arity_is_compatible(AtomicFnSymb fn_symb, Nat arity) {
     fn_arities = keys(lookup(top_level_fndefs_by_name_arity, fn_symb, []));
     prot_meth_arities = lookup(protocol_methods, fn_symb, []);
     return fn_arities(arity) or (arity != 0 and prot_meth_arities(arity));
   }
 
-  Bool arity_is_compatible(NestedFnFamilyId fn_symb, Nat arity)
-  {
+  Bool arity_is_compatible(NestedFnFamilyId fn_symb, Nat arity) {
     arities = local_fn_defs_arities[fn_symb.inner];
     return arities(arity);
   }
@@ -65,14 +62,12 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
     return arities(arity);
   }
 
-  Bool arity_is_compatible(ClsVar var, Nat arity)
-  {
+  Bool arity_is_compatible(ClsVar var, Nat arity) {
     var_arity = cls_vars_arities[var];
     return var_arity == arity;
   }
 
-  Bool arity_is_compatible(AnyRelVar var, Nat arity)
-  {
+  Bool arity_is_compatible(AnyRelVar var, Nat arity) {
     var_arity = rel_vars_arities[var];
     return arity == var_arity or arity == var_arity - 1;
   }
@@ -89,8 +84,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
 
   //////////////////////////////////////////////////////////////////////////////
 
-  [FnFamilyId] resolve_by_priority_as_fn_name(Atom symbol, Nat arity, [Var] def_vars)
-  {
+  [FnFamilyId] resolve_by_priority_as_fn_name(Atom symbol, Nat arity, [Var] def_vars) {
     raw_resols = resolve_symbol(symbol, def_vars);
     resols = [r : r <- raw_resols, r :: FnFamilyId, arity_is_compatible(r, arity)];
     res = min_by(resols, resol_priority($));
@@ -100,8 +94,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
 
 
   [<SymbObjVar, ClsVar, RelVar, FnFamilyId, PreCall>]
-  resolve_by_priority_as_call_lookalike_target(Atom target, Nat arity, [Var] def_vars)
-  {
+  resolve_by_priority_as_call_lookalike_target(Atom target, Nat arity, [Var] def_vars) {
     raw_resols = resolve_symbol(target, def_vars);
     resols = [r : r <- raw_resols, arity_is_compatible(r, arity)];
     fail if not resols :: [<StdVar, ImplArg, MembVar, QualAutoMembVar, ClsVar, RelVar, FnFamilyId, PreCall>];
@@ -110,8 +103,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
 
 
   [<SymbChainExpr, ClsVar, AnyRelVar, FnFamilyId, PreCall>]
-  resolve_by_priority_as_call_lookalike_target(Atom+ symbols, Nat arity, [Var] def_vars)
-  {
+  resolve_by_priority_as_call_lookalike_target(Atom+ symbols, Nat arity, [Var] def_vars) {
     raw_resols = resolve_symbol_chain(symbols, def_vars);
     resols = [r : r <- raw_resols, arity_is_compatible(r, arity)];
     fail if not resols :: [<SymbChainExpr, ClsVar, AnyRelVar, FnFamilyId, PreCall>];
@@ -119,8 +111,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
   }
 
 
-  [<AnyAutoVar, LocDBVar, MembDBVar>] resolve_by_priority_as_auto_or_db_var(Atom symbol, [Var] def_vars)
-  {
+  [<AnyAutoVar, LocDBVar, MembDBVar>] resolve_by_priority_as_auto_or_db_var(Atom symbol, [Var] def_vars) {
     raw_resols = resolve_symbol(symbol, def_vars);
     resols = [r : r <- raw_resols, r :: <AnyAutoVar, LocDBVar, MembDBVar>];
     assert |resols| <= 1;
@@ -129,15 +120,13 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
 
 
   [<AnyRelVar, SymbChainExpr, FnCallExpr, AutoMethodCall, DBMethodCall>]
-  resolve_by_priority_as_memb_test_target(Atom+ symbols, NzNat arity, [Var] def_vars)
-  {
+  resolve_by_priority_as_memb_test_target(Atom+ symbols, NzNat arity, [Var] def_vars) {
     return resolve_by_priority_as_memb_test_target(symbols, def_vars);
   }
 
 
   [<AnyRelVar, SymbChainExpr, FnCallExpr, AutoMethodCall, DBMethodCall>]
-  resolve_by_priority_as_memb_test_target(Atom+ symbols, [Var] def_vars)
-  {
+  resolve_by_priority_as_memb_test_target(Atom+ symbols, [Var] def_vars) {
     pre_resols = resolve_symbol_chain(symbols, def_vars);
     relvar_resols = [r : r <- pre_resols, r :: AnyRelVar];
     expr_resols = [value(er) : r <- pre_resols, er = try_resolve_as_expr(r), er != nothing];
@@ -145,8 +134,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
   }
 
   ## DOES IT REALLY NEED THE SECOND PARAMETER, def_vars?
-  [AnyRelVar] resolve_by_priority_as_rel_var(Atom+ symbols, [Var] def_vars)
-  {
+  [AnyRelVar] resolve_by_priority_as_rel_var(Atom+ symbols, [Var] def_vars) {
     pre_resols = resolve_symbol_chain(symbols, def_vars);
     resols = [r : r <- pre_resols, r :: AnyRelVar];
     assert |resols| <= 1;
@@ -155,23 +143,20 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
 
 
   [<SymbChainExpr, FnCallExpr, AutoMethodCall, DBMethodCall>]
-  resolve_by_priority_as_expr(Atom+ symbols, [Var] def_vars)
-  {
+  resolve_by_priority_as_expr(Atom+ symbols, [Var] def_vars) {
     resols = resolve_symbol_chain(symbols, def_vars);
     expr_resols = [value(er) : r <- resols, er = try_resolve_as_expr(r), er != nothing];
     return min_by(expr_resols, resol_priority($)); ## BAD BAD: WORKAROUND FOR TYPECHECKING BUG
   }
 
 
-  [ClsExpr] resolve_by_priority_as_cls_expr(Atom symbol, NzNat exp_arity, [StdVar] def_vars)
-  {
+  [ClsExpr] resolve_by_priority_as_cls_expr(Atom symbol, NzNat exp_arity, [StdVar] def_vars) {
     raw_resols = resolve_symbol(symbol, def_vars);
     resols_priorities = [r -> resol_priority(rr) : rr <- raw_resols, r <- resolve(rr, exp_arity)];
     return min_by(keys(resols_priorities), resols_priorities[$]);
 
 
-    [ClsExpr] resolve(FnFamilyId fn_symb, NzNat exp_arity)
-    {
+    [ClsExpr] resolve(FnFamilyId fn_symb, NzNat exp_arity) {
       ## BUG BUG BUG: HERE I MUST ALSO CHECK THAT IT HAS NO IMPLICIT ARGUMENTS...
       has_exp_arity = function_exists(fn_symb, exp_arity) and all((a == 0 : a <- arg_arities(fn_symb, exp_arity)));
       return [
@@ -205,8 +190,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
       else nothing;
 
 
-  Maybe[AutoMethodCall] try_resolve_as_expr(PreAutoCall precall)
-  {
+  Maybe[AutoMethodCall] try_resolve_as_expr(PreAutoCall precall) {
     auto_type = if precall.var? then auto_var_type(precall.var) else self_auto_type;
     if methods_by_automaton(bare_id(auto_type), *):
       methods = methods_by_automaton[bare_id(auto_type)];
@@ -218,8 +202,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
   }
 
 
-  Maybe[DBMethodCall] try_resolve_as_expr(PreDBCall precall)
-  {
+  Maybe[DBMethodCall] try_resolve_as_expr(PreDBCall precall) {
     db_type = if precall.var? then db_var_type(precall.var) else self_db_type;
     if methods_by_db(bare_id(db_type), *):
       methods = methods_by_db[bare_id(db_type)];
@@ -234,8 +217,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
   //////////////////////////////////////////////////////////////////////////////
 
   [<SymbChainExpr, ClsVar, AnyAutoVar, AnyDBVar, AnyRelVar, FnFamilyId, PreCall>]
-  resolve_symbol_chain(Atom+ symbols, [Var] def_vars)
-  {
+  resolve_symbol_chain(Atom+ symbols, [Var] def_vars) {
     resols = resolve_symbol(head(symbols), def_vars);
     for s <- tail(symbols):
       resols = [value(nr) : r <- resols, nr = try_resolve_accessor(r, s), nr != nothing];
@@ -246,8 +228,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
     Nothing try_resolve_accessor(<ClsVar, AnyRelVar>, Atom) = nothing;
 
 
-    Maybe[SymbChainExpr] try_resolve_accessor(<FnFamilyId, PreCall> target, Atom field)
-    {
+    Maybe[SymbChainExpr] try_resolve_accessor(<FnFamilyId, PreCall> target, Atom field) {
       maybe_resol_target = try_resolve_as_expr(target);
       return if maybe_resol_target != nothing
         then just(accessor(expr: value(maybe_resol_target), field: object(field)))
@@ -259,8 +240,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
       just(accessor(expr: target, field: object(field)));
 
 
-    Maybe[<QualAutoMembVar, PreCall>] try_resolve_accessor(AnyAutoVar target, Atom field)
-    {
+    Maybe[<QualAutoMembVar, PreCall>] try_resolve_accessor(AnyAutoVar target, Atom field) {
       auto_type = match (target)
         loc_auto_var()  = loc_auto_vars[target],
         memb_auto_var() = memb_auto_vars[target];
@@ -279,8 +259,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
     }
 
 
-    Maybe[<QualDBMembVar, QualRelVar, NestedDBVar, PreCall>] try_resolve_accessor(AnyDBVar target, Atom field)
-    {
+    Maybe[<QualDBMembVar, QualRelVar, NestedDBVar, PreCall>] try_resolve_accessor(AnyDBVar target, Atom field) {
       target_type = db_var_type(target);
       interface = db_interfaces[target_type];
       if in(field, interface.memb_vars):
@@ -308,8 +287,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
     RelVar,
     FnFamilyId, PreCall
   >]
-  resolve_symbol(Atom symbol, [Var] def_vars)
-  {
+  resolve_symbol(Atom symbol, [Var] def_vars) {
     std_var = var(symbol);
     impl_arg = impl_arg(symbol);
     fn_symb = fn_symbol(symbol);
@@ -326,13 +304,11 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact, impl_args : [ImplArg]
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-implicit syn_prg : SynPrg
-{
+implicit syn_prg : SynPrg {
   [] resolve_symbol(<null_artifact>, Atom symbol) = [];
 
 
-  [<LocAutoVar, LocDBVar, QualAutoMembVar>] resolve_symbol(SynProcDef artifact, Atom symbol)
-  {
+  [<LocAutoVar, LocDBVar, QualAutoMembVar>] resolve_symbol(SynProcDef artifact, Atom symbol) {
     resols = [loc_db_var(symbol) : v <~ artifact.db_vars, v.var == symbol];
     for v <- artifact.auto_vars:
       if v.var == symbol:
@@ -347,8 +323,7 @@ implicit syn_prg : SynPrg
   }
 
 
-  [<MembVar, MembAutoVar, MembDBVar, QualAutoMembVar>] resolve_symbol(SynAutoDef artifact, Atom symbol)
-  {
+  [<MembVar, MembAutoVar, MembDBVar, QualAutoMembVar>] resolve_symbol(SynAutoDef artifact, Atom symbol) {
     internals = auto_internals[artifact.name];
     resols = [
       memb_var(symbol)      if in(symbol, internals.memb_vars),
@@ -366,8 +341,7 @@ implicit syn_prg : SynPrg
   }
 
 
-  [<MembVar, RelVar, MembDBVar, PreCall>] resolve_symbol(SynDBDef artifact, Atom symbol)
-  {
+  [<MembVar, RelVar, MembDBVar, PreCall>] resolve_symbol(SynDBDef artifact, Atom symbol) {
     interface = db_interfaces[db_symbol(artifact.name)];
     return [
       memb_var(symbol)                          if in(symbol, interface.memb_vars),
@@ -378,8 +352,7 @@ implicit syn_prg : SynPrg
   }
 
 
-  [<MembVar, MembAutoVar, MembDBVar, QualAutoMembVar, PreCall>] resolve_symbol(AutoMethodDef artifact, Atom symbol)
-  {
+  [<MembVar, MembAutoVar, MembDBVar, QualAutoMembVar, PreCall>] resolve_symbol(AutoMethodDef artifact, Atom symbol) {
     auto_def = auto_defs_by_id[auto_symbol(artifact.target)];
     resols = resolve_symbol(auto_def, symbol);
     if method_ids_by_automaton_id[artifact.target](symbol):
@@ -389,15 +362,13 @@ implicit syn_prg : SynPrg
   }
 
 
-  [<MembVar, RelVar, MembDBVar, PreCall>] resolve_symbol(HandlerDef artifact, Atom symbol)
-  {
+  [<MembVar, RelVar, MembDBVar, PreCall>] resolve_symbol(HandlerDef artifact, Atom symbol) {
     db_def = db_defs_by_id[db_symbol(artifact.target)];
     return resolve_symbol(db_def, symbol);
   }
 
 
-  [<ClsVar, StdFnSymb, NestedFnFamilyId>] resolve_symbol(TopLevelFnDef artifact, Atom symbol)
-  {
+  [<ClsVar, StdFnSymb, NestedFnFamilyId>] resolve_symbol(TopLevelFnDef artifact, Atom symbol) {
     cls_var = cls_var(symbol);
     fn_symb = fn_symbol(symbol);
     nested_fn_symb = nested_fn_symbol(artifact.unique_name, fn_symb);
@@ -409,8 +380,7 @@ implicit syn_prg : SynPrg
   }
 
 
-  [<ClsVar, StdFnSymb, NestedFnFamilyId>] resolve_symbol(NestedFnDef artifact, Atom symbol)
-  {
+  [<ClsVar, StdFnSymb, NestedFnFamilyId>] resolve_symbol(NestedFnDef artifact, Atom symbol) {
     cls_var = cls_var(symbol);
     fn_symb = fn_symbol(symbol);
     nested_fn_symb = nested_fn_symbol(artifact.parent_unique_name, fn_symb);
@@ -422,15 +392,13 @@ implicit syn_prg : SynPrg
   }
 
 
-  [<MembVar, RelVar, MembDBVar, PreCall>] resolve_symbol(UsingBlockFnDef artifact, Atom symbol)
-  {
+  [<MembVar, RelVar, MembDBVar, PreCall>] resolve_symbol(UsingBlockFnDef artifact, Atom symbol) {
     db_def = db_defs_by_id[db_symbol(artifact.target)];
     return resolve_symbol(db_def, symbol);
   }
 
 
-  [<MembVar, RelVar, MembDBVar, PreCall>] resolve_symbol(UsingBlockUpdateDef artifact, Atom symbol)
-  {
+  [<MembVar, RelVar, MembDBVar, PreCall>] resolve_symbol(UsingBlockUpdateDef artifact, Atom symbol) {
     db_def = db_defs_by_id[db_symbol(artifact.target)];
     return resolve_symbol(db_def, symbol);
   }
