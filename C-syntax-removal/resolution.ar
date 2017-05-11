@@ -403,3 +403,81 @@ implicit syn_prg : SynPrg {
     return resolve_symbol(db_def, symbol);
   }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+
+implicit syn_prg : SynPrg, auto_def : SynAutoDef {
+  Bool is_fake(SynTimeVaryingRule rule) =
+    syn_time_varying_boolean_rule()   |
+    syn_time_varying_unchanged_rule() = is_const(rule.time_expr),
+    syn_time_varying_inactive_rule()  = is_const(rule.time_expr) and
+                                        (initial_value(rule.time_expr) == false or rule.starts_at_time_0);
+
+
+  SynPlainRule rewrite_fake_time_rule(SynTimeVaryingRule rule) {
+    assert is_fake(rule);
+
+    value = match (rule)
+      syn_time_varying_boolean_rule()   = if initial_value(rule.time_expr) == true then rule.cond else object(false),
+      syn_time_varying_unchanged_rule() = object(initial_value(rule.time_expr)),
+      syn_time_varying_inactive_rule()  = object(initial_value(rule.time_expr));
+
+    return syn_plain_rule(rule.name, value, false);
+  }
+
+
+  Bool is_disguised_auto(SynPlainRule rule) {
+    expr = rule.expr;
+    return false if not expr :: <SynImplArgsCall, call_lookalike(target: ConstOrVar, args: SynExpr+)>;
+
+    id = match (expr)
+      impl_args_call()  = expr.name,
+      call_lookalike()  = {match (expr.target) const_or_var(a?) = a};
+
+    arity = |expr.args|;
+    fn_name = fn_symbol(id);
+    auto_name = auto_symbol(id);
+
+    // If there's no automaton with the specified name, we decide it's a function,
+    // even if there's no such function.
+    return false if not auto_defs_by_id(auto_name, *);
+
+    // If the automaton exists and the function does not, then we go for the automaton
+    return true if not non_nested_function_exists(fn_name);
+
+    auto_arity = |auto_defs_by_id[auto_name].pos_inputs|;
+
+    auto_arity_ok = arity == auto_arity or arity == 0;
+    fn_arity_ok = non_nested_function_exists(fn_name, arity);
+
+    return true if auto_arity_ok and not fn_arity_ok;
+    return false if not auto_arity_ok and fn_arity_ok;
+
+    ## WE ARE NOT SUPPOSED TO GET HERE, I THINK...
+    return false;
+  }
+
+
+  SynNestedAuto rewrite_disguised_auto(SynPlainRule rule) {
+    expr = rule.expr;
+    fail if not expr :: <SynImplArgsCall, call_lookalike(target: ConstOrVar, args: SynExpr+)>;
+
+    id = match (expr)
+      impl_args_call()  = expr.name,
+      call_lookalike()  = {match (expr.target) const_or_var(a?) = a};
+
+    fn_name = fn_symbol(id);
+    auto_name = auto_symbol(id);
+
+    args = expr.args;
+    impl_args = match (expr)
+      impl_args_call()  = expr.impl_args,
+      call_lookalike()  = ();
+
+    auto_interface = auto_interfaces[auto_name];
+    assert args == () or |auto_interface.pos_inputs| == |args|;
+    pos_inputs = if args != () then zip(auto_interface.pos_inputs, args) else ();
+    named_inputs = ((bare_id(a), e) : a, e <- impl_args);
+    return syn_nested_auto(rule.name, id, pos_inputs & named_inputs);
+  }
+}

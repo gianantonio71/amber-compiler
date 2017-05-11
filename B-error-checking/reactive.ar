@@ -1,0 +1,103 @@
+// type SynAutoDef     = syn_auto_def(
+//                         name:       AutoSymbol,
+//                         pos_inputs: Atom*,
+//                         res_type:   SynType?,
+//                         parent:     Atom?,
+//                         inputs:     InputDecl*,
+//                         outputs:    OutputDecl*,
+//                         state_vars: StateVarDecl*,
+//                         nested_dbs: NestedDBDecl*,
+//                         consts:     ConstDecl*,
+//                         rules:      RuleDecl*
+//                       );
+
+
+implicit syn_prg : SynPrg {
+  ExprWFError* reactive_auto_wf_errors(SynAutoDef auto_def) {
+    errs = if auto_def.res_type? then type_wf_errors(auto_def.res_type, type_arity_map, true) else ();
+    let syn_artifact = auto_def:
+      errs = errs & join(
+        (input_decl_wf_errors(i)     : i <- auto_def.inputs) &
+        (output_decl_wf_errors(o)    : o <- auto_def.outputs) &
+        (state_var_decl_wf_errors(v) : v <- auto_def.state_vars) &
+        (nested_db_decl_wf_errors(a) : a <- auto_def.nested_dbs) &
+        (const_decl_wf_errors(c)     : c <- auto_def.consts) &
+        (rule_decl_wf_error(r)       : r <- auto_def.rules)
+      );
+    ;
+    return errs;
+  }
+}
+
+
+implicit syn_prg : SynPrg, syn_artifact : SynAutoDef {
+  ExprWFError* auto_expr_wf_errors(SynExpr expr) = expr_wf_errors(expr, [], impl_args=[], actual_arg_arity=0);
+
+  // type InputDecl      = input_decl(name: Atom, type: SynType, discrete: Bool);
+  ExprWFError* input_decl_wf_errors(InputDecl input) = type_wf_errors(input.type, type_arity_map, true);
+
+  // type OutputDecl     = output_decl(name: Atom, type: SynType, discrete: Bool);
+  ExprWFError* output_decl_wf_errors(OutputDecl output) = type_wf_errors(output.type, type_arity_map, true);
+
+  // type StateVarDecl   = state_var_decl(name: Atom, type: SynType, init_value: SynExpr);
+  ExprWFError* state_var_decl_wf_errors(StateVarDecl decl) {
+    type_errs = type_wf_errors(decl.type, type_arity_map, true);
+    expr_errs = auto_expr_wf_errors(decl.init_value);
+    return type_errs & expr_errs;
+  }
+
+  // type NestedDBDecl   = nested_db_decl(name: Atom, type: Atom);
+  ExprWFError* nested_db_decl_wf_errors(NestedDBDecl decl) = (
+    unknown_auto(db_symbol(decl.type)) if not db_defs_by_id(db_symbol(decl.type), *)
+  );
+
+  // type ConstDecl      = const_decl(name: Atom, type: SynType?, value: SynExpr);
+  ExprWFError* const_decl_wf_errors(ConstDecl decl) {
+    type_errs = if decl.type? then type_wf_errors(decl.type, type_arity_map, true) else ();
+    expr_errs = auto_expr_wf_errors(decl.value);
+    return type_errs & expr_errs;
+  }
+
+  // type SynPlainRule   = syn_plain_rule(name: Atom, expr: SynExpr, discrete: Bool);
+  ExprWFError* rule_decl_wf_error(SynPlainRule rule) =
+    if is_disguised_auto(rule, auto_def=syn_artifact)
+      then rule_decl_wf_error(rewrite_disguised_auto(rule, auto_def=syn_artifact))
+      else auto_expr_wf_errors(rule.expr);
+
+  // type SynCondRule    = syn_cond_rule(name: Atom, branches: (expr: SynExpr, cond: SynExpr)+, discrete: Bool);
+  ExprWFError* rule_decl_wf_error(SynCondRule rule) =
+    join((auto_expr_wf_errors(b.expr) & auto_expr_wf_errors(b.cond) : b <- rule.branches));
+
+  // type SynForeachRule = syn_foreach_rule(name: Atom, value: SynExpr, signals: Atom+, cond: SynExpr?, discrete: Bool);
+  ExprWFError* rule_decl_wf_error(SynForeachRule rule) {
+    value_errs = auto_expr_wf_errors(rule.value);
+    cond_errs = if rule.cond? then auto_expr_wf_errors(rule.cond) else ();
+    return value_errs & cond_errs;
+  }
+
+  // type SynTimeVaryingRule = syn_time_varying_boolean_rule(name: Atom, cond: SynExpr, time_expr: TimeExpr),
+  //                           syn_time_varying_unchanged_rule(name: Atom, cond: SynExpr, time_expr: TimeExpr),
+  //                           syn_time_varying_inactive_rule(
+  //                             name:             Atom,
+  //                             signals:          Atom+,
+  //                             time_expr:        TimeExpr,
+  //                             starts_at_time_0: Bool
+  //                           );
+  ExprWFError* rule_decl_wf_error(SynTimeVaryingRule rule) =
+    if rule.cond? then auto_expr_wf_errors(rule.cond) else ();
+
+  // type SynNestedAuto  = syn_nested_auto(name: Atom, auto_name: Atom, args: (Atom, SynExpr)*);
+  ExprWFError* rule_decl_wf_error(SynNestedAuto rule) = join((auto_expr_wf_errors(e) : unused_var, e <- rule.args));
+
+  // type SynMsgSend     = syn_msg_send(
+  //                         target:   Atom,
+  //                         message:  SynExpr,
+  //                         cond:     Maybe[SynExpr],
+  //                         signals:  Atom*
+  //                       );
+  ExprWFError* rule_decl_wf_error(SynMsgSend rule) {
+    msg_errs = auto_expr_wf_errors(rule.message);
+    cond_errs = if rule.cond != nothing then auto_expr_wf_errors(value(rule.cond)) else ();
+    return msg_errs & cond_errs;
+  }
+}
