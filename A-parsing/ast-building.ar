@@ -7,16 +7,18 @@ implicit filename : String, lines : Nat** {
     decl = match (get_rule_name(mtc))
       typedef             = build_typedef_ast(inner_match),
       par_typedef         = build_par_typedef_ast(inner_match),
+      unary_op            = build_unary_op_def_ast(inner_match),
+      binary_op           = build_binary_op_def_ast(inner_match),
       fndef               = build_std_fndef_ast(inner_match),
       fndef_proc          = build_proc_fndef_ast(inner_match),
-      fndef_switch        = build_switch_fndef_ast(inner_match),
+      fndef_match         = build_match_fndef_ast(inner_match),
       impl_block_1        = build_impl_block_1_ast(inner_match),
       impl_block_2        = build_impl_block_2_ast(inner_match),
       proc_def            = build_proc_def_ast(inner_match),
       db_def              = build_db_def_ast(inner_match),
       auto_def            = build_auto_def_ast(inner_match),
       std_auto_method     = build_std_method_def_ast(inner_match),
-      switch_auto_method  = build_switch_method_def_ast(inner_match),
+      match_auto_method   = build_match_method_def_ast(inner_match),
       proc_auto_method    = build_proc_method_def_ast(inner_match),
       msg_handler         = build_handler_def_ast(inner_match),
       using_block         = build_using_block_ast(inner_match),
@@ -36,9 +38,37 @@ implicit filename : String, lines : Nat** {
     return prot_decl(nonempty(types), nonempty(methods));
 
     (AtomicFnSymb, SynType+, SynType) build_prot_method_ast(RuleMatch mtc) {
+      label = get_rule_name(mtc);
+      inner_match = get_rule_match(mtc);
+      return match(label)
+        unary_op    = build_unary_op_prot_method_ast(inner_match),
+        binary_op   = build_binary_op_prot_method_ast(inner_match),
+        function    = build_fn_prot_method_ast(inner_match);
+    }
+
+    (AtomicFnSymb, SynType+, SynType) build_unary_op_prot_method_ast(RuleMatch mtc) {
       nodes = rule_seq_nodes(mtc);
       assert |nodes| == 5;
-      name = build_fn_symbol_ast(nodes(0));
+      operator = match (get_token(nodes(0))) operator(op?) = op_symbol(op);
+      arg_type = build_type_ast(nodes(2));
+      ret_type = build_type_ast(nodes(4));
+      return (operator, (arg_type), ret_type);
+    }
+
+    (AtomicFnSymb, SynType+, SynType) build_binary_op_prot_method_ast(RuleMatch mtc) {
+      nodes = rule_seq_nodes(mtc);
+      assert |nodes| == 7;
+      operator = match (get_token(nodes(0))) operator(op?) = op_symbol(op);
+      arg1_type = build_type_ast(nodes(2));
+      arg2_type = build_type_ast(nodes(4));
+      ret_type = build_type_ast(nodes(6));
+      return (operator, (arg1_type, arg2_type), ret_type);
+    }
+
+    (AtomicFnSymb, SynType+, SynType) build_fn_prot_method_ast(RuleMatch mtc) {
+      nodes = rule_seq_nodes(mtc);
+      assert |nodes| == 5;
+      name = fn_symbol(get_lowercase_id(nodes(0)));
       args_types = (build_type_ast(n) : n <- rep_rule_nodes(nodes(2)));
       ret_type = build_type_ast(nodes(4));
       return (name, nonempty(args_types), ret_type);
@@ -235,18 +265,51 @@ implicit filename : String, lines : Nat** {
 
   ////////////////////////////////////////////////////////////////////////////////
 
+  SynFnDef build_unary_op_def_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 6;
+    operator = match (get_token(nodes(1))) operator(op?) = op_symbol(op);
+    return syn_fn_def(
+      name:       operator,
+      args:       (build_obj_arg_ast(rule_seq_nodes(block_node(nodes(2))))),
+      res_type:   build_type_ast(nodes(0)),
+      expr:       build_expr_ast(nodes(4)),
+      local_fns:  (),
+      typevars:   []
+    );
+  }
+
+  SynFnDef build_binary_op_def_ast(RuleMatch mtc) {
+    nodes = rule_seq_nodes(mtc);
+    assert |nodes| == 6;
+    operator = match (get_token(nodes(1))) operator(op?) = op_symbol(op);
+    arg_nodes = rule_seq_nodes(block_node(nodes(2)));
+    arg1 = build_obj_arg_ast(subseq(arg_nodes, 0, 2));
+    arg2 = build_obj_arg_ast(subseq(arg_nodes, 3, 2));
+    return syn_fn_def(
+      name:       operator,
+      args:       (arg1, arg2),
+      res_type:   build_type_ast(nodes(0)),
+      expr:       build_expr_ast(nodes(4)),
+      local_fns:  (),
+      typevars:   []
+    );
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
+
   SynFnDef build_fndef_ast(RuleMatch mtc) =
     match (get_rule_name(mtc))
       std     = build_std_fndef_ast(get_rule_match(mtc)),
       proc    = build_proc_fndef_ast(get_rule_match(mtc)),
-      switch  = build_switch_fndef_ast(get_rule_match(mtc));
+      match   = build_match_fndef_ast(get_rule_match(mtc));
 
   SynFnDef build_std_fndef_ast(RuleMatch mtc) {
     nodes = rule_seq_nodes(mtc);
     assert |nodes| == 6;
     ret_type  = build_type_ast(nodes(0));
     return syn_fn_def(
-      name:       build_fn_symbol_ast(nodes(1)),
+      name:       fn_symbol(get_lowercase_id(nodes(1))),
       args:       build_fn_args_ast(nodes(2)),
       res_type:   ret_type,
       expr:       build_expr_ast(nodes(4)),
@@ -270,7 +333,7 @@ implicit filename : String, lines : Nat** {
       else ();
 
     return syn_fn_def(
-      name:       build_fn_symbol_ast(nodes(1)),
+      name:       fn_symbol(get_lowercase_id(nodes(1))),
       args:       build_fn_args_ast(nodes(2)),
       res_type:   ret_type,
       expr:       syn_do_expr(nonempty(stmts), var_decls),
@@ -289,16 +352,16 @@ implicit filename : String, lines : Nat** {
     SynFnDef build_loc_fndef_ast(RuleMatch mtc) = attach_src_code_info(build_fndef_ast(mtc), filename, mtc);
   }
 
-  SynFnDef build_switch_fndef_ast(RuleMatch mtc) {
+  SynFnDef build_match_fndef_ast(RuleMatch mtc) {
     nodes = rule_seq_nodes(mtc);
     assert |nodes| == 6;
     ret_type = build_type_ast(nodes(0));
     args = build_fn_args_ast(nodes(2));
-    cases = (build_switch_case_ast(n) : n <- rep_rule_nodes(nodes(4)));
+    cases = (build_match_case_ast(n) : n <- rep_rule_nodes(nodes(4)));
     arity = syn_case_arity(cases(0));
     expr = syn_try_expr(nonempty((fn_par(i) : i < arity)), nonempty(cases));
     return syn_fn_def(
-      name:       build_fn_symbol_ast(nodes(1)),
+      name:       fn_symbol(get_lowercase_id(nodes(1))),
       args:       args,
       res_type:   ret_type,
       expr:       expr,
@@ -347,7 +410,7 @@ implicit filename : String, lines : Nat** {
     inner_match = get_rule_match(mtc);
     decl = match (get_rule_name(mtc))
       std_method      = build_std_db_method_ast(inner_match),
-      switch_method   = build_switch_db_method_ast(inner_match),
+      match_method    = build_match_db_method_ast(inner_match),
       proc_method     = build_proc_db_method_ast(inner_match),
       update          = build_update_def_ast(inner_match);
     return attach_src_code_info(decl, filename, inner_match);
@@ -379,12 +442,12 @@ implicit filename : String, lines : Nat** {
     );
   }
 
-  DBMethodDef build_switch_db_method_ast(RuleMatch mtc) {
+  DBMethodDef build_match_db_method_ast(RuleMatch mtc) {
     nodes = rule_seq_nodes(mtc);
     assert |nodes| == 6;
     arg_nodes = rep_rule_nodes(block_node(nodes(2)));
     args = ((build_type_ast(rule_seq_node(n, 0)), get_lowercase_id(rule_seq_node(n, 1))) : n <- arg_nodes);
-    cases = (build_switch_case_ast(n) : n <- rep_rule_nodes(nodes(4)));
+    cases = (build_match_case_ast(n) : n <- rep_rule_nodes(nodes(4)));
     expr = syn_try_expr(nonempty((fn_par(i) : i < syn_case_arity(cases(0)))), nonempty(cases));
     return db_method_def(
       name:       get_lowercase_id(nodes(1)),
@@ -436,11 +499,6 @@ implicit filename : String, lines : Nat** {
     }
   }
 
-  AtomicFnSymb build_fn_symbol_ast(RuleMatch mtc) =
-    match (get_token(mtc))
-      lowercase_id(a?)  = fn_symbol(a),
-      operator(op?)     = op_symbol(op);
-
   SynArg* build_fn_args_ast(RuleMatch mtc) = if mtc != null_match then (build_fn_arg_ast(m) : m <- rep_rule_nodes(block_node(mtc))) else (); ## MAYBE rep_rule_nodes (AND seq_rule_nodes) SHOULD RETURN THE EMPTY SEQUENCE WHEN INVOKED WITH A null_match PARAMETER
 
   SynArg build_fn_arg_ast(RuleMatch mtc) {
@@ -448,14 +506,19 @@ implicit filename : String, lines : Nat** {
     nodes = rule_seq_nodes(get_rule_match(mtc));
     assert |nodes| == 2;
     if label == :obj:
-      type = build_type_ast(nodes(0));
-      return if nodes(1) != null_match
-        then obj_arg(type, get_lowercase_id(nodes(1)))
-        else obj_arg(type);
+      return build_obj_arg_ast(nodes);
     else
       assert label == :cls;
       return cls_arg(build_cls_type_ast(nodes(0)), get_lowercase_id(nodes(1)));
     ;
+  }
+
+  SynObjArg build_obj_arg_ast(RuleMatch* nodes) {
+    assert |nodes| == 2;
+    type = build_type_ast(nodes(0));
+    return if nodes(1) != null_match
+      then obj_arg(type, get_lowercase_id(nodes(1)))
+      else obj_arg(type);
   }
 
   SynClsType build_cls_type_ast(RuleMatch mtc) {
@@ -889,7 +952,7 @@ implicit filename : String, lines : Nat** {
     nodes = rule_seq_nodes(mtc);
     assert |nodes| == 3;
     exprs = (build_expr_ast(n) : n <- rep_rule_nodes(block_node(nodes(1))));
-    cases = (build_switch_case_ast(n) : n <- rep_rule_nodes(nodes(2)));
+    cases = (build_match_case_ast(n) : n <- rep_rule_nodes(nodes(2)));
     return syn_try_expr(nonempty(exprs), nonempty(cases));
   }
 
@@ -1580,7 +1643,7 @@ implicit filename : String, lines : Nat** {
 
   ////////////////////////////////////////////////////////////////////////////////
 
-  SynCase build_switch_case_ast(RuleMatch mtc) {
+  SynCase build_match_case_ast(RuleMatch mtc) {
     nodes = rule_seq_nodes(mtc);
     assert |nodes| == 3;
     ptrns = (build_ptrn_ast(n) : n <- rep_rule_nodes(nodes(0)));
@@ -1848,14 +1911,14 @@ implicit filename : String, lines : Nat** {
     return auto_method_def(target, method, args, ret_type, expr);
   }
 
-  AutoMethodDef build_switch_method_def_ast(RuleMatch mtc) {
+  AutoMethodDef build_match_method_def_ast(RuleMatch mtc) {
     nodes = rule_seq_nodes(mtc);
     assert |nodes| == 8;
     ret_type = build_type_ast(nodes(0));
     target = get_lowercase_id(nodes(1));
     method = get_lowercase_id(nodes(3));
     args = ((build_type_ast(rule_seq_node(n, 0)), var(get_lowercase_id(n, 1))) : n <- rep_rule_nodes(block_node(nodes(4))));
-    cases = (build_switch_case_ast(n) : n <- rep_rule_nodes(nodes(6)));
+    cases = (build_match_case_ast(n) : n <- rep_rule_nodes(nodes(6)));
     arity = syn_case_arity(cases(0));
     expr = syn_try_expr(nonempty((fn_par(i) : i < arity)), nonempty(cases));
     return auto_method_def(target, method, args, ret_type, expr);
