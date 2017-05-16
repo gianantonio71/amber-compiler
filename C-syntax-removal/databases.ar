@@ -1,5 +1,5 @@
 implicit syn_prg : SynPrg, db_def : SynDBDef {
-  DataBase desugared_data_base {
+  Database desugared_data_base {
     state_vars = [
       memb_var(v.name) -> (
         type:       desugar_type(v.type),
@@ -11,7 +11,7 @@ implicit syn_prg : SynPrg, db_def : SynDBDef {
     updates  = [desugar_update(u)    : u <- lookup(updates_by_db, db_def.name, [])];
     handlers = [desugar_handler(h)   : h <- lookup(handlers_by_db, db_def.name, [])];
 
-    return data_base(
+    db = data_base(
       name:         db_symbol(db_def.name),
       state_vars:   state_vars,
       rel_vars:     desugared_relvars,
@@ -20,6 +20,8 @@ implicit syn_prg : SynPrg, db_def : SynDBDef {
       updates:      updates,
       handlers:     handlers
     );
+
+    return transfer(db, db_def);
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -72,7 +74,8 @@ implicit syn_prg : SynPrg, db_def : SynDBDef {
     arg_vars = [var(n) : _, n <~ method_def.args];
     artifact = using_block_method_def(db_def.name, method_def);
     expr = desugar_expr(method_def.expr, arg_vars, syn_artifact = artifact, impl_args = []);
-    return method(method_symbol(method_def.name), args, ret_type, expr);
+    method = method(method_symbol(method_def.name), args, ret_type, expr);
+    return transfer(method, method_def);
   }
 
 
@@ -81,13 +84,15 @@ implicit syn_prg : SynPrg, db_def : SynDBDef {
     arg_vars = [v : _, v <~ update_def.args];
     artifact = using_block_update_def(db_def.name, update_def);
     body = desugar_stmts(update_def.body, arg_vars, syn_artifact = artifact, impl_args = []);
-    return update(update_symbol(update_def.name), args, body);
+    update = update(update_symbol(update_def.name), args, body);
+    return transfer(update, update_def);
   }
 
 
   Handler desugar_handler(HandlerDef handler_def) {
     type = desugar_type(handler_def.type);
     body = desugar_stmts(handler_def.body, [var(:it)], syn_artifact = handler_def, impl_args = []);
-    return handler(type, body);
+    handler = handler(type, body);
+    return transfer(handler, handler_def);
   }
 }

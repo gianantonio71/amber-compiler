@@ -2,35 +2,27 @@
 ## NAME AND ARITY ALL IMPLICIT PARAMETERS HAVE THE SAME TYPE, AND
 ## THAT ALL CLOSURE PARAMETERS HAVE EXACTLY THE SAME TYPE.
 
+type EnvVar   = StdVar, FnPar, ImplArg;
+type LocVar2  = StdVar, FnPar;
 
-[Function -> [+TypeCheckingError]] typecheck(Program prg) {
-  typedefs = prg.typedefs;
-  signatures = merge_values([[(family_id(fd.name), arity(fd)) -> signature(fd)] : fd <- prg.fndefs]);
-  sgn_sets = [n -> preprocess_signatures(ss, typedefs) : n, ss <- signatures];
-  let typedefs = typedefs, signatures = sgn_sets:
-    errors = [fd -> typecheck_function(fd) : fd <- prg.fndefs];
+
+[<Function, Database, Method, Update, Handler> -> [+TypeCheckingError]] typecheck(Program prg) {
+  let program = prg, typedefs = prg.typedefs:
+    fn_errs = [fd -> es : fd <- prg.fndefs, es = typecheck_function(fd), es != []];
+    db_errs = merge([typecheck_database(db) : db <- prg.data_bases]);
   ;
-  return [fd -> es : fd, es <- errors, es != []];
+  return fn_errs & db_errs;
 }
 
 
-implicit typedefs : [TypeName -> NeType], signatures : [(FnFamilyId, Nat) -> SgnSet] {
+implicit program : Program, typedefs : [TypeName -> NeType] {
   [TypeCheckingError] typecheck_function(Function func) {
     args = func.args;
     var_aliases = [[fn_par(i), a.var] : a @ i <~ args, a :: FormalObjArg and a.var?];
-
     obj_vars = [a.var -> a.type : a <~ args, formal_obj_arg() ?= a, a.var?] &
                [fn_par(i) -> a.type : a @ i <~ args, formal_obj_arg() ?= a] &
                [v -> t : v, t <- func.impl_args];
-
-    cls_vars = [a.var -> a.type : a <~ args, formal_cls_arg() ?= a];
-
-    ## THE FOLLOWING LINE WAS PRODUCING A COMPLETELY WRONG ERROR MESSAGE
-    // errs = typecheck(func.expr, nonexistent_function(func), environment=obj_vars, closures=cls_vars);
-
-    constraints = merge_values([[(n, arity(s)) -> s] : n, ss <- func.constrs, s <- ss]);
-
-    let var_aliases=var_aliases, closures=cls_vars, constraints=constraints:
+    let context=func, var_aliases=var_aliases, typed_vars = []:
       errs = typecheck(func.expr, func.res_type, obj_vars);
     ;
     return errs;
@@ -40,15 +32,8 @@ implicit typedefs : [TypeName -> NeType], signatures : [(FnFamilyId, Nat) -> Sgn
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-implicit {
-  typedefs    : [TypeName -> NeType],
-  signatures  : [(FnFamilyId, Nat) -> SgnSet],
-  closures    : [ClsVar -> ClsType],
-  constraints : [(AtomicFnSymb, NzNat) -> [+ClsType]],
-  var_aliases : [[Var]];
-
-
-  [TypeCheckingError] typecheck(CondExpr expr, Type exp_type, [Var -> Type] env) {
+implicit program : Program, typedefs : [TypeName -> NeType], context : ContextTC, var_aliases : [[LocVar2]], typed_vars : [StdVar -> NeType] {
+  [TypeCheckingError] typecheck(CondExpr expr, Type exp_type, [EnvVar -> Type] env) {
     errs = typecheck(expr.cond, type_bool, env);
     return errs if errs != [];
     new_env = left(refine_env(expr.cond, env));
@@ -57,7 +42,7 @@ implicit {
 
   //////////////////////////////////////////////////////////////////////////////
 
-  [TypeCheckingError] typecheck(ClsExpr expr, Type+ arg_types, Type ret_type, [Var -> Type] env) =
+  [TypeCheckingError] typecheck(ClsExpr expr, Type+ arg_types, Type ret_type, [EnvVar -> Type] env) =
     ClsVar = {
       var_type = closures[expr];
       is_subtype = is_fn_subtype(var_type.in_types, var_type.out_type, arg_types, ret_type);
@@ -84,15 +69,15 @@ implicit {
 
   //////////////////////////////////////////////////////////////////////////////
 
-  [TypeCheckingError] typecheck(Clause cls, [Var -> Type] env) {
+  [TypeCheckingError] typecheck(Clause cls, [EnvVar -> Type] env) {
     errs = typecheck_without_annotations(cls, env);
     return [add_anchor_if_needed(e, cls) : e <- errs];
 
 
-    [TypeCheckingError] typecheck_without_annotations(Clause cls, [Var -> Type] env) =
+    [TypeCheckingError] typecheck_without_annotations(Clause cls, [EnvVar -> Type] env) =
       set_clause()      = typecheck(cls.src, type_set, env),
       rel_clause()      = typecheck_rel_clause(cls.vars, cls.src, cls.args, env),
-      relvar_clause()   = {fail;},
+      relvar_clause()   = typecheck_relvar_clause(cls.vars, cls.rel_var, cls.args, env),
       seq_clause()      = typecheck(cls.src, type_seq, env),
       and_clause()      = typecheck_and_clause(cls.left, cls.right, env),
       or_clause()       = typecheck(cls.left, env) & typecheck(cls.right, env),
@@ -102,7 +87,7 @@ implicit {
   }
 
 
-  [TypeCheckingError] typecheck_rel_clause(StdVar+ vars, Expr src, Maybe[Expr]+ args, [Var -> Type] env) {
+  [TypeCheckingError] typecheck_rel_clause(StdVar+ vars, Expr src, Maybe[Expr]+ args, [EnvVar -> Type] env) {
     assert |vars| == count(args, $ == nothing);
 
     return match (args)
@@ -110,7 +95,7 @@ implicit {
       (a1?, a2?, a3?) = typecheck_tern_rel_clause(src, args, env);
 
 
-    [TypeCheckingError] typecheck_bin_rel_clause(Expr src, (Maybe[Expr], Maybe[Expr]) args, [Var -> Type] env) {
+    [TypeCheckingError] typecheck_bin_rel_clause(Expr src, (Maybe[Expr], Maybe[Expr]) args, [EnvVar -> Type] env) {
       errs = typecheck(src, type_bin_rel, env);
       return errs if errs != [];
       args_types = bin_rel_args_supertypes(expr_type(src, env));
@@ -118,7 +103,7 @@ implicit {
     }
 
 
-    [TypeCheckingError] typecheck_tern_rel_clause(Expr src, (Maybe[Expr], Maybe[Expr], Maybe[Expr]) args, [Var -> Type] env) {
+    [TypeCheckingError] typecheck_tern_rel_clause(Expr src, (Maybe[Expr], Maybe[Expr], Maybe[Expr]) args, [EnvVar -> Type] env) {
       errs = typecheck(src, type_tern_rel, env);
       return errs if errs != [];
       args_types = tern_rel_args_supertypes(expr_type(src, env));
@@ -127,7 +112,7 @@ implicit {
   }
 
 
-  [TypeCheckingError] typecheck_and_clause(Clause left, Clause right, [Var -> Type] env) {
+  [TypeCheckingError] typecheck_and_clause(Clause left, Clause right, [EnvVar -> Type] env) {
     errs = typecheck(left, env);
     return errs if errs != [];
     new_env = generate_env(left, env);
@@ -135,7 +120,7 @@ implicit {
   }
 
 
-  [TypeCheckingError] typecheck_match_clause(Pattern ptrn, Expr source, [Var -> Type] env) {
+  [TypeCheckingError] typecheck_match_clause(Pattern ptrn, Expr source, [EnvVar -> Type] env) {
     errs = typecheck(source, type_any, env);
     return errs if errs != [];
     type = expr_type(source, env);

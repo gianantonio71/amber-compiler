@@ -1,13 +1,6 @@
-implicit {
-  typedefs    : [TypeName -> NeType],
-  signatures  : [(FnFamilyId, Nat) -> SgnSet],
-  closures    : [ClsVar -> ClsType],
-  constraints : [(AtomicFnSymb, NzNat) -> [+ClsType]],
-  typed_vars  : [StdVar -> NeType],
-  var_aliases : [[Var]];
+implicit program : Program, typedefs : [TypeName -> NeType], context : ContextTC, var_aliases : [[LocVar2]], typed_vars : [StdVar -> NeType] {
 
-
-  [TypeCheckingError] typecheck(Statement* stmts, Type exp_type, [Var -> Type] env) {
+  [TypeCheckingError] typecheck(Statement* stmts, Type exp_type, [EnvVar -> Type] env) {
     curr_env = env;
     for s <- stmts:
       errs = typecheck(s, exp_type, curr_env);
@@ -18,12 +11,12 @@ implicit {
   }
 
 
-  [TypeCheckingError] typecheck(Statement stmt, Type exp_type, [Var -> Type] env) {
+  [TypeCheckingError] typecheck(Statement stmt, Type exp_type, [EnvVar -> Type] env) {
     errs = typecheck_without_annotations(stmt, exp_type, env);
     return [add_anchor_if_needed(e, stmt) : e <- errs];
 
 
-    [TypeCheckingError] typecheck_without_annotations(Statement stmt, Type exp_type, [Var -> Type] env) =
+    [TypeCheckingError] typecheck_without_annotations(Statement stmt, Type exp_type, [EnvVar -> Type] env) =
       assignment_stmt()   = typecheck_assignment_stmt(stmt.vars, stmt.value, env),
       return_stmt(e?)     = typecheck(e, exp_type, env),
       if_stmt()           = typecheck_if_stmt(stmt.cond, stmt.body, stmt.else, exp_type, env),
@@ -43,14 +36,14 @@ implicit {
   }
 
 
-  [TypeCheckingError] typecheck_assignment_stmt(Var+ vars, Expr value, [Var -> Type] env) {
+  [TypeCheckingError] typecheck_assignment_stmt(Var+ vars, Expr value, [EnvVar -> Type] env) {
     vars_types = (lookup(typed_vars, v, type_any) : v <- vars);
     exp_type = if |vars| == 1 then only(vars_types) else tuple_type(vars_types);
     return typecheck(value, exp_type, env);
   }
 
 
-  [TypeCheckingError] typecheck_if_stmt(Expr cond, Statement+ body, Statement* else_body, Type exp_type, [Var -> Type] env) {
+  [TypeCheckingError] typecheck_if_stmt(Expr cond, Statement+ body, Statement* else_body, Type exp_type, [EnvVar -> Type] env) {
     errs = typecheck(cond, type_bool, env);
     return errs if errs != [];
     if_true_env, if_false_env = refine_env(cond, env);
@@ -59,7 +52,7 @@ implicit {
   }
 
 
-  [TypeCheckingError] typecheck_loop_stmt(Statement+ body, Type exp_type, [Var -> Type] env) {
+  [TypeCheckingError] typecheck_loop_stmt(Statement+ body, Type exp_type, [EnvVar -> Type] env) {
     out_of_loop_vars = keys(env);
     entry_env = env;
     for 2:
@@ -73,7 +66,7 @@ implicit {
   }
 
 
-  [TypeCheckingError] typecheck_foreach_stmt(Var+ vars, Maybe[Var] maybe_idx_var, Expr values, Statement+ body, Type exp_type, [Var -> Type] env) {
+  [TypeCheckingError] typecheck_foreach_stmt(StdVar+ vars, Maybe[StdVar] maybe_idx_var, Expr values, Statement+ body, Type exp_type, [EnvVar -> Type] env) {
     nvars = nz_nat(|vars|);
     exp_src_type = if nvars == 1 then type_seq else type_seq(type_tuple(nvars));
     errs = typecheck(values, exp_src_type, env);
@@ -106,7 +99,7 @@ implicit {
   }
 
 
-  [TypeCheckingError] typecheck_for_stmt(Maybe[Var] maybe_var, Expr start_val, Expr end_val, Bool end_val_incl, Statement+ body, Type exp_type, [Var -> Type] env) {
+  [TypeCheckingError] typecheck_for_stmt(Maybe[StdVar] maybe_var, Expr start_val, Expr end_val, Bool end_val_incl, Statement+ body, Type exp_type, [EnvVar -> Type] env) {
     errs = typecheck(start_val, integer, env) & typecheck(end_val, integer, env);
     return errs if errs != [];
 
@@ -133,7 +126,7 @@ implicit {
   }
 
 
-  [TypeCheckingError] typecheck_let_stmt([ImplArg -> Expr] asgnms, Statement+ body, Type exp_type, [Var -> Type] env) {
+  [TypeCheckingError] typecheck_let_stmt([ImplArg -> Expr] asgnms, Statement+ body, Type exp_type, [EnvVar -> Type] env) {
     errs = union([typecheck(e, type_any, env) : v, e <- asgnms]);
     return errs if errs != [];
     env_delta = [v -> expr_type(e, env) : v, e <- asgnms];
