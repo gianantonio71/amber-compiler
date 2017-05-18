@@ -1,4 +1,4 @@
-implicit program : Program, typedefs : [TypeName -> NeType], context : ContextTC, var_aliases : [[LocVar2]], typed_vars : [StdVar -> NeType] {
+implicit program : Program, typedefs : [TypeName -> NeType], context : Context, var_aliases : [[LocVar2]], typed_vars : [StdVar -> NeType] {
 
   Type expr_type(CondExpr expr, [EnvVar -> Type] env) = expr_type(expr.expr, left(refine_env(expr.cond, env)));
 
@@ -902,7 +902,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : ContextTC
 type IterTree = never, once([EnvVar -> Type]), repeated(IterTree), any([+IterTree]), all(IterTree+);
 
 
-implicit program : Program, typedefs : [TypeName -> NeType], context : ContextTC, var_aliases : [[LocVar2]], typed_vars : [StdVar -> NeType] {
+implicit program : Program, typedefs : [TypeName -> NeType], context : Context, var_aliases : [[LocVar2]], typed_vars : [StdVar -> NeType] {
 
   IterTree full_iter_tree(Clause cls, [EnvVar -> Type] env) = iter_tree(cls, env, :once($));
 
@@ -1303,7 +1303,7 @@ TernRelCompType tern_rel_both(TernRelCompType type1, TernRelCompType type2) =
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-implicit program : Program, typedefs : [TypeName -> NeType], context : ContextTC, var_aliases : [[LocVar2]], typed_vars : [StdVar -> NeType] {
+implicit program : Program, typedefs : [TypeName -> NeType], context : Context, var_aliases : [[LocVar2]], typed_vars : [StdVar -> NeType] {
 
   Type return_type(Statement* stmts, [EnvVar -> Type] env) {
     curr_env = env;
@@ -1402,12 +1402,13 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : ContextTC
     let_stmt()          = let_stmt_update_env(stmt.asgnms, stmt.body, env),
     break_stmt          = unreachable_env(env),
     fail_stmt           = unreachable_env(env),
-    ## THIS IS AN INTERESTING CASE: IF I DECIDE TO MAKE ASSERTIONS REMOVABLE ONLY
-    ## WHEN THEY ARE NOT NECESSARY TO MAKE THE CODE STATICALLY TYPE CHECKABLE,
-    ## HOW CAN I DO IT? I WOULD NEED TO SOMEHOW STORE THE FACT THAT THE ASSERTION
-    ## IS REMOVABLE OR NOT DURING STATIC TYPE CHECKING...
-    assert_stmt(e?)     = env, // refine_env(e).if_true, ## SHOULD I RELY ON THIS? WHAT HAPPENS IF THE ASSERTIONS ARE REMOVED? MAYBE I NEED A NON-REMOVABLE ASSERTION TYPE
-    print_stmt()        = env;
+    assert_stmt()       |
+    print_stmt()        |
+    send_msg_stmt()     |
+    try_update_stmt()   |
+    set_memb_var_stmt() |
+    delete_stmt()       |
+    insert_stmt()       = env;
 
 
   [EnvVar -> Type] assignment_stmt_update_env(StdVar+ vars, Expr value, [EnvVar -> Type] env) {

@@ -884,29 +884,37 @@ type StmtOutcome = fails, returns, breaks, falls_through;
 
 
 [+StmtOutcome] outcomes(Statement stmt) =
-  assignment_stmt() = [:fails, :falls_through],
-  return_stmt       = [:returns],
-  return_stmt()     = [:fails, :returns],
-  if_stmt()         = nonempty([:fails] & outcomes(stmt.body) & outcomes(stmt.else)), // Shutting up the type checker
-  loop_stmt(body?)  = {
-    os = outcomes(body);
-    // Failures and returns in the body are transferred to the loop.
-    // Fall throughs in the body are neutralized by the loop, but they
-    // create the possibility of an infinite loop, which counts as failure.
-    os = {os - [:falls_through]} & [:fails] if in(:falls_through, os);
-    // A break in the body becomes a fall through for the loop itself
-    os = {os - [:breaks]} & [:falls_through] if in(:breaks, os);
-    return nonempty(os); // Shutting up the type checker
-  },
-  foreach_stmt()    = nonempty([:fails, :falls_through] & outcomes(stmt.body) - [:breaks]), // Shutting up the type checker
-  for_stmt()        = nonempty([:fails, :falls_through] & outcomes(stmt.body) - [:breaks]), // Shutting up the type checker ## BAD: SAME AS ABOVE
-  let_stmt()        = nonempty([:fails] & outcomes(stmt.body)), // Shutting up the type checker
-  break_stmt        = [:breaks],
-  fail_stmt         = [:fails],
-  assert_stmt()     = [:falls_through, :fails],
-  print_stmt()      = [:falls_through, :fails],
-  imp_update_stmt() = [:falls_through, :fails],
-  proc_call_stmt()  = [:falls_through, :fails];
+  assignment_stmt()   = [:fails, :falls_through],
+  return_stmt         = [:returns],
+  return_stmt()       = [:fails, :returns],
+  if_stmt()           = nonempty([:fails] & outcomes(stmt.body) & outcomes(stmt.else)), // Shutting up the type checker
+  loop_stmt(ss?)      = loop_stmt_outcomes(ss),
+  foreach_stmt()      = nonempty([:fails, :falls_through] & outcomes(stmt.body) - [:breaks]), // Shutting up the type checker
+  for_stmt()          = nonempty([:fails, :falls_through] & outcomes(stmt.body) - [:breaks]), // Shutting up the type checker ## BAD: SAME AS ABOVE
+  let_stmt()          = nonempty([:fails] & outcomes(stmt.body)), // Shutting up the type checker
+  break_stmt          = [:breaks],
+  fail_stmt           = [:fails],
+  assert_stmt()       |
+  print_stmt()        |
+  imp_update_stmt()   |
+  proc_call_stmt()    |
+  send_msg_stmt()     |
+  try_update_stmt()   |
+  set_memb_var_stmt() |
+  delete_stmt()       |
+  insert_stmt()       = [:falls_through, :fails];
+
+
+[+StmtOutcome] loop_stmt_outcomes(Statement+ body) {
+  os = outcomes(body);
+  // Failures and returns in the body are transferred to the loop.
+  // Fall throughs in the body are neutralized by the loop, but they
+  // create the possibility of an infinite loop, which counts as failure.
+  os = {os - [:falls_through]} & [:fails] if in(:falls_through, os);
+  // A break in the body becomes a fall through for the loop itself
+  os = {os - [:breaks]} & [:falls_through] if in(:breaks, os);
+  return nonempty(os); // Shutting up the type checker
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 

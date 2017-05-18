@@ -10,10 +10,11 @@ type TypeCheckingError =
   missing_rec_fields(fields: [+SymbObj]),
   invalid_rec_fields(fields: [+SymbObj]),
   invalid_var_type(var: Var, actual_type: Type, expected_type: Type),
-  no_dispatchable_function_found(name: FnSymbol, arity: NzNat, signatures: [+FnType], par_types: Maybe[Type]*),
+  no_disp_fn_found(name: FnSymbol, arity: NzNat, signatures: [+FnType], par_types: Maybe[Type]*),
   no_disp_db_method(name: MethodSymbol, args_types: Type*, exp_ret_type: Type, signatures: [FnType]),
+  no_disp_db_update(name: UpdateSymbol, args_types: Type*, signatures: [+NeType*]),
   no_matching_relvar(name: AnyRelVar, args_types: Maybe[Type]+, signatures: [+NeType+]),
-  invalid_param_types(fn_name: FnSymbol, target_signature: FnType, invalid_params: [+<(Nat, Expr, Type)>]),
+  invalid_args_types(fn_name: FnSymbol, target_signature: FnType, invalid_params: [+<(Nat, Expr, Type)>]),
   invalid_cls_var_type(var: ClsVar, expected_type: ClsType, type_var_insts: [TypeVar -> Type]),
   invalid_cls_param_types(target_signature: FnType, errors: [TypeCheckingError]),
   invalid_implicit_par_type(
@@ -89,11 +90,14 @@ TypeCheckingError actual_tag_type_not_a_symb_type(Type t) = actual_tag_type_not_
 
 TypeCheckingError invalid_var_type(Var v, Type at, Type et) = invalid_var_type(var: v, actual_type: at, expected_type: et);
 
-TypeCheckingError no_dispatchable_function_found(FnSymbol n, NzNat a, [+FnType] ss, Maybe[Type]+ ts) =
-  no_dispatchable_function_found(name: n, arity: a, signatures: ss, par_types: ts);
+TypeCheckingError no_disp_fn_found(FnSymbol n, NzNat a, [+FnType] ss, Maybe[Type]+ ts) =
+  no_disp_fn_found(name: n, arity: a, signatures: ss, par_types: ts);
 
 TypeCheckingError no_disp_db_method(MethodSymbol n, Type* ats, Type rt, [FnType] ss) =
   no_disp_db_method(name: n, args_types: ats, exp_ret_type: rt, signatures: ss);
+
+TypeCheckingError no_disp_db_update(UpdateSymbol n, Type* ats, [+NeType*] ss) =
+  no_disp_db_update(name: n, args_types: ats, signatures: ss);
 
 TypeCheckingError no_matching_relvar(AnyRelVar n, Maybe[Type]+ ats, [+NeType+] ss) =
   no_matching_relvar(name: n, args_types: ats, signatures: ss);
@@ -101,7 +105,7 @@ TypeCheckingError no_matching_relvar(AnyRelVar n, Maybe[Type]+ ats, [+NeType+] s
 ////////////////////////////////////////////////////////////////////////////////
 
 ## CAN I OMMIT THE ANGLE BRACKETS FOR THE TYPE OF THE SECOND PARAMETER?
-TypeCheckingError invalid_param_types(FnSymbol n, FnType s, [+<(Nat, Expr, Type)>] ps) = invalid_param_types(fn_name: n, target_signature: s, invalid_params: ps);
+TypeCheckingError invalid_args_types(FnSymbol n, FnType s, [+<(Nat, Expr, Type)>] ps) = invalid_args_types(fn_name: n, target_signature: s, invalid_params: ps);
 
 TypeCheckingError invalid_cls_var_type(ClsVar v, ClsType t, [TypeVar -> Type] tvis) = invalid_cls_var_type(var: v, expected_type: t, type_var_insts: tvis);
 
@@ -215,17 +219,18 @@ String* create_error_msg(TypeCheckingError err) =
                                           "  Expected type: " & user_repr(err.expected_type),
                                           "  Actual type:   " & user_repr(err.actual_type)
                                         ),
-  no_dispatchable_function_found()    = create_no_dispatchable_function_found_error_msg(err.name, err.arity, err.signatures, err.par_types),
-  no_disp_db_method()                 = create_no_disp_db_method_error_msg(err.name, err.args_types, err.exp_ret_type, err.signatures),
-  no_matching_relvar()                = create_no_matching_relvar_error_msg(err.name, err.args_types, err.signatures),
-  invalid_param_types()               = create_invalid_params_types_error_msg(err.fn_name, err.target_signature, err.invalid_params),
+  no_disp_fn_found()                  = no_disp_fn_found_err_msg(err.name, err.arity, err.signatures, err.par_types),
+  no_disp_db_method()                 = no_disp_db_method_err_msg(err.name, err.args_types, err.exp_ret_type, err.signatures),
+  no_disp_db_update()                 = no_disp_db_update_err_msg(err.name, err.args_types, err.signatures),
+  no_matching_relvar()                = no_matching_relvar_err_msg(err.name, err.args_types, err.signatures),
+  invalid_args_types()                = invalid_args_types_err_msg(err.fn_name, err.target_signature, err.invalid_params),
   invalid_cls_var_type()              = ("Invalid closure variable: " & user_repr(err.var) & ". Expected type: " & user_repr(err.expected_type)),
   invalid_cls_param_types()           = ("Unable to instantiate type variables"),
   invalid_rel_arg_type()              = ( "Invalid " & pos_name(err.idx) & " argument type in relation membership test",
                                           "  Expected type: " & user_repr(err.expected_type),
                                           "  Actual type:   " & user_repr(err.actual_type)
                                         ),
-  invalid_implicit_par_type()         = ( "Invalid implicit parameter type: " & user_repr(err.param_name),
+  invalid_implicit_par_type()         = ( "Invalid implicit argument type: " & user_repr(err.param_name),
                                           "  Expected type: " & user_repr(err.formal_type),
                                           "  Actual type:   " & user_repr(err.actual_type)
                                         ),
@@ -237,7 +242,7 @@ String* create_error_msg(TypeCheckingError err) =
   unexpected_actual_type()            = ( "Invalid type: " & user_repr(err.actual_type),
                                           "  The type must be a subset of " & user_repr(err.expected_type)
                                         ),
-  invalid_cls_param_type()            = ( "Invalid closure parameter type.",
+  invalid_cls_param_type()            = ( "Invalid closure argument type.",
                                           "  Actual type: " & user_repr(err.actual_type),
                                           "  Expected type: " & cls_type_user_repr(err.exp_arg_types, err.exp_ret_type)
                                         ),
@@ -297,31 +302,38 @@ String* create_error_msg(TypeCheckingError err) =
   };
 
 
-String* create_no_dispatchable_function_found_error_msg(FnSymbol name, NzNat arity, [+FnType] signatures, Maybe[Type]* par_types) =
+String* no_disp_fn_found_err_msg(FnSymbol name, NzNat arity, [+FnType] signatures, Maybe[Type]* par_types) =
   ("No suitable function found: " & user_repr(name, arity) & ". Possible function signatures:") &
   ("  " & user_repr(s) : s <- rand_sort(signatures)) &
   ("Actual types:") &
   ("  " & if t != nothing then user_repr(value(t)) else "CLOSURE" : t <- par_types);
 
 
-String* create_no_disp_db_method_error_msg(MethodSymbol name, Type* args_types, Type exp_ret_type, [FnType] signatures) =
+String* no_disp_db_method_err_msg(MethodSymbol name, Type* args_types, Type exp_ret_type, [FnType] signatures) =
   ("No suitable function found: " & user_repr(name, |args_types|) & ". Possible method signatures:") &
   ("  " & user_repr(s) : s <- rand_sort(signatures)) &
   ("Actual types:") &
   ("  " & user_repr(t) : t <- args_types);
 
 
-String* create_no_matching_relvar_error_msg(AnyRelVar name, Maybe[Type]+ args_types, [+NeType+] signatures) =
+String* no_disp_db_update_err_msg(UpdateSymbol name, Type* args_types, [+NeType*] signatures) =
+  ("No suitable update found: " & user_repr(name, |args_types|) & ". Possible signatures:") &
+  ("  " & append((user_repr(t) : t <- s), ", ") : s <- rand_sort(signatures)) &
+  ("Actual types:") &
+  ("  " & user_repr(t) : t <- args_types);
+
+
+String* no_matching_relvar_err_msg(AnyRelVar name, Maybe[Type]+ args_types, [+NeType+] signatures) =
   ("No matching relation variable found: " & user_repr(name) & ". Possible signatures:") &
   ("  " & append((user_repr(t) : t <- s), ", ") : s <- rand_sort(signatures)) &
   ("Actual argument types:") &
   ("  " & if t != nothing then user_repr(value(t)) else "?" : t <- args_types);
 
 
-String* create_invalid_params_types_error_msg(FnSymbol fn_name, FnType signature, [+(Nat, Expr, Type)] invalid_params) {
+String* invalid_args_types_err_msg(FnSymbol fn_name, FnType signature, [+(Nat, Expr, Type)] invalid_params) {
   errs = ();
   for i, e, t <- rand_sort(invalid_params):
-    errs = (errs | "  Invalid parameter " & printed(i) & " type in function call: " & user_repr(fn_name) &
+    errs = (errs | "  Invalid argument " & printed(i) & " type in function call: " & user_repr(fn_name) &
                    "(...). Expected type: " & user_repr(signature.args(i)));
   ;
   return errs;

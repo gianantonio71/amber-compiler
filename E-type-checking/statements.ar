@@ -1,4 +1,4 @@
-implicit program : Program, typedefs : [TypeName -> NeType], context : ContextTC, var_aliases : [[LocVar2]], typed_vars : [StdVar -> NeType] {
+implicit program : Program, typedefs : [TypeName -> NeType], context : Context, var_aliases : [[LocVar2]], typed_vars : [StdVar -> NeType] {
 
   [TypeCheckingError] typecheck(Statement* stmts, Type exp_type, [EnvVar -> Type] env) {
     curr_env = env;
@@ -32,7 +32,14 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : ContextTC
       break_stmt          = [],
       fail_stmt           = [],
       assert_stmt()       = typecheck(stmt.cond, type_bool, env),
-      print_stmt(e?)      = typecheck(e, type_any, env);
+      print_stmt(e?)      = typecheck(e, type_any, env),
+
+      send_msg_stmt()     = typecheck_send_msg_stmt(stmt.target, stmt.msg, env),
+      try_update_stmt()   = typecheck_try_update_stmt(stmt.name, stmt.args, env),
+      set_memb_var_stmt() = typecheck_set_memb_var_stmt(stmt.var, stmt.value, env),
+      delete_stmt()       = typecheck_delete_stmt(stmt.var, stmt.fields, env),
+      insert_stmt()       = typecheck_insert_stmt(stmt.var, stmt.fields, stmt.force, env);
+
   }
 
 
@@ -72,8 +79,6 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : ContextTC
     errs = typecheck(values, exp_src_type, env);
     return errs if errs != [];
     elem_type = seq_elem_supertype(expr_type(values, env));
-
-    // return {not_a_seq_type} if elem_type == empty_type; ## COULD I ACCEPT A TUPLE TYPE HERE ALSO?
 
     num_vars = nz_nat(|vars|);
     if num_vars == 1:
@@ -132,5 +137,62 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : ContextTC
     env_delta = [v -> expr_type(e, env) : v, e <- asgnms];
     new_env = update(env, env_delta);
     return typecheck(body, exp_type, new_env); ## BUG BUG BUG (WHY?)
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  [TypeCheckingError] typecheck_send_msg_stmt(MembDBVar target, Expr msg, [EnvVar -> Type] env) {
+    db_type = cast_database(context).nested_dbs[target];
+    msg_type = msg_type_by_db[db_type];
+    return typecheck(msg, msg_type, env);
+  }
+
+
+  [TypeCheckingError] typecheck_try_update_stmt(UpdateSymbol name, Expr* args, [EnvVar -> Type] env) {
+    errs = seq_union((typecheck(a, type_any, env) : a <- args));
+    return errs if errs != [];
+    args_types = (expr_type(a, env) : a <- args);
+    db_type = cast_database(context).name;
+    sgns = update_signatures(db_type, name);
+    agg_sgns = update_aggregate_signatures(db_type, name);
+    for s <- rand_sort(sgns) & rand_sort(agg_sgns):
+      return [] if all((is_subset(at, ft) : at, ft <- zip(args_types, s)));
+    ;
+    return [no_disp_db_update(name, args_types, sgns)];
+  }
+
+
+  [TypeCheckingError] typecheck_set_memb_var_stmt(PendingStateVar var, Expr value, [EnvVar -> Type] env) {
+    var_type = cast_database(context).state_vars[memb_var(bare_id(var))].type;
+    return [] if typecheck(value, var_type, env) == [];
+    errs = typecheck(value, type_any, env);
+    return if errs != [] then errs else [unexpected_actual_type(expr_type(value, env), var_type)];
+  }
+
+
+  [TypeCheckingError] typecheck_delete_stmt(RelVar var, Maybe[Expr]+ fields, [EnvVar -> Type] env) {
+    errs = seq_union((typecheck(value(f), type_any, env) : f <- fields, f != nothing));
+    return errs if errs != [];
+    args_types = (apply(f, expr_type($, env)) : f <- fields);
+    sgns = cast_database(context).rel_vars[var].signatures;
+    for s <- rand_sort(sgns):
+      return [] if all((at == nothing or not are_ptype_disjoint(value(at), ft) : at, ft <- zip(args_types, s)));
+    ;
+    return [no_matching_relvar(var, args_types, sgns)];
+  }
+
+
+  [TypeCheckingError] typecheck_insert_stmt(RelVar var, Expr+ fields, Bool force, [EnvVar -> Type] env) {
+    errs = seq_union((typecheck(f, type_any, env) : f <- fields));
+    return errs if errs != [];
+    args_types = (expr_type(f, env) : f <- fields);
+    database = cast_database(context);
+    sgns = database.rel_vars[var].signatures;
+    agg_sgns = relvar_aggregated_signatures(database.name, var);
+    for s <- rand_sort(sgns) & rand_sort(agg_sgns):
+      return [] if all((is_subset(at, ft) : at, ft <- zip(args_types, s)));
+    ;
+    return [no_matching_relvar(var, (just(a) : a <- args_types), sgns)];
   }
 }

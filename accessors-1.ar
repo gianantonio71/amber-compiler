@@ -8,8 +8,8 @@ type NestedFnDef          = nested_fn_def(
 type UsingBlockFnDef      = using_block_method_def(target: Atom, fndef: DBMethodDef);
 type UsingBlockUpdateDef  = using_block_update_def(target: Atom, fndef: UpdateDef);
 
-type SynArtifact  = null_artifact, SynProcDef, SynAutoDef, SynDBDef, AutoMethodDef, HandlerDef,
-                    NestedFnDef, TopLevelFnDef, UsingBlockFnDef, UsingBlockUpdateDef;
+type Artifact = null_artifact, SynProcDef, SynAutoDef, SynDBDef, AutoMethodDef, HandlerDef,
+                NestedFnDef, TopLevelFnDef, UsingBlockFnDef, UsingBlockUpdateDef;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -361,11 +361,11 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-implicit syn_prg : SynPrg, syn_artifact : SynArtifact {
+implicit syn_prg : SynPrg, artifact : Artifact {
   [AtomicFnSymb -> [+NzNat]] protocol_methods {
-    args, typevars = match (syn_artifact)
+    args, typevars = match (artifact)
       top_level_fn_def()  |
-      nested_fn_def()     = (syn_artifact.fndef.args, syn_artifact.fndef.typevars),
+      nested_fn_def()     = (artifact.fndef.args, artifact.fndef.typevars),
       _                   = ((), []);
 
     // All the protocol types that are mentioned in the current function signatures,
@@ -387,9 +387,9 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact {
 
 
   [TypeVar] def_type_vars {
-    return match (syn_artifact)
+    return match (artifact)
       top_level_fn_def()  |
-      nested_fn_def()     = type_vars(syn_artifact.fndef),
+      nested_fn_def()     = type_vars(artifact.fndef),
       _                   = [];
 
 
@@ -399,32 +399,32 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact {
 
 
   [LocAutoVar -> AutoSymbol] loc_auto_vars =
-    match (syn_artifact)
-      syn_proc_def()  = [loc_auto_var(v.var) -> auto_symbol(v.type) : v <~ syn_artifact.auto_vars],
+    match (artifact)
+      syn_proc_def()  = [loc_auto_var(v.var) -> auto_symbol(v.type) : v <~ artifact.auto_vars],
       _               = [];
 
 
   [LocDBVar -> DBSymbol] loc_db_vars =
-    match (syn_artifact)
-      syn_proc_def()  = [loc_db_var(v.var) -> db_symbol(v.type) : v <~ syn_artifact.db_vars],
+    match (artifact)
+      syn_proc_def()  = [loc_db_var(v.var) -> db_symbol(v.type) : v <~ artifact.db_vars],
       _               = [];
 
 
   [MembAutoVar -> AutoSymbol] memb_auto_vars =
-    match (syn_artifact)
-      syn_auto_def()    = memb_auto_vars(syn_artifact.name),
-      auto_method_def() = memb_auto_vars(auto_symbol(syn_artifact.target)),
+    match (artifact)
+      syn_auto_def()    = memb_auto_vars(artifact.name),
+      auto_method_def() = memb_auto_vars(auto_symbol(artifact.target)),
       _                 = [];
 
 
   [MembDBVar -> DBSymbol] memb_db_vars =
-    match (syn_artifact)
-      syn_auto_def()            = memb_db_vars(syn_artifact.name),
-      auto_method_def()         = memb_db_vars(auto_symbol(syn_artifact.target)),
-      syn_db_def()              = memb_db_vars(db_symbol(syn_artifact.name)),
+    match (artifact)
+      syn_auto_def()            = memb_db_vars(artifact.name),
+      auto_method_def()         = memb_db_vars(auto_symbol(artifact.target)),
+      syn_db_def()              = memb_db_vars(db_symbol(artifact.name)),
       handler_def()             |
       using_block_method_def()  |
-      using_block_update_def()  = memb_db_vars(db_symbol(syn_artifact.target)),
+      using_block_update_def()  = memb_db_vars(db_symbol(artifact.target)),
       _                         = [];
 
   //////////////////////////////////////////////////////////////////////////////
@@ -449,7 +449,7 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact {
 
   [AnyRelVar -> NzNat] rel_vars_arities {
     ## BAD BAD BAD
-    has_self_db = match (syn_artifact)
+    has_self_db = match (artifact)
       syn_db_def()              |
       handler_def()             |
       using_block_method_def()  |
@@ -471,10 +471,10 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact {
   //////////////////////////////////////////////////////////////////////////////
 
   SynDBDef curr_db_def {
-    db_name = match (syn_artifact)
-      handler_def()             = syn_artifact.target,
-      using_block_method_def()  = syn_artifact.target,
-      using_block_update_def()  = syn_artifact.target;
+    db_name = match (artifact)
+      handler_def()             = artifact.target,
+      using_block_method_def()  = artifact.target,
+      using_block_update_def()  = artifact.target;
     return db_defs_by_id[db_symbol(db_name)];
   }
 
@@ -486,17 +486,17 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact {
   //////////////////////////////////////////////////////////////////////////////
 
   AutoSymbol self_auto_type =
-    match (syn_artifact)
-      syn_auto_def()    = syn_artifact.name,
-      auto_method_def() = auto_symbol(syn_artifact.target);
+    match (artifact)
+      syn_auto_def()    = artifact.name,
+      auto_method_def() = auto_symbol(artifact.target);
 
 
   DBSymbol self_db_type =
-    match (syn_artifact)
-      syn_db_def()              = db_symbol(syn_artifact.name),
-      handler_def()             = db_symbol(syn_artifact.target),
-      using_block_method_def()  = db_symbol(syn_artifact.target),
-      using_block_update_def()  = db_symbol(syn_artifact.target);
+    match (artifact)
+      syn_db_def()              = db_symbol(artifact.name),
+      handler_def()             = db_symbol(artifact.target),
+      using_block_method_def()  = db_symbol(artifact.target),
+      using_block_update_def()  = db_symbol(artifact.target);
 
 
   AutoSymbol auto_var_type(AnyAutoVar var) =
@@ -513,9 +513,9 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact {
 
 
   [SynFnDef] local_fn_defs =
-    match (syn_artifact)
-      top_level_fn_def()  = set(syn_artifact.fndef.local_fns),
-      nested_fn_def()     = set(syn_artifact.parent_fndef.local_fns), ## NOT SURE ABOUT THIS ONE...
+    match (artifact)
+      top_level_fn_def()  = set(artifact.fndef.local_fns),
+      nested_fn_def()     = set(artifact.parent_fndef.local_fns), ## NOT SURE ABOUT THIS ONE...
       _                   = [];
 
 
@@ -533,9 +533,9 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact {
 
 
   [ClsVar -> NzNat] cls_vars_arities =
-    match (syn_artifact)
-      top_level_fn_def()  = [cls_var(a.name) -> syn_type_arity(a.type) : a <~ syn_artifact.fndef.args, cls_arg() ?= a],
-      nested_fn_def()     = [cls_var(a.name) -> syn_type_arity(a.type) : a <~ syn_artifact.fndef.args, cls_arg() ?= a],
+    match (artifact)
+      top_level_fn_def()  = [cls_var(a.name) -> syn_type_arity(a.type) : a <~ artifact.fndef.args, cls_arg() ?= a],
+      nested_fn_def()     = [cls_var(a.name) -> syn_type_arity(a.type) : a <~ artifact.fndef.args, cls_arg() ?= a],
       _                   = [];
 
   //////////////////////////////////////////////////////////////////////////////
@@ -576,6 +576,6 @@ implicit syn_prg : SynPrg, syn_artifact : SynArtifact {
 
 
   [+[ImplArg]] fn_impl_args(NestedFnFamilyId nested_fn_symb, Nat arity) =
-    match (syn_artifact)
-      top_level_fn_def() | nested_fn_def()  = [[a.name : a <- syn_artifact.impl_args]];
+    match (artifact)
+      top_level_fn_def() | nested_fn_def()  = [[a.name : a <- artifact.impl_args]];
 }
