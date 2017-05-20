@@ -4,7 +4,10 @@ LocVar never_used_lvar  = :never_used_lvar;
 ElemVar evar(Nat id, <Nat, IntVar> i)   = evar(id: id, idx: i);
 ElemVar evar(Nat id, IntVar v, Nat i)   = evar(id: id, idx: add(val1: v, val2: i));
 
+CaptVar capt_var(Nat n) = :capt_var(n);
+
 PendingInputVar pending_input_var(Atom id)  = :pending_input_var(id);
+PendingStateVar pending_state_var(Atom id)  = :pending_state_var(id);
 
 VecVar vvar(Nat n, NzNat s) = vvar(id: n, size: s);
 
@@ -90,7 +93,7 @@ NatBoolOp is_lt(IntExpr e1, IntExpr e2)                   = is_lt(expr1: e1, exp
 NatBoolOp is_le(IntExpr e1, IntExpr e2)                   = is_le(expr1: e1, expr2: e2);
 NatBoolOp inline_is_eq(ObjExpr e, InlineObj v)            = inline_is_eq(expr: e, value: v);
 NatBoolOp is_out_of_range(ItVar v)                        = :is_out_of_range(v);
-NatBoolOp is_blank(<MembVar, QualAutoMembVar, LocVar> v)  = :is_blank(v);
+NatBoolOp is_blank(<AnyAutoMembVar, LocVar> v)            = :is_blank(v);
 NatBoolOp is_null(AnyNullableVar v)                       = :is_null(v);
 NatBoolOp has_elem(ObjExpr s, ObjExpr e)                  = has_elem(set: s, elt: e);
 NatBoolOp has_field(ObjExpr r, SymbObj f)                 = has_field(record: r, field: f);
@@ -224,12 +227,12 @@ Instr set_ivar(IntVar v, IntExpr e)                   = set_ivar(var: v, value: 
 
 Instr set_var(WriteObjVar v, RefObjExpr e)  = set_rc_var(var: v, value: e);
 
-Instr init_memb_var(<MembVar, MembCopyVar, MembObjVar, PendingInputVar, PendingStateVar> v, <blank, undefined> s)  = init_memb_var(var: v, new_state: s);
-Instr reset_memb_var(<MembVar, MembCopyVar, PendingStateVar> v, <blank, undefined> s)   = reset_memb_var(var: v, new_state: s);
+Instr init_memb_var(<MembVar, AutoMembVar, AutoMembVarCopy, MembObjVar, PendingInputVar, PendingStateVar> v, <blank, undefined> s)  = init_memb_var(var: v, new_state: s);
+Instr reset_memb_var(<AutoMembVar, AutoMembVarCopy, MembVar> v, <blank, undefined> s)   = reset_memb_var(var: v, new_state: s);
 Instr clear_loc_var(LocVar v)                             = :clear_loc_var(v);
 
-Instr make_var_undef(MembVar v) = reset_memb_var(v, :undefined);
-Instr make_var_undef(LocVar v)  = clear_loc_var(v);
+Instr make_var_undef(AutoMembVar v) = reset_memb_var(v, :undefined);
+Instr make_var_undef(LocVar v)      = clear_loc_var(v);
 
 Instr terminate = :terminate;
 
@@ -338,9 +341,11 @@ Instr runtime_check(AtomicExpr c, String f, NzNat l, Maybe[String] t, <StdVar, I
 
 ////////////////////////////////////////////////////////////////////////////////
 
-ClsDef   cls_def(NzNat a, Instr+ b)   = cls_def(arity: a, body: b);
+CaptClsVar capt_cls_var(Nat n) = :capt_cls_var(n);
 
-BoundCls bound_cls(ClsDef c, Var* vs, ClsVar* cs)  = bound_cls(cls: c, capt_vars: vs, capt_cls_vars: cs);
+ClsDef cls_def(NzNat a, Instr+ b) = cls_def(arity: a, body: b);
+
+BoundCls bound_cls(ClsDef c, <StdVar, CaptVar>* vs, AnyClsVar* cs) = bound_cls(cls: c, capt_vars: vs, capt_cls_vars: cs);
 
 <obj> obj = :obj;
 ObjProcPar cls(ClsVar n, NzNat a) = cls(name: n, arity: a);
@@ -401,9 +406,9 @@ BoolExpr is_empty_rel(ObjExpr e)  = is_eq(e, empty_rel);
 BoolExpr is_seq(ObjExpr e)  = or(is_empty_seq(e), is_ne_seq(e));
 BoolExpr is_set_value(ObjExpr e)  = or(is_empty_rel(e), is_ne_set(e)); // Renamed because of conflict with is_set() constructors
 
-BoolExpr is_not_blank(<MembVar, QualAutoMembVar, LocVar> v) = neg(is_blank(v));
-BoolExpr is_not_null(AnyNullableVar v)                      = neg(is_null(v));
-BoolExpr is_neither_blank_nor_null(<MembVar, LocVar> v)     = neg(or(is_null(v), is_blank(v)));
+BoolExpr is_not_blank(<AnyAutoMembVar, LocVar> v)               = neg(is_blank(v));
+BoolExpr is_not_null(AnyNullableVar v)                          = neg(is_null(v));
+BoolExpr is_neither_blank_nor_null(<AnyAutoMembVar, LocVar> v)  = neg(or(is_null(v), is_blank(v)));
 
 BoolExpr is_between(IntExpr e, IntExpr l, IntExpr u) = and(is_ge(e, l), is_le(e, u));
 

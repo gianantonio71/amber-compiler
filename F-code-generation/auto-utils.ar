@@ -38,13 +38,13 @@ implicit program : Program, automaton : Automaton, next_var_gen : VarGen, option
 
   //////////////////////////////////////////////////////////////////////////////
 
-  Instr+ gen_safe_eval_code(Expr expr, <MembVar, LocVar> res_var) =
+  Instr+ gen_safe_eval_code(Expr expr, <AutoMembVar, LocVar> res_var) =
     and_expr()    = gen_safe_eval_code_for_and_expr(expr.left, expr.right, res_var),
     or_expr()     = gen_safe_eval_code_for_or_expr(expr.left, expr.right, res_var),
     _             = gen_default_safe_eval_code(expr, res_var);
 
 
-  Instr+ gen_safe_eval_code_for_and_expr(Expr left_expr, Expr right_expr, <MembVar, LocVar> res_var) {
+  Instr+ gen_safe_eval_code_for_and_expr(Expr left_expr, Expr right_expr, <AutoMembVar, LocVar> res_var) {
     left_tmp_var, var_gen = next_obj_var(next_var_gen);
     right_tmp_var, var_gen = next_obj_var(var_gen);
     let next_var_gen = var_gen:
@@ -64,7 +64,7 @@ implicit program : Program, automaton : Automaton, next_var_gen : VarGen, option
   }
 
 
-  Instr+ gen_safe_eval_code_for_or_expr(Expr left_expr, Expr right_expr, <MembVar, LocVar> res_var) {
+  Instr+ gen_safe_eval_code_for_or_expr(Expr left_expr, Expr right_expr, <AutoMembVar, LocVar> res_var) {
     left_tmp_var, var_gen = next_obj_var(next_var_gen);
     right_tmp_var, var_gen = next_obj_var(var_gen);
     let next_var_gen = var_gen:
@@ -84,8 +84,10 @@ implicit program : Program, automaton : Automaton, next_var_gen : VarGen, option
   }
 
 
-  Instr+ gen_default_safe_eval_code(Expr expr, <MembVar, LocVar> res_var) {
-    eval_code = gen_eval_code(expr, res_var, context=automaton);
+  Instr+ gen_default_safe_eval_code(Expr expr, <AutoMembVar, LocVar> res_var) {
+    let context = automaton, var_subst_map = [], cls_var_subst_map = []:
+      eval_code = gen_eval_code(expr, res_var);
+    ;
     vars_to_safeguard = non_nullable_vars(expr);
     if vars_to_safeguard != []:
       cond = and((is_not_null(v) : v <- rand_sort(vars_to_safeguard)));
@@ -143,8 +145,8 @@ IntConst time_slot_length(CyclicTimeExpr time_expr, AutoSymbol auto_name, Atom e
 ////////////////////////////////////////////////////////////////////////////////
 
 ## THIS FUNCTION HAS A REALLY STRANGE NAME. SHOULDN'T IT BE THE OPPOSITE?
-[<MembVar, MembCopyVar>] non_nullable_vars(Expr expr) {
+[<AutoMembVar, AutoMembVarCopy>] non_nullable_vars(Expr expr) {
   ## BUG BUG BUG: THIS IS WRONG. VARIABLES IN is-def EXPRESSIONS SHOULD NOT BE COUNTED HERE
   vs = extern_vars(expr);
-  return [v : v <- vs, v :: <MembVar, MembCopyVar>];
+  return [v : v <- vs, v :: <AutoMembVar, AutoMembVarCopy>];
 }

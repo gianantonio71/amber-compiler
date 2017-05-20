@@ -7,7 +7,7 @@ type CondInfo     = ( cond:         Expr,
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type AutoNodeDependency = BlockNodeId, QualMembVar, QualRelVar; // QualMembVar/QualRelVar ARE TOO LOOSE, AUTO/DB LOCAL VARIABLES SHOULD BE RULED OUT.
+type AutoNodeDependency = BlockNodeId, QualAutoMembVar, QualDBMembVar, QualRelVar; // QualMembVar/QualRelVar ARE TOO LOOSE, AUTO/DB LOCAL VARIABLES SHOULD BE RULED OUT.
 
 
 BlockNodeId dependency_to_node_id(BlockNodeId id)   = id;
@@ -202,7 +202,7 @@ implicit automaton : Automaton {
 
 
   ## TYPECHECKING BUG SAME AS ABOVE
-  [NestedAutoNodeId -> [MembVar -> [BlockNodeId]]] output_trigger_down_nodes_map {
+  [NestedAutoNodeId -> [AutoMembVar -> [BlockNodeId]]] output_trigger_down_nodes_map {
     // Reversing the dependency mapping: node -> all nodes that depend on it: [AutoNodeDependency -> [+BlockNodeId]]
     fat_map = reverse_multi(trigger_up_nodes_map);
     // Coalescing all the (automaton, output -> ...) into (automaton -> ...) entries
@@ -331,7 +331,7 @@ implicit program : Program, automaton : Automaton {
     ## WOULD BE NICE TO ADD AN ASSERT HERE, AS WELL.
     ## WE ARE ALSO IGNORING THE output_is_def() EXPRESSION, WHICH SHOULD BE ALLOWED
     ## ONLY INSIDE THE BODY OF A PROCEDURE
-    disc_signals = [v : v <- auto_expr_extern_vars(expr), v :: <MembVar, QualAutoMembVar>, is_discrete(v)];
+    disc_signals = [v : v <- auto_expr_extern_vars(expr), v :: AnyAutoMembVar, is_discrete(v)];
 
     assert is_disc == {disc_signals != []};
 
@@ -394,10 +394,10 @@ implicit program : Program, automaton : Automaton {
   vars = extern_vars(expr);
   var_deps = [
     match (v)
-      memb_var(a?)          = std_block_node_id(a),
+      auto_memb_var(a?)     = std_block_node_id(a),
       qual_auto_memb_var()  = v,
       qual_db_memb_var()    = v
-    : v <- vars, not v :: MembCopyVar
+    : v <- vars, not v :: AutoMembVarCopy
   ];
   return var_deps & nested_deps(expr);
 

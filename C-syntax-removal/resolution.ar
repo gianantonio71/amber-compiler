@@ -1,4 +1,4 @@
-type SymbObjVar     = StdVar, ImplArg, MembVar, QualAutoMembVar;
+type SymbObjVar     = StdVar, ImplArg, MembVar, AnyAutoMembVar;
 type SymbChainAcc   = accessor(expr: <SymbChainExpr, FnCallExpr, AutoMethodCall, DBMethodCall>, field: SymbObj);
 type SymbChainExpr  = SymbObjVar, QualDBMembVar, SymbChainAcc;
 
@@ -6,6 +6,7 @@ type SymbChainExpr  = SymbObjVar, QualDBMembVar, SymbChainAcc;
 Nat resol_priority(StdVar)                    = 0;
 Nat resol_priority(ImplArg)                   = 0;
 Nat resol_priority(MembVar)                   = 1;
+Nat resol_priority(AutoMembVar)               = 1;
 Nat resol_priority(QualAutoMembVar)           = 2;
 Nat resol_priority(QualDBMembVar)             = 2;
 Nat resol_priority(SymbChainAcc symb_chain)   = resol_priority(symb_chain.expr);
@@ -75,6 +76,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
   Bool arity_is_compatible(StdVar, Nat arity)           = arity :: <1..3>;
   Bool arity_is_compatible(ImplArg, Nat arity)          = arity :: <1..3>;
   Bool arity_is_compatible(MembVar, Nat arity)          = arity :: <1..3>;
+  Bool arity_is_compatible(AutoMembVar, Nat arity)      = arity :: <1..3>;
   Bool arity_is_compatible(QualAutoMembVar, Nat arity)  = arity :: <1..3>;
   Bool arity_is_compatible(QualDBMembVar, Nat arity)    = arity :: <1..3>;
   Bool arity_is_compatible(SymbChainAcc, Nat arity)     = arity :: <1..3>;
@@ -150,13 +152,13 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
   }
 
 
-  [ClsExpr] resolve_by_priority_as_cls_expr(Atom symbol, NzNat exp_arity, [StdVar] def_vars) {
+  [AnyClsExpr] resolve_by_priority_as_cls_expr(Atom symbol, NzNat exp_arity, [StdVar] def_vars) {
     raw_resols = resolve_symbol(symbol, def_vars);
     resols_priorities = [r -> resol_priority(rr) : rr <- raw_resols, r <- resolve(rr, exp_arity)];
     return min_by(keys(resols_priorities), resols_priorities[$]);
 
 
-    [ClsExpr] resolve(FnFamilyId fn_symb, NzNat exp_arity) {
+    [AnyClsExpr] resolve(FnFamilyId fn_symb, NzNat exp_arity) {
       ## BUG BUG BUG: HERE I MUST ALSO CHECK THAT IT HAS NO IMPLICIT ARGUMENTS...
       has_exp_arity = function_exists(fn_symb, exp_arity) and all((a == 0 : a <- arg_arities(fn_symb, exp_arity)));
       return [
@@ -169,7 +171,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
     [ClsVar] resolve(ClsVar var, NzNat exp_arity) = [var if cls_vars_arities[var] == exp_arity];
 
 
-    [ClsExpr] resolve(SymbObjVar var, NzNat exp_arity) = [no_args_cls_expr(exp_arity, var)];
+    [AnyClsExpr] resolve(SymbObjVar var, NzNat exp_arity) = [no_args_cls_expr(exp_arity, var)];
 
 
     [] resolve(<LocAutoVar, MembAutoVar, LocDBVar, MembDBVar, RelVar, PreCall>, NzNat) = [];
@@ -250,7 +252,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
         visible_fields = visible_fields & keys(interface.inputs) & interface.state_vars & interface.rule_vars;
       ;
       if visible_fields(field):
-        return just(qual_auto_memb_var(target, memb_var(field)));
+        return just(qual_auto_memb_var(target, auto_memb_var(field)));
       elif method_ids_by_automaton_id[bare_id(auto_type)](field):
         return just(pre_auto_method_call(target, method_symbol(field)));
       else
@@ -309,31 +311,47 @@ implicit syn_prg : SynPrg {
 
 
   [<LocAutoVar, LocDBVar, QualAutoMembVar>] resolve_symbol(SynProcDef artifact, Atom symbol) {
-    resols = [loc_db_var(symbol) : v <~ artifact.db_vars, v.var == symbol];
-    for v <- artifact.auto_vars:
-      if v.var == symbol:
+    db_resols = [loc_db_var(symbol) : v <~ artifact.db_vars, v.var == symbol];
+    auto_resols = [{
         interface = auto_interfaces[auto_symbol(v.type)];
         resol = loc_auto_var(symbol);
         def_output = interface.default_output;
-        resol = qual_auto_memb_var(loc_auto_var(symbol), memb_var(value(def_output))) if def_output != nothing;
-        resols = resols & [resol];
+        resol = qual_auto_memb_var(loc_auto_var(symbol), auto_memb_var(value(def_output))) if def_output != nothing;
+        return resol;
+      } : v <~ artifact.auto_vars, v.var == symbol
+    ];
+
+    assert {
+      resols = [loc_db_var(symbol) : v <~ artifact.db_vars, v.var == symbol];
+      for v <- artifact.auto_vars:
+        if v.var == symbol:
+          interface = auto_interfaces[auto_symbol(v.type)];
+          resol = loc_auto_var(symbol);
+          def_output = interface.default_output;
+          resol = qual_auto_memb_var(loc_auto_var(symbol), auto_memb_var(value(def_output))) if def_output != nothing;
+          resols = resols & [resol];
+        ;
       ;
-    ;
-    return resols;
+      return resols == db_resols & auto_resols;
+    };
+
+    return db_resols & auto_resols;
   }
 
 
-  [<MembVar, MembAutoVar, MembDBVar, QualAutoMembVar>] resolve_symbol(SynAutoDef artifact, Atom symbol) {
+  [<AutoMembVar, MembAutoVar, MembDBVar, QualAutoMembVar>] resolve_symbol(SynAutoDef artifact, Atom symbol) {
     internals = auto_internals[artifact.name];
     resols = [
-      memb_var(symbol)      if in(symbol, internals.memb_vars),
+      auto_memb_var(symbol) if in(symbol, internals.memb_vars),
       memb_db_var(symbol)   if internals.nested_dbs(symbol, *)
     ];
 
     if internals.nested_autos(symbol, *):
       auto_type = auto_symbol(internals.nested_autos[symbol]);
       interface = auto_interfaces[auto_type];
-      resol = if interface.default_output == nothing then memb_auto_var(symbol) else memb_var(symbol);
+      ## BUG BUG BUG: I THINK THERE'S A BUG HERE, WITH auto_memb_var(symbol)
+      ## INSTEAD OF qual_auto_memb_var(memb_auto_var(symbol), auto_memb_var(symbol))
+      resol = if interface.default_output == nothing then memb_auto_var(symbol) else auto_memb_var(symbol);
       resols = resols & [resol];
     ;
 
@@ -352,7 +370,7 @@ implicit syn_prg : SynPrg {
   }
 
 
-  [<MembVar, MembAutoVar, MembDBVar, QualAutoMembVar, PreCall>] resolve_symbol(AutoMethodDef artifact, Atom symbol) {
+  [<AutoMembVar, MembAutoVar, MembDBVar, QualAutoMembVar, PreCall>] resolve_symbol(AutoMethodDef artifact, Atom symbol) {
     auto_def = auto_defs_by_id[auto_symbol(artifact.target)];
     resols = resolve_symbol(auto_def, symbol);
     if method_ids_by_automaton_id[artifact.target](symbol):

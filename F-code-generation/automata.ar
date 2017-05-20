@@ -5,7 +5,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
 
     memb_bool_vars = seq_union((memb_bool_vars(n) : n <- nodes)) & [(is_new, true)];
     memb_int_vars = auto_memb_int_vars;
-    memb_obj_vars = seq_union((memb_obj_vars(n) : n <- nodes)) & [(memb_var(id), :blank) : id <- keys(automaton.params)];
+    memb_obj_vars = seq_union((memb_obj_vars(n) : n <- nodes)) & [(auto_memb_var(id), :blank) : id <- keys(automaton.params)];
 
     const_data = [time_slots_len(a, ls) : a, c <- automaton.time_rules, ls = trigger_times_table(c.time_expr), ls != ()];
 
@@ -127,7 +127,9 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
     Instr* gen_code(Method method) {
       res_var, var_gen = next_obj_var(blank_var_gen);
       args_code = (set_var(value(v), fn_par(i)) : unused_var, v @ i <- method.args, v != nothing);
-      body_code = gen_eval_code(method.expr, res_var, context = automaton, next_var_gen = var_gen);
+      let context = automaton, var_subst_map = [], cls_var_subst_map = [], next_var_gen = var_gen:
+        body_code = gen_eval_code(method.expr, res_var);
+      ;
       // entry_code = [push_call_info(fndef.name, fn_par(i)) : p @ i <- fndef.params])];
       // exit_code = [pop_call_info];
       return (args_code & body_code | ret_val(res_var));
@@ -135,7 +137,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
   }
 
 
-  Instr* gen_pre_init_code([(MembBoolVar, Bool)] memb_bool_vars, [(MembIntVar, Int)] memb_int_vars, [(<MembVar, MembObjVar, PendingInputVar, PendingStateVar>, <blank, undefined>)] memb_obj_vars) {
+  Instr* gen_pre_init_code([(MembBoolVar, Bool)] memb_bool_vars, [(MembIntVar, Int)] memb_int_vars, [(<AutoMembVar, MembObjVar, PendingInputVar>, <blank, undefined>)] memb_obj_vars) {
     // Initializing all boolean member variables
     code_0 = (set_bvar(var, init_val) : var, init_val <- rand_sort(memb_bool_vars));
 
@@ -206,9 +208,9 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
       first_pass_finish_code = (first_pass_finish_code | auto_apply(automaton.name));
     ;
 
-    apply_code = (reset_memb_var(memb_var(id), :blank) : id <- rand_sort(discrete_signals_ids)) &
+    apply_code = (reset_memb_var(auto_memb_var(id), :blank) : id <- rand_sort(discrete_signals_ids)) &
                  (init_memb_var(v, :blank) : v <- sorted_memb_copy_vars) &
-                 (set_var(v, memb_var(bare_id(v))) : v <- sorted_memb_copy_vars) &
+                 (set_var(v, auto_memb_var(bare_id(v))) : v <- sorted_memb_copy_vars) &
                  (set_ivar(changed_outputs_count, 0) if automaton.outputs != []) &
                  (mark_for_update(n.id) : n <- nodes, must_always_be_recalculated(n)) &
                  join(levels_code) &
@@ -319,7 +321,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
     sorted_params = topological_sort(dep_map);
     let next_var_gen = blank_var_gen:
       params_init_code = (
-        (gen_safe_eval_code(automaton.params[p].value, memb_var(p)) : p <- rand_sort(ps))
+        (gen_safe_eval_code(automaton.params[p].value, auto_memb_var(p)) : p <- rand_sort(ps))
         : ps <- sorted_params
       );
     ;

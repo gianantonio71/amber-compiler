@@ -14,7 +14,7 @@
 //    Also returns the id of the first free object variable.
 
 type EvalVar        = StdVar, LocVar;
-type EvalDestVar    = StdVar, LocVar, ElemVar, MembVar;
+type EvalDestVar    = StdVar, LocVar, ElemVar, MembVar, AutoMembVar;
 
 type ExprEvalRes    = StdObjVar, LeafObj;
 
@@ -24,24 +24,19 @@ type MultEvalInfo   = (eval_code: Instr*, exprs: ExprEvalRes*, next_var_gen: Var
 type VectorEvalInfo = (code: Instr*, vect_var: VecVar, count_expr: IntExpr);
 
 
-implicit program : Program, context : Context, next_var_gen : VarGen, options : CompilationOptions {
+implicit program : Program, context : Context, var_subst_map : [StdVar -> CaptVar],
+  cls_var_subst_map : [ClsVar -> CaptClsVar], next_var_gen : VarGen, options : CompilationOptions {
+
   (EvalVar, VarGen) pick_temp_var(EvalDestVar res_var) =
     if {res_var :: EvalVar}
       then (res_var, next_var_gen)
       else next_obj_var(next_var_gen);
 
 
-  Instr+ gen_fn_body(Expr expr) {
-    fn_res_var, var_gen = next_obj_var(next_var_gen);
-    code = gen_eval_code(expr, fn_res_var, next_var_gen = var_gen);
-    return nonempty(code & (ret_val(fn_res_var)));
-  }
-
-
   EvalInfo gen_eval_info(Expr expr, EvalVar var) =
-    LeafObj   = (eval_code: (),                       expr: expr,   var_used: false),
-    Var       = (eval_code: (),                       expr: expr,   var_used: false),
-    _         = (eval_code: gen_eval_code(expr, var), expr: var,    var_used: true);
+    LeafObj   = (eval_code: (),                       expr: expr,                               var_used: false),
+    Var       = (eval_code: (),                       expr: lookup(var_subst_map, expr, expr),  var_used: false),
+    _         = (eval_code: gen_eval_code(expr, var), expr: var,                                var_used: true);
 
 
   ExEvalInfo gen_eval_info(Expr expr) {
@@ -124,29 +119,38 @@ implicit program : Program, context : Context, next_var_gen : VarGen, options : 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  BoundCls gen_non_scalar_par_code(ClsExpr expr) =
-    AnyClsVar   = expr,
-    fn_ptr()    = {
-      var = lvar(0);
-      ps = (fn_par(i) : i < expr.arity);
-      body = (call_proc(var, expr.name, ps), ret_val(var));
-      cls = cls_def(expr.arity, body);
-      return bound_cls(cls, (), ());
-    },
-    cls_expr()  = {
-      loc_vs = seq_union(([value(v) if v != nothing, fn_par(i)] : v @ i <- expr.args));
-      ext_vs = rand_sort(extern_vars(expr.expr) - loc_vs);
+  BoundCls compiled_closure(ClsVar var) = lookup(cls_var_subst_map, var, var);
 
-      cls_vs = rand_sort(cls_vars(expr.expr));
 
-      subst_map = merge(([v -> capt_var(i)] : v @ i <- ext_vs));
-      new_expr = replace_external_vars(expr.expr, subst_map);
+  BoundCls compiled_closure(FnPtr ptr) {
+    var = lvar(0);
+    ps = (fn_par(i) : i < ptr.arity);
+    body = (call_proc(var, ptr.name, ps), ret_val(var));
+    cls = cls_def(ptr.arity, body);
+    return bound_cls(cls, (), ());
+  }
 
-      cls_subst_map = merge(([v -> capt_cls_var(i)] : v @ i <- cls_vs));
-      new_expr = replace_cls_vars(new_expr, cls_subst_map);
 
-      cls_body = (set_var(value(v), fn_par(i)) : v @ i <- expr.args, v != nothing) & gen_fn_body(new_expr);
+  BoundCls compiled_closure(ClsExpr expr) {
+    loc_vs = seq_union(([value(v) if v != nothing, fn_par(i)] : v @ i <- expr.args));
+    ext_vs = rand_sort(extern_vars(expr.expr) - loc_vs);
+    assert ext_vs :: StdVar*;
+    fail if not ext_vs :: StdVar*;
 
-      return bound_cls(cls_def(nz_nat(|expr.args|), nonempty(cls_body)), ext_vs, cls_vs);
-    };
+    cls_vs = rand_sort(cls_vars(expr.expr));
+
+    subst_map = merge(([v -> capt_var(i)] : v @ i <- ext_vs));
+    cls_subst_map = merge(([v -> capt_cls_var(i)] : v @ i <- cls_vs));
+
+    capt_vars = (lookup(var_subst_map, v, v) : v <- ext_vs);
+    capt_cls_vars = (lookup(cls_var_subst_map, v, v) : v <- cls_vs);
+
+    fn_res_var, var_gen = next_obj_var(blank_var_gen);
+    let var_subst_map = subst_map, cls_var_subst_map = cls_subst_map:
+      eval_code = gen_eval_code(expr.expr, fn_res_var, next_var_gen = var_gen);
+    ;
+    cls_body = (set_var(value(v), fn_par(i)) : v @ i <- expr.args, v != nothing) & eval_code & (ret_val(fn_res_var));
+
+    return bound_cls(cls_def(nz_nat(|expr.args|), nonempty(cls_body)), capt_vars, capt_cls_vars);
+  }
 }

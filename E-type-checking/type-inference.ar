@@ -19,12 +19,13 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     var()                 |
     fn_par()              |
     impl_arg()            = env[expr],
-    capt_var()            = {fail;},
     memb_var()            |
     qual_db_memb_var()    |
+    pending_state_var()   |
+    auto_memb_var()       |
     qual_auto_memb_var()  |
-    memb_copy_var()       |
-    pending_state_var()   = memb_var_type(expr),
+    auto_memb_var_copy()  |
+    pending_input_var()   = memb_var_type(expr),
     fn_call()             = fn_call_expr_type(expr.name, expr.args, expr.impl_args, env),
     cls_call()            = closures[cast_cls_var(expr.name)].out_type,
     builtin_call()        = builtin_call_expr_type(expr.name, expr.args, env),
@@ -66,17 +67,27 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
+  Type memb_var_type(PendingStateVar var) {
+    fail;
+  }
+
+
+  Type memb_var_type(AutoMembVar var) {
+    fail;
+  }
+
+
   Type memb_var_type(QualAutoMembVar var) {
     fail;
   }
 
 
-  Type memb_var_type(MembCopyVar var) {
+  Type memb_var_type(AutoMembVarCopy var) {
     fail;
   }
 
 
-  Type memb_var_type(PendingStateVar var) {
+  Type memb_var_type(PendingInputVar var) {
     fail;
   }
 
@@ -427,7 +438,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
     for e, t <- zip(params, signature.args):
       ## THIS IS A CHECK THAT SHOULD BE PERFORMED ELSEWHERE.
-      assert (e :: Expr and t :: Type) or (e :: ClsExpr and t :: ClsType);
+      assert (e :: Expr and t :: Type) or (e :: AnyClsExpr and t :: ClsType);
       if e :: Expr and t :: Type:
         return false if not is_subset(expr_type(e, env), replace_type_vars_with_type_any(t));
       ;
@@ -761,7 +772,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  [TypeVar -> Type] instantiate_type_vars(Type* actual_types, Type* formal_types, ClsExpr* cls_args, ClsType* cls_types, [EnvVar -> Type] env) {
+  [TypeVar -> Type] instantiate_type_vars(Type* actual_types, Type* formal_types, AnyClsExpr* cls_args, ClsType* cls_types, [EnvVar -> Type] env) {
     assert |actual_types| == |formal_types|;
     assert |cls_args| == |cls_types|;
     type_var_insts = type_var_instantiations_for_subset(actual_types, formal_types);
@@ -781,7 +792,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  Type get_return_type(ClsExpr expr, ClsType type, [TypeVar -> Type] type_var_insts, [EnvVar -> Type] env) =
+  Type get_return_type(AnyClsExpr expr, ClsType type, [TypeVar -> Type] type_var_insts, [EnvVar -> Type] env) =
     ClsVar      = closures[expr].out_type,
     fn_ptr()    = {fail;},
     cls_expr()  = { inst_formal_par_types = (replace_type_vars(t, type_var_insts) : t <- type.in_types);

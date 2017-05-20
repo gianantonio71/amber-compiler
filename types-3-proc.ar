@@ -1,15 +1,22 @@
 type LocVar           = lvar(Nat), never_used_lvar;  ## FIND BETTER NAME.
 type ElemVar          = evar(id: Nat, idx: <Nat, IntVar, add(val1: IntVar, val2: Nat)>);
+
+type CaptVar          = capt_var(Nat);
+
+type PendingStateVar  = pending_state_var(Atom);
 type PendingInputVar  = pending_input_var(Atom);
 
 type ReadOnlyObjVar = FnPar, CaptVar;
 type WriteObjVar    = RWObjVar, ElemVar;
-type RWObjVar       = StdVar, LocVar, MembVar, QualMembVar, MembObjVar, MembCopyVar, PendingStateVar;
+type RWObjVar       = StdVar, LocVar,
+                      AnyMembVar, PendingStateVar,
+                      AnyAutoMembVar, AutoMembVarCopy, PendingInputVar,
+                      MembObjVar;
 
 type StdObjVar      = RWObjVar, ImplArg, ReadOnlyObjVar;
 
-type NullableVar    = StdVar, MembVar, QualAutoMembVar, MembCopyVar, PendingStateVar, LocVar, MembObjVar;
-type NonNullableVar = FnPar, ImplArg, CaptVar, QualDBMembVar, ElemVar;
+type NullableVar    = StdVar, AnyAutoMembVar, AutoMembVarCopy, PendingInputVar, LocVar, MembObjVar;
+type NonNullableVar = FnPar, ImplArg, CaptVar, AnyMembVar, PendingStateVar, ElemVar;
 
 type ObjVar         = NonNullableVar, NullableVar;
 
@@ -107,7 +114,7 @@ type NatBoolOp      = is_symb(ObjExpr),
                       is_le(expr1: IntExpr, expr2: IntExpr),
                       inline_is_eq(expr: ObjExpr, value: InlineObj),
                       is_out_of_range(ItVar),
-                      is_blank(<MembVar, QualAutoMembVar, LocVar>),
+                      is_blank(<AnyAutoMembVar, LocVar>),
                       is_null(AnyNullableVar),
                       has_elem(set: ObjExpr, elt: ObjExpr),
                       has_field(record: ObjExpr, field: SymbObj),
@@ -221,8 +228,8 @@ type BasicInstr     = init_stream(StreamVar),
 
                       set_rc_var(var: WriteObjVar, value: RefObjExpr),
 
-                      init_memb_var(var: <MembVar, MembCopyVar, MembObjVar, PendingInputVar, PendingStateVar>, new_state: <blank, undefined>),
-                      reset_memb_var(var: <MembVar, MembCopyVar, PendingStateVar>, new_state: <blank, undefined>),
+                      init_memb_var(var: <MembVar, AutoMembVar, AutoMembVarCopy, MembObjVar, PendingInputVar, PendingStateVar>, new_state: <blank, undefined>),
+                      reset_memb_var(var: <AutoMembVar, AutoMembVarCopy, MembVar>, new_state: <blank, undefined>),
                       clear_loc_var(LocVar), ## BAD: I DON'T LIKE THE ABILITY TO CLEAR A NON-MEMBER VARIABLE
 
                       add_ref(ObjVar),
@@ -309,9 +316,17 @@ type CompInstr      = branch(cond: BoolExpr, when_true: Instr+, when_false: Inst
 
 type Instr          = BasicInstr, JumpInstr, CompInstr;
 
+type CaptClsVar     = capt_cls_var(Nat);
+type AnyClsVar      = ClsVar, CaptClsVar;
+
 type ClsDef         = cls_def(arity: NzNat, body: Instr+);
 
-type BoundCls       = AnyClsVar, bound_cls(cls: ClsDef, capt_vars: Var*, capt_cls_vars: ClsVar*); ## WHY IS THE capt_vars FIELD OF TYPE Var* INSTEAD OF ObjVar*?
+type BoundCls       = AnyClsVar,
+                      bound_cls(
+                        cls: ClsDef,
+                        capt_vars: <StdVar, CaptVar>*,
+                        capt_cls_vars: AnyClsVar*
+                      );
 
 type ObjProcPar     = obj, cls(name: ClsVar?, arity: NzNat);
 
@@ -366,7 +381,7 @@ type Block  = block(
                 input_memb_preds:     [Atom -> BoolFnName],
                 inputs:               [Atom -> (type: NeType, discrete: Bool)],
                 outputs:              [Atom -> (type: NeType, discrete: Bool)],
-                memb_vars:            [<MembVar, MembObjVar, PendingInputVar, PendingStateVar, MembIntVar, MembIntVectVar, MembBoolVar>],
+                memb_vars:            [<AutoMembVar, MembObjVar, PendingInputVar, MembIntVar, MembIntVectVar, MembBoolVar>],
                 nested_auto_vars:     [MembAutoVar -> AutoSymbol],
                 nested_trans_blocks:  [MembDBVar -> DBSymbol],
                 pre_init_code:        Instr*,

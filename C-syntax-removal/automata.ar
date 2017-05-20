@@ -38,7 +38,7 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef {
 
     // Creating shadow member variables for automata with default output
     def_output_rules = [
-      na.name -> qual_auto_memb_var(memb_auto_var(na.name), memb_var(value(intf.default_output)))
+      na.name -> qual_auto_memb_var(memb_auto_var(na.name), auto_memb_var(value(intf.default_output)))
       : na <- syn_nested_autos, intf = auto_interfaces[auto_symbol(na.auto_name)], intf.default_output != nothing
     ];
 
@@ -52,7 +52,7 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef {
     // // Identifying and separating constant rules
     // const_rules_ids = [];
     // loop
-    //   const_rules_vars = [memb_var(id) : id <- const_rules_ids];
+    //   const_rules_vars = [auto_memb_var(id) : id <- const_rules_ids];
     //   next_round = [id : e @ id <- rules, subset(extern_vars(e), const_rules_vars)];
     //   break if next_round == const_rules_ids;
     //   const_rules_ids = next_round;
@@ -98,10 +98,10 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef {
     // If the list of discrete signals is not given explicitly, we search
     // the parameter list and the condition for discrete signals
     if syn_msg_send.signals != ():
-      signals = (memb_var(a) : a <- syn_msg_send.signals);
+      signals = (auto_memb_var(a) : a <- syn_msg_send.signals);
     else
       all_signals = union([auto_expr_extern_vars(e) : e <- [message, value(maybe_cond) if maybe_cond != nothing]]);
-      signals = rand_sort([s : s <- all_signals, s :: <MembVar, QualAutoMembVar>, signal_is_discrete(s)]);
+      signals = rand_sort([s : s <- all_signals, s :: AnyAutoMembVar, signal_is_discrete(s)]);
     ;
     signals_set_conds = (is_set(s) : s <- signals);
 
@@ -136,7 +136,7 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef {
     ## WOULD BE NICE TO ADD AN ASSERT HERE, AS WELL.
     ## WE ARE ALSO IGNORING THE output_is_def() EXPRESSION, WHICH SHOULD BE ALLOWED
     ## ONLY INSIDE THE BODY OF A PROCEDURE
-    discrete_signals = [v : v <- auto_expr_extern_vars(expr), v :: <MembVar, QualAutoMembVar>, signal_is_discrete(v)];
+    discrete_signals = [v : v <- auto_expr_extern_vars(expr), v :: AnyAutoMembVar, signal_is_discrete(v)];
 
     // If a plain rule does not contain any discrete signals,
     // then it defines a continuous intermediate signal
@@ -159,7 +159,7 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef {
       cond = desugar_auto_expr(branch.cond, []);
       expr = desugar_auto_expr(branch.expr, []);
       ss = auto_expr_extern_vars(cond) & auto_expr_extern_vars(expr);
-      dss = (s : s <- rand_sort(ss), s :: <MembVar, QualAutoMembVar> and signal_is_discrete(s));
+      dss = (s : s <- rand_sort(ss), s :: AnyAutoMembVar and signal_is_discrete(s));
 
       if dss != ():
         if rule.discrete:
@@ -207,11 +207,11 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef {
     ;
     action = rep_action(desugar_auto_expr(rule.cond, []), [action], []) if rule.cond?;
 
-    signals = (memb_var(a) : a <- rule.signals);
+    signals = (auto_memb_var(a) : a <- rule.signals);
     change_cond = or_expr((
       if signal_is_discrete(s)
         then is_set(s)
-        else not_expr(eq(s, memb_copy_var(bare_id(s))))
+        else not_expr(eq(s, auto_memb_var_copy(bare_id(s))))
      : s <- signals
     ));
 
@@ -222,7 +222,7 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef {
   TimeVaryingCond syn_time_varying_rule_to_cond(SynTimeVaryingRule rule) =
     syn_time_varying_boolean_rule()   = time_varying_boolean_cond(desugar_auto_expr(rule.cond, []), rule.time_expr),
     syn_time_varying_unchanged_rule() = time_varying_unchanged_cond(desugar_auto_expr(rule.cond, []), rule.time_expr),
-    syn_time_varying_inactive_rule()  = time_varying_since_cond([memb_var(s) : s <~ rule.signals], rule.time_expr, rule.starts_at_time_0);
+    syn_time_varying_inactive_rule()  = time_varying_since_cond([auto_memb_var(s) : s <~ rule.signals], rule.time_expr, rule.starts_at_time_0);
 
 
   Expr desugar_auto_expr(SynExpr expr, [StdVar] def_vars) =

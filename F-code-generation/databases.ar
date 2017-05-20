@@ -32,7 +32,7 @@ implicit program : Program, database : Database, options : CompilationOptions {
     nested_dbs = database.nested_dbs;
 
     vars_pre_init_code = rand_sort([init_memb_var(v, :blank) : v, unused_var <- state_vars]);
-    let context = database, next_var_gen = blank_var_gen:
+    let context = database, var_subst_map = [], cls_var_subst_map = [], next_var_gen = blank_var_gen:
       vars_init_code = join(rand_sort([gen_eval_code(d.init_value, v) : v, d <- state_vars]));
     ;
     nested_dbs_init_code = rand_sort([init_db(v, t) : v, t <- nested_dbs]);
@@ -176,7 +176,9 @@ implicit program : Program, database : Database, options : CompilationOptions {
     Instr* gen_code(Method method) {
       res_var, var_gen = next_obj_var(blank_var_gen);
       args_code = (set_var(value(v), fn_par(i)) : unused_var, v @ i <- method.args, v != nothing);
-      body_code = gen_eval_code(method.expr, res_var, context = database, next_var_gen = var_gen);
+      let context = database, var_subst_map = [], cls_var_subst_map = [], next_var_gen = var_gen:
+        body_code = gen_eval_code(method.expr, res_var);
+      ;
       // entry_code = [push_call_info(fndef.name, fn_par(i)) : p @ i <- fndef.params])];
       // exit_code = [pop_call_info];
       return (args_code & body_code | ret_val(res_var));
@@ -204,10 +206,10 @@ implicit program : Program, database : Database, options : CompilationOptions {
       // Compiling the body of the update
       update_body = update.body;
       return () if update_body == ();
-      return (
-        (set_var(v, fn_par(i)) : unused_var, v @ i <- update.args) |
-        execute_block(gen_code(update_body, never_used_lvar, context = database, next_var_gen = blank_var_gen))
-      );
+      let context = database, var_subst_map = [], cls_var_subst_map = [], next_var_gen = blank_var_gen:
+        code = gen_code(update_body, never_used_lvar);
+      ;
+      return ((set_var(v, fn_par(i)) : unused_var, v @ i <- update.args) | execute_block(code));
     }
   }
 
@@ -225,10 +227,10 @@ implicit program : Program, database : Database, options : CompilationOptions {
       // Compiling the body of the handler
       handler_body = handler.body;
       return () if handler_body == ();
-      return (
-        set_var(var(:it), fn_par(0)),
-        execute_block(gen_code(handler_body, never_used_lvar, context = database, next_var_gen = blank_var_gen))
-      );
+      let context = database, var_subst_map = [], cls_var_subst_map = [], next_var_gen = blank_var_gen:
+        code = gen_code(handler_body, never_used_lvar);
+      ;
+      return (set_var(var(:it), fn_par(0)), execute_block(code));
     }
   }
 }

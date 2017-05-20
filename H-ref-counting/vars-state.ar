@@ -29,6 +29,12 @@ StdObjVar parent_var(VarStatus) =
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
+## BAD BAD BAD: REALLY WRONG NAME FOR THE TYPE
+type GenMembVar = AnyMembVar, PendingStateVar, AnyAutoMembVar, AutoMembVarCopy, PendingInputVar, MembObjVar;
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
 VarsState unreachable_vars_state = :unreachable_vars_state;
 
 VarsState blank_vars_state = vars_state([], []);
@@ -48,7 +54,7 @@ VarsState vars_state([TrkObjVar -> VarStatus] std_vs, [TrkItVar -> StdObjVar] it
 
 
   Bool parent_var_status_is_fine(StdObjVar var, [TrkObjVar -> VarStatus] vars_status) {
-    return true if var :: <ReadOnlyObjVar, ImplArg, MembVar, QualMembVar, MembCopyVar, MembObjVar, PendingStateVar>;
+    return true if var :: <ReadOnlyObjVar, ImplArg, GenMembVar>;
     return false if not is_key(var, vars_status);
     parent_status = vars_status[var];
     return parent_status == owner or is_dependent(parent_status);
@@ -56,7 +62,7 @@ VarsState vars_state([TrkObjVar -> VarStatus] std_vs, [TrkItVar -> StdObjVar] it
 
 
   Bool coll_status_is_fine(StdObjVar var, [TrkObjVar -> VarStatus] vars_status) {
-    return true if var :: <ReadOnlyObjVar, ImplArg, MembVar, QualMembVar, MembCopyVar, MembObjVar, PendingStateVar>;
+    return true if var :: <ReadOnlyObjVar, ImplArg, GenMembVar>;
     return false if not is_key(var, vars_status);
     status = vars_status[var];
     return not is_copy(status);
@@ -95,7 +101,7 @@ StdObjVar collection_iterated_over(VarsState state, TrkItVar var) = it_vars_map(
 
 StdObjVar deref_copy(VarsState state, StdObjVar var) = deref_copy(vars_status(state), var);
 
-StdObjVar deref_copy([TrkObjVar -> VarStatus] status, <ReadOnlyObjVar, ImplArg, MembVar, QualMembVar, MembCopyVar, MembObjVar, PendingStateVar> var) = var;
+StdObjVar deref_copy([TrkObjVar -> VarStatus] status, <ReadOnlyObjVar, ImplArg, GenMembVar> var) = var;
 
 StdObjVar deref_copy([TrkObjVar -> VarStatus] status, TrkObjVar var) =
   match (status[var])
@@ -129,7 +135,7 @@ Bool var_group_is_live(VarsState state, TrkObjVar var, [TrkVar] live_vars) {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-(VarsState, Instr*) release_var(VarsState state, <TrkObjVar, ImplArg, MembVar, QualMembVar, MembCopyVar, MembObjVar, PendingStateVar> var) {
+(VarsState, Instr*) release_var(VarsState state, <TrkObjVar, ImplArg, GenMembVar> var) {
   return (state, ()) if var :: TrkObjVar and not is_tracked(state, var);
 
   vars_status = vars_status(state);
@@ -149,7 +155,11 @@ Bool var_group_is_live(VarsState state, TrkObjVar var, [TrkVar] live_vars) {
       // Tranferring the status of the original variable to the copy
       new_copy_status = vars_status[var];
     else
-      assert var :: <ImplArg, MembVar>; ## TO DO (PROBABLY): ADD QualMembVar AND MembObjVar
+      // assert var :: <ImplArg, AutoMembVar>; ## TO DO (PROBABLY): ADD QualMembVar AND MembObjVar
+      if not var :: <ImplArg, AutoMembVar>:
+        print "Internal error in release_var(), vars-state.ar:160";
+        print var;
+      ;
       // Since implicit parameters are not tracked, we just give the copy
       // the status of owner, since untracked variables own their reference
       ## IS THAT ALWAYS TRUE?
@@ -340,7 +350,7 @@ VarStatus reconcile(VarStatus status1, VarStatus status2) =
 
 (VarsState, Instr*) set_rc_var(VarsState state, ElemVar var) = (state, ());
 
-(VarsState, Instr*) set_rc_var(VarsState state, <MembVar, QualMembVar, MembCopyVar, MembObjVar, PendingStateVar> var) = release_var(state, var);
+(VarsState, Instr*) set_rc_var(VarsState state, GenMembVar var) = release_var(state, var);
 
 (VarsState, Instr*) set_rc_var(VarsState state, TrkObjVar var) = reset_var(state, var, owner);
 
@@ -353,13 +363,13 @@ VarStatus reconcile(VarStatus status1, VarStatus status2) =
 (VarsState, Instr*, Instr*) set_owned_var(VarsState state, ElemVar var, TrkItVar src_var, [TrkVar] live_vars) =
   (state, (), (add_ref(var)));
 
-(VarsState, Instr*, Instr*) set_owned_var(VarsState state, <MembVar, QualMembVar, MembCopyVar, MembObjVar, PendingStateVar> var, StdObjVar src_var, [TrkVar] live_vars) {
+(VarsState, Instr*, Instr*) set_owned_var(VarsState state, GenMembVar var, StdObjVar src_var, [TrkVar] live_vars) {
   interm_state, rel_instrs = release_var(state, var);
   final_state, swallow_instrs = swallow_var(interm_state, src_var, live_vars);
   return (final_state, rel_instrs & swallow_instrs, ());
 }
 
-(VarsState, Instr*, Instr*) set_owned_var(VarsState state, <MembVar, QualMembVar, MembCopyVar, MembObjVar, PendingStateVar> var, TrkItVar src_var, [TrkVar] live_vars) {
+(VarsState, Instr*, Instr*) set_owned_var(VarsState state, GenMembVar var, TrkItVar src_var, [TrkVar] live_vars) {
   fail; ## NOT NEEDED FOR NOW
 }
 
@@ -402,10 +412,10 @@ VarStatus reconcile(VarStatus status1, VarStatus status2) =
 
 (VarsState, Instr*) set_var_inline(VarsState state, ElemVar var) = (state, ());
 
-(VarsState, Instr*) set_var_inline(VarsState state, <MembVar, QualMembVar, MembCopyVar, MembObjVar, PendingStateVar> var) = release_var(state, var);
+(VarsState, Instr*) set_var_inline(VarsState state, GenMembVar var) = release_var(state, var);
 
 
-(VarsState, Instr*) swallow_var(VarsState state, <ReadOnlyObjVar, ImplArg, MembVar, QualMembVar, MembCopyVar, MembObjVar, PendingStateVar> var, [TrkVar] live_vars) = (state, (add_ref(var)));
+(VarsState, Instr*) swallow_var(VarsState state, <ReadOnlyObjVar, ImplArg, GenMembVar> var, [TrkVar] live_vars) = (state, (add_ref(var)));
 
 (VarsState, Instr*) swallow_var(VarsState state, Maybe[StdObjVar] maybe_var, [TrkVar] live_vars) =
   if maybe_var != nothing

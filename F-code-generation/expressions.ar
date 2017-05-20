@@ -1,8 +1,11 @@
-implicit program : Program, context : Context, next_var_gen : VarGen, options : CompilationOptions {
+implicit program : Program, context : Context, var_subst_map : [StdVar -> CaptVar],
+  cls_var_subst_map : [ClsVar -> CaptClsVar], next_var_gen : VarGen, options : CompilationOptions {
+
   Instr+ gen_eval_code(Expr expr, EvalDestVar res_var) =
+    var()               = (set_var(res_var, lookup(var_subst_map, expr, expr))),
     object()            |
     float_lit()         |
-    Var                 = (set_var(res_var, expr)),
+    Var                 = (set_var(res_var, expr)), // StdVar is dealt with separately
 
     set_expr(es?)       = gen_eval_code_for_set_expr(es, res_var),
     seq_expr(es?)       = gen_eval_code_for_seq_expr(es, res_var),
@@ -38,7 +41,7 @@ implicit program : Program, context : Context, next_var_gen : VarGen, options : 
     accessor()          = gen_eval_code_for_accessor_expr(expr.expr, expr.field, res_var),
     accessor_test()     = gen_eval_code_for_accessor_test_expr(expr.expr, expr.field, res_var),
 
-    output_is_def()     = (set_var(res_var, bool_obj(is_not_null(qual_auto_memb_var(expr.var, memb_var(expr.output)))))),
+    output_is_def()     = (set_var(res_var, bool_obj(is_not_null(qual_auto_memb_var(expr.var, auto_memb_var(expr.output)))))),
 
     auto_method_call()  = get_eval_code_for_auto_method_call(expr, res_var),
     db_method_call()    = get_eval_code_for_db_method_call(expr, res_var),
@@ -278,7 +281,7 @@ implicit program : Program, context : Context, next_var_gen : VarGen, options : 
       all_params = (
         if pars_are_first_order(i)
           then pars_info.exprs(par_packed_idxs[i])
-          else gen_non_scalar_par_code(cast_as_cls_expr(p))
+          else compiled_closure(cast_as_cls_expr(p))
       : p @ i <- params);
       core_call_code = (call_proc(res_var, name, all_params));
       return nonempty(pars_info.eval_code & core_call_code);

@@ -95,16 +95,17 @@ type DBSymbol       = db_symbol(Atom);
 type StdVar           = var(Atom);
 type FnPar            = fn_par(Nat);
 type ImplArg          = impl_arg(Atom);
-type CaptVar          = capt_var(Nat); ## DO I NEED THIS HERE? OR IS IT ONLY USED IN THE LAYER 3?
+
 type MembVar          = memb_var(Atom);
-type MembCopyVar      = memb_copy_var(Atom);      ## FIND BETTER NAME...
-type PendingStateVar  = pending_state_var(Atom);  ## FIND BETTER NAME...
+
+type AutoMembVar      = auto_memb_var(Atom);
+type AutoMembVarCopy  = auto_memb_var_copy(Atom);
 
 type QualDBMembVar    = qual_db_memb_var(db_var: AnyDBVar, memb_var: MembVar);
-type QualAutoMembVar  = qual_auto_memb_var(auto_var: AnyAutoVar, memb_var: MembVar);
-type QualMembVar      = QualDBMembVar, QualAutoMembVar;
+type QualAutoMembVar  = qual_auto_memb_var(auto_var: AnyAutoVar, memb_var: AutoMembVar);
 
-type AnyMembVar   = MembVar, QualMembVar;
+type AnyMembVar     = MembVar, QualDBMembVar;
+type AnyAutoMembVar = AutoMembVar, QualAutoMembVar;
 
 type LocAutoVar   = loc_auto_var(Atom);
 type MembAutoVar  = memb_auto_var(Atom);
@@ -115,15 +116,13 @@ type MembDBVar    = memb_db_var(Atom);
 type NestedDBVar  = nested_db_var(outer: AnyDBVar, inner: MembDBVar);
 type AnyDBVar     = LocDBVar, MembDBVar, NestedDBVar;
 
-type Var        = StdVar, FnPar, ImplArg, CaptVar, MembVar, QualMembVar, MembCopyVar, PendingStateVar;
+type Var        = StdVar, FnPar, ImplArg, AnyMembVar, AnyAutoMembVar, AutoMembVarCopy;
 
 type RelVar     = rel_var(Atom);
 type QualRelVar = qual_rel_var(db_var: AnyDBVar, rel_var: RelVar);
 type AnyRelVar  = RelVar, QualRelVar;
 
 type ClsVar     = cls_var(<Atom, Nat>);
-type CaptClsVar = capt_cls_var(Nat);
-type AnyClsVar  = ClsVar, CaptClsVar;
 
 type CondExpr = cond_expr(expr: Expr, cond: Expr);
 
@@ -158,7 +157,7 @@ type TernRelExpr    = tern_rel_expr([+(args: (Expr, Expr, Expr), cond: Expr?)]);
 type TagObjExpr     = tag_obj_expr(tag: Expr, obj: Expr);
 
 type FnCallExpr     = fn_call(name: FnFamilyId, args: AnyExpr*, impl_args: [ImplArg -> Expr]);
-type ClsCall        = cls_call(name: AnyClsVar, args: Expr+);
+type ClsCall        = cls_call(name: ClsVar, args: Expr+);
 type BuiltinCall    = builtin_call(name: BuiltIn, args: Expr+);
 
 type SizeExpr       = size_expr(coll: Expr);
@@ -202,15 +201,16 @@ type TernRelCompExpr  = tern_rel_comp(exprs: (Expr, Expr, Expr), source: Clause)
 type SeqCompExpr    = seq_comp(expr: Expr, vars: StdVar+, idx_var: StdVar?, src_expr: Expr, sel_expr: Expr?);
 type RangeCompExpr  = range_comp(expr: Expr, var: StdVar, bound_expr: Expr, inclusive: Bool, sel_expr: Expr?);
 
-type IsSetExpr      = is_set(<MembVar, QualAutoMembVar>);
+type IsSetExpr      = is_set(AnyAutoMembVar);
 
 ///////////////////////////////////////////////////////////////////////////////
 
-type ClsExpr  = AnyClsVar,
-                fn_ptr(name: FnFamilyId, arity: NzNat),
-                cls_expr(args: Maybe[StdVar]+, expr: Expr);
+type FnPtr    = fn_ptr(name: FnFamilyId, arity: NzNat);
+type ClsExpr  = cls_expr(args: Maybe[StdVar]+, expr: Expr);
 
-type AnyExpr  = Expr, ClsExpr;
+type AnyClsExpr = ClsVar, FnPtr, ClsExpr;
+
+type AnyExpr    = Expr, AnyClsExpr;
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -263,7 +263,7 @@ type AtomicFnStmt   = assignment_stmt(vars: StdVar+, value: Expr),
 
 type AtomicUpdateStmt = send_msg_stmt(target: MembDBVar, msg: Expr),
                         try_update_stmt(name: UpdateSymbol, args: Expr*),
-                        set_memb_var_stmt(var: PendingStateVar, value: Expr),
+                        set_memb_var_stmt(var: MembVar, value: Expr),
                         delete_stmt(var: RelVar, fields: Maybe[Expr]+),
                         insert_stmt(var: RelVar, fields: Expr+, force: Bool);
 
@@ -341,7 +341,7 @@ type Handler  = handler(type: NeType, body: Statement*);
 
 type TimeVaryingCond  = time_varying_boolean_cond(expr: Expr, time_expr: TimeExpr),
                         time_varying_unchanged_cond(expr: Expr, time_expr: TimeExpr),
-                        time_varying_since_cond(signals: [+MembVar], time_expr: TimeExpr, starts_at_time_0: Bool);
+                        time_varying_since_cond(signals: [+AutoMembVar], time_expr: TimeExpr, starts_at_time_0: Bool);
 
 type Automaton  = automaton(
                     name:           AutoSymbol,

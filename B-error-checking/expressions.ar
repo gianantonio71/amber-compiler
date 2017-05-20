@@ -24,7 +24,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
     FnPar               = {assert in(expr, def_vars); return ();},
     const_or_var()      = (),
     cls_par()           = (),
-    memb_copy_var()     = (),
+    auto_memb_var_copy()= (),
     impl_args_call()    = (),
     unary_op_call()     = expr_wf_errors(expr.expr, def_vars),
     binary_op_call()    = expr_wf_errors(expr.left_arg, def_vars) & expr_wf_errors(expr.right_arg, def_vars),
@@ -101,7 +101,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
 
   ExprWFError* expr_local_wf_errors(SynExpr expr, [DefVar] def_vars) =
     const_or_var(a?)    = const_or_var_local_wf_errors(a, def_vars),
-    memb_copy_var(a?)   = memb_copy_var_local_wf_errors(a),
+    auto_memb_var_copy(a?)  = auto_memb_var_copy_local_wf_errors(a),
     accessor()          = if expr :: AccessorChain then accessor_local_wf_errors(expr, def_vars) else (),
     accessor_test()     = if expr :: <accessor_test(expr: IdChain, field: Atom)> ## BAD BAD: WORKING AROUND TYPE CHECKING "BUG"
                             then accessor_test_local_wf_errors(expr, def_vars)
@@ -215,9 +215,9 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
   }
 
 
-  ExprWFError* memb_copy_var_local_wf_errors(Atom symbol) {
+  ExprWFError* auto_memb_var_copy_local_wf_errors(Atom symbol) {
     resols = resolve_by_priority_as_expr((symbol), []);
-    return (ambiguous_expr(memb_copy_var(symbol), resols)) if |resols| > 1;
+    return (ambiguous_expr(auto_memb_var_copy(symbol), resols)) if |resols| > 1;
     if resols == []:
       invalid_resols = resolve_symbol_chain((symbol), []);
       return if invalid_resols != []
@@ -225,7 +225,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
         else (undef_var_or_const(symbol));
     ;
     resol = only(resols);
-    if not resol :: MembVar:
+    if not resol :: AutoMembVar:
       maybe_auto_def = if artifact :: SynAutoDef then just(artifact) else nothing;
       return (not_a_memb_copy_var(symbol, maybe_auto_def));
     ;
@@ -293,7 +293,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
       (invalid_expr(expr));
 
     // This is just not supposed to happen. An accessor cannot resolve to an unqualified variable
-    ExprWFError* wf_errors(<StdVar, ImplArg, MembVar> resol, SynExpr expr) {fail;}
+    ExprWFError* wf_errors(<StdVar, ImplArg, MembVar, AutoMembVar> resol, SynExpr expr) {fail;}
   }
 
 
@@ -335,7 +335,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
     return (invalid_expr(syn_is_set(var_id))) if not artifact_is_auto_def;
 
     resol = only(resolve_by_priority_as_expr((var_id), def_vars));
-    is_discrete = resol :: MembVar and signal_is_discrete(self_auto_type, resol);
+    is_discrete = resol :: AutoMembVar and signal_is_discrete(self_auto_type, resol);
     return (not_a_discrete_signal(var_id, auto_defs_by_id[self_auto_type]) if not is_discrete);
   }
 
