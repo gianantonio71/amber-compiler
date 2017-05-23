@@ -56,6 +56,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     cast_expr()         = pre_typecheck_cast_expr(expr.expr, expr.type, env),
     accessor()          = pre_typecheck_accessor_expr(expr.expr, expr.field, env),
     accessor_test()     = typecheck(expr.expr, type_dot_access_target, env),
+    auto_method_call()  = fully_typecheck_auto_method_call(expr, exp_type, env),
     db_method_call()    = fully_typecheck_db_method_call(expr, exp_type, env),
     if_expr()           = fully_typecheck_if_expr(expr.cond, expr.then, expr.else, exp_type, env),
     match_expr()        = fully_typecheck_match_expr(expr.exprs, expr.cases, exp_type, env),
@@ -66,7 +67,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     bin_rel_comp()      |
     tern_rel_comp()     = pre_typecheck_rel_comp(expr.exprs, expr.source, env),
     seq_comp()          = pre_typecheck_seq_comp_expr(expr, env),
-    range_comp()        = pre_typecheck_range_comp_expr(expr, env);
+    range_comp()        = pre_typecheck_range_comp_expr(expr, env),
+    is_set()            = [];
 
 
 
@@ -281,6 +283,58 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     target_type = expr_type(expr, env);
     return [] if target_type == empty_type;
     return [may_not_have_field(target_type, field) if not always_has_field(target_type, field)];
+  }
+
+
+  [TypeCheckingError] fully_typecheck_auto_method_call(AutoMethodCall expr, Type exp_type, [EnvVar -> Type] env) {
+    errs = seq_union((typecheck(a, type_any, env) : a <- expr.args));
+    return errs if errs != [];
+
+    args_types = (expr_type(a, env) : a <- expr.args);
+    automaton = cast_automaton(context);
+    auto_type = if expr.var? then automaton.nested_autos[expr.var].type else automaton.name;
+    sgn_set = method_signatures(auto_type, expr.name, |args_types|);
+
+    for s <- rand_sort(sgn_set.sgns):
+      assert s.impl_args == [] and s.constrs == [] and |args_types| == |s.args|;
+      types = zip(args_types, s.args);
+      ## REMOVE THE THREE CALLS TO cast_type()
+      if all((is_subset(at, cast_type(ft)) : at, ft <- types)):
+        return [invalid_return_type(s.ret_type, exp_type) if not is_subset(s.ret_type, exp_type)];
+      elif none((are_ptype_disjoint(at, cast_type(ft)) : at, ft <- types)):
+        return [invalid_return_type(s.ret_type, exp_type)] if not is_subset(s.ret_type, exp_type);
+      ;
+    ;
+    for s <- rand_sort(sgn_set.agg_sgns):
+      return [] if all((is_subset(at, cast_type(ft)) : at, ft <- zip(args_types, s.args)));
+    ;
+    return [no_disp_db_method(expr.name, args_types, exp_type, sgn_set.sgns)];
+  }
+
+
+  [TypeCheckingError] fully_typecheck_db_method_call(DBMethodCall expr, Type exp_type, [EnvVar -> Type] env) {
+    errs = seq_union((typecheck(a, type_any, env) : a <- expr.args));
+    return errs if errs != [];
+
+    args_types = (expr_type(a, env) : a <- expr.args);
+    database = cast_database(context);
+    db_type = if expr.var? then database.nested_dbs[expr.var] else database.name;
+    sgn_set = method_signatures(db_type, expr.name, |args_types|);
+
+    for s <- rand_sort(sgn_set.sgns):
+      assert s.impl_args == [] and s.constrs == [] and |args_types| == |s.args|;
+      types = zip(args_types, s.args);
+      ## REMOVE THE THREE CALLS TO cast_type()
+      if all((is_subset(at, cast_type(ft)) : at, ft <- types)):
+        return [invalid_return_type(s.ret_type, exp_type) if not is_subset(s.ret_type, exp_type)];
+      elif none((are_ptype_disjoint(at, cast_type(ft)) : at, ft <- types)):
+        return [invalid_return_type(s.ret_type, exp_type)] if not is_subset(s.ret_type, exp_type);
+      ;
+    ;
+    for s <- rand_sort(sgn_set.agg_sgns):
+      return [] if all((is_subset(at, cast_type(ft)) : at, ft <- zip(args_types, s.args)));
+    ;
+    return [no_disp_db_method(expr.name, args_types, exp_type, sgn_set.sgns)];
   }
 
 

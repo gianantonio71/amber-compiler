@@ -18,14 +18,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     tag_obj_expr()        = tag_obj_expr_type(expr.tag, expr.obj, env),
     var()                 |
     fn_par()              |
-    impl_arg()            = env[expr],
-    memb_var()            |
-    qual_db_memb_var()    |
-    pending_state_var()   |
-    auto_memb_var()       |
-    qual_auto_memb_var()  |
-    auto_memb_var_copy()  |
-    pending_input_var()   = memb_var_type(expr),
+    impl_arg()            |
+    auto_memb_var()       = env[expr],
+    auto_memb_var_copy()  = env[auto_memb_var(bare_id(expr))],
+    memb_var()            = memb_var_type(expr),
+    qual_db_memb_var()    = qual_db_memb_var_type(expr),
+    qual_auto_memb_var()  = qual_auto_memb_var_type(expr),
     fn_call()             = fn_call_expr_type(expr.name, expr.args, expr.impl_args, env),
     cls_call()            = closures[cast_cls_var(expr.name)].out_type,
     builtin_call()        = builtin_call_expr_type(expr.name, expr.args, env),
@@ -43,6 +41,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     cast_expr()           = expr.type,
     accessor()            = accessor_expr_type(expr.expr, expr.field, env),
     accessor_test()       = type_bool,
+    auto_method_call()    = auto_method_call_expr_type(expr, env),
     db_method_call()      = db_method_call_expr_type(expr, env),
     if_expr()             = if_expr_type(expr.cond, expr.then, expr.else, env),
     match_expr()          = match_expr_type(expr.exprs, expr.cases, env),
@@ -53,42 +52,33 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     bin_rel_comp()        = bin_rel_comp_expr_type(expr.exprs, expr.source, env),
     tern_rel_comp()       = tern_rel_comp_expr_type(expr.exprs, expr.source, env),
     seq_comp()            = seq_comp_expr_type(expr, env),
-    range_comp()          = range_comp_expr_type(expr, env);
+    range_comp()          = range_comp_expr_type(expr, env),
+    is_set()              = type_bool;
 
 
   Type memb_var_type(MembVar var) = match (context)
     data_base() = context.state_vars[var].type;
 
 
-  Type memb_var_type(QualDBMembVar var) {
-    db_type = db_var_type(var.db_var);
+  Type qual_db_memb_var_type(QualDBMembVar var) {
+    db_type = var_type(var.db_var);
     db = data_bases_by_id[db_type];
     return db.state_vars[var.memb_var].type;
   }
 
 
-  Type memb_var_type(PendingStateVar var) {
-    fail;
-  }
-
-
-  Type memb_var_type(AutoMembVar var) {
-    fail;
-  }
-
-
-  Type memb_var_type(QualAutoMembVar var) {
-    fail;
-  }
-
-
-  Type memb_var_type(AutoMembVarCopy var) {
-    fail;
-  }
-
-
-  Type memb_var_type(PendingInputVar var) {
-    fail;
+  Type qual_auto_memb_var_type(QualAutoMembVar var) {
+    auto_type = var_type(var.auto_var);
+    auto = automata_by_id[auto_type];
+    var_id = bare_id(var.memb_var);
+    if auto.outputs(var_id, *):
+      return auto.outputs[var_id].type;
+    elif auto.state(var_id, *):
+      return auto.state[var_id].type;
+    else
+      ## WHAT ELSE IS ACCESSIBLE FROM INSIDE A PROCEDURE?
+      return auto.inputs[var_id].type;
+    ;
   }
 
 
@@ -323,11 +313,24 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
+  Type auto_method_call_expr_type(AutoMethodCall expr, [EnvVar -> Type] env) {
+    args_types = (expr_type(a, env) : a <- expr.args);
+    automaton = cast_automaton(context);
+    auto_type = if expr.var? then automaton.nested_autos[expr.var].type else automaton.name;
+    sgn_set = method_signatures(auto_type, expr.name, |args_types|);
+    types = [
+      s.ret_type : s <- sgn_set.sgns,
+        not (at, ft <~ zip(args_types, s.args) : are_ptype_disjoint(at, cast_type(ft))) ## REMOVE THE cast_type() CALL
+    ];
+    return union_superset(types);
+  }
+
+
   Type db_method_call_expr_type(DBMethodCall expr, [EnvVar -> Type] env) {
     args_types = (expr_type(a, env) : a <- expr.args);
     database = cast_database(context);
     db_type = if expr.var? then database.nested_dbs[expr.var] else database.name;
-    sgn_set = signatures_by_db[db_type][(expr.name, |args_types|)];
+    sgn_set = method_signatures(db_type, expr.name, |args_types|);
     types = [
       s.ret_type : s <- sgn_set.sgns,
         not (at, ft <~ zip(args_types, s.args) : are_ptype_disjoint(at, cast_type(ft))) ## REMOVE THE cast_type() CALL

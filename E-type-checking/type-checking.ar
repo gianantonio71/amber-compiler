@@ -2,16 +2,17 @@
 ## NAME AND ARITY ALL IMPLICIT PARAMETERS HAVE THE SAME TYPE, AND
 ## THAT ALL CLOSURE PARAMETERS HAVE EXACTLY THE SAME TYPE.
 
-type EnvVar   = StdVar, FnPar, ImplArg;
+type EnvVar   = StdVar, FnPar, ImplArg, AutoMembVar;
 type LocVar2  = StdVar, FnPar;
 
 
-[<Function, Database, Method, Update, Handler> -> [+TypeCheckingError]] typecheck(Program prg) {
+[<Function, Database, Method, Update, Handler, Automaton> -> [+TypeCheckingError]] typecheck(Program prg) {
   let program = prg, typedefs = prg.typedefs:
     fn_errs = [fd -> es : fd <- prg.fndefs, es = typecheck_function(fd), es != []];
     db_errs = merge([typecheck_database(db) : db <- prg.data_bases]);
+    ra_errs = merge([typecheck_automaton(auto) : auto <- prg.auto_defs]);
   ;
-  return fn_errs & db_errs;
+  return fn_errs & db_errs & ra_errs;
 }
 
 
@@ -110,6 +111,19 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       args_types = tern_rel_args_supertypes(expr_type(src, env));
       return seq_union((if a != nothing then typecheck(value(a), t, env) else [] : a, t <- zip(args, args_types)));
     }
+  }
+
+
+  [TypeCheckingError] typecheck_relvar_clause(StdVar+ vars, AnyRelVar rel_var, Maybe[Expr]+ args, [EnvVar -> Type] env) {
+    assert |vars| == count(args, $ == nothing);
+
+    errs = seq_union((typecheck(value(a), type_any, env) : a <- args, a != nothing));
+    return errs if errs != [];
+
+    rv_sgns = relvar_signatures(rel_var);
+    assert not (s <- rv_sgns : |s| != |args|); ## THIS SHOULD NOT BE AN ASSERTION, BUT A REGULAR WELL-FORMEDNESS CHECK
+
+    return [];
   }
 
 

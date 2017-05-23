@@ -31,6 +31,9 @@ type TypeCheckingError =
   loop_did_not_converge(iteractions: NzNat),
   ptrn_cannot_match_type(pattern: Pattern, type: Type),
 
+  auto_typechecking_cycle(name: AutoSymbol, signals: [+Atom]),
+  invalid_output_type(name: Atom, actual_type: Type, expected_type: Type),
+
   internal_typechecking_error,
 
   annotated_error(error: TypeCheckingError, anchor: Any),
@@ -132,6 +135,10 @@ TypeCheckingError invalid_rel_arg_type(Nat i, Type at, Type et) = invalid_rel_ar
 TypeCheckingError loop_did_not_converge(NzNat nis) = loop_did_not_converge(iteractions: nis);
 
 TypeCheckingError ptrn_cannot_match_type(Pattern p, Type t) = add_anchor_if_needed(ptrn_cannot_match_type(pattern: p, type: t), p);
+
+TypeCheckingError auto_typechecking_cycle(AutoSymbol n, [+Atom] ss) = auto_typechecking_cycle(name: n, signals: ss);
+
+TypeCheckingError invalid_output_type(Atom n, Type at, Type et) = invalid_output_type(name: n, actual_type: at, expected_type: et);
 
 TypeCheckingError internal_typechecking_error = :internal_typechecking_error;
 
@@ -248,6 +255,14 @@ String* create_error_msg(TypeCheckingError err) =
                                         ),
   loop_did_not_converge()             = ("Cannot infer types of variables updated in loop"),
   ptrn_cannot_match_type()            = ("Pattern cannot match type: " & user_repr(err.pattern)),
+
+  auto_typechecking_cycle()           = ( "Typechecking loop in reactive automaton " & user_repr(err.name),
+                                          "Involved signals: " & append((_str_(d) : d <- rand_sort(err.signals)), ", ")
+                                        ),
+  invalid_output_type()               = ( "Invalid output type: " & _str_(err.name),
+                                          "  Expected type: " & user_repr(err.expected_type),
+                                          "  Actual type: " & user_repr(err.actual_type)
+                                        ),
 
   internal_typechecking_error         = ("Internal typechecking error"),
 

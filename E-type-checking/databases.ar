@@ -1,12 +1,3 @@
-implicit typedefs : [TypeName -> NeType] {
-  [(MethodSymbol, Nat) -> SgnSet] database_method_signatures(Database db) {
-    signatures = merge_values([[(m.name, |m.args|) -> signature(m)] : m <- db.methods]);
-    return [n -> preprocess_signatures(ss) : n, ss <- signatures];
-  }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
 implicit program : Program, typedefs : [TypeName -> NeType] {
   [<Database, Method, Update, Handler> -> [+TypeCheckingError]] typecheck_database(Database db) {
     let context = db:
@@ -42,48 +33,4 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Database 
 
   [TypeCheckingError] typecheck_db_expr(Expr expr, Type exp_type, [EnvVar -> Type] env, [[LocVar2]] var_aliases) =
     typecheck(expr, exp_type, env, var_aliases = var_aliases, typed_vars = []);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-implicit program : Program, typedefs : [TypeName -> NeType], context : Context, var_aliases : [[LocVar2]], typed_vars : [StdVar -> NeType] {
-  [TypeCheckingError] fully_typecheck_db_method_call(DBMethodCall expr, Type exp_type, [EnvVar -> Type] env) {
-    errs = seq_union((typecheck(a, type_any, env) : a <- expr.args));
-    return errs if errs != [];
-
-    args_types = (expr_type(a, env) : a <- expr.args);
-    database = cast_database(context);
-    db_type = if expr.var? then database.nested_dbs[expr.var] else context.name;
-    sgn_set = signatures_by_db[db_type][(expr.name, |args_types|)];
-
-    for s <- rand_sort(sgn_set.sgns):
-      assert s.impl_args == [] and s.constrs == [] and |args_types| == |s.args|;
-      types = zip(args_types, s.args);
-      ## REMOVE THE THREE CALLS TO cast_type()
-      if all((is_subset(at, cast_type(ft)) : at, ft <- types)):
-        return [invalid_return_type(s.ret_type, exp_type) if not is_subset(s.ret_type, exp_type)];
-      elif none((are_ptype_disjoint(at, cast_type(ft)) : at, ft <- types)):
-        return [invalid_return_type(s.ret_type, exp_type)] if not is_subset(s.ret_type, exp_type);
-      ;
-    ;
-    for s <- rand_sort(sgn_set.agg_sgns):
-      return [] if all((is_subset(at, cast_type(ft)) : at, ft <- zip(args_types, s.args)));
-    ;
-    return [no_disp_db_method(expr.name, args_types, exp_type, sgn_set.sgns)];
-  }
-
-  //////////////////////////////////////////////////////////////////////////////
-  //////////////////////////////////////////////////////////////////////////////
-
-  [TypeCheckingError] typecheck_relvar_clause(StdVar+ vars, AnyRelVar rel_var, Maybe[Expr]+ args, [EnvVar -> Type] env) {
-    assert |vars| == count(args, $ == nothing);
-
-    errs = seq_union((typecheck(value(a), type_any, env) : a <- args, a != nothing));
-    return errs if errs != [];
-
-    rv_sgns = relvar_signatures(rel_var);
-    assert not (s <- rv_sgns : |s| != |args|); ## THIS SHOULD NO BE AN ASSERTION, BUT A REGULAR WELL-FORMEDNESS CHECK
-
-    return [];
-  }
 }

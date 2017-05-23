@@ -9,14 +9,23 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
   }
 
 
-  [DBSymbol -> [(MethodSymbol, Nat) -> SgnSet]] signatures_by_db = [
-    db.name -> database_method_signatures(db) : db <- program.data_bases
-  ];
+  SgnSet method_signatures(<AutoSymbol, DBSymbol> type, MethodSymbol name, Nat arity) {
+    return signatures[type][(name, arity)];
+
+    [<AutoSymbol, DBSymbol> -> [(MethodSymbol, Nat) -> SgnSet]] signatures = [
+        auto_or_db.name -> {
+          sgns = merge_values([[(m.name, |m.args|) -> signature(m)] : m <- auto_or_db.methods]);
+          return [n -> preprocess_signatures(ss) : n, ss <- sgns];
+        }
+      : auto_or_db <- program.auto_defs | auto_or_db <- program.data_bases
+    ];
+  }
 
 
   [DBSymbol -> Type] msg_type_by_db = [
     db.name -> union_superset([h.type : h <- db.handlers]) : db <- program.data_bases
   ];
+
 
   [DBSymbol -> [UpdateSymbol -> [+NeType*]]] updates_signatures_by_db_and_update_name_private = [
     db.name -> merge_values([[u.name -> (t : t, unused_var <- u.args)] : u <- db.updates])
@@ -68,7 +77,7 @@ implicit program : Program, context : Context {
 
 
   [+NeType+] relvar_signatures(QualRelVar relvar) {
-    db_type = db_var_type(relvar.db_var);
+    db_type = var_type(relvar.db_var);
     db = data_bases_by_id[db_type];
     return db.rel_vars[relvar.rel_var].signatures;
   }
@@ -79,23 +88,10 @@ implicit program : Program, context : Context {
 
 
   [[+Nat]] relvar_keys(QualRelVar relvar) {
-    db_type = db_var_type(relvar.db_var);
+    db_type = var_type(relvar.db_var);
     db = data_bases_by_id[db_type];
     return db.rel_vars[relvar.rel_var].keys;
   }
-
-
-  DBSymbol db_var_type(MembDBVar var) = match (context)
-    data_base()   = context.nested_dbs[var];
-
-
-  DBSymbol db_var_type(LocDBVar var) = {fail;};
-    // match (context)
-    //   procedure()    = context.db_vars[var];
-
-
-  DBSymbol db_var_type(NestedDBVar var) = match (context)
-    data_base()   = data_bases_by_id[db_var_type(var.outer)].nested_dbs[var.inner];
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -133,6 +129,10 @@ implicit program : Program {
 
   //////////////////////////////////////////////////////////////////////////////
 
+  [AutoSymbol -> Automaton] automata_by_id = [auto.name -> auto : auto <- program.auto_defs];
+
+  //////////////////////////////////////////////////////////////////////////////
+
   [DBSymbol -> [RelVar -> Table]] tables_by_db = [
     db.name -> value_stores_and_tables(database=db)(1) : db <- program.data_bases
   ];
@@ -144,7 +144,7 @@ implicit program : Program {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-implicit context : Context {
+implicit program : Program, context : Context {
   AutoSymbol var_type(MembAutoVar var) =
     match (context)
       automaton()   = context.nested_autos[bare_id(var)].type;
@@ -166,7 +166,7 @@ implicit context : Context {
       procedure()    = context.db_vars[var];
 
 
-  DBSymbol var_type(NestedDBVar var) = {fail;}; ## IMPLEMENT IMPLEMENT IMPLEMENT
+  DBSymbol var_type(NestedDBVar var) = data_bases_by_id[var_type(var.outer)].nested_dbs[var.inner];
 
 
   AutoSymbol this_auto_symbol =
