@@ -1,66 +1,76 @@
-Maybe[WFError] typedef_wf_errors(SynAnyTypedef tdef, [BasicTypeSymbol -> [+Nat]] type_arity_map) {
-  errs = type_wf_errors(tdef.type, type_arity_map=type_arity_map, type_vars=just(type_vars(tdef)));
-  return if errs == () then nothing else just(typedef_errors(tdef, errs));
-}
-
-
-TypeWFError* type_wf_errors(SynType type, [BasicTypeSymbol -> [+Nat]] type_arity_map, Bool fully_instantiated) {
-  errs = type_wf_errors(type, type_arity_map);
-  if fully_instantiated:
-    vars = syn_type_vars(type);
-    errs = (errs | type_vars_not_allowed(type, vars)) if vars != [];
-  ;
-  return errs;
-}
-
-
-TypeWFError* type_wf_errors(SynType type, [BasicTypeSymbol -> [+Nat]] type_arity_map) =
-  type_wf_errors(type, type_arity_map=type_arity_map, type_vars=nothing);
-
-
-TypeWFError* type_wf_errors(SynClsType type, [BasicTypeSymbol -> [+Nat]] type_arity_map) =
-  join((type_wf_errors(t, type_arity_map) : t <- type.in_types)) &
-  type_wf_errors(type.out_type, type_arity_map);
-
-
-implicit type_arity_map : [BasicTypeSymbol -> [+Nat]], type_vars : Maybe[[TypeVar]] {
-  TypeWFError* type_wf_errors(SynType type) =
-    LeafType            = (),
-    syn_int_range()     = (invalid_int_range(type) if type.min > type.max),
-    type_ref(ts?)       = type_symb_wf_errors(ts),
-    TypeVar             = (undef_type_var(type) if type_vars != nothing and not in(type, value(type_vars))),
-    ne_seq_type()       = type_wf_errors(type.elem_type),
-    ne_set_type()       = type_wf_errors(type.elem_type),
-    ne_map_type()       = type_wf_errors(type.key_type) & type_wf_errors(type.value_type),
-    ne_bin_rel_type()   |
-    ne_tern_rel_type()  = join((join((type_wf_errors(t) : t <- s)) : s <- type.signatures)),
-    record_type(fs?)    = record_type_wf_errors(fs),
-    tuple_type(ts?)     = join((type_wf_errors(t) : t <- ts)),
-    tag_obj_type()      = (invalid_tag_type(type.tag_type) if not type.tag_type :: TagType) & type_wf_errors(type.obj_type),
-    union_type(ts?)     = union_type_wf_errors(ts);
-
-
-  TypeWFError* type_symb_wf_errors(SynTypeSymbol type_symb) {
-    basic_type_symb, arity = match (type_symb)
-      BasicTypeSymbol   = (type_symb, 0),
-      SynParTypeSymbol  = (type_symb.symbol, arity(type_symb));
-    return (undef_type(basic_type_symb)) if not type_arity_map(basic_type_symb, *);
-    arities = type_arity_map[basic_type_symb];
-    return (undef_type_arity(basic_type_symb, arity, arities) if not in(arity, arities));
+implicit syn_prg : SynPrg {
+  Maybe[WFError] typedef_wf_errors(SynAnyTypedef tdef) {
+    tvars = type_vars(tdef);
+    let type_arity_map=type_arity_map, schemas = []:
+      errs = type_wf_errors(tdef.type, (undef_type_var($) if not tvars($)));
+    ;
+    return if errs == () then nothing else just(typedef_errors(tdef, errs));
   }
 
 
-  TypeWFError* record_type_wf_errors(SynRecordField+ fields) {
+  // No schemas, not protocols and no type variables
+  TypeWFError* plain_type_wf_errors(SynType type) =
+    type_wf_errors(type, (type_vars_not_allowed(type, $)), type_arity_map=type_arity_map, schemas=[]);
+
+  // Schemas, but not protocols nor type variables
+  TypeWFError* schema_aware_type_wf_errors(SynType type) =
+    type_wf_errors(type, (type_vars_not_allowed(type, $)), type_arity_map=type_arity_map, schemas=schema_names);
+
+  // Anything goes
+  TypeWFError* arbitrary_type_wf_errors(SynType type) =
+    type_wf_errors(type, (), type_arity_map=type_prot_arity_map, schemas=schema_names);
+
+  TypeWFError* arbitrary_type_wf_errors(SynClsType type) =
+    join((arbitrary_type_wf_errors(t) : t <- type.in_types)) & arbitrary_type_wf_errors(type.out_type);
+}
+
+
+implicit type_arity_map : [BasicTypeSymbol -> [+Nat]], schemas : [Atom] {
+  TypeWFError* type_wf_errors(SynType type, (TypeVar -> TypeWFError*) typevar_wf_errors) =
+    LeafType            = (),
+    syn_int_range()     = (invalid_int_range(type) if type.min > type.max),
+    type_ref(ts?)       = type_symb_wf_errors(ts, typevar_wf_errors),
+    TypeVar             = typevar_wf_errors(type),
+    ne_seq_type()       = type_wf_errors(type.elem_type, typevar_wf_errors),
+    ne_set_type()       = type_wf_errors(type.elem_type, typevar_wf_errors),
+    ne_map_type()       = type_wf_errors(type.key_type, typevar_wf_errors) &
+                          type_wf_errors(type.value_type, typevar_wf_errors),
+    ne_bin_rel_type()   |
+    ne_tern_rel_type()  = join((join((type_wf_errors(t, typevar_wf_errors) : t <- s)) : s <- type.signatures)),
+    record_type(fs?)    = record_type_wf_errors(fs, typevar_wf_errors),
+    tuple_type(ts?)     = join((type_wf_errors(t, typevar_wf_errors) : t <- ts)),
+    tag_obj_type()      = (invalid_tag_type(type.tag_type) if not type.tag_type :: TagType) &
+                          type_wf_errors(type.obj_type, typevar_wf_errors),
+    union_type(ts?)     = union_type_wf_errors(ts, typevar_wf_errors);
+
+
+  TypeWFError* type_symb_wf_errors(BasicTypeSymbol type_symb, (TypeVar -> TypeWFError*) typevar_wf_errors) {
+    bare_id = match (type_symb) type_symbol(id?) = id;
+    is_def = type_arity_map(type_symb, *) or schemas(bare_id);
+    return (undef_type(type_symb) if not is_def);
+  }
+
+
+  TypeWFError* type_symb_wf_errors(SynParTypeSymbol type_symb, (TypeVar -> TypeWFError*) typevar_wf_errors) {
+    return (undef_type(type_symb.symbol)) if not type_arity_map(type_symb.symbol, *);
+    arity = arity(type_symb);
+    arities = type_arity_map[type_symb.symbol];
+    return (undef_type_arity(type_symb.symbol, arity, arities) if not in(arity, arities));
+    ## CHECK ALL THE TYPE PARAMETERS...
+  }
+
+
+  TypeWFError* record_type_wf_errors(SynRecordField+ fields, (TypeVar -> TypeWFError*) typevar_wf_errors) {
     errs = ();
     for f1 @ i1 <- fields ; f2 <- right_subseq(fields, i1+1):
       errs = (errs | dupl_record_field(f1, f2)) if f1.label == f2.label;
     ;
-    return errs & join((type_wf_errors(f.type) : f <- fields));
+    return errs & join((type_wf_errors(f.type, typevar_wf_errors) : f <- fields));
   }
 
 
-  TypeWFError* union_type_wf_errors(SynType+ types) {
+  TypeWFError* union_type_wf_errors(SynType+ types, (TypeVar -> TypeWFError*) typevar_wf_errors) {
     errs = if |types| > 1 then (type_var_in_union(t) : t <- types, t :: TypeVar) else ();
-    return errs & join((type_wf_errors(t) : t <- types));
+    return errs & join((type_wf_errors(t, typevar_wf_errors) : t <- types));
   }
 }

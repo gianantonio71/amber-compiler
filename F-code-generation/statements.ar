@@ -26,7 +26,7 @@ implicit program : Program, context : Context, var_subst_map : [StdVar -> CaptVa
     for_stmt()                = gen_code_for_for_stmt(if stmt.var? then just(stmt.var) else nothing, stmt.start_val, stmt.end_val, stmt.end_val_incl, stmt.body, res_var),
     foreach_stmt()            = gen_code_for_foreach_stmt(stmt.vars, if stmt.idx_var? then just(stmt.idx_var) else nothing, stmt.values, stmt.body, res_var),
     return_stmt               = (exit_block),
-    proc_call_stmt()          = gen_code_for_proc_call_stmt(if stmt.res_var? then just(stmt.res_var) else nothing, stmt.proc_name, stmt.params),
+    proc_call_stmt()          = gen_code_for_proc_call_stmt(if stmt.res_var? then just(stmt.res_var) else nothing, stmt.proc_name, stmt.args),
 
     send_msg_stmt()           = gen_code_for_send_msg_stmt(stmt.target, stmt.msg),
     try_update_stmt()         = gen_code_for_try_update_stmt(stmt.name, stmt.args),
@@ -164,15 +164,17 @@ implicit program : Program, context : Context, var_subst_map : [StdVar -> CaptVa
   Instr+ gen_code_for_send_msg_ctrl_stmt(StdVar res_var, LocDBVar db_var, Expr msg) {
     eval_info = gen_eval_info(msg);
     type = var_type(db_var);
-    send_msg_instr = send_msg(db_var, type, eval_info.expr, true, res_var);
-    return (eval_info.eval_code | send_msg_instr);
+    tmp_bool_var, unused_var = next_bool_var(next_var_gen);
+    send_msg_instr = send_msg(db_var, type, eval_info.expr, true, tmp_bool_var);
+    return (eval_info.eval_code | send_msg_instr, set_var(res_var, bool_obj(tmp_bool_var)));
   }
 
 
   Instr+ gen_code_for_restore_state_ctrl_stmt(StdVar res_var, LocDBVar db_var, Expr state) {
     eval_info = gen_eval_info(state);
-    set_state_instr = set_state(res_var, eval_info.expr, db_var, var_type(db_var));
-    return (eval_info.eval_code | set_state_instr);
+    tmp_bool_var, unused_var = next_bool_var(next_var_gen);
+    set_state_instr = set_state(tmp_bool_var, eval_info.expr, db_var, var_type(db_var));
+    return (eval_info.eval_code | set_state_instr, set_var(res_var, bool_obj(tmp_bool_var)));
   }
 
 

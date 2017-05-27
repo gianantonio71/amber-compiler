@@ -7,16 +7,17 @@
 
 
 [StdVar] syn_new_vars(SynStmt stmt) =
-  assignment_stmt()       = set(stmt.vars),
-  if_stmt()               = { bodies = [b.body : b <~ stmt.branches] & [stmt.else];
-                              return intersection([syn_new_vars(ss) : ss <- bodies, syn_may_fall_through(ss)]);
-                            },
-  let_stmt()              = syn_new_vars(stmt.body),
-  proc_call_stmt()        = [stmt.res_var if stmt.res_var?],
-  apply_ctrl_stmt()       = [var(stmt.res_var)],
-  send_msg_ctrl_stmt()    = [var(stmt.res_var)],
-  read_state_ctrl_stmt()  = [var(stmt.res_var)],
-  _                       = [];
+  assignment_stmt()         = set(stmt.vars),
+  if_stmt()                 = { bodies = [b.body : b <~ stmt.branches] & [stmt.else];
+                                return intersection([syn_new_vars(ss) : ss <- bodies, syn_may_fall_through(ss)]);
+                              },
+  let_stmt()                = syn_new_vars(stmt.body),
+  proc_call_stmt()          = [stmt.res_var if stmt.res_var?],
+  apply_ctrl_stmt()         |
+  send_msg_ctrl_stmt()      |
+  read_state_ctrl_stmt()    |
+  restore_state_ctrl_stmt() = [var(stmt.res_var)],
+  _                         = [];
 
 
 [StdVar] syn_new_vars(<SynStmt, SynClause>* objs) = seq_union((syn_new_vars(obj) : obj <- objs));
@@ -62,12 +63,22 @@
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-NeType desugar_type(SynType type) =
+NeType desugar_plain_type(SynType type) =
   desugar_type(
     type,
     match ($)
-      type_var() = $,
-      type_ref() = desugar_type_ref($, desugar_type)
+      // type_var() = {fail;},
+      type_ref() = desugar_type_ref($, desugar_plain_type)
+  );
+
+
+NeType desugar_schema_aware_type(SynType type, [Atom] schemas) =
+  desugar_type(
+    type,
+    match ($)
+      // type_var()                    = {fail;},
+      type_ref(type_symbol(a?) ts?) = type_ref(if schemas(a) then schema_type_symbol(a) else ts),
+      type_ref(par_type_symbol())   = desugar_type_ref($, desugar_schema_aware_type($, schemas))
   );
 
 
@@ -80,14 +91,26 @@ NeType desugar_par_type_def(SynType type, TypeVar+ sorted_type_vars) =
   );
 
 
-NeType desugar_prot_aware_type(SynType type, [Atom -> TypeVar] subst_map) =
-  desugar_type(
-    type,
-    match ($)
-      type_var()                = $,
-      type_ref(type_symbol(a?)) = if subst_map(a, *) then subst_map[a] else $,
-      type_ref()                = desugar_type_ref($, desugar_prot_aware_type($, subst_map))
-  );
+NeType desugar_arbitrary_type(SynType type, [Atom -> TypeVar] subst_map, [Atom] schemas) {
+  assert disjoint(keys(subst_map), schemas);
+  return desugar(type, subst_map, schemas);
+
+
+  NeType desugar(SynType type, [Atom -> TypeVar] subst_map, [Atom] schemas) =
+    desugar_type(
+      type,
+      match ($)
+        type_var()                = $,
+        type_ref(type_symbol(a?)) = if subst_map(a, *)
+                                      then subst_map[a]
+                                    elif schemas(a)
+                                      then type_ref(schema_type_symbol(a))
+                                    else
+                                      $,
+        type_ref()                = desugar_type_ref($, desugar($, subst_map, schemas))
+    );
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -160,7 +183,7 @@ NeType desugar_type(SynType type, (<SynTypeRef, SynTypeVar> -> NeType) desugar) 
 ////////////////////////////////////////////////////////////////////////////////
 
 [TypeName -> NeType] create_type_map([SynTypedef] tdefs, [SynParTypedef] par_tdefs) {
-  type_map = [type_name(td.name, 0) -> desugar_type(td.type) : td <- tdefs];
+  type_map = [type_name(td.name, 0) -> desugar_plain_type(td.type) : td <- tdefs];
   par_type_map = [
     type_name(td.name, |td.params|) ->
     desugar_par_type_def(td.type, td.params)
@@ -168,11 +191,6 @@ NeType desugar_type(SynType type, (<SynTypeRef, SynTypeVar> -> NeType) desugar) 
   ];
   return type_map & par_type_map;
 }
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
-PseudoType syn_pseudotype(SynType type, [TypeName -> Type] typedefs) = pseudotype(desugar_type(type), typedefs);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////

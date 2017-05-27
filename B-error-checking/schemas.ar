@@ -34,7 +34,7 @@ implicit syn_prg : SynPrg {
   //////////////////////////////////////////////////////////////////////////////
 
   ExprWFError* schema_decl_wf_errors(StateVarDecl decl) {
-    type_errs = type_wf_errors(decl.type, type_arity_map, true);
+    type_errs = plain_type_wf_errors(decl.type);
     let artifact = :null_artifact, impl_args = [], actual_arg_arity = 0:
       expr_errs = expr_wf_errors(decl.init_value, []);
     ;
@@ -54,8 +54,8 @@ implicit syn_prg : SynPrg {
     return (invalid_relvar_arity(decl)) if arity > 3 or (decl.attributes != () and arity > 2);
 
     type_errs = join(
-      (type_wf_errors(t, type_arity_map, true) : t <- decl.col_types) &
-      (type_wf_errors(a.type, type_arity_map, true) : a <- decl.attributes)
+      (plain_type_wf_errors(t) : t <- decl.col_types) &
+      (plain_type_wf_errors(a.type) : a <- decl.attributes)
     );
     return type_errs if type_errs != ();
 
@@ -115,20 +115,21 @@ implicit syn_prg : SynPrg {
     all_key_sets = std_relvars_keys & attr_relvars_keys;
     return (incomp_relvar_decls(std_relvars, attr_relvars)) if |all_key_sets| != 1;
 
-    ord_std_relvars = rand_sort(std_relvars);
-    ord_attr_relvars = rand_sort(attr_relvars);
+    // ord_std_relvars = rand_sort(std_relvars);
+    // ord_attr_relvars = rand_sort(attr_relvars);
 
-    // Now checking that their signatures are disjoint
-    std_relvars_col_ptypes = ((syn_pseudotype(t, typedefs) : t <- rv(0).col_types) : rv <- ord_attr_relvars);
-    attr_relvars_col_ptypes = ({
-        rv, i = arv_info;
-        arv = rv.attributes(i);
-        col_types = (rv.col_types | arv.type);
-        return (syn_pseudotype(t, typedefs) : t <- col_types);
-      } : arv_info <- ord_attr_relvars
-    );
+    // // Now checking that their signatures are disjoint
+    // std_relvars_col_ptypes = ((pseudotype(desugar_plain_type(t)) : t <- rv(0).col_types) : rv <- ord_attr_relvars);
+    // attr_relvars_col_ptypes = ({
+    //     rv, i = arv_info;
+    //     arv = rv.attributes(i);
+    //     col_types = (rv.col_types | arv.type);
+    //     return (pseudotype(desugar_plain_type(t)) : t <- col_types);
+    //   } : arv_info <- ord_attr_relvars
+    // );
 
     ## WHAT IS IT THAT I SHOULD DO HERE? DOES THIS CHECK MAKE ANY SENSE AT ALL?
+    ## AND IF IT DOES MAKE SENSE, SHOULD IT BE DONE HERE OR IN LEVEL 2?
 
     return ();
   }

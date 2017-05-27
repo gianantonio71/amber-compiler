@@ -11,13 +11,15 @@ implicit syn_prg : SynPrg {
   //////////////////////////////////////////////////////////////////////////////
 
   Procedure desugar_proc_def(SynProcDef pd) {
-    args = ((var: p.var, type: desugar_type(p.type)) : p <- pd.args);
-    maybe_ret_type = if pd.res_type != nothing then just(desugar_type(value(pd.res_type))) else nothing;
+    args = ((var: p.var, type: desugar_schema_aware_type(p.type, schema_names)) : p <- pd.args);
+    maybe_ret_type = if pd.res_type != nothing
+      then just(desugar_schema_aware_type(value(pd.res_type), schema_names))
+      else nothing;
     body = desugar_stmts(pd.body, [p.var : p <~ pd.args], artifact = pd, impl_args = []);
     auto_vars = merge(([loc_auto_var(v.var) -> auto_symbol(v.type)] : v <- pd.auto_vars));
     db_vars = merge(([loc_db_var(v.var) -> db_symbol(v.type)] : v <- pd.db_vars));
 
-    return procedure(
+    proc = procedure(
       name:       pd.name,
       args:       args,
       res_type:   maybe_ret_type,
@@ -25,6 +27,7 @@ implicit syn_prg : SynPrg {
       db_vars:    db_vars,
       body:       body
     );
+    return transfer(proc, pd);
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -92,8 +95,8 @@ implicit syn_prg : SynPrg, artifact : Artifact {
 
     // Desugaring types
     args = (desugar_formal_arg(a, subst_map) : a <- syn_args);
-    impl_args = [a.name -> desugar_type(a.type) : a <- syn_impl_args];
-    res_type = desugar_prot_aware_type(syn_res_type, subst_map);
+    impl_args = [a.name -> desugar_plain_type(a.type) : a <- syn_impl_args];
+    res_type = desugar_arbitrary_type(syn_res_type, subst_map, schema_names);
 
     // Desugaring expression
     def_vars = [var(a.name) : a <~ syn_args, obj_arg() ?= a, a.name?];
@@ -127,8 +130,8 @@ implicit syn_prg : SynPrg, artifact : Artifact {
       subst_map = reverse(binds);
 
       return merge_values([{
-          args_types = (desugar_prot_aware_type(t, subst_map) : t <- ats);
-          ret_type = desugar_prot_aware_type(rt, subst_map);
+          args_types = (desugar_arbitrary_type(t, subst_map, schema_names) : t <- ats);
+          ret_type = desugar_arbitrary_type(rt, subst_map, schema_names);
           return [n -> cls_type(args_types, ret_type)];
         } : n, ats, rt <~ prot.methods, subset(refd_prot_types(ats, rt, set(prot.types)), bound_types)
       ]);
@@ -145,14 +148,14 @@ implicit syn_prg : SynPrg, artifact : Artifact {
     FormalObjArg desugar_formal_arg(SynObjArg arg, [Atom -> TypeVar] subst_map) =
       formal_obj_arg(
         var:  var(arg.name) if arg.name?,
-        type: desugar_prot_aware_type(arg.type, subst_map)
+        type: desugar_arbitrary_type(arg.type, subst_map, schema_names)
       );
 
 
     FormalClsArg desugar_formal_arg(SynClsArg arg, [Atom -> TypeVar] subst_map) =
       formal_cls_arg(
         var:  cls_var(arg.name),
-        type: desugar_cls_type(arg.type, desugar_prot_aware_type($, subst_map))
+        type: desugar_cls_type(arg.type, desugar_arbitrary_type($, subst_map, schema_names))
       );
   }
 }

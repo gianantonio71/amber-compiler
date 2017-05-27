@@ -170,7 +170,7 @@ Bool is_param_type(FnType type) = (t <~ type.args : is_param_type(t)) or is_para
   print_stmt(e?)            = retrieve(e),
   imp_update_stmt()         = retrieve(stmt.idx) & retrieve(stmt.value),
   return_stmt               = [],
-  proc_call_stmt()          = seq_union((retrieve(p) : p <- stmt.params)),
+  proc_call_stmt()          = seq_union((retrieve(p) : p <- stmt.args)),
   send_msg_stmt()           = retrieve(stmt.msg),
   try_update_stmt()         = seq_union((retrieve(a) : a <- stmt.args)),
   set_memb_var_stmt()       = retrieve(stmt.value), ## NOT SURE ABOUT THIS ONE, IT MIGHT BE NECESSARY TO ALSO RETRIEVE THE TARGET VARIABLE IN ORDER TO MAKE extern_vars() WORK. BUT WHAT ABOUT THE ASSIGNMENT STATEMENTS THEN?
@@ -431,7 +431,7 @@ Bool is_pattern_any(Pattern ptrn) =
   assert_stmt()     = extern_vars(s.cond),
   print_stmt(e?)    = extern_vars(e),
   imp_update_stmt() = [s.obj] & extern_vars(s.idx) & extern_vars(s.value),
-  proc_call_stmt()  = seq_union((extern_vars(p) : p <- s.params));
+  proc_call_stmt()  = seq_union((extern_vars(p) : p <- s.args));
 
 
 [Var] cls_expr_extern_vars(AnyClsExpr expr) =
@@ -478,25 +478,32 @@ type StmtOutcome = fails, returns, breaks, falls_through;
 
 
 [+StmtOutcome] outcomes(Statement stmt) =
-  assignment_stmt()   = [:fails, :falls_through],
-  return_stmt         = [:returns],
-  return_stmt()       = [:fails, :returns],
-  if_stmt()           = nonempty([:fails] & outcomes(stmt.body) & outcomes(stmt.else)), // Shutting up the type checker
-  loop_stmt(ss?)      = loop_stmt_outcomes(ss),
-  foreach_stmt()      = nonempty([:fails, :falls_through] & outcomes(stmt.body) - [:breaks]), // Shutting up the type checker
-  for_stmt()          = nonempty([:fails, :falls_through] & outcomes(stmt.body) - [:breaks]), // Shutting up the type checker ## BAD: SAME AS ABOVE
-  let_stmt()          = nonempty([:fails] & outcomes(stmt.body)), // Shutting up the type checker
-  break_stmt          = [:breaks],
-  fail_stmt           = [:fails],
-  assert_stmt()       |
-  print_stmt()        |
-  imp_update_stmt()   |
-  proc_call_stmt()    |
-  send_msg_stmt()     |
-  try_update_stmt()   |
-  set_memb_var_stmt() |
-  delete_stmt()       |
-  insert_stmt()       = [:falls_through, :fails];
+  assignment_stmt()             = [:fails, :falls_through],
+  return_stmt                   = [:returns],
+  return_stmt()                 = [:fails, :returns],
+  if_stmt()                     = nonempty([:fails] & outcomes(stmt.body) & outcomes(stmt.else)), // Shutting up the type checker
+  loop_stmt(ss?)                = loop_stmt_outcomes(ss),
+  foreach_stmt()                = nonempty([:fails, :falls_through] & outcomes(stmt.body) - [:breaks]), // Shutting up the type checker
+  for_stmt()                    = nonempty([:fails, :falls_through] & outcomes(stmt.body) - [:breaks]), // Shutting up the type checker ## BAD: SAME AS ABOVE
+  let_stmt()                    = nonempty([:fails] & outcomes(stmt.body)), // Shutting up the type checker
+  break_stmt                    = [:breaks],
+  fail_stmt                     = [:fails],
+  assert_stmt()                 |
+  print_stmt()                  |
+  imp_update_stmt()             |
+  proc_call_stmt()              |
+  send_msg_stmt()               |
+  try_update_stmt()             |
+  set_memb_var_stmt()           |
+  delete_stmt()                 |
+  insert_stmt()                 |
+  set_input_ctrl_stmt()         |
+  clear_input_ctrl_stmt()       |
+  set_elapsed_time_ctrl_stmt()  |
+  apply_ctrl_stmt()             |
+  send_msg_ctrl_stmt()          |
+  restore_state_ctrl_stmt()     |
+  read_state_ctrl_stmt()        = [:falls_through, :fails];
 
 
 [+StmtOutcome] loop_stmt_outcomes(Statement+ body) {

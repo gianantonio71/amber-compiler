@@ -41,6 +41,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     cast_expr()           = expr.type,
     accessor()            = accessor_expr_type(expr.expr, expr.field, env),
     accessor_test()       = type_bool,
+    output_is_def()       = type_bool,
     auto_method_call()    = auto_method_call_expr_type(expr, env),
     db_method_call()      = db_method_call_expr_type(expr, env),
     if_expr()             = if_expr_type(expr.cond, expr.then, expr.else, env),
@@ -315,8 +316,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
   Type auto_method_call_expr_type(AutoMethodCall expr, [EnvVar -> Type] env) {
     args_types = (expr_type(a, env) : a <- expr.args);
-    automaton = cast_automaton(context);
-    auto_type = if expr.var? then automaton.nested_autos[expr.var].type else automaton.name;
+    auto_type = if expr.var? then var_type(expr.var) else this_auto_symbol;
     sgn_set = method_signatures(auto_type, expr.name, |args_types|);
     types = [
       s.ret_type : s <- sgn_set.sgns,
@@ -328,8 +328,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
   Type db_method_call_expr_type(DBMethodCall expr, [EnvVar -> Type] env) {
     args_types = (expr_type(a, env) : a <- expr.args);
-    database = cast_database(context);
-    db_type = if expr.var? then database.nested_dbs[expr.var] else database.name;
+    db_type = if expr.var? then var_type(expr.var) else this_db_symbol;
     sgn_set = method_signatures(db_type, expr.name, |args_types|);
     types = [
       s.ret_type : s <- sgn_set.sgns,
@@ -1422,7 +1421,20 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     try_update_stmt()   |
     set_memb_var_stmt() |
     delete_stmt()       |
-    insert_stmt()       = env;
+    insert_stmt()       = env,
+
+    return_stmt         = unreachable_env(env),
+    proc_call_stmt()    = if stmt.res_var?
+                            then proc_call_stmt_update_env(stmt.res_var, stmt.proc_name, stmt.args, env)
+                            else env,
+
+    set_input_ctrl_stmt()         |
+    clear_input_ctrl_stmt()       |
+    set_elapsed_time_ctrl_stmt()  = env,
+    apply_ctrl_stmt()             |
+    send_msg_ctrl_stmt()          |
+    restore_state_ctrl_stmt()     = update(env, stmt.res_var, type_bool),
+    read_state_ctrl_stmt()        = update(env, stmt.res_var, db_state_type(data_bases_by_id[var_type(stmt.db_var)]));
 
 
   [EnvVar -> Type] assignment_stmt_update_env(StdVar+ vars, Expr value, [EnvVar -> Type] env) {
@@ -1491,6 +1503,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     env_delta = [v -> expr_type(e, env) : v, e <- asgnms];
     new_env = update(env, env_delta);
     return update_env(body, new_env);
+  }
+
+
+  [EnvVar -> Type] proc_call_stmt_update_env(StdVar res_var, ProcSymbol proc_name, Expr* args, [EnvVar -> Type] env) {
+    unused_var, maybe_ret_type = procedure_signature(proc_name);
+    return update(env, res_var, value_unsafe(maybe_ret_type));
   }
 
   //////////////////////////////////////////////////////////////////////////////

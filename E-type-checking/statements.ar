@@ -38,8 +38,21 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       try_update_stmt()   = typecheck_try_update_stmt(stmt.name, stmt.args, env),
       set_memb_var_stmt() = typecheck_set_memb_var_stmt(stmt.var, stmt.value, env),
       delete_stmt()       = typecheck_delete_stmt(stmt.var, stmt.fields, env),
-      insert_stmt()       = typecheck_insert_stmt(stmt.var, stmt.fields, stmt.force, env);
+      insert_stmt()       = typecheck_insert_stmt(stmt.var, stmt.fields, stmt.force, env),
 
+      return_stmt         = [],
+      proc_call_stmt()    = typecheck_proc_call_stmt(
+                              if stmt.res_var? then just(stmt.res_var) else nothing,
+                              stmt.proc_name, stmt.args, env
+                            ),
+
+      set_input_ctrl_stmt()         = typecheck_set_input_ctrl_stmt(stmt.var, stmt.input, stmt.value, env),
+      clear_input_ctrl_stmt()       = [],
+      set_elapsed_time_ctrl_stmt()  = typecheck_set_elapsed_time_ctrl_stmt(stmt.var, stmt.time, env),
+      apply_ctrl_stmt()             = [],
+      send_msg_ctrl_stmt()          = typecheck_send_msg_ctrl_stmt(stmt.res_var, stmt.db_var, stmt.msg, env),
+      read_state_ctrl_stmt()        = [],
+      restore_state_ctrl_stmt()     = typecheck_restore_state_ctrl_stmt(stmt.res_var, stmt.db_var, stmt.state, env);
   }
 
 
@@ -143,7 +156,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   //////////////////////////////////////////////////////////////////////////////
 
   [TypeCheckingError] typecheck_send_msg_stmt(MembDBVar target, Expr msg, [EnvVar -> Type] env) {
-    db_type = cast_database(context).nested_dbs[target];
+    db_type = var_type(target);
     msg_type = msg_type_by_db[db_type];
     return typecheck(msg, msg_type, env);
   }
@@ -153,7 +166,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     errs = seq_union((typecheck(a, type_any, env) : a <- args));
     return errs if errs != [];
     args_types = (expr_type(a, env) : a <- args);
-    db_type = cast_database(context).name;
+    db_type = this_db_symbol;
     sgns = update_signatures(db_type, name);
     agg_sgns = update_aggregate_signatures(db_type, name);
     for s <- rand_sort(sgns) & rand_sort(agg_sgns):
@@ -164,7 +177,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
 
   [TypeCheckingError] typecheck_set_memb_var_stmt(MembVar var, Expr value, [EnvVar -> Type] env) {
-    var_type = cast_database(context).state_vars[var].type;
+    var_type = memb_var_type(var);
     return [] if typecheck(value, var_type, env) == [];
     errs = typecheck(value, type_any, env);
     return if errs != [] then errs else [unexpected_actual_type(expr_type(value, env), var_type)];
@@ -194,5 +207,41 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       return [] if all((is_subset(at, ft) : at, ft <- zip(args_types, s)));
     ;
     return [no_matching_relvar(var, (just(a) : a <- args_types), sgns)];
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  [TypeCheckingError] typecheck_proc_call_stmt(Maybe[StdVar] maybe_res_var, ProcSymbol proc_name, Expr* args, [EnvVar -> Type] env) {
+    args_types, unused_var = procedure_signature(proc_name);
+    return seq_union((typecheck(e, t, env) : e, t <- zip(args, args_types)));
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  [TypeCheckingError] typecheck_set_input_ctrl_stmt(LocAutoVar var, Atom input, Expr value, [EnvVar -> Type] env) {
+    auto = automata_by_id[var_type(var)];
+    input_type = auto.inputs[input].type;
+    return typecheck(value, input_type, env);
+  }
+
+
+  [TypeCheckingError] typecheck_set_elapsed_time_ctrl_stmt(LocAutoVar var, Expr time, [EnvVar -> Type] env) {
+    return typecheck(time, integer, env);
+  }
+
+
+  [TypeCheckingError] typecheck_send_msg_ctrl_stmt(StdVar res_var, LocDBVar db_var, Expr msg, [EnvVar -> Type] env) {
+    db = data_bases_by_id[var_type(db_var)];
+    msg_type = msg_type_by_db[var_type(db_var)];
+    return typecheck(msg, msg_type, env);
+  }
+
+
+  [TypeCheckingError] typecheck_restore_state_ctrl_stmt(StdVar res_var, LocDBVar db_var, Expr state, [EnvVar -> Type] env) {
+    db = data_bases_by_id[var_type(db_var)];
+    state_type = db_state_type(db);
+    return typecheck(state, state_type, env);
   }
 }

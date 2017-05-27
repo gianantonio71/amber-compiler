@@ -2,21 +2,6 @@
 ## CHECK THAT A POSITIONAL PARAMETER CANNOT HAVE THE SAME NAME AS AN IMPLICIT PARAMETER
 
 implicit syn_prg : SynPrg {
-  ## MOVE THIS TO accessor.ar
-  [BasicTypeSymbol -> [+Nat]] type_arity_map =
-    merge_values(
-      [[td.name -> 0]         : td <- syn_tdefs] &
-      [[td.name -> arity(td)] : td <- syn_par_tdefs]
-    );
-
-
-  ## MOVE THIS TO accessor.ar
-  [BasicTypeSymbol -> [+Nat]] type_prot_arity_map {
-    prot_types_arity_map = [type_symbol(t) -> [0] : d <- prot_decls, t <~ d.types];
-    return type_arity_map & prot_types_arity_map;
-  }
-
-
   WFError* prg_wf_errors {
     return typedefs_wf_errors if typedefs_wf_errors != ();
 
@@ -66,9 +51,9 @@ implicit syn_prg : SynPrg {
 
 
   WFError* db_method_def_wf_errors(Atom db_name, DBMethodDef method) {
-    ## WE ARE NOT ALLOWING TYPE VARIABLES IN A METHOD SIGNATURE FOR NOW
-    errs = join((type_wf_errors(t, type_arity_map, true) : t, unused_var <- method.args));
-    errs = errs & type_wf_errors(method.ret_type, type_arity_map, true);
+    ## WE ARE NOT ALLOWING TYPE VARIABLES (NOR SCHEMAS THEMSELVES) IN A METHOD SIGNATURE FOR NOW
+    errs = join((plain_type_wf_errors(t) : t, unused_var <- method.args));
+    errs = errs & plain_type_wf_errors(method.ret_type);
 
     arg_names = (n : unused_var, n <- method.args);
     dupl_args = dupl_elems(arg_names);
@@ -84,7 +69,7 @@ implicit syn_prg : SynPrg {
 
 
   WFError* handler_def_wf_errors(HandlerDef handler_def) {
-    errs = type_wf_errors(handler_def.type, type_arity_map, true);
+    errs = plain_type_wf_errors(handler_def.type);
 
     db_symb = db_symbol(handler_def.target);
     if db_defs_by_id(db_symb, *):
@@ -101,7 +86,7 @@ implicit syn_prg : SynPrg {
 
 
   WFError* update_def_wf_errors(Atom db_name, UpdateDef update_def) {
-    errs = join((type_wf_errors(t, type_arity_map, true) : t, unused_var <- update_def.args));
+    errs = join((plain_type_wf_errors(t) : t, unused_var <- update_def.args));
 
     args = (v : unused_var, v <- update_def.args);
     dupl_args = dupl_elems(args);
@@ -120,9 +105,9 @@ implicit syn_prg : SynPrg {
 
 
   WFError* auto_method_def_wf_errors(AutoMethodDef method) {
-    ## WE ARE NOT ALLOWING TYPE VARIABLES IN A METHOD SIGNATURE FOR NOW
-    errs = join((type_wf_errors(t, type_arity_map, true) : t, unused_var <- method.args));
-    errs = errs & type_wf_errors(method.ret_type, type_arity_map, true);
+    ## WE ARE NOT ALLOWING TYPE VARIABLES (NOR SCHEMAS) IN A METHOD SIGNATURE FOR NOW
+    errs = join((plain_type_wf_errors(t) : t, unused_var <- method.args));
+    errs = errs & plain_type_wf_errors(method.ret_type);
 
     arg_names = (v : unused_var, v <- method.args);
     dupl_args = dupl_elems(arg_names);
@@ -157,7 +142,7 @@ implicit syn_prg : SynPrg {
     ## TODO: CHECK FOR CYCLES IN THE SUBSET GRAPH
 
     for td <- tdefs & par_tdefs:
-      maybe_err = typedef_wf_errors(td, type_arity_map);
+      maybe_err = typedef_wf_errors(td);
       errs = (errs | value(maybe_err)) if maybe_err != nothing;
     ;
     return errs;
@@ -187,7 +172,7 @@ implicit syn_prg : SynPrg {
       errs = (errs | dupl_impl_arg(s1, s2)) if s1.name == s2.name;
     ;
     for s <- signatures:
-      type_errs = type_wf_errors(s.type, type_arity_map, true);
+      type_errs = plain_type_wf_errors(s.type);
       errs = (errs | signature_errors(s, type_errs)) if type_errs != ();
     ;
     return errs;
@@ -197,16 +182,14 @@ implicit syn_prg : SynPrg {
   WFError* function_group_signature_wf_errors((SynFnDef, ImplArgDecl*)* full_fndefs) {
     sgn_errs = values((fndef_signature_wf_errors(fd, nps) : fd, nps <- full_fndefs));
     return sgn_errs if sgn_errs != ();
-
-    fndefs_by_name_and_arity = merge_values([[(fd.name, arity(fd)) -> (fd, ss)] : fd, ss <~ full_fndefs]);
-    fndef_incomp_errs = join(rand_sort([polymorphic_functions_errors(nonempty(rand_sort(fds))) : unused_var, fds <- fndefs_by_name_and_arity]));
-    return fndef_incomp_errs;
+    fndefs_by_name_and_arity = merge_values([[(fd.name, arity(fd)) -> fd] : fd, unused_var <~ full_fndefs]);
+    return join(rand_sort([polymorphic_functions_errors(nonempty(rand_sort(fds))) : unused_var, fds <- fndefs_by_name_and_arity]));
   }
 
 
   Maybe[WFError] fndef_signature_wf_errors(SynFnDef fndef, ImplArgDecl* impl_args) {
-    errs = join((type_wf_errors(p.type, type_prot_arity_map) : p <- fndef.args));
-    errs = errs & type_wf_errors(fndef.res_type, type_prot_arity_map);
+    errs = join((arbitrary_type_wf_errors(p.type) : p <- fndef.args));
+    errs = errs & arbitrary_type_wf_errors(fndef.res_type);
 
     pos_args = (a.name : a <- fndef.args, a.name?);
     impl_args_ids = (bare_id(p.name) : p <- impl_args);
@@ -236,22 +219,12 @@ implicit syn_prg : SynPrg {
   }
 
 
-  WFError* polymorphic_functions_errors((SynFnDef, ImplArgDecl*)+ full_fndefs) {
-    for fd1, ss1 @ i1 <- full_fndefs ; fd2, ss2 <- right_subseq(full_fndefs, i1+1):
+  WFError* polymorphic_functions_errors(SynFnDef+ full_fndefs) {
+    for fd1 @ i1 <- full_fndefs ; fd2 <- right_subseq(full_fndefs, i1+1):
       assert fd1.name == fd2.name and arity(fd1) == arity(fd2);
-
       arity_match = (syn_type_arity(a1.type) == syn_type_arity(a2.type) : a1, a2 <- zip(fd1.args, fd2.args));
       return (incomp_pos_args(fd1, fd2, nonempty((i : b @ i <- arity_match, not b)))) if not all(arity_match);
-
-      args_overlap = all((
-        match (a1, a2)
-          obj_arg(),  obj_arg()   = not are_disjoint(syn_pseudotype(a1.type, typedefs), syn_pseudotype(a2.type, typedefs)),
-          cls_arg(),  cls_arg()   = true
-        : a1, a2 <- zip(fd1.args, fd2.args)
-      ));
-      return (overlapping_pos_args_types(fd1, fd2)) if args_overlap;
     ;
-
     return ();
   }
 
@@ -278,8 +251,8 @@ implicit syn_prg : SynPrg {
       dupl_par_names(dup_pars, [])  if dup_pars != []
     );
 
-    errs = errs & join((type_wf_errors(p.type, type_arity_map) : p <- proc_def.args));
-    errs = errs & type_wf_errors(value(res_type), type_arity_map) if res_type != nothing;
+    errs = errs & join((schema_aware_type_wf_errors(p.type) : p <- proc_def.args));
+    errs = errs & schema_aware_type_wf_errors(value(res_type)) if res_type != nothing;
 
     return (proc_def_errors(proc_def, errs) if errs != ());
   }
