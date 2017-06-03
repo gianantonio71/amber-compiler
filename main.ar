@@ -67,13 +67,8 @@ Maybe[CCodeOutput] Compile(
       unused_var = GetChar();
     ;
   else
-    msgs = (create_error_msg(e) : e <- errs);
-    for m <- msgs:
-      for l <- m:
-        Print(l & "\n");
-      ;
-      Print("\n");
-    ;
+    msgs = append((append(create_error_msg(e), "\n") & "\n" : e <- errs));
+    Print(msgs);
     return nothing;
   ;
 
@@ -86,6 +81,18 @@ Maybe[CCodeOutput] Compile(
 
   if print_intermediate:
     FileWrite("dump_prg.txt", false, chars(printed(prg, 100)));
+  ;
+
+  errs = core_wf_errors(prg);
+  if errs != []:
+    msgs = append((append(error_message(e), "\n") & "\n" : e <- rand_sort(errs)));
+    Print(msgs);
+    return nothing;
+  ;
+  t4 = _ticks_(:any_value_will_do);
+  Print("Additional checks passed\n");
+  if wait_for_key:
+    unused_var = GetChar();
   ;
 
   if run_typechecking:
@@ -111,11 +118,11 @@ Maybe[CCodeOutput] Compile(
     ;
   ;
 
-  t4 = _ticks_(:any_value_will_do);
+  t5 = _ticks_(:any_value_will_do);
 
   options = compilation_options(ignore_assertions: ignore_assertions);
   code = compiled_program(program=prg, options=options);
-  t5 = _ticks_(:any_value_will_do);
+  t6 = _ticks_(:any_value_will_do);
   Print("Code generated\n");
   if wait_for_key:
     unused_var = GetChar();
@@ -133,7 +140,7 @@ Maybe[CCodeOutput] Compile(
     trans_blocks: [remove_dead_code(b)  : b <- code.trans_blocks],
     int_seqs:     code.int_seqs
   );
-  t6 = _ticks_(:any_value_will_do);
+  t7 = _ticks_(:any_value_will_do);
   Print("Dead code removed\n");
   if wait_for_key:
     unused_var = GetChar();
@@ -160,14 +167,14 @@ Maybe[CCodeOutput] Compile(
     rc_code = opt_code;
   ;
 
-  t7 = _ticks_(:any_value_will_do);
+  t8 = _ticks_(:any_value_will_do);
 
   if print_intermediate:
     FileWrite("dump_rc_code.txt", false, chars(printed(rc_code, 100)));
   ;
 
   c_code  = compile_to_c(rc_code);
-  t8 = _ticks_(:any_value_will_do);
+  t9 = _ticks_(:any_value_will_do);
   Print("C code generated\n");
   if wait_for_key:
     unused_var = GetChar();
@@ -178,16 +185,17 @@ Maybe[CCodeOutput] Compile(
     Print("Parsing:             " & printed(t1-t0) & "ms\n");
     Print("Error checking:      " & printed(t2-t1) & "ms\n");
     Print("Syntax removal:      " & printed(t3-t2) & "ms\n");
+    Print("Additional checks:   " & printed(t4-t3) & "ms\n");
     if run_typechecking:
-      Print("Type checking:       " & printed(t4-t3) & "ms\n");
+      Print("Type checking:       " & printed(t5-t4) & "ms\n");
     ;
-    Print("Code generation:     " & printed(t5-t4) & "ms\n");
-    Print("Code optimization:   " & printed(t6-t5) & "ms\n");
+    Print("Code generation:     " & printed(t6-t5) & "ms\n");
+    Print("Code optimization:   " & printed(t7-t6) & "ms\n");
     if add_rc:
-      Print("Reference counting:  " & printed(t7-t6) & "ms\n");
+      Print("Reference counting:  " & printed(t8-t7) & "ms\n");
     ;
-    Print("C code generation:   " & printed(t8-t7) & "ms\n");
-    Print("Total time elapsed:  " & printed(t8-t0) & "ms\n");
+    Print("C code generation:   " & printed(t9-t8) & "ms\n");
+    Print("Total time elapsed:  " & printed(t9-t0) & "ms\n");
   ;
 
   return just(c_code);

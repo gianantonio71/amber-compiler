@@ -216,20 +216,12 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
 
 
   ExprWFError* auto_memb_var_copy_local_wf_errors(Atom symbol) {
-    resols = resolve_by_priority_as_expr((symbol), []);
-    return (ambiguous_expr(auto_memb_var_copy(symbol), resols)) if |resols| > 1;
-    if resols == []:
-      invalid_resols = resolve_symbol_chain((symbol), []);
-      return if invalid_resols != []
-        then (not_an_object(const_or_var(symbol), invalid_resols))
-        else (undef_var_or_const(symbol));
-    ;
-    resol = only(resols);
-    if not resol :: AutoMembVar:
-      maybe_auto_def = if artifact :: SynAutoDef then just(artifact) else nothing;
-      return (not_a_memb_copy_var(symbol, maybe_auto_def));
-    ;
-    return ();
+    artifact_is_auto_def = match (artifact) syn_auto_def() = true, _ = false;
+    return (invalid_signal_copy_context(symbol)) if not artifact_is_auto_def;
+
+    interface = auto_interfaces[self_auto_type];
+    is_ok = interface.state_vars(symbol) or (interface.inputs(symbol, *) and not interface.inputs[symbol].discrete);
+    return (not_a_copiable_signal(symbol) if not is_ok);
   }
 
 

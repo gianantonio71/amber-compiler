@@ -1,0 +1,234 @@
+[CoreWFError] core_wf_errors(Program prg) {
+  schema_typedefs = [type_name(schema_type_symbol(bare_id(db.name)), 0) -> db_state_type(db) : db <- prg.data_bases];
+  return core_wf_errors(program = prg, typedefs = prg.typedefs & schema_typedefs);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+implicit program : Program, typedefs : [TypeName -> NeType] {
+  [CoreWFError] core_wf_errors {
+    fndefs_families = group_by(program.fndefs, (family_id($.name), arity($)));
+    errs = union([function_family_errors(fs) : unused_var, fs <- fndefs_families]);
+    return errs & databases_errors & automata_errors;
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  [CoreWFError] function_family_errors([+Function] functions) {
+    ord_fns = rand_sort(functions);
+    return [overlapping_signatures(f1, f2) : f1 @ i1 <~ ord_fns, f2 <~ drop(ord_fns, i1+1), overlap(f1, f2)];
+
+    Bool overlap(Function f1, Function f2) = none((are_disjoint(a1, a2) : a1, a2 <- zip(f1.args, f2.args)));
+
+    Bool are_disjoint(FormalArg arg1, FormalArg arg2) =
+      formal_obj_arg(), formal_obj_arg()  = are_ptype_disjoint(arg1.type, arg2.type),
+      formal_cls_arg(), formal_cls_arg()  = false;
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  [CoreWFError] databases_errors {
+    db_errs = union([database_errors(db) : db <- program.data_bases]);
+
+    shallow_deps = [db.name -> values(db.nested_dbs) : db <- program.data_bases];
+    deep_deps = transitive_closure(shallow_deps);
+    rec_errs = [recursively_defined_auto_or_db(data_bases_by_id[db_type]) : db_type, deps <- deep_deps, deps(db_type)];
+
+    return db_errs & rec_errs;
+  }
+
+
+  [CoreWFError] database_errors(Database database) {
+    method_errs = union([
+      [overlapping_signatures(m1, m2) : m1, m2 <- symmetric_cart_prod(ms), overlap(m1, m2)]
+      : unused_var, ms <- group_by(database.methods, ($.name, arity($)))
+    ]);
+
+    updates_errs = union([
+      [overlapping_signatures(u1, u2) : u1, u2 <- symmetric_cart_prod(us), overlap(u1, u2)]
+      : unused_var, us <- group_by(database.updates, ($.name, arity($)))
+    ]);
+
+    handler_errs = [
+      overlapping_signatures(h1, h2)
+      : h1, h2 <- symmetric_cart_prod(database.handlers), not are_ptype_disjoint(h1.type, h2.type)
+    ];
+
+    errs = method_errs & updates_errs & handler_errs;
+    return [error_cluster(database, errs) if errs != []];
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  [CoreWFError] automata_errors {
+    auto_errs = union([automaton_errors(a) : a <- program.auto_defs]);
+
+    shallow_deps = [auto.name -> [a.type : unused_var, a <- auto.nested_autos] : auto <- program.auto_defs];
+    deep_deps = transitive_closure(shallow_deps);
+    rec_errs = [recursively_defined_auto_or_db(automata_by_id[auto_type]) : auto_type, deps <- deep_deps, deps(auto_type)];
+
+    return auto_errs & rec_errs;
+  }
+
+
+  [CoreWFError] automaton_errors(Automaton automaton) {
+    errs = union([
+      [overlapping_signatures(m1, m2) : m1, m2 <- symmetric_cart_prod(ms), overlap(m1, m2)]
+      : unused_var, ms <- group_by(automaton.methods, ($.name, arity($)))
+    ]);
+    errs = automaton_parameters_errors(automaton) if errs == [];
+    errs = automaton_first_run_errors(automaton)  if errs == [];
+    errs = automaton_std_run_errors(automaton)    if errs == [];
+    return if errs != [] then [error_cluster(automaton, errs)] else [];
+  }
+
+
+  [CoreWFError] automaton_parameters_errors(Automaton automaton) {
+    param_vars = [auto_memb_var(id) : id, unused_var <- automaton.params];
+
+    // Parameter can only depend on other parameters
+    def_vars = [auto_memb_var(id) : id, unused_var <- automaton.params];
+    errs = [
+      invalid_auto_var(v, id, info.value)
+      : id, info <- automaton.params,
+        v <- auto_expr_extern_vars(info.value),
+        not in(v, param_vars)
+    ];
+    return errs if errs != [];
+
+    // No dependency cycles among parameters
+    shallow_deps = [auto_memb_var(id) -> auto_expr_extern_vars(info.value) : id, info <- automaton.params];
+    deep_deps = transitive_closure(shallow_deps);
+    return [dependency_loop(p, nonempty(ds)) : p, ds <- deep_deps, ds(p)];
+  }
+
+
+  [CoreWFError] automaton_first_run_errors(Automaton automaton) {
+    param_vars = [auto_memb_var(id) : id, unused_var <- automaton.params];
+    cont_input_vars = [auto_memb_var(id) : id, info <- automaton.inputs, not info.discrete];
+    state_vars = [auto_memb_var(id) : id, unused_var <- automaton.state];
+    rule_vars  = [auto_memb_var(id) : id, unused_var <- automaton.rules];
+    time_rule_vars = [auto_memb_var(id) : id, unused_var <- automaton.time_rules];
+    continuous_nested_autos_outputs = [
+      qual_auto_memb_var(memb_auto_var(id), auto_memb_var(out_id))
+      : id, info <- automaton.nested_autos,
+        out_id, out_info <- automata_by_id[info.type].outputs,
+        not out_info.discrete
+    ];
+
+    // First run permitted dependencies
+    first_run_vars = param_vars & cont_input_vars & state_vars & rule_vars & time_rule_vars & continuous_nested_autos_outputs;
+
+    state_vars_init_exprs = [id -> info.init_value : id, info <- automaton.state];
+    errs = [
+      invalid_auto_var(v, id, expr)
+      : id, expr <- state_vars_init_exprs | id, expr <- automaton.rules,
+        v <- auto_expr_extern_vars(expr),
+        not v :: QualDBMembVar and not in(v, first_run_vars)
+    ];
+    errs = errs & [
+      invalid_nested_auto_input_var(v, id, input_id, in_expr)
+      : id, info <- automaton.nested_autos,
+        nested_auto = automata_by_id[info.type],
+        input_id, in_expr <- info.args,
+        not nested_auto.inputs[input_id].discrete,
+        v <- auto_expr_extern_vars(in_expr),
+        not v :: QualDBMembVar and not in(v, first_run_vars)
+    ];
+    errs = errs & [
+      invalid_auto_var(v, id, cond)
+      : id, cond <- automaton.time_rules,
+        v <- dependencies(cond),
+        not v :: QualDBMembVar and not in(v, first_run_vars)
+    ];
+    return errs if errs != [];
+
+    // No cycles among first-run signals
+    state_vars_and_rules_deps = [
+      auto_memb_var(id) -> auto_expr_extern_vars(expr)
+      : id, expr <- state_vars_init_exprs | id, expr <- automaton.rules
+    ];
+    nested_auto_outputs_deps = [
+      qual_auto_memb_var(memb_auto_var(id), auto_memb_var(out_id)) -> deps
+      : id, info <- automaton.nested_autos,
+        nested_auto = automata_by_id[info.type],
+        in_exprs = [e : in_id, e <- info.args, not nested_auto.inputs[in_id].discrete],
+        deps = union([auto_expr_extern_vars(e) : e <- in_exprs]),
+        out_id, out_info <- nested_auto.outputs,
+        not out_info.discrete
+    ];
+    time_rules_deps = [auto_memb_var(id) -> dependencies(cond) : id, cond <- automaton.time_rules];
+    deep_deps = transitive_closure(state_vars_and_rules_deps & nested_auto_outputs_deps & time_rules_deps);
+    return [dependency_loop(v, nonempty(ds)) : v, ds <- deep_deps, ds(v)];
+  }
+
+
+  [CoreWFError] automaton_std_run_errors(Automaton automaton) {
+    ## HERE THE AutoMembVarCopy SHOULD BE REMOVED, EVEN THOUGH THEY'RE PROBABLY HARMLESS...
+    rules_deps                : [AutoMembVar              -> [<AnyAutoMembVar, AutoMembVarCopy, QualDBMembVar>]];
+    time_rules_deps           : [AutoMembVar              -> [<AnyAutoMembVar, AutoMembVarCopy, QualDBMembVar>]];
+    action_deps               : [<AutoMembVar, MembDBVar> -> [<AnyAutoMembVar, AutoMembVarCopy, QualDBMembVar>]];
+    nested_auto_outputs_deps  : [QualAutoMembVar          -> [<AnyAutoMembVar, AutoMembVarCopy, QualDBMembVar>]];
+
+    incomplete_shallow_deps : [
+      <AutoMembVar, QualAutoMembVar, MembDBVar> ->
+      [<AnyAutoMembVar, AutoMembVarCopy, QualDBMembVar>]
+    ];
+    db_deps : [QualDBMembVar -> [MembDBVar]];
+    shallow_deps : [
+      <AutoMembVar, QualAutoMembVar, QualDBMembVar, MembDBVar> ->
+      [<MembDBVar, AnyAutoMembVar, AutoMembVarCopy, QualDBMembVar>]
+    ];
+
+    rules_deps = [auto_memb_var(id) -> auto_expr_extern_vars(expr) : id, expr <- automaton.rules];
+    nested_auto_outputs_deps = [
+      qual_auto_memb_var(memb_auto_var(id), auto_memb_var(out_id)) -> deps
+      : id, info <- automaton.nested_autos,
+        deps = union([auto_expr_extern_vars(e) : unused_var, e <- info.args]),
+        nested_auto = automata_by_id[info.type],
+        out_id, out_info <- nested_auto.outputs
+    ];
+    time_rules_deps = [auto_memb_var(id) -> dependencies(cond) : id, cond <- automaton.time_rules];
+    action_deps = merge_value_sets([dependencies(a) : a <- automaton.actions | a <- automaton.rep_actions]);
+
+    incomplete_shallow_deps = merge_value_sets([rules_deps, nested_auto_outputs_deps, time_rules_deps, action_deps]);
+    db_memb_vars = [d : v, ds <- incomplete_shallow_deps, d <- ds, d :: QualDBMembVar];
+    db_deps = [d -> [if d.db_var :: MembDBVar then d.db_var else {fail;}] : d <- db_memb_vars];
+    shallow_deps = merge_value_sets([incomplete_shallow_deps, db_deps]);
+
+    deep_deps = transitive_closure(shallow_deps);
+    return [
+      dependency_loop(v, nonempty([d : d <- ds, d :: AnyReactAutoVar]))
+      : v, ds <- deep_deps, ds(v), v :: AnyReactAutoVar
+    ];
+  }
+}
+
+
+[<AnyAutoMembVar, AutoMembVarCopy, QualDBMembVar>] dependencies(TimeVaryingCond cond) =
+  time_varying_boolean_cond()     |
+  time_varying_unchanged_cond()   = auto_expr_extern_vars(cond.expr),
+  time_varying_since_cond()       = cond.signals;
+
+
+[<AutoMembVar, MembDBVar> -> [<AutoMembVarCopy, QualDBMembVar, AnyAutoMembVar>]] dependencies(AutoAtomicAction action) =
+  state_update()        = [ auto_memb_var(action.target) ->
+                              auto_expr_extern_vars(action.value) - [auto_memb_var(action.target)]
+                          ],
+  discrete_signal_def() = [auto_memb_var(action.target) -> auto_expr_extern_vars(action.value)],
+  msg_send()            = [action.target -> auto_expr_extern_vars(action.message)];
+
+
+[<AutoMembVar, MembDBVar> -> [<AutoMembVarCopy, QualDBMembVar, AnyAutoMembVar>]] dependencies(<AutoCondAction, AutoRepAction> action) {
+  cond_deps = auto_expr_extern_vars(action.cond);
+  nested_deps = merge_value_sets([dependencies(a) : a <- action.body | a <- action.else]);
+  return [v -> ds & cond_deps : v, ds <- nested_deps];
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+implicit typedefs : [TypeName -> NeType] {
+  Bool overlap(<Method, Update> d1, <Method, Update> d2) =
+    none((are_ptype_disjoint(left(a1), left(a2)) : a1, a2 <- zip(d1.args, d2.args)));
+}
