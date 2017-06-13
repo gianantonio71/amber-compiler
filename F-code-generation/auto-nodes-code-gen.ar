@@ -7,8 +7,8 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
     memb_var = auto_memb_var(id);
     pending_input_var = pending_input_var(id);
 
-    body = (set_var(memb_var, l0), set_bvar(memb_has_changed(id), true) if in(id, memb_copy_vars_ids)) &
-           (mark_for_update(n) : n <- rand_sort(node.downstream_nodes)) &
+    body = (set_var(memb_var, l0)) &
+           (queue_update(n) : n <- rand_sort(node.downstream_nodes)) &
            flag_as_changed_if_output(id);
 
     return nonempty((read_pending_var(l0, pending_input_var), init_memb_var(pending_input_var, :blank)) & body) if node.discrete;
@@ -30,8 +30,8 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
     eval_code = gen_safe_eval_code(node.expr, nv_var, next_var_gen = var_gen);
     eval_code = (try_block(nv_var, eval_code)) if not is_total(node.expr);
     cond = neg(is_eq(var, nv_var));
-    body = (set_var(var, nv_var), set_bvar(memb_has_changed(id), true) if in(id, memb_copy_vars_ids)) &
-           (mark_for_update(n) : n <- rand_sort(node.downstream_nodes)) &
+    body = (set_var(var, nv_var)) &
+           (queue_update(n) : n <- rand_sort(node.downstream_nodes)) &
            flag_as_changed_if_output(id);
     return (eval_code | do_if(cond, body));
   }
@@ -48,10 +48,13 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
     ;
     eval_instr = try_block(nv_var, (eval_instr)) if (e <~ node.exprs : not is_total(e));
     cond = neg(is_eq(var, nv_var));
-    body = (set_var(var, nv_var), set_bvar(memb_has_changed(id), true) if in(id, memb_copy_vars_ids)) &
-           (mark_for_update(n) : n <- rand_sort(node.downstream_nodes)) &
+    body = (set_var(var, nv_var)) &
+           (queue_update(n) : n <- rand_sort(node.downstream_nodes)) &
            flag_as_changed_if_output(id);
-    return (eval_instr, do_if(cond, body));
+    lock_check_instr = if |node.exprs| > 1
+      then do_if_not(is_eq(null_locks_count_var(id), 0), set_ivar(update_source_var(id), |node.exprs|))
+      else no_op;
+    return (lock_check_instr, eval_instr, do_if(cond, body));
   }
 
 
@@ -65,9 +68,12 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
       eval_instr = switch_on_nat(update_source_var(id), cases);
     ;
     eval_instr = try_block(nv_var, (eval_instr)) if (e <~ node.exprs : not is_total(e));
+    lock_check_instr = if |node.exprs| > 1
+      then do_if_not(is_eq(null_locks_count_var(id), 0), set_ivar(update_source_var(id), |node.exprs|))
+      else no_op;
     return nonempty(
-      (eval_instr, set_var(var, nv_var)) &
-      (mark_for_update(n) : n <- rand_sort(node.downstream_nodes)) &
+      (lock_check_instr, eval_instr, set_var(var, nv_var)) &
+      (queue_update(n) : n <- rand_sort(node.downstream_nodes)) &
       flag_as_changed_if_output(id)
     );
   }
@@ -76,10 +82,6 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
   Instr* gen_node_update_code(AutoCondNode node) {
     id = get_inner_id(node.id);
 
-    then_actions, else_actions = node.actions;
-    all_actions = then_actions & else_actions;
-    all_subcond_ids = seq_union(node.subconds);
-
     l0 = lvar(0);
     b0 = bvar(0);
     b1 = bvar(1);
@@ -87,10 +89,9 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
     cond_is_def_var = cond_is_def_var(id);
 
     // Evaluating the condition and storing the result in l0
-    cond_eval_code = gen_cond_eval_code(id, node.cond, node.parent);
-
-    // Propagating the update to dependent conditions
-    dep_conds_update_prop_code = (mark_for_update_from_parent_cond(n) : n <- rand_sort(all_subcond_ids));
+    l0, var_gen = next_obj_var(blank_var_gen);
+    cond_eval_code = gen_safe_eval_code(node.cond, l0, next_var_gen = var_gen);
+    cond_eval_code = (try_block(l0, cond_eval_code)) if not is_total(node.cond);
 
     // Base case, the condition stays defined. b1 holds the value of the condition, b0 whether it has changed
     // If the condition has changed, we queue the updates for the appropriate branch
@@ -102,8 +103,8 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
         and((b0, neg(is_new))),
         ( branch_or_no_op(
             b1,
-            join(rand_sort([gen_update_code(a) : a <- then_actions])),
-            join(rand_sort([gen_update_code(a) : a <- else_actions]))
+            join(rand_sort([gen_update_code(a) : a <- node.actions])),
+            ()
           )
         )
       )
@@ -120,7 +121,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
           set_bvar(cond_is_def_var, true)
         )
       )
-    ) & dep_conds_update_prop_code;
+    );
 
     // The condition is undefined. If it already was, there's nothing we need to do.
     // If, on the other hand, it has just become undefined, we need execute all the
@@ -129,8 +130,8 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
       do_if(
         cond_is_def_var,
         ( set_bvar(cond_is_def_var, false),
-          do_if_not(is_new, join((gen_clear_code(a) : a <- rand_sort(all_actions))))
-        ) & dep_conds_update_prop_code
+          do_if_not(is_new, join((gen_clear_code(a) : a <- rand_sort(node.actions))))
+        )
       )
     );
 
@@ -140,15 +141,54 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
 
   Instr* gen_node_update_code(AutoRepCondNode node) {
     id = node.id;
-    then_actions, else_actions = node.actions;
-    all_actions = then_actions & else_actions;
-    then_subcond_ids, else_subcond_ids = node.subconds;
-    all_subcond_ids = then_subcond_ids & else_subcond_ids;
-
-    l0 = lvar(0);
 
     // Evaluating the condition and storing the result in l0
-    cond_eval_code = gen_rep_cond_eval_code(id, node.cond, node.parent, all_subcond_ids != []);
+    l0, var_gen = next_obj_var(blank_var_gen);
+    cond_eval_code = gen_safe_eval_code(node.cond, l0, next_var_gen = var_gen);
+    cond_eval_code = (try_block(l0, cond_eval_code)) if not is_total(node.cond);
+
+    continuous_signals = rand_sort([v : v, unused_var <- node.signals_state, not is_discrete(v)]);
+    discrete_signals = rand_sort([v : v, unused_var <- node.signals_state, is_discrete(v)]);
+
+    if discrete_signals != ():
+      signals_cond_is_undef = or((is_null(v) : v <- discrete_signals));
+      signals_cond = and((
+          if node.signals_state[v] then neg(is_blank(v)) else is_blank(v)
+        : v <- discrete_signals
+      ));
+      cond_eval_code = (
+        branch(
+          signals_cond_is_undef,
+          clear_loc_var(l0),
+          branch(signals_cond, cond_eval_code, (set_var(l0, obj_false)))
+        )
+      );
+    ;
+
+    if continuous_signals != ():
+      signals_cond_is_undef = or((is_null(v) : v <- continuous_signals));
+      signals_cond_was_undef = or((is_null(prev_var_value(v)) : v <- continuous_signals));
+      signals_cond = and(({
+          neg_cond = is_eq(v, prev_var_value(v));
+          return if node.signals_state[v] then neg(neg_cond) else neg_cond;
+        } : v <- continuous_signals
+      ));
+      locks_count_vars = (null_locks_count_var(a.target_var) : a <- rand_sort(node.actions), requires_null_locking(a));
+      locking_code = (increment(v) : v <- locks_count_vars);
+      unlocking_code = (decrement(v) : v <- locks_count_vars);
+      cond_eval_code = (
+        branch(
+          signals_cond_is_undef,
+          (opt_do_if(neg(signals_cond_was_undef), locking_code) | clear_loc_var(l0)),
+          ( branch(
+              signals_cond_was_undef,
+              (unlocking_code | clear_loc_var(l0)),
+              (branch(signals_cond, cond_eval_code, (set_var(l0, obj_false))))
+            )
+          )
+        )
+      );
+    ;
 
     // Executing all the actions associated with the condition
     action_exec_code = (
@@ -156,18 +196,13 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
         is_null(l0),
 
         // The condition is not defined, we execute all assignments with a null value
-        join(rand_sort([gen_clear_code(a) : a <- all_actions])) &
-        (mark_for_update_from_parent_cond(n) : n <- rand_sort(all_subcond_ids)),
+        join(rand_sort([gen_clear_code(a) : a <- node.actions])),
 
         // The condition is defined, we run the normal actions
         ( branch_or_no_op(
             inline_is_eq(l0, obj_true),
-            // The condition is true, running the 'then' branch
-            join(rand_sort([gen_update_code(a) : a <- then_actions])) &
-            (mark_for_update_from_parent_cond(n) : n <- rand_sort(then_subcond_ids)),
-            // The condition is false, running the 'else' branch
-            join(rand_sort([gen_update_code(a) : a <- else_actions])) &
-            (mark_for_update_from_parent_cond(n) : n <- rand_sort(else_subcond_ids))
+            join(rand_sort([gen_update_code(a) : a <- node.actions])),
+            ()
           )
         )
       )
@@ -390,7 +425,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
       do_if_not(
         is_eq(cond_var, l0),
         (set_var(cond_var, l0)) &
-        (mark_for_update(n) : n <- rand_sort(node.downstream_nodes)) &
+        (queue_update(n) : n <- rand_sort(node.downstream_nodes)) &
         flag_as_changed_if_output(id)
       )
     );
@@ -498,7 +533,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
       do_if_not(
         is_eq(cond_var, l0),
         (set_var(cond_var, l0)) &
-        (mark_for_update(n) : n <- rand_sort(node.downstream_nodes)) &
+        (queue_update(n) : n <- rand_sort(node.downstream_nodes)) &
         flag_as_changed_if_output(id)
       );
 
@@ -517,14 +552,14 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
       ## SHOULD I CHECK THAT THE INPUT IS NOT NULL BEFORE SETTING IT, OR IS THIS ALREADY DONE
       ## INSIDE THE NESTED AUTOMATON?
       set_input(auto_var, auto_vars_types[auto_var], node_id.input, nv_var),
-      mark_for_update(nested_auto_node_id(node_id.auto))
+      queue_update(nested_auto_node_id(node_id.auto))
     );
 
     code = eval_code & set_var_code;
 
-    disc_vars = rand_sort(node.discrete_signals);
-    if disc_vars != ():
-      cond = and((is_not_blank(v) : v <- disc_vars));
+    discrete_vars = rand_sort(node.discrete_signals);
+    if discrete_vars != ():
+      cond = and((is_not_blank(v) : v <- discrete_vars));
       code = (do_if(cond, code));
     ;
 
@@ -537,7 +572,6 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
 
     auto_var = memb_auto_var(inner_id);
     auto_type = auto_vars_types[auto_var];
-    update_source_var = update_source_var(inner_id);
 
     is_time_sensitive = is_time_sensitive(auto_type);
 
@@ -550,7 +584,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
     );
 
     ## CURRENTLY WE PROPAGATE THE UPDATE WITHOUT CHECKING WHAT INPUTS (IF ANY) HAVE CHANGED. FIX
-    prop_code = (mark_for_update(id) : id <- rand_sort(union(values(node.downstream_nodes_by_output))));
+    prop_code = (queue_update(id) : id <- rand_sort(union(values(node.downstream_nodes_by_output))));
 
     triggers_count_var = nested_auto_int_var(auto_var, time_triggers_count_var);
     first_trigger_var  = nested_auto_int_var(auto_var, trigger_times_heap_var(0));
@@ -569,7 +603,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
     inner_id = get_inner_id(node.id);
 
     db_var = memb_db_var(inner_id);
-    db_type = automaton.nested_dbs[db_var];
+    db_type = automaton.nested_dbs[db_var].type;
 
     if is_total(node.message):
       msg_eval_info = gen_safe_eval_info(node.message, next_var_gen = blank_var_gen);
@@ -584,7 +618,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
     msg_send_instr = send_msg(db_var, db_type, atomic_msg_expr, true);
 
     ## CURRENTLY WE PROPAGATE THE UPDATE WITHOUT CHECKING WHAT INPUTS (IF ANY) HAVE CHANGED. FIX
-    prop_code = (mark_for_update(id) : id <- rand_sort(union(values(node.downstream_nodes_by_state_var))));
+    prop_code = (queue_update(id) : id <- rand_sort(union(values(node.downstream_nodes_by_state_var))));
 
     msg_send_code = (msg_send_instr) & prop_code;
     msg_send_code = (do_if_not(is_null(atomic_msg_expr), msg_send_code)) if atomic_msg_expr :: NullableVar;
@@ -595,130 +629,14 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  Instr* gen_cond_eval_code(Nat id, Expr cond, Maybe[(id: CondNodeId, trigger: Bool)] parent) {
-    l0, var_gen = next_obj_var(blank_var_gen);
-
-    // Evaluating the local condition. If there's no parent, that's all we need to do
-    loc_cond_eval_code = gen_safe_eval_code(cond, l0, next_var_gen = var_gen);
-    loc_cond_eval_code = (try_block(l0, loc_cond_eval_code)) if not is_total(cond);
-    return loc_cond_eval_code if parent == nothing;
-
-    // Local condition variables
-    cv_var = cond_expr_value_var(id);
-    cd_var = cond_expr_is_def_var(id);
-    utd_var = cond_expr_up_to_date_var(id);
-
-    // Overall condition variables
-    id_var = cond_value_var(id);
-
-    // Parent condition variables
-    pd_var = cond_is_def_var(get_inner_id(parent.id));
-    pid_var = cond_value_var(get_inner_id(parent.id));
-
-    return (
-      // Getting the value of the local condition in l0.
-      // The value is not necessarly the correct one,
-      // when the and condition is determined by the parent anyway
-      branch(
-        // No need to refresh the local condition if it's not up-to-date
-        // Also, if the parent is defined and not equal to the trigger value,
-        // the overall condition is false anyway, so no need to refresh
-        and((pd_var, is_eq(pid_var, parent.trigger), neg(utd_var))),
-
-        // Evaluating the local condition and permanently storing its value
-        loc_cond_eval_code & (
-          set_bvar(cv_var, inline_is_eq(l0, obj_true)),
-          set_bvar(cd_var, is_not_null(l0)),
-          set_bvar(utd_var, true)
-        ),
-
-        // Pulling the stored, and not necessarly up-to-date, value into l0
-        ( branch(
-            cd_var,
-            (set_var(l0, bool_obj(id_var))),
-            (clear_loc_var(l0))
-          )
-        )
-      ),
-
-      // Evaluating the overall condition by anding the local condition and its parent
-      branch(
-        pd_var,
-        (do_if_not(is_eq(pid_var, parent.trigger), (set_var(l0, obj_false)))),
-        (do_if_not(inline_is_eq(l0, obj_false), (clear_loc_var(l0))))
-      )
-    );
-  }
-
-
-  Instr* gen_rep_cond_eval_code(CondNodeId node_id, Expr cond, Maybe[(id: CondNodeId, trigger: Bool)] parent, Bool has_deps) {
-    l0, var_gen = next_obj_var(blank_var_gen);
-
-    // Evaluating the local condition.
-    cond_eval_code = gen_safe_eval_code(cond, l0, next_var_gen = var_gen);
-    cond_eval_code = (try_block(l0, cond_eval_code)) if not is_total(cond);
-
-    // Anding the local condition with the 'parent == trigger' one, if a parent exists
-    if parent != nothing:
-      pcv_var = rep_cond_value_var(get_inner_id(parent.id));
-      pcd_var = rep_cond_is_def_var(get_inner_id(parent.id));
-
-      cond_eval_code = (
-        branch(
-          // If the parent variable is defined and different from
-          // the trigger value then the overall condition is false
-          and((pcd_var, neg(is_eq(pcv_var, parent.trigger)))),
-          (set_var(l0, obj_false)),
-          // Otherwise, we first calculate the local condition,
-          // which is the same as the overall condition unless the
-          // parent is undefined and the local condition is true
-          ( cond_eval_code |
-            do_if(
-              and((neg(pcd_var), is_eq(l0, obj_true))),
-              clear_loc_var(l0)
-            )
-          )
-        )
-      );
-    ;
-
-    // Saving the value of the condition for dependent condition, if there are any
-    if has_deps:
-      id = get_inner_id(node_id);
-      cv_var = rep_cond_value_var(id);
-      cd_var = rep_cond_is_def_var(id);
-
-      cond_eval_code = (
-        cond_eval_code |
-        set_bvar(cv_var, is_eq(l0, obj_true)),
-        set_bvar(cd_var, is_not_null(l0))
-      );
-    ;
-
-    return cond_eval_code;
-  }
-
-
   Instr+ gen_update_code(AutoNodeAction action) =
-    state_update_action()   = ( do_if(
-                                  up_to_date_var(std_block_node_id(action.target_var)),
-                                  set_ivar(update_source_var(action.target_var), action.expr_idx)
-                                ),
-                                mark_for_update(std_block_node_id(action.target_var))
-                              ),
-    msg_send_action()       = (mark_for_update(std_block_node_id(action.target_db)));
+    state_update_action()   = (queue_update(std_block_node_id(action.target_var), action.expr_idx)),
+    msg_send_action()       = (queue_update(std_block_node_id(action.target_db)));
 
 
   Instr* gen_clear_code(AutoNodeAction action) =
-    state_update_action()   = { target_var = action.target_var;
-                                node_id = std_block_node_id(target_var);
-                                return (
-                                  do_if(
-                                    up_to_date_var(node_id),
-                                    set_ivar(update_source_var(target_var), multivalue_node_expr_count[node_id])
-                                  ),
-                                  mark_for_update(node_id)
-                                );
+    state_update_action()   = { node_id = std_block_node_id(action.target_var);
+                                return (queue_update(node_id, multivalue_node_expr_count[node_id]));
                               },
     msg_send_action()       = ();
 }
@@ -727,26 +645,12 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
 ////////////////////////////////////////////////////////////////////////////////
 
 implicit program : Program, automaton : Automaton {
-  Instr mark_for_update(BlockNodeId node_id) =
-    match (nodes_by_id[node_id])
-      input()                       |
-      derived()                     |
-      state()                       |
-      derived_disc()                |
-      discrete_time_varying_node()  |
-      nested_auto_input_node()      |
-      nested_auto_node()            |
-      nested_db_node()              = queue_update(automaton.name, node_id),
-      cond_node()                   |
-      rep_cond_node()               |
-      time_varying_node()           = queue_cond_update(automaton.name, node_id, true);
-
-
-  Instr mark_for_update_from_parent_cond(CondNodeId node_id) = queue_cond_update(automaton.name, node_id, false);
+  Instr queue_update(BlockNodeId node_id) = queue_update(automaton.name, node_id);
+  Instr queue_update(BlockNodeId node_id, Nat expr_idx) = queue_update(automaton.name, node_id, expr_idx);
 
 
   Instr* flag_as_changed_if_output(Atom id) {
-    return () if not automaton.outputs(id, *);
+    return () if not automaton.outputs(auto_memb_var(id), *);
     return (
       set_ivar(changed_output(changed_outputs_count), outputs_indexes[id]),
       increment(changed_outputs_count)
@@ -759,82 +663,45 @@ implicit program : Program, automaton : Automaton {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-(body: Instr*, two_level_update: Bool) gen_queue_update_method(AutoInputNode node, Nat index, Nat level_size) =
-  gen_std_queue_update_method(node, index, level_size);
+(body: Instr*, args: IntVar*) queue_update_method(AutoNode node, Nat index, Nat level_size) {
+  return match (node)
+    state()             |
+    derived_discrete()  = (body: method_body(node.id, node.exprs, node.level, index, level_size), args: (update_expr_index)),
+    time_varying_node() = (body: method_body(node, index, level_size), args: ()),
+    _                   = (body: std_method_body(node.id, node.level, index, level_size), args: ());
 
 
-(body: Instr*, two_level_update: Bool) gen_queue_update_method(AutoDerivedNode node, Nat index, Nat level_size) =
-  gen_std_queue_update_method(node, index, level_size);
+  Instr* method_body(StdBlockNodeId node_id, Expr* exprs, Nat level, Nat index, Nat level_size) {
+    update_source_var = update_source_var(get_inner_id(node_id));
+    return (branch(
+      up_to_date_var(node_id),
+      (std_action(node_id, level, index, level_size) | set_ivar(update_source_var, update_expr_index)),
+      (do_if_not(is_eq(update_source_var, update_expr_index), set_ivar(update_source_var, |exprs|)))
+    ));
+  }
 
 
-(body: Instr*, two_level_update: Bool) gen_queue_update_method(AutoStateNode node, Nat index, Nat level_size) =
-  gen_std_queue_update_method(node, index, level_size);
+  Instr* method_body(AutoTimeVaryingNode node, Nat index, Nat level_size) {
+    watched_signal_up_to_date_var = watched_signal_up_to_date_var(get_inner_id(node.id));
+    inval_cache_instr = set_bvar(watched_signal_up_to_date_var, false);
+    return (std_method_body(node.id, node.level, index, level_size) | inval_cache_instr);
+  }
 
 
-(body: Instr*, two_level_update: Bool) gen_queue_update_method(AutoDiscDerivedNode node, Nat index, Nat level_size) =
-  gen_std_queue_update_method(node, index, level_size);
+  Instr* std_method_body(BlockNodeId node_id, Nat level, Nat index, Nat level_size) =
+    (do_if(up_to_date_var(node_id), std_action(node_id, level, index, level_size)));
 
 
-(body: Instr*, two_level_update: Bool) gen_queue_update_method(AutoCondNode node, Nat index, Nat level_size) {
-  code = gen_std_queue_update_code(node.id, node.level, index, level_size);
-  if node.parent != nothing:
-    cond_expr_up_to_date_var = cond_expr_up_to_date_var(get_inner_id(node.id));
-    inval_cache_instr = do_if(invalidate_cond_expr_cache, set_bvar(cond_expr_up_to_date_var, false));
-    return (body: (code | inval_cache_instr), two_level_update: true);
-  else
-    return (body: code, two_level_update: false);
-  ;
-}
-
-
-(body: Instr*, two_level_update: Bool) gen_queue_update_method(AutoRepCondNode node, Nat index, Nat level_size) =
-  ## ISN'T THIS A BUG? RETURNING two_level_update == false FOR A NESTED, REPEATED CONDITION?
-  ## I'M NOT AT ALL CLEAR HOW ALL THIS STUFF WORKS.
-  gen_std_queue_update_method(node, index, level_size);
-
-
-(body: Instr*, two_level_update: Bool) gen_queue_update_method(AutoTimeVaryingNode node, Nat index, Nat level_size) {
-  watched_signal_up_to_date_var = watched_signal_up_to_date_var(get_inner_id(node.id));
-  inval_cache_instr = do_if(invalidate_cond_expr_cache, set_bvar(watched_signal_up_to_date_var, false));
-  code = (gen_std_queue_update_code(node.id, node.level, index, level_size) | inval_cache_instr);
-  return (body: code, two_level_update: true);
-}
-
-
-(body: Instr*, two_level_update: Bool) gen_queue_update_method(AutoDiscTimeVaryingNode node, Nat index, Nat level_size) =
-  gen_std_queue_update_method(node, index, level_size);
-
-
-(body: Instr*, two_level_update: Bool) gen_queue_update_method(AutoNestedAutoInputNode node, Nat index, Nat level_size) =
-  gen_std_queue_update_method(node, index, level_size);
-
-
-(body: Instr*, two_level_update: Bool) gen_queue_update_method(AutoNestedAutoNode node, Nat index, Nat level_size) =
-  gen_std_queue_update_method(node, index, level_size);
-
-
-(body: Instr*, two_level_update: Bool) gen_queue_update_method(AutoNestedDBNode node, Nat index, Nat level_size) =
-  gen_std_queue_update_method(node, index, level_size);
-
-////////////////////////////////////////////////////////////////////////////////
-
-(body: Instr*, two_level_update: Bool) gen_std_queue_update_method(AutoNode node, Nat index, Nat level_size) =
-  (body: gen_std_queue_update_code(node.id, node.level, index, level_size), two_level_update: false);
-
-
-Instr* gen_std_queue_update_code(BlockNodeId node_id, Nat level, Nat index, Nat level_size) {
-  idx_var = ivar(0);
-  up_to_date_var = up_to_date_var(node_id);
-  count_var = update_count_var(level);
-  nodes_var = nodes_to_update_var(level, idx_var);
-
-  extra_code = if level_size > 2
-    then (
-      set_ivar(idx_var, count_var),
-      set_ivar(nodes_var, index),
-      set_ivar(count_var, add(idx_var, 1))
-    )
-    else ();
-
-  return (do_if(up_to_date_var, (set_bvar(up_to_date_var, false)) & extra_code));
+  Instr* std_action(BlockNodeId node_id, Nat level, Nat index, Nat level_size) {
+    idx_var = ivar(0);
+    up_to_date_var = up_to_date_var(node_id);
+    count_var = update_count_var(level);
+    nodes_var = nodes_to_update_var(level, idx_var);
+    return (
+      set_bvar(up_to_date_var, false),
+      set_ivar(idx_var, count_var)          if level_size > 2,
+      set_ivar(nodes_var, index)            if level_size > 2,
+      set_ivar(count_var, add(idx_var, 1))  if level_size > 2
+    );
+  }
 }

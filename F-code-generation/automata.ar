@@ -5,9 +5,9 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
 
     memb_bool_vars = seq_union((memb_bool_vars(n) : n <- nodes)) & [(is_new, true)];
     memb_int_vars = auto_memb_int_vars;
-    memb_obj_vars = seq_union((memb_obj_vars(n) : n <- nodes)) & [(auto_memb_var(id), :blank) : id <- keys(automaton.params)];
+    memb_obj_vars = seq_union((memb_obj_vars(n) : n <- nodes)) & [(id, :blank) : id <- keys(automaton.params)];
 
-    const_data = [time_slots_len(a, ls) : a, c <- automaton.time_rules, ls = trigger_times_table(c.time_expr), ls != ()];
+    const_data = [time_slots_len(bare_id(a), ls) : a, c <- automaton.time_rules, ls = trigger_times_table(c.time_expr), ls != ()];
 
     pre_init_code     = gen_pre_init_code(memb_bool_vars, memb_int_vars, memb_obj_vars);
     nodes_update_code = merge(([n.id -> gen_node_update_code(n)] : n <- nodes));
@@ -16,11 +16,11 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
 
     // Generating cleanup code
     cleanup_code = join(((release(v), init_memb_var(v, :blank)) : v, unused_var <- rand_sort(memb_obj_vars))) &
-                   rand_sort([auto_cleanup(memb_auto_var(id), auto.type) : id, auto <- automaton.nested_autos]) &
-                   rand_sort([cleanup_db(var, type) : var, type <- automaton.nested_dbs]);
+                   rand_sort([auto_cleanup(id, auto.type) : id, auto <- automaton.nested_autos]) &
+                   rand_sort([cleanup_db(var, db.type) : var, db <- automaton.nested_dbs]);
 
     // Generating methods for queuing updates
-    queue_update_code = [n.id -> gen_queue_update_method(n, nodes_indexes[n.id], item(levels_sizes, n.level)) : n <~ nodes];
+    queue_update_code = [n.id -> queue_update_method(n, nodes_indexes[n.id], item(levels_sizes, n.level)) : n <~ nodes];
 
     assert {
       inputs_count = |automaton.inputs|;
@@ -48,12 +48,12 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
       name:                 automaton.name,
       ord_inputs:           sorted_input_ids,
       ord_outputs:          sorted_outputs_ids,
-      input_memb_preds:     [i -> memb_test_preds_map[d.type] : i, d <- automaton.inputs],
-      inputs:               automaton.inputs,
-      outputs:              automaton.outputs,
+      input_memb_preds:     [bare_id(i) -> memb_test_preds_map[d.type] : i, d <- automaton.inputs],
+      inputs:               [bare_id(id) -> (type: input.type, discrete: input.discrete) : id, input <- automaton.inputs],
+      outputs:              [bare_id(id) -> (type: output.type, discrete: output.discrete) : id, output <- automaton.outputs],
       memb_vars:            memb_vars,
-      nested_auto_vars:     [memb_auto_var(id) -> auto.type : id, auto <- automaton.nested_autos],
-      nested_trans_blocks:  automaton.nested_dbs,
+      nested_auto_vars:     [id -> auto.type : id, auto <- automaton.nested_autos],
+      nested_trans_blocks:  [id -> db.type : id, db <- automaton.nested_dbs],
       pre_init_code:        pre_init_code,
       cleanup_code:         cleanup_code,
       nodes_update_code:    nodes_update_code,
@@ -162,34 +162,35 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
     ## THESE VARIABLES HAVE ALREADY BEEN INITIALIZED TO BLANK, AND THAT'S REDUNDANT
     code_4 = gen_params_init_code;
 
-    code_5 = rand_sort([auto_pre_init(memb_auto_var(id), auto.type) : id, auto <- automaton.nested_autos]);
+    code_5 = rand_sort([auto_pre_init(id, auto.type) : id, auto <- automaton.nested_autos]);
 
-    code_6 = rand_sort([init_db(v, t) : v, t <- automaton.nested_dbs]);
+    code_6 = rand_sort([init_db(v, db.type) : v, db <- automaton.nested_dbs]);
 
     return join((code_0, code_1, code_2, code_3, code_4, code_5, code_6));
   }
 
 
   Instr* gen_apply_code(AutoNode+ nodes) {
-    sorted_memb_copy_vars = rand_sort(memb_copy_vars);
-    sorted_memb_copy_vars_ids = rand_sort(memb_copy_vars_ids);
+    ord_signals_to_copy = rand_sort(signals_to_copy);
 
     node_idx_var = ivar(0);
     node_count_var = ivar(1);
     curr_time_var = ivar(2);
     a_free_int_var = ivar(3);
 
-    ## WHAT DOES THIS DO? I HAVE NO IDEA...
-    queue_memb_copy_updates_code = join((
-      opt_do_if(
-        memb_has_changed(id),
-        (mark_for_update(d) : d <- rand_sort(downstream_nodes_ids(nodes_by_id[std_block_node_id(id)])))
-      ) : id <- sorted_memb_copy_vars_ids
-    ));
-
     levels_code = (gen_level_code(rand_sort(ids), i, item(levels_offsets, i), node_idx_var, node_count_var, curr_time_var) : ids @ i <- nodes_ids_by_level);
 
     first_pass_finish_code = (set_bvar(is_new, false));
+
+    for id <- rand_sort(continuous_inputs_ids):
+      instr = do_if(
+        is_null(auto_memb_var(id)),
+        ## HERE I SHOULD DO AN init_memb_var() INSTEAD, I THINK
+        (reset_memb_var(auto_memb_var(id), :blank), clear_input(automaton.name, id))
+      );
+      first_pass_finish_code = (first_pass_finish_code | instr);
+    ;
+
     if discrete_inputs_ids != []:
       if item(levels_sizes, 0) > 2:
         counter_var = ivar(0); ## ivar(0) IS ALREADY USED ELSEWHERE
@@ -205,21 +206,18 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
         ;
         first_pass_finish_code = (first_pass_finish_code | set_ivar(update_count_var(0), counter_var));
       ;
-      first_pass_finish_code = (first_pass_finish_code | auto_apply(automaton.name));
     ;
 
+    first_pass_finish_code = (first_pass_finish_code | auto_apply(automaton.name));
+
     apply_code = (reset_memb_var(auto_memb_var(id), :blank) : id <- rand_sort(discrete_signals_ids)) &
-                 (init_memb_var(v, :blank) : v <- sorted_memb_copy_vars) &
-                 (set_var(v, auto_memb_var(bare_id(v))) : v <- sorted_memb_copy_vars) &
+                 (init_memb_var(prev_var_value(v), :blank) : v <- ord_signals_to_copy) &
+                 (set_var(prev_var_value(v), v) : v <- ord_signals_to_copy) &
                  (set_ivar(changed_outputs_count, 0) if automaton.outputs != []) &
-                 (mark_for_update(n.id) : n <- nodes, must_always_be_recalculated(n)) &
                  join(levels_code) &
-                 (reset_memb_var(v, :blank) : v <- sorted_memb_copy_vars) &
+                 (reset_memb_var(prev_var_value(v), :blank) : v <- ord_signals_to_copy) &
                  (do_if(is_new, first_pass_finish_code));
 
-    init_memb_copies_code = (set_bvar(memb_has_changed(id), false) : id <- sorted_memb_copy_vars_ids);
-
-    apply_code = init_memb_copies_code & apply_code & queue_memb_copy_updates_code;
     apply_code = add_timer_code(apply_code, curr_time_var, a_free_int_var) if is_time_sensitive(automaton.name);
     return apply_code;
 
@@ -240,7 +238,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
                   set_ivar(a_free_int_var, time_varying_cond_ids_heap_var(0)),
                   switch_on_nat(
                     a_free_int_var,
-                    ( (mark_for_update(time_varying_nodes_by_idx[i]))
+                    ( (queue_update(time_varying_nodes_by_idx[i]))
                       : i < nz_nat(|time_varying_nodes_by_idx|)
                     )
                   ),
@@ -281,10 +279,10 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
             else auto_update_node(automaton.name, id),
           set_bvar(up_to_date_var(id), true)
         );
-        is_disc_input = match (id)
+        is_discrete_input = match (id)
           std_block_node_id(a?) = level_idx == 0 and in(a, discrete_inputs_ids),
           _                     = false;
-        code = (do_if(neg(is_new), code)) if is_disc_input;
+        code = (do_if(neg(is_new), code)) if is_discrete_input;
         return code;
       }
       : id <- nodes_ids
@@ -316,12 +314,12 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
 
   Instr* gen_params_init_code {
     param_ids = keys(automaton.params);
-    dep_map = [a -> [if v :: MembVar then bare_id(v) else {fail;} : v <- extern_vars(p.value)] : a, p <- automaton.params];
+    dep_map = [a -> [cast_auto_memb_var(v) : v <- extern_vars(p.value)] : a, p <- automaton.params];
     assert not (s, ts <- dep_map, t <- ts : not in(t, param_ids));
     sorted_params = topological_sort(dep_map);
     let next_var_gen = blank_var_gen:
       params_init_code = (
-        (gen_safe_eval_code(automaton.params[p].value, auto_memb_var(p)) : p <- rand_sort(ps))
+        (gen_safe_eval_code(automaton.params[p].value, p) : p <- rand_sort(ps))
         : ps <- sorted_params
       );
     ;

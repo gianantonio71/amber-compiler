@@ -267,10 +267,11 @@ ImplArg         impl_arg(Atom a)            = :impl_arg(a);
 MembVar         memb_var(Atom a)            = :memb_var(a);
 
 AutoMembVar     auto_memb_var(Atom a)       = :auto_memb_var(a);
-AutoMembVarCopy auto_memb_var_copy(Atom a)  = :auto_memb_var_copy(a);
 
 QualDBMembVar   qual_db_memb_var(AnyDBVar dbv, MembVar mv)        = qual_db_memb_var(db_var: dbv, memb_var: mv);
 QualAutoMembVar qual_auto_memb_var(AnyAutoVar av, AutoMembVar mv) = qual_auto_memb_var(auto_var: av, memb_var: mv);
+
+PrevVarValue prev_var_value(AnyAutoMembVar v) = :prev_var_value(v);
 
 LocAutoVar  loc_auto_var(Atom a)  = :loc_auto_var(a);
 MembAutoVar memb_auto_var(Atom a) = :memb_auto_var(a);
@@ -346,6 +347,7 @@ Expr accessor(Expr e, SymbObj f) = accessor(expr: e, field: f);
 Expr accessor_test(Expr e, SymbObj f) = accessor_test(expr: e, field: f);
 
 OutputIsDefExpr output_is_def(LocAutoVar v, Atom o)  = output_is_def(var: v, output: o);
+OutputIsSetExpr output_is_set(LocAutoVar v, Atom o)  = output_is_set(var: v, output: o);
 
 AutoMethodCall auto_method_call(AnyAutoVar v, MethodSymbol m, Expr* as)  = auto_method_call(var: v, name: m, args: as);
 AutoMethodCall auto_method_call(MethodSymbol m, Expr* as)                = auto_method_call(name: m, args: as);
@@ -370,8 +372,6 @@ SetCompExpr set_comp(Expr e, Clause c)                          = set_comp(expr:
 MapCompExpr map_comp(Expr ke, Expr ve, Clause c)                = map_comp(key_expr: ke, value_expr: ve, source: c);
 BinRelCompExpr bin_rel_comp((Expr, Expr) es, Clause c)          = bin_rel_comp(exprs: es, source: c);
 TernRelCompExpr tern_rel_comp((Expr, Expr, Expr) es, Clause c)  = tern_rel_comp(exprs: es, source: c);
-
-IsSetExpr is_set(AnyAutoMembVar v)  = :is_set(v);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -452,20 +452,6 @@ FormalClsArg formal_cls_arg(ClsVar v, ClsType t)  = formal_cls_arg(var: v, type:
 
 ////////////////////////////////////////////////////////////////////////////////
 
-AutoUpdate      state_update(Atom a, Expr e)          = state_update(target: a, value: e);
-AutoSetDiscrete discrete_signal_def(Atom a, Expr e)   = discrete_signal_def(target: a, value: e);
-AutoMsgSend     msg_send(MembDBVar t, Expr m)         = msg_send(target: t, message: m);
-
-AutoCondAction cond_action(Expr c, [AutoAnyCondAction] b, [AutoAnyCondAction] e) {
-  assert b != [] or e != [];
-  return cond_action(cond: c, body: b, else: e);
-}
-
-AutoRepAction rep_action(Expr c, [AutoAnyRepAction] b, [AutoAnyRepAction] e) {
-  assert b != [] or e != [];
-  return rep_action(cond: c, body: b, else: e);
-}
-
 Method method(MethodSymbol n, (NeType, Maybe[StdVar])* as, NeType t, Expr e) = method(name: n, args: as, ret_type: t, expr: e);
 
 Update update(UpdateSymbol n, (NeType, StdVar)* as, Statement* ss)    = update(name: n, args: as, body: ss);
@@ -481,6 +467,19 @@ BasicTimeExpr time_or(BasicTimeExpr te1, BasicTimeExpr te2)   = time_or(left: te
 
 CyclicTimeExpr every(BasicTimeExpr te, NzNat ns)  = every(expr: te, nanosecs: ns);
 
-TimeVaryingCond time_varying_boolean_cond(Expr c, TimeExpr te) = time_varying_boolean_cond(expr: c, time_expr: te);
-TimeVaryingCond time_varying_unchanged_cond(Expr c, TimeExpr te) = time_varying_unchanged_cond(expr: c, time_expr: te);
-TimeVaryingCond time_varying_since_cond([+AutoMembVar] ss, TimeExpr te, Bool at0) = time_varying_since_cond(signals: ss, time_expr: te, starts_at_time_0: at0);
+TimeRule boolean_time_rule(Expr c, TimeExpr te) = boolean_time_rule(expr: c, time_expr: te);
+TimeRule unchanged_time_rule(Expr c, TimeExpr te) = unchanged_time_rule(expr: c, time_expr: te);
+TimeRule since_time_rule([+AutoMembVar] ss, TimeExpr te, Bool at0) = since_time_rule(signals: ss, time_expr: te, starts_at_time_0: at0);
+
+Input  input(NeType t, Bool d)    = input(type: t, discrete: d);
+Output output(NeType t, Bool d)   = output(type: t, discrete: d);
+
+ReactCond on_becoming_true_cond(Expr c) = on_becoming_true_cond(cond: c);
+ReactCond react_cond(Expr c, [+AnyAutoMembVar -> Bool] ss) = react_cond(cond: c, signals_state: ss);
+
+StateVar state_var(NeType t, Expr e, [StateVarUpdate] us) = state_var(type: t, init_value: e, updates: us);
+StateVarUpdate state_var_update(Expr v, ReactCond c) = state_var_update(value: v, cond: c);
+
+DiscreteRule discrete_rule(Expr v, ReactCond c) = discrete_rule(value: v, cond: c);
+
+MsgSendRule msg_send_rule(Expr m, ReactCond c) = msg_send_rule(message: m, cond: c);

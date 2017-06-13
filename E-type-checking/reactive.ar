@@ -6,10 +6,10 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
 
 implicit program : Program, typedefs : [TypeName -> NeType], context : Automaton, var_aliases : [], typed_vars : [] {
   [<Automaton, Method> -> [+TypeCheckingError]] typecheck_automaton {
-    // Typechecking and inferring type of consts
+    // Typechecking and inferring type of constants
     consts = context.params;
     consts_vars = [id -> type_dependencies(info.value) : id, info <- consts];
-    expl_consts_types = [auto_memb_var(id) -> info.type : id, info <- consts, info.type?];
+    expl_consts_types = [id -> info.type : id, info <- consts, info.type?];
 
     consts_ids = keys(consts);
     curr_env = expl_consts_types;
@@ -21,18 +21,15 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Automaton
         : c <- ready_consts, info = consts[c]
       ]);
       return [context -> errs] if errs != [];
-      env_delta = [
-        v -> expr_type(consts[c].value, curr_env)
-        : c <- ready_consts, v = auto_memb_var(c), not curr_env(v, *)
-      ];
+      env_delta = [c -> expr_type(consts[c].value, curr_env) : c <- ready_consts, not curr_env(c, *)];
       curr_env = curr_env & env_delta;
       consts_ids = consts_ids - ready_consts;
     ;
 
     // All explicitly declared types, except for outputs
-    inputs_types      = [auto_memb_var(id) -> info.type : id, info <- context.inputs];
-    state_vars_types  = [auto_memb_var(id) -> info.type : id, info <- context.state];
-    time_rules_types  = [auto_memb_var(id) -> type_bool : id, unused_var <- context.time_rules];
+    inputs_types      = [id -> info.type : id, info <- context.inputs];
+    state_vars_types  = [id -> info.type : id, info <- context.state];
+    time_rules_types  = [id -> type_bool : id, unused_var <- context.time_rules];
 
     expl_types = inputs_types & state_vars_types & time_rules_types;
 
@@ -47,90 +44,95 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Automaton
       return [context -> [auto_typechecking_cycle(context.name, rule_ids)]] if ready_rules == [];
       errs = union([typecheck(rules[r], type_any, curr_env) : r <- ready_rules]);
       return [context -> errs] if errs != [];
-      env_delta = [auto_memb_var(r) -> expr_type(rules[r], curr_env) : r <- ready_rules];
+      env_delta = [r -> expr_type(rules[r], curr_env) : r <- ready_rules];
       assert disjoint(keys(curr_env), keys(env_delta));
       curr_env = curr_env & env_delta;
       rule_ids = rule_ids - ready_rules;
     ;
 
     // Typechecking and inferring types of discrete rules
-    actions = context.actions & context.rep_actions;
-    actions_deps = [a -> action_deps(a) : a <- actions];
+    discrete_rules = context.discrete_rules;
+    discrete_rules_vars = [id -> union([type_dependencies(r) : r <- rs]) : id, rs <- discrete_rules];
 
-    while actions != []:
-      ready_actions = [a : a <- actions, not (v <- actions_deps[a] : not curr_env(v, *))];
-      if ready_actions == []:
-        disc_rule_ids = nonempty(union([disc_rule_ids(a) : a <- actions]));
-        return [context -> [auto_typechecking_cycle(context.name, disc_rule_ids)]];
-      ;
-      errs = union([typecheck_action(a, curr_env) : a <- ready_actions]);
+    discrete_rules_ids = keys(discrete_rules);
+    while discrete_rules_ids != []:
+      ready_rules = [r : r <- discrete_rules_ids, not (v <- discrete_rules_vars[r] : not curr_env(v, *))];
+      return [context -> [auto_typechecking_cycle(context.name, discrete_rules_ids)]] if ready_rules == [];
+
+      ## THIS CAUSED THE TYPECHECKER TO CRASH. SEE crash-08.ar FOR DETAILS.
+      ## RESTORE ONCE BUG IS FIXED
+      // errs = union([
+      //   typecheck_guarded_expr(r.value, r.cond.cond, type_any, curr_env)
+      //   : id <- ready_rules, r <- discrete_rules[id]
+      // ]);
+
+      ## THIS IS A WORKAROUND FOR A TYPECHECKING BUG
+      errs = union([
+        union([typecheck_guarded_expr(r.value, r.cond.cond, type_any, curr_env) : r <- discrete_rules[id]])
+        : id <- ready_rules
+      ]);
+
       return [context -> errs] if errs != [];
-      env_delta = [v -> union_superset(ts) : v, ts <- merge_values([disc_signals_types(a, curr_env) : a <- ready_actions])];
-      ## NOTE THAT HERE I'M ASSUMING DISCRETE RULES HAVE A SINGLE DEFINITION,
-      ## WHICH IS CURRENTLY TRUE BUT MAY CHANGE IN THE FUTURE
+      env_delta = [id -> union_superset([expr_type(r.value, curr_env) : r <- discrete_rules[id]]) : id <- ready_rules];
       assert disjoint(keys(curr_env), keys(env_delta));
       curr_env = curr_env & env_delta;
-      actions = actions - ready_actions;
+      discrete_rules_ids = discrete_rules_ids - ready_rules;
     ;
-
-    // Checking all outputs have the right type
-    errs = [
-      invalid_output_type(id, actual_type, info.type)
-      : id, info <- context.outputs, actual_type = curr_env[auto_memb_var(id)], not is_subset(actual_type, info.type)
-    ];
-    return [context -> errs] if errs != [];
 
     // Now that we have the type of all member variables, we can typecheck all the remaining expressions
     errs = union([
       // Initial value of all state variables
-      union([typecheck(info.init_value, info.type, curr_env) : unused_var, info <- context.state]),
+      union([typecheck(sv.init_value, sv.type, curr_env) : unused_var, sv <- context.state]),
+
+      // State variable updates
+      union([
+        typecheck(u.value, sv.type, curr_env) & typecheck(u.cond.cond, type_bool, curr_env)
+        : unused_var, sv <- context.state, u <- sv.updates
+      ]),
+
       // Time-varying conditions
-      union([typecheck_time_varying_cond(tvc, curr_env) : unused_var, tvc <- context.time_rules]),
+      union([typecheck_time_rule(tvc, curr_env) : unused_var, tvc <- context.time_rules]),
+
       // Nested automata inputs
-      union([typecheck_nested_auto_inputs(info.type, info.args, curr_env) : unused_var, info <- context.nested_autos])
+      union([typecheck_nested_auto_inputs(info.type, info.args, curr_env) : unused_var, info <- context.nested_autos]),
+
+      // Nested static automata message sends
+      union([
+        typecheck_guarded_expr(rule.message, rule.cond.cond, db_msg_type(db.type), curr_env)
+        : unused_var, db <- context.nested_dbs, db.msg_send_rule?, rule = db.msg_send_rule
+      ])
     ]);
+    return [context -> errs] if errs != [];
+
+    // Checking all outputs have the right type
+    errs = [
+      invalid_output_type(bare_id(id), actual_type, info.type)
+      : id, info <- context.outputs, actual_type = curr_env[id], not is_subset(actual_type, info.type)
+    ];
     return [context -> errs] if errs != [];
 
     // Typechecking methods
     return [m -> es : m <- context.methods, es = typecheck_auto_method(m, curr_env), es != []];
+
+
+    [TypeCheckingError] typecheck_guarded_expr(Expr expr, Expr cond, Type exp_type, [EnvVar -> Type] env) {
+      errs = typecheck(cond, type_bool, env);
+      return errs if errs != [];
+      new_env, unused_var = refine_env(cond, env);
+      return typecheck(expr, exp_type, new_env);
+    }
   }
 
 
-  [TypeCheckingError] typecheck_time_varying_cond(TimeVaryingCond cond, [EnvVar -> Type] env) =
-    time_varying_boolean_cond()   = typecheck(cond.expr, type_bool, env),
-    time_varying_unchanged_cond() = typecheck(cond.expr, type_any, env),
-    time_varying_since_cond()     = [];
-
-
-  [TypeCheckingError] typecheck_action(<AutoCondAction, AutoRepAction> action, [EnvVar -> Type] env) {
-    errs = typecheck(action.cond, type_bool, env);
-    return errs if errs != [];
-    env_when_true, env_when_false = refine_env(action.cond, env);
-    return union([typecheck_action(a, env_when_true)  : a <- action.body]) &
-           union([typecheck_action(a, env_when_false) : a <- action.else]);
-  }
-
-
-  [TypeCheckingError] typecheck_action(AutoUpdate action, [EnvVar -> Type] env) {
-    exp_type = env[auto_memb_var(action.target)];
-    return typecheck(action.value, exp_type, env);
-  }
-
-
-  [TypeCheckingError] typecheck_action(AutoSetDiscrete action, [EnvVar -> Type] env) =
-    typecheck(action.value, type_any, env);
-
-
-  [TypeCheckingError] typecheck_action(AutoMsgSend action, [EnvVar -> Type] env) {
-    db_type = var_type(action.target);
-    db_msg_type = msg_type_by_db[db_type];
-    return typecheck(action.message, db_msg_type, env);
-  }
+  [TypeCheckingError] typecheck_time_rule(TimeRule rule, [EnvVar -> Type] env) =
+    boolean_time_rule()   = typecheck(rule.expr, type_bool, env),
+    unchanged_time_rule() = typecheck(rule.expr, type_any, env),
+    since_time_rule()     = [];
 
 
   [TypeCheckingError] typecheck_nested_auto_inputs(AutoSymbol auto_type, [Atom -> Expr] args, [EnvVar -> Type] env) {
-    inputs = automata_by_id[auto_type].inputs;
-    return union([typecheck(e, inputs[i].type, env) : i, e <- args]);
+    inputs = automaton_by_id(auto_type).inputs;
+    return union([typecheck(e, inputs[auto_memb_var(i)].type, env) : i, e <- args]);
   }
 
 
@@ -139,54 +141,18 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Automaton
     env_delta = merge([[fn_par(i) -> t, value(v) -> t if v != nothing] : t, v @ i <~ method.args]);
     return typecheck(method.expr, method.ret_type, env & env_delta, var_aliases = aliases);
   }
-
-  //////////////////////////////////////////////////////////////////////////////
-
-  [AutoMembVar -> Type] disc_signals_types(<AutoCondAction, AutoRepAction> action, [EnvVar -> Type] env) {
-    env_when_true, env_when_false = refine_env(action.cond, env);
-    body_types = [disc_signals_types(a, env_when_true) : a <- action.body];
-    else_types = [disc_signals_types(a, env_when_false) : a <- action.else];
-    merged_types = merge_values(body_types & else_types);
-    return [v -> union_superset(ts) : v, ts <- merged_types];
-  }
-
-
-  [AutoMembVar -> Type] disc_signals_types(AutoSetDiscrete action, [EnvVar -> Type] env) =
-    [auto_memb_var(action.target) -> expr_type(action.value, env)];
-
-
-  [] disc_signals_types(<AutoUpdate, AutoMsgSend>, [EnvVar -> Type]) = [];
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-[AutoMembVar] action_deps(AutoAtomicAction action) =
-  state_update()        = [],
-  discrete_signal_def() = type_dependencies(action.value),
-  msg_send()            = [];
+[AutoMembVar] type_dependencies(DiscreteRule rule) = type_dependencies(rule.value) & type_dependencies(rule.cond.cond);
 
-[AutoMembVar] action_deps(<AutoCondAction, AutoRepAction> action) =
-  type_dependencies(action.cond) & union([action_deps(a) : a <- action.body | a <- action.else]);
-
-////////////////////////////////////////////////////////////////////////////////
 
 [AutoMembVar] type_dependencies(Expr expr) {
-  return [redirect(v) : v <- auto_expr_extern_vars(expr), is_self_var(v)];
+  return union([dependencies(v) : v <- auto_expr_extern_vars(expr)]);
 
-  AutoMembVar redirect(AutoMembVar v)     = v;
-  AutoMembVar redirect(AutoMembVarCopy v) = auto_memb_var(bare_id(v));
-
-  True  is_self_var(<AutoMembVar, AutoMembVarCopy>)   = true;
-  False is_self_var(<QualDBMembVar, QualAutoMembVar>) = false;
+  [AutoMembVar] dependencies(AutoMembVar v)  = [v];
+  [AutoMembVar] dependencies(PrevVarValue v) = dependencies(_obj_(v));
+  [] dependencies(<QualDBMembVar, QualAutoMembVar>) = [];
 }
-
-////////////////////////////////////////////////////////////////////////////////
-
-[Atom] disc_rule_ids(AutoAtomicAction action) =
-  state_update()        = [],
-  discrete_signal_def() = [action.target],
-  msg_send()            = [];
-
-[Atom] disc_rule_ids(<AutoCondAction, AutoRepAction> action) =
-  union([disc_rule_ids(a) : a <- action.body | a <- action.else]);

@@ -340,7 +340,7 @@ implicit syn_prg : SynPrg {
 
 
   [<AutoMembVar, MembAutoVar, MembDBVar, QualAutoMembVar>] resolve_symbol(SynAutoDef artifact, Atom symbol) {
-    internals = auto_internals[artifact.name];
+    internals = auto_internals[auto_symbol(artifact.name)];
     resols = [
       auto_memb_var(symbol) if in(symbol, internals.memb_vars),
       memb_db_var(symbol)   if internals.nested_dbs(symbol, *)
@@ -425,26 +425,26 @@ implicit syn_prg : SynPrg {
 ////////////////////////////////////////////////////////////////////////////////
 
 implicit syn_prg : SynPrg, auto_def : SynAutoDef {
-  Bool is_fake(SynTimeVaryingRule rule) =
-    syn_time_varying_boolean_rule()   |
-    syn_time_varying_unchanged_rule() = is_const(rule.time_expr),
-    syn_time_varying_inactive_rule()  = is_const(rule.time_expr) and
-                                        (initial_value(rule.time_expr) == false or rule.starts_at_time_0);
+  Bool is_fake(TimeRuleDecl rule) =
+    true_for_rule_decl()      |
+    unchanged_for_rule_decl() = is_const(rule.time_expr),
+    inactive_for_rule_decl()  = is_const(rule.time_expr) and
+                                (initial_value(rule.time_expr) == false or rule.starts_at_time_0);
 
 
-  SynPlainRule rewrite_fake_time_rule(SynTimeVaryingRule rule) {
+  PlainRuleDecl rewrite_fake_time_rule(TimeRuleDecl rule) {
     assert is_fake(rule);
 
     value = match (rule)
-      syn_time_varying_boolean_rule()   = if initial_value(rule.time_expr) == true then rule.cond else object(false),
-      syn_time_varying_unchanged_rule() = object(initial_value(rule.time_expr)),
-      syn_time_varying_inactive_rule()  = object(initial_value(rule.time_expr));
+      true_for_rule_decl()      = if initial_value(rule.time_expr) == true then rule.cond else object(false),
+      unchanged_for_rule_decl() = object(initial_value(rule.time_expr)),
+      inactive_for_rule_decl()  = object(initial_value(rule.time_expr));
 
-    return syn_plain_rule(rule.name, value, false);
+    return plain_rule_decl(rule.name, value, false);
   }
 
 
-  Bool is_disguised_auto(SynPlainRule rule) {
+  Bool is_disguised_auto(PlainRuleDecl rule) {
     expr = rule.expr;
     return false if not expr :: <SynImplArgsCall, call_lookalike(target: ConstOrVar, args: SynExpr+)>;
 
@@ -476,7 +476,7 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef {
   }
 
 
-  SynNestedAuto rewrite_disguised_auto(SynPlainRule rule) {
+  NestedAutoDecl rewrite_disguised_auto(PlainRuleDecl rule) {
     expr = rule.expr;
     fail if not expr :: <SynImplArgsCall, call_lookalike(target: ConstOrVar, args: SynExpr+)>;
 
@@ -496,6 +496,6 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef {
     assert args == () or |auto_interface.pos_inputs| == |args|;
     pos_inputs = if args != () then zip(auto_interface.pos_inputs, args) else ();
     named_inputs = ((bare_id(a), e) : a, e <- impl_args);
-    return syn_nested_auto(rule.name, id, pos_inputs & named_inputs);
+    return nested_auto_decl(rule.name, id, pos_inputs & named_inputs);
   }
 }

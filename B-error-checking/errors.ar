@@ -36,6 +36,7 @@ type ExprSpecWFError    = already_def_var(Var),
                             expr:   SynExpr,
                             resols: [<SymbChainExpr, ClsVar, AnyAutoVar, AnyDBVar, AnyRelVar, FnFamilyId, PreCall>]
                           ),
+                          not_a_signal(id: Atom),
                           ambiguous_expr(expr: SynExpr, resols: [Any]),
                           invalid_expr(expr: SynExpr),
                           wrong_builtin_arity(name: BuiltIn, args: SynExpr+),
@@ -171,6 +172,7 @@ ExprSpecWFError already_def_var(Var v)                                  = :alrea
 ExprSpecWFError undef_var_or_const(Atom v)                              = :undef_var_or_const(v);
 ExprSpecWFError not_an_object(SynExpr e, <SymbChainExpr, ClsVar, AnyAutoVar, AnyDBVar, AnyRelVar, FnFamilyId, PreCall> r) = not_an_object(expr: e, resols: [r]);
 ExprSpecWFError not_an_object(SynExpr e, [<SymbChainExpr, ClsVar, AnyAutoVar, AnyDBVar, AnyRelVar, FnFamilyId, PreCall>] rs) = not_an_object(expr: e, resols: rs);
+ExprSpecWFError not_a_signal(Atom id)                                   = not_a_signal(id: id);
 ExprSpecWFError ambiguous_expr(SynExpr e, [Any] rs)                     = ambiguous_expr(expr: e, resols: rs);
 ExprSpecWFError invalid_expr(SynExpr e)                                 = invalid_expr(expr: e);
 // ExprSpecWFError invalid_expr(SynExpr e)                                 = {print :invalid_expr; fail;};
@@ -251,6 +253,7 @@ Any anchor_obj(ExprSpecWFError err) =
   already_def_var(v?)                     = v,
   undef_var_or_const(a?)                  = :none,
   not_an_object()                         = err.expr,
+  not_a_signal()                          = :none,
   ambiguous_expr()                        = err.expr,
   invalid_expr()                          = err.expr,
   wrong_builtin_arity()                   = :none,
@@ -365,7 +368,7 @@ String user_name(SynFnDef fd)       = user_repr(fd.name) & "/" & printed(arity(f
 String user_name(AutoMethodDef md)  = user_repr(auto_symbol(md.target)) & "." & user_repr(method_symbol(md.name)) & "/" & printed(arity(md));
 String user_name(SynProcDef pd)     = capitalize(_str_(bare_id(pd.name)), false);
 
-String user_name(SynAutoDef auto)   = user_repr(auto.name);
+String user_name(SynAutoDef auto)   = user_repr(auto_symbol(auto.name));
 String user_name(SynDBDef db)       = user_repr(db_symbol(db.name));
 
 String user_name(SynDBDef db, DBMethodDef meth) = user_repr(db_symbol(db.name)) & "." & user_repr(method_symbol(meth.name));
@@ -547,6 +550,7 @@ String* basic_err_msg(ExprSpecWFError err) =
   already_def_var(v?)         = ("Variable redefinition: " & user_repr(v)),
   undef_var_or_const(a?)      = ("Undefined variable or constant: " & _str_(a)),
   not_an_object()             = ("Expression resolves to something other than an object"),
+  not_a_signal()              = ("Unknown signal: " & _str_(err.id)),
   ambiguous_expr()            = ("Ambiguous expression", printed(err.resols)),
   invalid_expr()              = ("Invalid expression"),
   wrong_builtin_arity()       = ("Wrong builtin function arity: " & user_repr(err.name)),
@@ -615,10 +619,10 @@ String* basic_err_msg(ExprSpecWFError err) =
 
   unknown_auto()              = ("Automaton does not exist: " & user_repr(err.auto_symb)),
   auto_var_not_defined()      = ({if err.is_other_var_type then "Not an automaton" else "Undefined"} & " variable: " & user_repr(err.var)),
-  unknown_input()             = ("Automaton " & user_repr(err.automaton.name) & " has no such input: " & _str_(err.name)),
-  unknown_output()            = ("Automaton " & user_repr(err.automaton.name) & " has no such output: " & _str_(err.name)),
+  unknown_input()             = ("Automaton " & user_repr(auto_symbol(err.automaton.name)) & " has no such input: " & _str_(err.name)),
+  unknown_output()            = ("Automaton " & user_repr(auto_symbol(err.automaton.name)) & " has no such output: " & _str_(err.name)),
   unknown_db_field()          = ("Automaton " & user_repr(db_symbol(err.database.name)) & " has no such state variable or nested automaton: " & _str_(err.name)),
-  not_a_discrete_signal()     = ("Not a discrete signal: " & user_repr(err.automaton.name) & "." & _str_(err.name)),
+  not_a_discrete_signal()     = ("Not a discrete signal: " & user_repr(auto_symbol(err.automaton.name)) & "." & _str_(err.name)),
   not_a_memb_copy_var()       = ("Unknown signal: @" & _str_(err.name)),
   invalid_signal_copy_context() = (
                                   "Invalid expression: @" & _str_(err.name),

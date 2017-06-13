@@ -27,56 +27,49 @@ String to_c_var_name(AnyClsVar v) =
 
 /////////////////////////////////////////////////////////////////////////////////////
 
-String to_c_var_name(<ObjVar, PendingInputVar> v, Bool add_prefix) {
-  assert match (v)
+String to_c_var_name(<ObjVar, PendingInputVar> var, Bool add_prefix) {
+  assert match (var)
     qual_auto_memb_var()  |
     qual_db_memb_var()    = add_prefix,
     _                     = true;
 
   prefix = if add_prefix
-    then match (v)
-      auto_memb_var_copy()  |
-      pending_state_var()   = "self_aux->",
-      _                     = "self->"
+    then match (var)
+      prev_var_value()    |
+      pending_state_var() = "self_aux->",
+      _                   = "self->"
     else "";
 
-  return match (v)
+  return match (var)
     var(Atom a?)                  = upper_camel_case(a) & "_V",
     fn_par(Nat n?)                = "p" & printed(n),
     impl_arg(Atom a?)             = "env."  & _str_(a) & "_V",
     capt_var(Nat n?)              = "D["  & printed(n) & "]",
     memb_var(Atom a?)             = prefix & upper_camel_case(a),
     auto_memb_var(a?)             = prefix & upper_camel_case(a) & "_AMV",
-    qual_auto_memb_var()          = to_c_var_name(v.auto_var, true) & "." & to_c_var_name(v.memb_var, false),
-    qual_db_memb_var()            = to_c_var_name(v.db_var, true) & "." & to_c_var_name(v.memb_var, false),
+    qual_auto_memb_var()          = to_c_var_name(var.auto_var, true) & "." & to_c_var_name(var.memb_var, false),
+    qual_db_memb_var()            = to_c_var_name(var.db_var, true) & "." & to_c_var_name(var.memb_var, false),
     watched_signal_value_var(a?)  = prefix & upper_camel_case(a) & "_WS",
-    auto_memb_var_copy(Atom a?)   = prefix & upper_camel_case(a) & "_O",
+    prev_var_value(v?)            = prefix & ad_hoc_var_name(v) & "_O",
     pending_state_var(a?)         = prefix & upper_camel_case(a) & "_PS",
     lvar(Nat n?)                  = "l" & printed(n),
-    evar()                        = "V" & printed(v.id) & "[" & to_c_idx_expr(v.idx) & "]",
+    evar()                        = "V" & printed(var.id) & "[" & to_c_idx_expr(var.idx) & "]",
     pending_input_var(Atom a?)    = prefix & upper_camel_case(a) & "_new";
+
+
+  String ad_hoc_var_name(AutoMembVar var) = upper_camel_case(bare_id(var));
+  String ad_hoc_var_name(QualAutoMembVar var) = ad_hoc_var_name(var.auto_var) & "_" & ad_hoc_var_name(var.memb_var);
+  String ad_hoc_var_name(MembAutoVar var) = to_c_var_name(var, false);
+  String ad_hoc_var_name(LocAutoVar) {fail;}
 }
 
 
 String to_c_var_name(BoolVar v, Bool add_prefix) {
-  prefix = if add_prefix
-    then match (v)
-      memb_has_changed()    |
-      rep_cond_value_var()  |
-      rep_cond_is_def_var() = "self_aux->",
-      _                     = "self->"
-    else "";
+  prefix = if add_prefix then "self->" else "";
 
   return match (v)
     bvar(n?)                                      = "b" & printed(n),
-    memb_has_changed(id?)                         = prefix & "hc_" & upper_camel_case(id),
-    rep_cond_value_var(id?)                       = prefix & "rc" & printed(id),
-    rep_cond_is_def_var(id?)                      = prefix & "rcd" & printed(id),
-    invalidate_cond_expr_cache                    = "inval_cache",
     cond_value_var(n?)                            = prefix & "cond_" & printed(n),
-    cond_expr_up_to_date_var(Nat n?)              = prefix & "cond_" & printed(n) & "_expr_up_to_date",
-    cond_expr_value_var(Nat n?)                   = prefix & "cond_" & printed(n) & "_expr",
-    cond_expr_is_def_var(Nat n?)                  = prefix & "cond_" & printed(n) & "_expr_is_def",
     cond_is_def_var(n?)                           = prefix & "cond_" & printed(n) & "_is_def",
     watched_signal_up_to_date_var(a?)             = prefix & upper_camel_case(a) & "_WSUTD",
     up_to_date_var(std_block_node_id(a?))         = prefix & upper_camel_case(a) & "_UTD",
@@ -98,7 +91,9 @@ String to_c_var_name(IntVar v, Bool add_prefix) {
     ivar(n?)                            = "i" & printed(n),
     curr_time                           = "curr_time",
     update_time                         = "update_time",
+    update_expr_index                   = "update_expr_index",
     update_source_var(a?)               = prefix & upper_camel_case(a) & "_update_source",
+    null_locks_count_var(a?)            = prefix & upper_camel_case(a) & "_LC",
     update_count_var(l?)                = prefix & "update_count_" & printed(l),
     nodes_to_update_var()               = prefix & "nodes_to_update_" & printed(v.level) & "[" & to_c_idx_expr(v.index) & "]",
     next_trigger_time_var(a?)           = prefix & upper_camel_case(a) & "_next_trigger_time",

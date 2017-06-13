@@ -34,9 +34,13 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
   }
 
 
-  [DBSymbol -> Type] msg_type_by_db = [
-    db.name -> union_superset([h.type : h <- db.handlers]) : db <- program.data_bases
-  ];
+  Type db_msg_type(DBSymbol type) {
+    return msg_type_by_db[type];
+
+    [DBSymbol -> Type] msg_type_by_db = [
+      db.name -> union_superset([h.type : h <- db.handlers]) : db <- program.data_bases
+    ];
+  }
 
 
   [DBSymbol -> [UpdateSymbol -> [+NeType*]]] updates_signatures_by_db_and_update_name_private = [
@@ -114,21 +118,23 @@ implicit program : Program {
 
   [Int+ -> Nat] int_seqs_ids = merge(([s -> i] : s @ i <- int_seqs));
 
-  Bool input_is_discrete(AutoSymbol auto, Atom input) = auto_input_is_discrete_map[auto][input];
+  Bool input_is_discrete(AutoSymbol auto, AutoMembVar input) {
+    return auto_input_is_discrete_map[auto][input];
 
-  Bool output_is_discrete(AutoSymbol auto, Atom output) = auto_output_is_discrete_map[auto][output];
+    [AutoSymbol -> [AutoMembVar -> Bool]] auto_input_is_discrete_map =
+      [a.name -> [id -> input.discrete  : id, input <- a.inputs]  : a <- program.auto_defs];
+  }
+
+  Bool output_is_discrete(AutoSymbol auto, AutoMembVar output) {
+    return auto_output_is_discrete_map[auto][output];
+
+    [AutoSymbol -> [AutoMembVar -> Bool]] auto_output_is_discrete_map =
+      [a.name -> [id -> output.discrete : id, output <- a.outputs] : a <- program.auto_defs];
+  }
 
   Bool is_time_sensitive(AutoSymbol auto) = in(auto, time_sensitive_autos);
 
   //////////////////////////////////////////////////////////////////////////////
-
-  [AutoSymbol -> [Atom -> Bool]] auto_input_is_discrete_map =
-    [a.name -> [id -> input.discrete  : id, input <- a.inputs]  : a <- program.auto_defs];
-
-
-  [AutoSymbol -> [Atom -> Bool]] auto_output_is_discrete_map =
-    [a.name -> [id -> output.discrete : id, output <- a.outputs] : a <- program.auto_defs];
-
 
   [AutoSymbol] time_sensitive_autos {
     automata = program.auto_defs;
@@ -141,7 +147,11 @@ implicit program : Program {
 
   //////////////////////////////////////////////////////////////////////////////
 
-  [AutoSymbol -> Automaton] automata_by_id = [auto.name -> auto : auto <- program.auto_defs];
+  Automaton automaton_by_id(AutoSymbol type) {
+    return automata_by_id[type];
+
+    [AutoSymbol -> Automaton] automata_by_id = [auto.name -> auto : auto <- program.auto_defs];
+  }
 
   //////////////////////////////////////////////////////////////////////////////
 
@@ -159,7 +169,7 @@ implicit program : Program {
 implicit program : Program, context : Context {
   AutoSymbol var_type(MembAutoVar var) =
     match (context)
-      automaton()   = context.nested_autos[bare_id(var)].type;
+      automaton()   = context.nested_autos[var].type;
 
 
   AutoSymbol var_type(LocAutoVar var) =
@@ -169,7 +179,7 @@ implicit program : Program, context : Context {
 
   DBSymbol var_type(MembDBVar var) =
     match (context)
-      automaton()   = context.nested_dbs[var],
+      automaton()   = context.nested_dbs[var].type,
       data_base()   = context.nested_dbs[var];
 
 

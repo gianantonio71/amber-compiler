@@ -24,7 +24,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
     FnPar               = {assert in(expr, def_vars); return ();},
     const_or_var()      = (),
     cls_par()           = (),
-    auto_memb_var_copy()= (),
+    prev_var_value()    = (),
     impl_args_call()    = (),
     unary_op_call()     = expr_wf_errors(expr.expr, def_vars),
     binary_op_call()    = expr_wf_errors(expr.left_arg, def_vars) & expr_wf_errors(expr.right_arg, def_vars),
@@ -45,7 +45,6 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
     accessor()          = if expr :: AccessorChain then () else expr_wf_errors(expr.expr, def_vars),
     accessor_test()     = if expr.expr :: IdChain then () else expr_wf_errors(expr.expr, def_vars),
     output_is_def()     = (),
-    is_set()            = (),
     ex_qual()           = clauses_exprs_wf_errors(expr.source, (expr.cond), def_vars),
     set_comp()          = clauses_exprs_wf_errors(expr.source, (expr.expr), def_vars),
     map_comp()          = clauses_exprs_wf_errors(expr.source, (expr.key_expr, expr.value_expr), def_vars),
@@ -101,7 +100,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
 
   ExprWFError* expr_local_wf_errors(SynExpr expr, [DefVar] def_vars) =
     const_or_var(a?)    = const_or_var_local_wf_errors(a, def_vars),
-    auto_memb_var_copy(a?)  = auto_memb_var_copy_local_wf_errors(a),
+    prev_var_value(a?)  = prev_var_value_local_wf_errors(a),
     accessor()          = if expr :: AccessorChain then accessor_local_wf_errors(expr, def_vars) else (),
     accessor_test()     = if expr :: <accessor_test(expr: IdChain, field: Atom)> ## BAD BAD: WORKING AROUND TYPE CHECKING "BUG"
                             then accessor_test_local_wf_errors(expr, def_vars)
@@ -120,7 +119,6 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
     range_comp()        = (already_def_var(expr.var) if already_def(expr.var, def_vars)), ## BUG BUG BUG
     match_expr()        = match_expr_local_wf_errors(expr, def_vars),
     output_is_def()     = output_is_def_local_wf_errors(expr.var, expr.output, def_vars),
-    is_set(v?)          = is_set_local_wf_errors(v, def_vars),
     _                   = ();
 
 
@@ -215,7 +213,10 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
   }
 
 
-  ExprWFError* auto_memb_var_copy_local_wf_errors(Atom symbol) {
+  ExprWFError* prev_var_value_local_wf_errors(AnyAutoMembVar var) {
+    fail if not var :: AutoMembVar;
+    symbol = bare_id(var);
+
     artifact_is_auto_def = match (artifact) syn_auto_def() = true, _ = false;
     return (invalid_signal_copy_context(symbol)) if not artifact_is_auto_def;
 
@@ -318,18 +319,18 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
   }
 
 
-  ExprWFError* is_set_local_wf_errors(Atom var_id, [DefVar] def_vars) {
-    errs = const_or_var_local_wf_errors(var_id, def_vars);
-    return errs if errs != ();
+  // ExprWFError* is_set_local_wf_errors(Atom var_id, [DefVar] def_vars) {
+  //   errs = const_or_var_local_wf_errors(var_id, def_vars);
+  //   return errs if errs != ();
 
-    artifact_is_auto_def = match (artifact) syn_auto_def() = true, _ = false;
-    ## HERE I COULD BE MORE SPECIFIC
-    return (invalid_expr(syn_is_set(var_id))) if not artifact_is_auto_def;
+  //   artifact_is_auto_def = match (artifact) syn_auto_def() = true, _ = false;
+  //   ## HERE I COULD BE MORE SPECIFIC
+  //   return (invalid_expr(syn_is_set(var_id))) if not artifact_is_auto_def;
 
-    resol = only(resolve_by_priority_as_expr((var_id), def_vars));
-    is_discrete = resol :: AutoMembVar and signal_is_discrete(self_auto_type, resol);
-    return (not_a_discrete_signal(var_id, auto_defs_by_id[self_auto_type]) if not is_discrete);
-  }
+  //   resol = only(resolve_by_priority_as_expr((var_id), def_vars));
+  //   is_discrete = resol :: AutoMembVar and signal_is_discrete(self_auto_type, resol);
+  //   return (not_a_discrete_signal(var_id, auto_defs_by_id[self_auto_type]) if not is_discrete);
+  // }
 
   ////////////////////////////////////////////////////////////////////////////////
   ////////////////////////////////////////////////////////////////////////////////

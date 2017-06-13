@@ -20,7 +20,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     fn_par()              |
     impl_arg()            |
     auto_memb_var()       = env[expr],
-    auto_memb_var_copy()  = env[auto_memb_var(bare_id(expr))],
+    prev_var_value(v?)    = env[v],
     memb_var()            = memb_var_type(expr),
     qual_db_memb_var()    = qual_db_memb_var_type(expr),
     qual_auto_memb_var()  = qual_auto_memb_var_type(expr),
@@ -41,7 +41,6 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     cast_expr()           = expr.type,
     accessor()            = accessor_expr_type(expr.expr, expr.field, env),
     accessor_test()       = type_bool,
-    output_is_def()       = type_bool,
     auto_method_call()    = auto_method_call_expr_type(expr, env),
     db_method_call()      = db_method_call_expr_type(expr, env),
     if_expr()             = if_expr_type(expr.cond, expr.then, expr.else, env),
@@ -54,7 +53,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     tern_rel_comp()       = tern_rel_comp_expr_type(expr.exprs, expr.source, env),
     seq_comp()            = seq_comp_expr_type(expr, env),
     range_comp()          = range_comp_expr_type(expr, env),
-    is_set()              = type_bool;
+    output_is_def()       = type_bool,
+    output_is_set()       = type_bool;
 
 
   Type memb_var_type(MembVar var) = match (context)
@@ -70,15 +70,15 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
   Type qual_auto_memb_var_type(QualAutoMembVar var) {
     auto_type = var_type(var.auto_var);
-    auto = automata_by_id[auto_type];
-    var_id = bare_id(var.memb_var);
-    if auto.outputs(var_id, *):
-      return auto.outputs[var_id].type;
-    elif auto.state(var_id, *):
-      return auto.state[var_id].type;
+    auto = automaton_by_id(auto_type);
+    memb_var = var.memb_var;
+    if auto.outputs(memb_var, *):
+      return auto.outputs[memb_var].type;
+    elif auto.state(memb_var, *):
+      return auto.state[memb_var].type;
     else
       ## WHAT ELSE IS ACCESSIBLE FROM INSIDE A PROCEDURE?
-      return auto.inputs[var_id].type;
+      return auto.inputs[memb_var].type;
     ;
   }
 

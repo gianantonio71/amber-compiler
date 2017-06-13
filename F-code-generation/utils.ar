@@ -37,71 +37,11 @@ Nat+ choose_disp_args(AnyType++ types, [TypeName -> Type] typedefs) {
   _                 = retrieve_from_nested_exprs(expr, retrieve_nested_int_seqs($)); ## BAD BAD: THE ($) PART IS A WORKAROUND FOR A BUG IN THE TYPECHECKER
 
 
-[Int+] retrieve_nested_int_seqs(Statement* stmts) =
-  seq_union((retrieve_from_nested_exprs(s, retrieve_nested_int_seqs($)) : s <- stmts)); ## BAD BAD: THE ($) PART IS A WORKAROUND FOR A BUG IN THE TYPECHECKER
-
-////////////////////////////////////////////////////////////////////////////////
-
-[Int+] retrieve_nested_int_seqs(Function fn) = retrieve_nested_int_seqs(fn.expr);
-
-[Int+] retrieve_nested_int_seqs(Procedure pc) = retrieve_nested_int_seqs(pc.body);
-
-////////////////////////////////////////////////////////////////////////////////
-
-[Int+] retrieve_nested_int_seqs(TimeVaryingCond cond) =
-  time_varying_boolean_cond()   |
-  time_varying_unchanged_cond() = retrieve_nested_int_seqs(cond.expr),
-  time_varying_since_cond()     = [];
-
-
-[Int+] retrieve_nested_int_seqs(AutoAtomicAction action) =
-  state_update()        = retrieve_nested_int_seqs(action.value),
-  discrete_signal_def() = retrieve_nested_int_seqs(action.value),
-  msg_send()            = retrieve_nested_int_seqs(action.message);
-
-
-[Int+] retrieve_nested_int_seqs(AutoCondAction action) =
-  retrieve_nested_int_seqs(action.cond) &
-  union([retrieve_nested_int_seqs(a) : a <- action.body & action.else]);
-
-
-[Int+] retrieve_nested_int_seqs(AutoRepAction action) =
-  retrieve_nested_int_seqs(action.cond) &
-  union([retrieve_nested_int_seqs(a) : a <- action.body & action.else]);
-
-
-[Int+] retrieve_nested_int_seqs(Method method) = retrieve_nested_int_seqs(method.expr);
-
-
-[Int+] retrieve_nested_int_seqs(Update update) = retrieve_nested_int_seqs(update.body);
-
-
-[Int+] retrieve_nested_int_seqs(Handler handler) = retrieve_nested_int_seqs(handler.body);
-
-
-[Int+] retrieve_nested_int_seqs(Automaton auto) =
-  union([retrieve_nested_int_seqs(sv.init_value) : unused_var, sv <- auto.state]) &
-  union([retrieve_nested_int_seqs(p.value) : unused_var, p <- auto.params]) &
-  union([retrieve_nested_int_seqs(e) : unused_var, e <- auto.rules]) &
-  union([retrieve_nested_int_seqs(c) : unused_var, c <- auto.time_rules]) &
-  union([retrieve_nested_int_seqs(a) : a <- auto.actions]) &
-  union([retrieve_nested_int_seqs(a) : a <- auto.rep_actions]) &
-  union([retrieve_nested_int_seqs(e) : unused_var_1, na <- auto.nested_autos, unused_var_2, e <- na.args]) &
-  union([retrieve_nested_int_seqs(m) : m <- auto.methods]);
-
-
-[Int+] retrieve_nested_int_seqs(Database db) =
-  union([retrieve_nested_int_seqs(sv.init_value) : unused_var, sv <- db.state_vars]) &
-  union([retrieve_nested_int_seqs(m) : m <- db.methods]) &
-  union([retrieve_nested_int_seqs(u) : u <- db.updates]) &
-  union([retrieve_nested_int_seqs(h) : h <- db.handlers]);
-
-
 [Int+] retrieve_nested_int_seqs(Program prg) =
-  union([retrieve_nested_int_seqs(fd) : fd <- prg.fndefs]) &
-  union([retrieve_nested_int_seqs(pd) : pd <- prg.proc_defs]) &
-  union([retrieve_nested_int_seqs(a)  : a  <- prg.auto_defs]) &
-  union([retrieve_nested_int_seqs(db) : db <- prg.data_bases]);
+  union([
+    retrieve_from_nested_exprs(obj, retrieve_nested_int_seqs($)) ## BAD BAD BAD: WORKAROUND FOR TYPECHECKING BUG...
+    : obj <- prg.fndefs | obj <- prg.proc_defs | obj <- prg.auto_defs | obj <- prg.data_bases
+  ]);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////

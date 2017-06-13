@@ -99,13 +99,14 @@ type ImplArg          = impl_arg(Atom);
 type MembVar          = memb_var(Atom);
 
 type AutoMembVar      = auto_memb_var(Atom);
-type AutoMembVarCopy  = auto_memb_var_copy(Atom);
 
 type QualDBMembVar    = qual_db_memb_var(db_var: AnyDBVar, memb_var: MembVar);
 type QualAutoMembVar  = qual_auto_memb_var(auto_var: AnyAutoVar, memb_var: AutoMembVar);
 
 type AnyMembVar     = MembVar, QualDBMembVar;
 type AnyAutoMembVar = AutoMembVar, QualAutoMembVar;
+
+type PrevVarValue = prev_var_value(AnyAutoMembVar);
 
 type LocAutoVar   = loc_auto_var(Atom);
 type MembAutoVar  = memb_auto_var(Atom);
@@ -116,7 +117,7 @@ type MembDBVar    = memb_db_var(Atom);
 type NestedDBVar  = nested_db_var(outer: AnyDBVar, inner: MembDBVar);
 type AnyDBVar     = LocDBVar, MembDBVar, NestedDBVar;
 
-type Var        = StdVar, FnPar, ImplArg, AnyMembVar, AnyAutoMembVar, AutoMembVarCopy;
+type Var        = StdVar, FnPar, ImplArg, AnyMembVar, AnyAutoMembVar, PrevVarValue;
 
 type RelVar     = rel_var(Atom);
 type QualRelVar = qual_rel_var(db_var: AnyDBVar, rel_var: RelVar);
@@ -141,11 +142,11 @@ type Expr     = LeafObj, FloatLit, Var,
                 EqExpr,
                 MembExpr, CastExpr,
                 AccExpr, AccTestExpr,
-                OutputIsDefExpr, AutoMethodCall, DBMethodCall,
+                AutoMethodCall, DBMethodCall,
                 IfExpr, MatchExpr, DoExpr,
                 ExQualExpr, SetCompExpr, MapCompExpr, BinRelCompExpr, TernRelCompExpr,
                 SeqCompExpr, RangeCompExpr,
-                IsSetExpr;
+                OutputIsDefExpr, OutputIsSetExpr;
 
 type SeqExpr        = seq_expr(SubExpr*);
 type TupleExpr      = tuple_expr(Expr+); ## THIS IS REDUNDANT NOW, IT'S STILL HERE ONLY BECAUSE REMOVING IT WOULD REQUIRE SOME MAINTENANCE OF THE TYPE CHECKING CODE
@@ -182,8 +183,6 @@ type CastExpr       = cast_expr(expr: Expr, type: NeType);
 type AccExpr        = accessor(expr: Expr, field: SymbObj);      ## SHOULD <field> BE AN OBJECT OR JUST A PLAIN SYMBOL?
 type AccTestExpr    = accessor_test(expr: Expr, field: SymbObj); ## DITTO
 
-type OutputIsDefExpr  = output_is_def(var: LocAutoVar, output: Atom);
-
 type AutoMethodCall = auto_method_call(var: AnyAutoVar?, name: MethodSymbol, args: Expr*);
 type DBMethodCall   = db_method_call(var: AnyDBVar?, name: MethodSymbol, args: Expr*);
 
@@ -201,7 +200,8 @@ type TernRelCompExpr  = tern_rel_comp(exprs: (Expr, Expr, Expr), source: Clause)
 type SeqCompExpr    = seq_comp(expr: Expr, vars: StdVar+, idx_var: StdVar?, src_expr: Expr, sel_expr: Expr?);
 type RangeCompExpr  = range_comp(expr: Expr, var: StdVar, bound_expr: Expr, inclusive: Bool, sel_expr: Expr?);
 
-type IsSetExpr      = is_set(AnyAutoMembVar);
+type OutputIsDefExpr  = output_is_def(var: LocAutoVar, output: Atom);
+type OutputIsSetExpr  = output_is_set(var: LocAutoVar, output: Atom);
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -314,6 +314,23 @@ type Procedure  = procedure(
 
 ///////////////////////////////////////////////////////////////////////////////
 
+type Input      = input(type: NeType, discrete: Bool);
+type Output     = output(type: NeType, discrete: Bool);
+
+// A signals state entry x -> true means the signal must be set or have changed, for discrete and continuous
+// signals, respectively. x -> false means the opposite. Signals not in the map do not affect the condition
+type ReactCond    = on_becoming_true_cond(cond: Expr),
+                    react_cond(cond: Expr, signals_state: [+AnyAutoMembVar -> Bool]);
+
+type StateVar       = state_var(type: NeType, init_value: Expr, updates: [StateVarUpdate]);
+type StateVarUpdate = state_var_update(value: Expr, cond: ReactCond);
+
+type DiscreteRule   = discrete_rule(value: Expr, cond: ReactCond);
+
+type MsgSendRule    = msg_send_rule(message: Expr, cond: ReactCond);
+
+///////////////////////////////////////////////////////////////////////////////
+
 type BasicTimeExpr  = at_least(nanosecs: Nat),
                       time_neg(BasicTimeExpr),
                       time_and(left: BasicTimeExpr, right: BasicTimeExpr),
@@ -321,42 +338,35 @@ type BasicTimeExpr  = at_least(nanosecs: Nat),
 
 type CyclicTimeExpr = every(expr: BasicTimeExpr, nanosecs: NzNat);
 
-type TimeExpr       = BasicTimeExpr, CyclicTimeExpr;
+type TimeExpr   = BasicTimeExpr, CyclicTimeExpr;
 
-type AutoUpdate         = state_update(target: Atom, value: Expr);
-type AutoSetDiscrete    = discrete_signal_def(target: Atom, value: Expr);
-type AutoMsgSend        = msg_send(target: MembDBVar, message: Expr);
+type TimeRule   = boolean_time_rule(expr: Expr, time_expr: TimeExpr),
+                  unchanged_time_rule(expr: Expr, time_expr: TimeExpr),
+                  since_time_rule(signals: [+AutoMembVar], time_expr: TimeExpr, starts_at_time_0: Bool);
 
-type AutoAtomicAction   = AutoUpdate, AutoSetDiscrete, AutoMsgSend;
+///////////////////////////////////////////////////////////////////////////////
 
-type AutoCondAction     = cond_action(cond: Expr, body: [AutoAnyCondAction], else: [AutoAnyCondAction]);
-type AutoAnyCondAction  = AutoAtomicAction, AutoCondAction;
+type Automaton  = automaton(
+                    name:           AutoSymbol,
+                    params:         [AutoMembVar -> (type: NeType?, value: Expr)],
+                    inputs:         [AutoMembVar -> Input],
+                    outputs:        [AutoMembVar -> Output],
+                    state:          [AutoMembVar -> StateVar],
+                    rules:          [AutoMembVar -> Expr],
+                    time_rules:     [AutoMembVar -> TimeRule],
+                    discrete_rules: [AutoMembVar -> [+DiscreteRule]],
+                    nested_autos:   [MembAutoVar -> (type: AutoSymbol, args: [Atom -> Expr])],
+                    nested_dbs:     [MembDBVar -> (type: DBSymbol, msg_send_rule: MsgSendRule?)],
+                    methods:        [Method]
+                  );
 
-type AutoRepAction      = rep_action(cond: Expr, body: [AutoAnyRepAction], else: [AutoAnyRepAction]);
-type AutoAnyRepAction   = AutoAtomicAction, AutoRepAction;
+///////////////////////////////////////////////////////////////////////////////
 
 type Method   = method(name: MethodSymbol, args: (NeType, Maybe[StdVar])*, ret_type: NeType, expr: Expr);
 type Update   = update(name: UpdateSymbol, args: (NeType, StdVar)*, body: Statement*);
 type Handler  = handler(type: NeType, body: Statement*);
 
-type TimeVaryingCond  = time_varying_boolean_cond(expr: Expr, time_expr: TimeExpr),
-                        time_varying_unchanged_cond(expr: Expr, time_expr: TimeExpr),
-                        time_varying_since_cond(signals: [+AutoMembVar], time_expr: TimeExpr, starts_at_time_0: Bool);
-
-type Automaton  = automaton(
-                    name:           AutoSymbol,
-                    inputs:         [Atom -> (type: NeType,  discrete: Bool)],
-                    outputs:        [Atom -> (type: NeType,  discrete: Bool)],
-                    state:          [Atom -> (type: NeType,  init_value: Expr)],
-                    params:         [Atom -> (type: NeType?, value: Expr)],
-                    rules:          [Atom -> Expr],
-                    time_rules:     [Atom -> TimeVaryingCond],
-                    actions:        [AutoCondAction],
-                    rep_actions:    [AutoRepAction],
-                    nested_autos:   [Atom -> (type: AutoSymbol, args: [Atom -> Expr])],
-                    nested_dbs:     [MembDBVar -> DBSymbol],
-                    methods:        [Method]
-                  );
+///////////////////////////////////////////////////////////////////////////////
 
 type Database   = data_base(
                     name:       DBSymbol,

@@ -41,8 +41,6 @@ implicit program : Program, context : Context, var_subst_map : [StdVar -> CaptVa
     accessor()          = gen_eval_code_for_accessor_expr(expr.expr, expr.field, res_var),
     accessor_test()     = gen_eval_code_for_accessor_test_expr(expr.expr, expr.field, res_var),
 
-    output_is_def()     = (set_var(res_var, bool_obj(is_not_null(qual_auto_memb_var(expr.var, auto_memb_var(expr.output)))))),
-
     auto_method_call()  = get_eval_code_for_auto_method_call(expr, res_var),
     db_method_call()    = get_eval_code_for_db_method_call(expr, res_var),
 
@@ -59,7 +57,18 @@ implicit program : Program, context : Context, var_subst_map : [StdVar -> CaptVa
     seq_comp()          = gen_eval_code_for_seq_comp_expr(expr, res_var),
     range_comp()        = gen_eval_code_for_range_comp_expr(expr, res_var),
 
-    is_set(v?)          = (set_var(res_var, bool_obj(is_not_blank(v))));
+    output_is_def()     = gen_eval_code_for_output_test_expr(expr.var, expr.output, false, res_var),
+    output_is_set(v?)   = gen_eval_code_for_output_test_expr(expr.var, expr.output, true, res_var);
+
+
+  Instr+ gen_eval_code_for_output_test_expr(LocAutoVar auto_var, Atom output, Bool check_is_set, EvalDestVar res_var) {
+    var = qual_auto_memb_var(auto_var, auto_memb_var(output));
+    bool_expr = if check_is_set then is_not_blank(var) else is_not_null(var);
+    return (
+      do_if(is_null(var), terminate) if check_is_set,
+      set_var(res_var, bool_obj(bool_expr))
+    );
+  }
 
 
   Instr+ gen_eval_code_for_set_expr([SubExpr] subexprs, EvalDestVar res_var) {

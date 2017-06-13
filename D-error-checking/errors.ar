@@ -2,24 +2,25 @@ type SgnDecl = Function, Method, Update, Handler;
 
 type AnyAuto = Database, Automaton;
 
-type AnyReactAutoVar = AutoMembVar, AutoMembVarCopy, QualDBMembVar, QualAutoMembVar;
+type AnyReactAutoVar = AutoMembVar, MembAutoVar, MembDBVar;
 
 type CoreWFError  = error_cluster(AnyAuto, [+CoreWFError]),
                     recursively_defined_auto_or_db(AnyAuto),
                     overlapping_signatures(SgnDecl, SgnDecl),
                     dependency_loop(signal: AnyReactAutoVar, deps: [AnyReactAutoVar]),
-                    invalid_auto_var(var: Var, signal: Atom, expr: <Expr, TimeVaryingCond>),
-                    invalid_nested_auto_input_var(var: Var, auto_id: Atom, input_id: Atom, expr: Expr);
+                    invalid_auto_var(var: Var, signal: AutoMembVar, expr: <Expr, TimeRule>),
+                    invalid_nested_auto_input_var(var: Var, auto_id: MembAutoVar, input_id: Atom, expr: Expr),
+                    invalid_nested_db_msg_var(var: Var, id: MembDBVar, rule: MsgSendRule);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-CoreWFError error_cluster(AnyAuto db, [+CoreWFError] es)    = :error_cluster(db, es);
-CoreWFError recursively_defined_auto_or_db(AnyAuto db)      = :recursively_defined_auto_or_db(db);
-CoreWFError overlapping_signatures(SgnDecl f1, SgnDecl f2)  = :overlapping_signatures(f1, f2);
-CoreWFError invalid_auto_var(Var v, Atom s, <Expr, TimeVaryingCond> e)  = invalid_auto_var(var: v, signal: s, expr: e);
-CoreWFError dependency_loop(AnyReactAutoVar s, [+AnyReactAutoVar] ds)   = dependency_loop(signal: s, deps: ds);
-CoreWFError invalid_nested_auto_input_var(Var v, Atom a, Atom i, Expr e) =
-  invalid_nested_auto_input_var(var: v, auto_id: a, input_id: i, expr: e);
+CoreWFError error_cluster(AnyAuto db, [+CoreWFError] es) = :error_cluster(db, es);
+CoreWFError recursively_defined_auto_or_db(AnyAuto db) = :recursively_defined_auto_or_db(db);
+CoreWFError overlapping_signatures(SgnDecl f1, SgnDecl f2) = :overlapping_signatures(f1, f2);
+CoreWFError invalid_auto_var(Var v, AutoMembVar s, <Expr, TimeRule> e) = invalid_auto_var(var: v, signal: s, expr: e);
+CoreWFError dependency_loop(AnyReactAutoVar s, [+AnyReactAutoVar] ds) = dependency_loop(signal: s, deps: ds);
+CoreWFError invalid_nested_auto_input_var(Var v, MembAutoVar a, Atom i, Expr e) = invalid_nested_auto_input_var(var: v, auto_id: a, input_id: i, expr: e);
+CoreWFError invalid_nested_db_msg_var(Var v, MembDBVar id, MsgSendRule r) = invalid_nested_db_msg_var(var: v, id: id, rule: r);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -29,7 +30,8 @@ String* error_message(CoreWFError err) =
   overlapping_signatures(f1?, f2?)    = overlapping_signatures_error_message(f1, f2),
   dependency_loop()                   = dependency_loop_error_message(err.signal, err.deps),
   invalid_auto_var()                  = invalid_auto_var_error_message(err.var, err.signal, err.expr),
-  invalid_nested_auto_input_var()     = invalid_nested_auto_input_var_error_message(err.var, err.auto_id, err.input_id, err.expr);
+  invalid_nested_auto_input_var()     = invalid_nested_auto_input_var_error_message(err.var, err.auto_id, err.input_id, err.expr),
+  invalid_nested_db_msg_var()         = invalid_nested_db_msg_var_error_message(err.var, err.id, err.rule);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -53,7 +55,7 @@ String* recursively_defined_auto_or_db_error_message(AnyAuto auto_or_db) {
 
 
 String* error_cluster_error_message(AnyAuto decl, [+CoreWFError] errs) =
-  ( "Error" & plural(errs) & " in transactional automaton definition: " & user_repr(decl.name),
+  ( "Error" & plural(errs) & " in automaton definition: " & user_repr(decl.name),
     source_code_location_string(source_code_location(decl))) &
   ("    " & l : l <- join((error_message(e) : e <- rand_sort(errs))));
 
@@ -63,13 +65,17 @@ String* dependency_loop_error_message(AnyReactAutoVar signal, [AnyReactAutoVar] 
 );
 
 
-String* invalid_auto_var_error_message(Var var, Atom signal, <Expr, TimeVaryingCond> expr) = (
-  "Signal " & _str_(signal) & " is not permitted to depend on signal " & user_repr(var)
+String* invalid_auto_var_error_message(Var var, AutoMembVar signal, <Expr, TimeRule> expr) = (
+  "Signal " & user_repr(signal) & " is not permitted to depend on signal " & user_repr(var)
 );
 
 
-String* invalid_nested_auto_input_var_error_message(Var var, Atom auto_id, Atom input_id, Expr expr) = (
-  "Input " & _str_(input_id) & " of nested automaton " & _str_(auto_id) & " is not permitted to depend on signal " & user_repr(var)
+String* invalid_nested_auto_input_var_error_message(Var var, MembAutoVar auto_id, Atom input_id, Expr expr) = (
+  "Input " & _str_(input_id) & " of nested automaton " & user_repr(auto_id) & " is not permitted to depend on signal " & user_repr(var)
+);
+
+String* invalid_nested_db_msg_var_error_message(Var var, MembDBVar db_id, MsgSendRule rule) = (
+  "Value of message sent to nested static automaton " & user_repr(db_id) & " is not permitted to depend on signal " & user_repr(var)
 );
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -12,16 +12,9 @@ PendingStateVar pending_state_var(Atom id)  = :pending_state_var(id);
 VecVar vvar(Nat n, NzNat s) = vvar(id: n, size: s);
 
 BoolVar bvar(Nat n)                 = :bvar(n);
-BoolVar rep_cond_value_var(Nat id)  = :rep_cond_value_var(id);
-BoolVar rep_cond_is_def_var(Nat id) = :rep_cond_is_def_var(id);
-BoolVar memb_has_changed(Atom id)   = :memb_has_changed(id);
-BoolVar invalidate_cond_expr_cache  = :invalidate_cond_expr_cache;
 
 MembBoolVar cond_value_var(Nat n)             = :cond_value_var(n);
 MembBoolVar cond_is_def_var(Nat n)            = :cond_is_def_var(n);
-MembBoolVar cond_expr_value_var(Nat n)        = :cond_expr_value_var(n);
-MembBoolVar cond_expr_is_def_var(Nat n)       = :cond_expr_is_def_var(n);
-MembBoolVar cond_expr_up_to_date_var(Nat n)   = :cond_expr_up_to_date_var(n);
 
 MembBoolVar watched_signal_up_to_date_var(Atom id)  = :watched_signal_up_to_date_var(id);
 
@@ -32,6 +25,8 @@ MembBoolVar is_new    = :is_new;
 IntVar curr_time      = :curr_time;
 IntVar update_time    = :update_time;
 
+IntVar update_expr_index = :update_expr_index;
+
 IntVar elapsed_time(LocAutoVar v) = :elapsed_time(v);
 
 ProjdIntVar changed_output(<Nat, IntVar> i)  = changed_output(index: i);
@@ -39,6 +34,7 @@ ProjdIntVar changed_output(<Nat, IntVar> i)  = changed_output(index: i);
 IntVar ivar(Nat n)    = :ivar(n);
 
 MembIntVar update_source_var(Atom n)                          = :update_source_var(n);
+MembIntVar null_locks_count_var(Atom id)                      = :null_locks_count_var(id);
 MembIntVar update_count_var(Nat l)                            = :update_count_var(l);
 MembIntVar nodes_to_update_var(Nat l, <Nat, IntVar> i)        = nodes_to_update_var(level: l, index: i);
 MembIntVar next_trigger_time_var(Atom a)                      = :next_trigger_time_var(a);
@@ -227,8 +223,8 @@ Instr set_ivar(IntVar v, IntExpr e)                   = set_ivar(var: v, value: 
 
 Instr set_var(WriteObjVar v, RefObjExpr e)  = set_rc_var(var: v, value: e);
 
-Instr init_memb_var(<MembVar, AutoMembVar, AutoMembVarCopy, MembObjVar, PendingInputVar, PendingStateVar> v, <blank, undefined> s)  = init_memb_var(var: v, new_state: s);
-Instr reset_memb_var(<AutoMembVar, AutoMembVarCopy, MembVar> v, <blank, undefined> s)   = reset_memb_var(var: v, new_state: s);
+Instr init_memb_var(<MembVar, AutoMembVar, PrevVarValue, MembObjVar, PendingInputVar, PendingStateVar> v, <blank, undefined> s) = init_memb_var(var: v, new_state: s);
+Instr reset_memb_var(<AutoMembVar, PrevVarValue, MembVar, PendingInputVar> v, <blank, undefined> s) = reset_memb_var(var: v, new_state: s);
 Instr clear_loc_var(LocVar v)                             = :clear_loc_var(v);
 
 Instr make_var_undef(AutoMembVar v) = reset_memb_var(v, :undefined);
@@ -274,8 +270,8 @@ Instr* opt_symb_switch(ObjExpr e, [([+Atom], Instr+)] cs, Instr* eis) = if cs !=
 Instr call_proc(WriteObjVar v, ObjFnName n, <AtomicExpr, BoundCls>* as) = call_proc(var: v, name: n, args: as);
 Instr call_cls(WriteObjVar v, AnyClsVar cv, AtomicExpr+ as)             = call_cls(var: v, cls_var: cv, args: as);
 
-Instr queue_update(AutoSymbol s, BlockNodeId id)              = queue_update(type: s, id: id);
-Instr queue_cond_update(AutoSymbol s, BlockNodeId id, Bool b) = queue_cond_update(type: s, id: id, inval_cache: b);
+Instr queue_update(AutoSymbol s, BlockNodeId id)        = queue_update(type: s, id: id, args: ());
+Instr queue_update(AutoSymbol s, BlockNodeId id, Nat a) = queue_update(type: s, id: id, args: (a));
 
 Instr insert_timer(AutoSymbol a, Nat i, IntExpr t)  = insert_timer(type: a, idx: i, time: t);
 Instr clear_timer(AutoSymbol a, IntExpr i)          = clear_timer(type: a, idx: i);
@@ -284,7 +280,9 @@ Instr auto_pre_init(AnyAutoVar v, AutoSymbol t) = auto_pre_init(var: v, type: t)
 Instr auto_cleanup(AnyAutoVar v, AutoSymbol t)  = auto_cleanup(var: v, type: t);
 
 Instr set_input(AnyAutoVar v, AutoSymbol t, Atom i, AtomicExpr e) = set_input(var: v, type: t, input: i, value: e);
-Instr clear_input(AnyAutoVar v, AutoSymbol t, Atom i)             = clear_input(var: v, type: t, input: i);
+
+Instr clear_input(AnyAutoVar v, AutoSymbol t, Atom i) = clear_input(var: v, type: t, input: i);
+Instr clear_input(AutoSymbol t, Atom i)               = clear_input(type: t, input: i);
 
 Instr auto_init(AnyAutoVar v, AutoSymbol t)                   = auto_init(var: v, type: t);
 Instr auto_init(AutoSymbol t)                                 = auto_init(type: t);
@@ -429,6 +427,7 @@ Instr repeat_while(BoolExpr cond, Instr+ body) = repeat(nonempty((do_if_not(cond
 
 Instr increment(IntVar v, IntExpr a)  = set_ivar(v, add(v, a));
 Instr increment(IntVar v)             = increment(v, 1);
+Instr decrement(IntVar v)             = increment(v, -1);
 
 Instr do_if(BoolExpr cond, Instr* instrs)      = branch(cond, instrs, ());
 Instr do_if_not(BoolExpr cond, Instr* instrs)  = branch(cond, (), instrs);
@@ -441,20 +440,9 @@ Instr* opt_do_if(BoolExpr cond, Instr* instrs) = if   instrs == ()  then ()
                                                  elif cond == false then ()
                                                                     else (do_if(cond, instrs));
 
+Instr branch(BoolExpr c, Instr i1, Instr i2) = branch(c, (i1), (i2));
+
 Instr branch(BoolExpr c1, Instr+ b1, BoolExpr c2, Instr+ b2, Instr+ e) = branch(c1, b1, (branch(c2, b2, e)));
-
-// Instr do_if_in(AtomicExpr val, SymbObj+ values, [Instr] instrs) =
-//   symbol_switch(
-//     val:   val,
-//     cases: {(vals: values, instrs: instrs)}
-//   );
-
-// Instr do_if_not_in(AtomicExpr val, SymbObj+ values, [Instr^] instrs) =
-//   symbol_switch(
-//     val:   val,
-//     cases: {(vals: values, instrs: [])},
-//     else:  instrs
-//   );
 
 Instr break_if(BoolExpr cond)     = do_if(cond, break_loop);
 Instr break_if_not(BoolExpr cond) = do_if_not(cond, break_loop);

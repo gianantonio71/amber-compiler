@@ -73,7 +73,7 @@ implicit {
     ];
     update_node_procs = join(intermix(rand_sort(update_node_procs_unsorted), ("", "")));
 
-    queue_methods_decls_and_impls = [gen_queue_update_method(block.name, id, method.body, method.two_level_update) : id, method <- block.queue_update_code];
+    queue_methods_decls_and_impls = [gen_queue_update_method(block.name, id, method.body, method.args) : id, method <- block.queue_update_code];
     queue_methods_decls, queue_methods_impls = unzip(rand_sort(queue_methods_decls_and_impls));
     queue_methods_impls = join(intermix(queue_methods_impls, ("", "")));
 
@@ -152,31 +152,10 @@ implicit {
   }
 
 
-  (String, String*) gen_queue_update_method(AutoSymbol block_name, <StdBlockNodeId, NestedAutoNodeId> memb_id, Instr* body, Bool two_level_update) {
-    method_name = queue_update_method_name(memb_id, block_name);
-    other_arg = if two_level_update then ", bool " & to_c_var_decl_name(invalidate_cond_expr_cache) else "";
-    sgn = "void " & method_name & "(" & to_c_name(block_name) & " *self" & other_arg & ")";
-    vars_decl_text = gen_vars_decls(body);
-    vars_decl_text = (vars_decl_text | "") if vars_decl_text != ();
-    body_text = vars_decl_text & compile_to_c(body, nothing);
-    return (sgn & ";", (sgn & " {") & indent_lines(body_text) & ("}"));
-  }
-
-
-  (String, String*) gen_queue_update_method(AutoSymbol block_name, CondNodeId cond_id, Instr* body, Bool two_level_update) {
-    method_name = queue_update_method_name(cond_id, block_name);
-    inval_cache_var_name = to_c_var_decl_name(invalidate_cond_expr_cache);
-    sgn = "void " & method_name & "(" & to_c_name(block_name) & " *self, bool " & inval_cache_var_name & ")";
-    vars_decl_text = gen_vars_decls(body);
-    vars_decl_text = (vars_decl_text | "") if vars_decl_text != ();
-    body_text = vars_decl_text & compile_to_c(body, nothing);
-    return (sgn & ";", (sgn & " {") & indent_lines(body_text) & ("}"));
-  }
-
-
-  (String, String*) gen_queue_update_method(AutoSymbol block_name, NestedAutoInputNodeId input_id, Instr* body, Bool two_level_update) {
-    method_name = queue_update_method_name(input_id, block_name);
-    sgn = "void " & method_name & "(" & to_c_name(block_name) & " *self)";
+  (String, String*) gen_queue_update_method(AutoSymbol block_name, BlockNodeId node_id, Instr* body, IntVar* args) {
+    method_name = queue_update_method_name(node_id, block_name);
+    args_str = append((", " & var_c_type(v) & " " & to_c_var_decl_name(v) : v <- args));
+    sgn = "void " & method_name & "(" & to_c_name(block_name) & " *self" & args_str & ")";
     vars_decl_text = gen_vars_decls(body);
     vars_decl_text = (vars_decl_text | "") if vars_decl_text != ();
     body_text = vars_decl_text & compile_to_c(body, nothing);

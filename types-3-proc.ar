@@ -10,12 +10,12 @@ type ReadOnlyObjVar = FnPar, CaptVar;
 type WriteObjVar    = RWObjVar, ElemVar;
 type RWObjVar       = StdVar, LocVar,
                       AnyMembVar, PendingStateVar,
-                      AnyAutoMembVar, AutoMembVarCopy, PendingInputVar,
+                      AnyAutoMembVar, PrevVarValue, PendingInputVar,
                       MembObjVar;
 
 type StdObjVar      = RWObjVar, ImplArg, ReadOnlyObjVar;
 
-type NullableVar    = StdVar, AnyAutoMembVar, AutoMembVarCopy, PendingInputVar, LocVar, MembObjVar;
+type NullableVar    = StdVar, AnyAutoMembVar, PrevVarValue, PendingInputVar, LocVar, MembObjVar;
 type NonNullableVar = FnPar, ImplArg, CaptVar, AnyMembVar, PendingStateVar, ElemVar;
 
 type ObjVar         = NonNullableVar, NullableVar;
@@ -26,14 +26,12 @@ type VecVar         = vvar(id: Nat, size: NzNat);
 
 type MembBoolVar    = cond_value_var(Nat),
                       cond_is_def_var(Nat),
-                      cond_expr_value_var(Nat),
-                      cond_expr_is_def_var(Nat),
-                      cond_expr_up_to_date_var(Nat),
                       watched_signal_up_to_date_var(Atom),
                       up_to_date_var(BlockNodeId),
                       is_new;
 
 type MembIntVar     = update_source_var(Atom),
+                      null_locks_count_var(Atom),
                       update_count_var(Nat),
                       nodes_to_update_var(level: Nat, index: <Nat, IntVar>),
                       next_trigger_time_var(Atom),
@@ -53,14 +51,7 @@ type IntConst       = time_slot_length(automaton: AutoSymbol, expr_id: Atom, tim
 type MembIntVectVar = nodes_to_update_vect_var(level: Nat, size: NzNat), ## BAD: <size> SHOULD BE OF TYPE <3..*>
                       changed_outputs(size: NzNat);
 
-type BoolArgVar     = invalidate_cond_expr_cache; ## FIND BETTER NAME
-
-type BoolVar        = bvar(Nat),
-                      memb_has_changed(Atom),
-                      rep_cond_value_var(Nat),
-                      rep_cond_is_def_var(Nat),
-                      MembBoolVar,
-                      BoolArgVar;
+type BoolVar        = bvar(Nat), MembBoolVar;
 
 type LocAutoIntVar  = elapsed_time(LocAutoVar); ## BETTER NAME/CLASSIFICATION
 
@@ -69,6 +60,7 @@ type ProjdIntVar    = changed_output(index: <Nat, IntVar>);
 type IntVar         = ivar(Nat),
                       update_time,
                       curr_time,
+                      update_expr_index,
                       ProjdIntVar,
                       MembIntVar,
                       LocAutoIntVar;
@@ -228,8 +220,8 @@ type BasicInstr     = init_stream(StreamVar),
 
                       set_rc_var(var: WriteObjVar, value: RefObjExpr),
 
-                      init_memb_var(var: <MembVar, AutoMembVar, AutoMembVarCopy, MembObjVar, PendingInputVar, PendingStateVar>, new_state: <blank, undefined>),
-                      reset_memb_var(var: <AutoMembVar, AutoMembVarCopy, MembVar>, new_state: <blank, undefined>),
+                      init_memb_var(var: <MembVar, AutoMembVar, PrevVarValue, MembObjVar, PendingInputVar, PendingStateVar>, new_state: <blank, undefined>),
+                      reset_memb_var(var: <AutoMembVar, PrevVarValue, MembVar, PendingInputVar>, new_state: <blank, undefined>),
                       clear_loc_var(LocVar), ## BAD: I DON'T LIKE THE ABILITY TO CLEAR A NON-MEMBER VARIABLE
 
                       add_ref(ObjVar),
@@ -247,9 +239,7 @@ type BasicInstr     = init_stream(StreamVar),
 
                       runtime_check(cond: AtomicExpr, file: String, line: NzNat, text: Maybe[String], vars: <StdVar, ImplArg>*),
 
-                      ## THESE TYPES SHOULD BE REFINED, BlockNodeId IS TOO GENERAL
-                      queue_update(type: AutoSymbol, id: BlockNodeId),
-                      queue_cond_update(type: AutoSymbol, id: BlockNodeId, inval_cache: Bool),
+                      queue_update(type: AutoSymbol, id: BlockNodeId, args: Nat*),
 
                       insert_timer(type: AutoSymbol, idx: IntExpr, time: IntExpr),
                       clear_timer(type: AutoSymbol, idx: IntExpr),
@@ -258,7 +248,7 @@ type BasicInstr     = init_stream(StreamVar),
                       auto_cleanup(var: AnyAutoVar, type: AutoSymbol),
 
                       set_input(var: AnyAutoVar, type: AutoSymbol, input: Atom, value: AtomicExpr),
-                      clear_input(var: AnyAutoVar, type: AutoSymbol, input: Atom),
+                      clear_input(var: AnyAutoVar?, type: AutoSymbol, input: Atom),
 
                       auto_init(var: AnyAutoVar?, type: AutoSymbol),
                       // auto_update(var: AnyAutoVar?, type: AutoSymbol),
@@ -388,7 +378,7 @@ type Block  = block(
                 cleanup_code:         Instr*,
                 apply_code:           Instr*,
                 nodes_update_code:    [BlockNodeId -> Instr*],
-                queue_update_code:    [BlockNodeId -> (body: Instr*, two_level_update: Bool)],
+                queue_update_code:    [BlockNodeId -> (body: Instr*, args: IntVar*)],
                 methods:              [MethodId -> CompiledMethod],
                 const_data:           [ConstBlockData],
                 time_rules_count:     Nat

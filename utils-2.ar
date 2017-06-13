@@ -128,7 +128,6 @@ Bool is_param_type(FnType type) = (t <~ type.args : is_param_type(t)) or is_para
   cast_expr()             = retrieve(expr.expr),
   accessor()              = retrieve(expr.expr),
   accessor_test()         = retrieve(expr.expr),
-  output_is_def()         = [],
   auto_method_call()      = seq_union((retrieve(a) : a <- expr.args)),
   db_method_call()        = seq_union((retrieve(a) : a <- expr.args)),
   if_expr()               = retrieve(expr.cond) & retrieve(expr.then) & retrieve(expr.else),
@@ -142,7 +141,8 @@ Bool is_param_type(FnType type) = (t <~ type.args : is_param_type(t)) or is_para
   tern_rel_comp()         = retrieve_from_nested_exprs(expr.source, retrieve) & seq_union((retrieve(e) : e <- expr.exprs)),
   seq_comp()              = retrieve(expr.expr) & retrieve(expr.src_expr)   & if expr.sel_expr? then retrieve(expr.sel_expr) else [],
   range_comp()            = retrieve(expr.expr) & retrieve(expr.bound_expr) & if expr.sel_expr? then retrieve(expr.sel_expr) else [],
-  is_set()                = [];
+  output_is_def()         = [],
+  output_is_set()         = [];
 
 
 [T] any_expr_retrieve_from_nested_exprs(Expr expr, (Expr -> [T]) retrieve)      = retrieve(expr);
@@ -201,33 +201,47 @@ Bool is_param_type(FnType type) = (t <~ type.args : is_param_type(t)) or is_para
 
 ////////////////////////////////////////////////////////////////////////////////
 
-[T] retrieve_from_nested_exprs(AutoAtomicAction action, (Expr -> [T]) retrieve) =
-  state_update()        = retrieve(action.value),
-  discrete_signal_def() = retrieve(action.value),
-  msg_send()            = retrieve(action.message);
+[T] retrieve_from_nested_exprs(Function fn, (Expr -> [T]) retrieve) =
+  retrieve_from_nested_exprs(fn.expr, retrieve);
+
+[T] retrieve_from_nested_exprs(Procedure pc, (Expr -> [T]) retrieve) =
+  retrieve_from_nested_exprs(pc.body, retrieve);
+
+////////////////////////////////////////////////////////////////////////////////
+
+[T] retrieve_from_nested_exprs(TimeRule rule, (Expr -> [T]) retrieve) =
+  boolean_time_rule()   = retrieve(rule.expr),
+  unchanged_time_rule() = retrieve(rule.expr),
+  since_time_rule()     = [];
 
 
-[T] retrieve_from_nested_exprs(<AutoCondAction, AutoRepAction> action, (Expr -> [T]) retrieve) =
-  retrieve(action.cond) & union([retrieve_from_nested_exprs(a, retrieve) : a <- action.body | a <- action.else]);
+[T] retrieve_from_nested_exprs(StateVar var, (Expr -> [T]) retrieve) =
+  retrieve(var.init_value) & union([retrieve(u.value) & retrieve(u.cond.cond) : u <- var.updates]);
 
 
-[T] retrieve_from_nested_exprs(TimeVaryingCond cond, (Expr -> [T]) retrieve) =
-  time_varying_boolean_cond()   = retrieve(cond.expr),
-  time_varying_unchanged_cond() = retrieve(cond.expr),
-  time_varying_since_cond()     = [];
+[T] retrieve_from_nested_exprs(DiscreteRule rule, (Expr -> [T]) retrieve) =
+  retrieve(rule.value) & retrieve(rule.cond.cond);
 
 
-[T] retrieve_from_nested_exprs(Automaton automaton, (Expr -> [T]) retrieve) =
-  union(
-    [retrieve(s.init_value) : unused_var, s <- automaton.state] &
-    [retrieve(p.value) : unused_var, p <- automaton.params] &
-    [retrieve(e) : unused_var, e <- automaton.rules] &
-    [retrieve_from_nested_exprs(c, retrieve) : unused_var, c <- automaton.time_rules] &
-    [retrieve_from_nested_exprs(a, retrieve) : a <- automaton.actions] &
-    [retrieve_from_nested_exprs(a, retrieve) : a <- automaton.rep_actions] &
-    [retrieve(e) : unused_var_1, na <- automaton.nested_autos, unused_var_2, e <- na.args] &
-    [retrieve(m.expr) : m <- automaton.methods]
-  );
+[T] retrieve_from_nested_exprs(MsgSendRule rule, (Expr -> [T]) retrieve) =
+  retrieve(rule.message) & retrieve(rule.cond.cond);
+
+
+[T] retrieve_from_nested_exprs(Automaton automaton, (Expr -> [T]) retrieve) {
+  objs = union([
+    values(automaton.state),
+    values(automaton.time_rules),
+    union(values(automaton.discrete_rules)),
+    [db.msg_send_rule : unused_var, db <- automaton.nested_dbs, db.msg_send_rule?]
+  ]);
+  exprs = union([
+    [p.value : unused_var, p <- automaton.params],
+    values(automaton.rules),
+    [e : unused_var, na <- automaton.nested_autos, unused_var_2, e <- na.args],
+    [m.expr : m <- automaton.methods]
+  ]);
+  return union([retrieve_from_nested_exprs(x, retrieve) : x <- objs | x <- exprs]);
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -344,7 +358,6 @@ Bool is_pattern_any(Pattern ptrn) =
   range_comp()    = range_comp_extern_vars(expr),
   do_expr()       = stmts_extern_vars(expr.body),
   match_expr()    = match_expr_extern_vars(expr.exprs, expr.cases),
-  is_set(v?)      = [v],
   _               = retrieve_from_nested_exprs(expr, extern_vars);
 
 
@@ -456,9 +469,9 @@ Bool is_pattern_any(Pattern ptrn) =
 
 ////////////////////////////////////////////////////////////////////////////////
 
-[<AnyAutoMembVar, AutoMembVarCopy, QualDBMembVar>] auto_expr_extern_vars(Expr expr) {
+[<AnyAutoMembVar, PrevVarValue, QualDBMembVar>] auto_expr_extern_vars(Expr expr) {
   vars = extern_vars(expr);
-  fail if not vars :: [<AnyAutoMembVar, AutoMembVarCopy, QualDBMembVar>];
+  fail if not vars :: [<AnyAutoMembVar, PrevVarValue, QualDBMembVar>];
   return vars;
 }
 
