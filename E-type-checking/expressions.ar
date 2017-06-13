@@ -34,7 +34,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     tuple_expr(es?)     = seq_union((typecheck(e, type_any, env) : e <- es)),
     seq_tail_expr()     = typecheck(expr.seq, type_seq, env) & seq_union((typecheck(e, type_any, env) : e <- expr.tail)),
     set_expr(ses?)      = union([typecheck(se, type_any, env) : se <- ses]),
-    map_expr(es?)       = union([pre_typecheck_map_entry(e, env) : e <- es]),
+    map_expr(es?)       = pre_typecheck_map_expr(es, env),
     bin_rel_expr(es?)   |
     tern_rel_expr(es?)  = union([pre_typecheck_rel_entry(e, env) : e <- es]),
     tag_obj_expr()      = typecheck(expr.tag, atom_type, env) & typecheck(expr.obj, type_any, env),
@@ -95,6 +95,25 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       new_env = env;
     ;
     return typecheck(entry.key, type_any, new_env) & typecheck(entry.value, type_any, new_env);
+  }
+
+
+  [TypeCheckingError] pre_typecheck_map_expr([+(key: Expr, value: Expr, cond: Expr?)] entries, [EnvVar -> Type] env) {
+    errs = union([pre_typecheck_map_entry(e, env) : e <- entries]);
+    return errs if errs != [];
+
+    // This is well-formedness, not type, checking. It's done here because
+    // it's safer to do it with desugared expressions, and because of the
+    // similarities with the checks that follows, which involves types and
+    // is critical to avoid clashes
+    ## THIS CHECK IS NOT CRITICAL AND PROBABLY NOT THAT USEFUL EITHER. MOVE IT TO
+    ## LEVEL 1 WELL-FORMEDNESS CHECKING, OR REMOVE IT ALTOGETHER?
+    dup_key_errs = [duplicate_map_key(k, es) : k, es <- group_by(entries, $.key), |es| > 1];
+    return dup_key_errs if dup_key_errs != [];
+
+    symb_key_entries = [e : e <- entries, is_symb_singl_type(expr_type(e.key, env))];
+    symb_key_entries_by_key = group_by(symb_key_entries, only_symb(expr_type($.key, env)));
+    return [duplicate_map_key(k, es) : k, es <- symb_key_entries_by_key, |es| > 1];
   }
 
 
