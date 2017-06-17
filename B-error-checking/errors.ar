@@ -82,6 +82,12 @@ type ExprSpecWFError    = already_def_var(Var),
                           not_a_memb_copy_var(name: Atom, automaton: Maybe[SynAutoDef]),
                           invalid_signal_copy_context(name: Atom),
                           not_a_copiable_signal(name: Atom),
+                          duplicate_tracked_signal(name: Atom),
+                          unknown_state_var(name: Atom),
+                          no_discrete_signals_in_expr(name: Atom, is_update: Bool),
+                          discrete_signals_in_countinuous_rule(name: Atom, discrete_signals: [+AnyAutoMembVar]),
+
+                          conflicting_auto_decls(AnyAutoDecl, AnyAutoDecl),
 
                           not_a_db_var(var: Atom, is_auto_var: Bool, is_obj_var: Bool),
                           db_has_no_handlers(db_type: Atom),
@@ -94,6 +100,8 @@ type ExprSpecWFError    = already_def_var(Var),
                           invalid_rel_var_arity(var: Atom, arity: NzNat, relvar_arity: NzNat),
                           not_a_rel_var(var: Atom, db_def: SynDBDef),
                           unknown_rel_var(var: Atom, db_def: SynDBDef),
+
+                          anchored_errors(errors: ExprWFError+, anchor: Any),
 
                           annotated_syn_expr_error(error: ExprWFError, expr: SynExpr),
                           annotated_syn_stmt_error(error: ExprWFError, stmt: SynStmt);
@@ -111,6 +119,10 @@ type FnDefWFError       = ExprWFError, GenDefSpecWFError, FnDefSpecWFError;
 type ProcDefWFError     = ExprWFError, GenDefSpecWFError, ProcDefSpecWFError;
 
 type UpdateDefWFError   = FnDefWFError;
+
+////////////////////////////////////////////////////////////////////////////////
+
+type AnyAutoDecl = InputDecl, OutputDecl, StateVarDecl, NestedDBDecl, ConstDecl, RuleDecl;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -220,6 +232,13 @@ ExprSpecWFError not_a_discrete_signal(Atom n, SynAutoDef a)       = not_a_discre
 ExprSpecWFError not_a_memb_copy_var(Atom n, Maybe[SynAutoDef] a)  = not_a_memb_copy_var(name: n, automaton: a);
 ExprSpecWFError invalid_signal_copy_context(Atom n)               = invalid_signal_copy_context(name: n);
 ExprSpecWFError not_a_copiable_signal(Atom n)                     = not_a_copiable_signal(name: n);
+ExprSpecWFError duplicate_tracked_signal(Atom n)                  = duplicate_tracked_signal(name: n);
+ExprSpecWFError unknown_state_var(Atom n)                         = unknown_state_var(name: n);
+ExprSpecWFError no_discrete_signals_in_expr(Atom n, Bool b)       = no_discrete_signals_in_expr(name: n, is_update: b);
+ExprSpecWFError discrete_signals_in_countinuous_rule(Atom n, [+AnyAutoMembVar] vs) =
+  discrete_signals_in_countinuous_rule(name: n, discrete_signals: vs);
+
+ExprSpecWFError conflicting_auto_decls(AnyAutoDecl d1, AnyAutoDecl d2) = :conflicting_auto_decls(d1, d2);
 
 ExprSpecWFError not_a_db_var(Atom v, Bool a, Bool o)              = not_a_db_var(var: v, is_auto_var: a, is_obj_var: o);
 ExprSpecWFError db_has_no_handlers(Atom t)                        = db_has_no_handlers(db_type: t);
@@ -232,6 +251,8 @@ ExprSpecWFError unknown_memb_var(Atom v, SynDBDef d)              = unknown_memb
 ExprSpecWFError invalid_rel_var_arity(Atom v, NzNat a, NzNat ra)  = invalid_rel_var_arity(var: v, arity: a, relvar_arity: ra);
 ExprSpecWFError not_a_rel_var(Atom v, SynDBDef d)                 = not_a_rel_var(var: v, db_def: d);
 ExprSpecWFError unknown_rel_var(Atom v, SynDBDef d)               = unknown_rel_var(var: v, db_def: d);
+
+ExprSpecWFError anchored_errors(ExprWFError+ es, Any a)           = anchored_errors(errors: es, anchor: a);
 
 ExprSpecWFError annotated_syn_expr_error(ExprWFError er, SynExpr e) = annotated_syn_expr_error(error: er, expr: e);
 ExprSpecWFError annotated_syn_stmt_error(ExprWFError er, SynStmt s) = annotated_syn_stmt_error(error: er, stmt: s);
@@ -299,6 +320,12 @@ Any anchor_obj(ExprSpecWFError err) =
   not_a_memb_copy_var()                   = :none,
   invalid_signal_copy_context()           = :none,
   not_a_copiable_signal()                 = :none,
+  duplicate_tracked_signal()              = :none,
+  unknown_state_var()                     = :none,
+  no_discrete_signals_in_expr()           = :none,
+  discrete_signals_in_countinuous_rule()  = :none,
+
+  conflicting_auto_decls()                = :none,
 
   not_a_db_var()                          = :none,
   db_has_no_handlers()                    = :none,
@@ -311,6 +338,8 @@ Any anchor_obj(ExprSpecWFError err) =
   invalid_rel_var_arity()                 = :none,
   not_a_rel_var()                         = :none,
   unknown_rel_var()                       = :none,
+
+  anchored_errors()                       = err.anchor,
 
   annotated_syn_expr_error()              = err.expr,
   annotated_syn_stmt_error()              = err.stmt;
@@ -502,7 +531,7 @@ String* create_same_name_proc_defs_err_msg(SynProcDef+ proc_defs) =
 
 String* create_error_msg(ExprWFError err) {
   msg = basic_err_msg(err);
-  loc = source_code_location(err);
+  loc = artifact_source_code_location(anchor_obj(err));
   if loc != nothing:
     start_line = left(left(value(loc)));
     msg = (l & " (line " & printed(start_line) & ")" : l <- msg);
@@ -631,6 +660,15 @@ String* basic_err_msg(ExprSpecWFError err) =
   not_a_copiable_signal()     = ( "Invalid expression: @" & _str_(err.name),
                                   "The @ notation can only be applied to continuous inputs and state variables"
                                 ),
+  duplicate_tracked_signal()  = ("Signal " & _str_(err.name) & " appears multiple times in the list of tracked signals"),
+  unknown_state_var()         = ("Not a state variable: " & _str_(err.name)),
+  no_discrete_signals_in_expr() = { descr = if err.is_update then "State variable update" else "Discrete rule";
+                                    return (descr & " without a guard must reference at least one discrete signal");
+                                  },
+  discrete_signals_in_countinuous_rule()  = ( "Discrete signal(s) used in continuous rule " & _str_(err.name) &
+                                              ": " & append((user_repr(v) : v <- rand_sort(err.discrete_signals)), ", ")),
+
+  conflicting_auto_decls(d1?, d2?) = conflicting_auto_decls_err_msg(d1, d2),
 
   not_a_db_var()              = ( if err.is_auto_var
                                     then _str_(err.var) & " is a reactive automaton, not a transactional one"
@@ -655,8 +693,31 @@ String* basic_err_msg(ExprSpecWFError err) =
   not_a_rel_var()             = ("Not a relational variable: " & _str_(err.var)),
   unknown_rel_var()           = ("Unknown relational variable: " & _str_(err.var)),
 
+  anchored_errors()           = join((basic_err_msg(e) : e <- err.errors)),
+
   annotated_syn_expr_error()  = basic_err_msg(err.error),
   annotated_syn_stmt_error()  = basic_err_msg(err.error);
+
+
+String* conflicting_auto_decls_err_msg(AnyAutoDecl decl1, AnyAutoDecl decl2) {
+  return (
+    "Conflicting declarations:",
+    "  " & description(decl1),
+    "  " & description(decl2)
+  );
+
+
+  String description(AnyAutoDecl decl) {
+    descr = auto_decl_descr(decl);
+    descr = descr & " " & _str_(decl.name) if decl.name?;
+    maybe_loc = artifact_source_code_location(decl);
+    if maybe_loc != nothing:
+      start_line = left(left(value(maybe_loc)));
+      descr = descr & " (line " & printed(start_line) & ")";
+    ;
+    return descr;
+  }
+}
 
 
 String* create_error_msg(GenDefSpecWFError err) =
@@ -676,8 +737,7 @@ String* create_error_msg(ProcDefSpecWFError err) =
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Maybe[((NzNat, NzNat), (NzNat, NzNat))] source_code_location(ExprWFError err) {
-  obj = anchor_obj(err);
+Maybe[((NzNat, NzNat), (NzNat, NzNat))] artifact_source_code_location(Any obj) {
   if obj != nothing:
     maybe_data = fetch(obj);
     if maybe_data != nothing:
@@ -691,3 +751,12 @@ Maybe[((NzNat, NzNat), (NzNat, NzNat))] source_code_location(ExprWFError err) {
   ;
   return nothing;
 }
+
+////////////////////////////////////////////////////////////////////////////////
+
+String auto_decl_descr(InputDecl)     = "Input";
+String auto_decl_descr(OutputDecl)    = "Output";
+String auto_decl_descr(StateVarDecl)  = "State variable";
+String auto_decl_descr(NestedDBDecl)  = "Nested automaton";
+String auto_decl_descr(ConstDecl)     = "Constant";
+String auto_decl_descr(RuleDecl)      = "Rule";

@@ -197,12 +197,12 @@ implicit syn_prg : SynPrg {
   [AutoSymbol -> (memb_vars: [Atom], nested_autos: [Atom -> Atom], nested_dbs: [Atom -> Atom])] auto_internals {
     res = ();
     for a <- rand_sort(values(auto_defs_by_id)):
-      let auto_def = a:
+      let artifact = a:
         info = (
           memb_vars:    [bare_id(v) : v <- auto_memb_vars],
           nested_autos: [na.name -> na.auto_name : na <- nested_auto_decls],
           // BUG BUG BUG: FIX RESOLUTION
-          // nested_dbs:   [db.name -> db.type | db <~ auto_def.nested_dbs]
+          // nested_dbs:   [db.name -> db.type | db <~ artifact.nested_dbs]
           nested_dbs:   [db.name -> db.type : db <~ a.nested_dbs]
         );
         res = (res | [auto_symbol(a.name) -> info]);
@@ -266,8 +266,8 @@ implicit syn_prg : SynPrg {
   [AutoSymbol -> [AutoMembVar]] discrete_signal_by_automaton {
     return [id -> [auto_memb_var(a) : a <- discrete_signals(auto)] : id, auto <- auto_defs_by_id];
 
-    [Atom] discrete_signals(SynAutoDef an_auto_def) {
-      let auto_def = an_auto_def:
+    [Atom] discrete_signals(SynAutoDef auto_def) {
+      let artifact = auto_def:
         discrete_signal_def_decls = [
           set(auto_def.inputs),
           set(auto_def.outputs),
@@ -287,8 +287,8 @@ implicit syn_prg : SynPrg {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-implicit syn_prg : SynPrg, db_def : SynDBDef {
-  [DatabaseDecl] all_db_decls = set(db_def.decls);
+implicit syn_prg : SynPrg, artifact : SynDBDef {
+  [DatabaseDecl] all_db_decls = set(artifact.decls);
 
   [StateVarDecl] db_state_vars = [d : d <- all_db_decls, state_var_decl() ?= d];
   [RelVarsDecl]  db_rel_vars   = [d : d <- all_db_decls, relvars_decl() ?= d];
@@ -302,8 +302,10 @@ implicit syn_prg : SynPrg, db_def : SynDBDef {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-implicit syn_prg : SynPrg, auto_def : SynAutoDef {
-  [RuleDecl] rule_decls = set(auto_def.rules);
+implicit syn_prg : SynPrg, artifact : SynAutoDef {
+  [Atom] auto_def_state_vars_ids = [sv.name : sv <~ artifact.state_vars];
+
+  [RuleDecl] rule_decls = set(artifact.rules);
 
   [PlainRuleDecl]   plain_rules_lookalike_decls = [d : d <- rule_decls, plain_rule_decl()    ?= d];
   [CondRuleDecl]    cond_rule_decls             = [d : d <- rule_decls, cond_rule_decl()     ?= d];
@@ -330,10 +332,10 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef {
 
   [AutoMembVar] auto_memb_vars {
     memb_var_def_decls = [
-      set(auto_def.inputs),
-      set(auto_def.outputs),
-      set(auto_def.state_vars),
-      set(auto_def.consts),
+      set(artifact.inputs),
+      set(artifact.outputs),
+      set(artifact.state_vars),
+      set(artifact.consts),
       plain_rule_decls,
       cond_rule_decls,
       foreach_rule_decls,
@@ -348,8 +350,8 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef {
 
     [Atom] discrete_signals {
       discrete_signal_def_decls = [
-        set(auto_def.inputs),
-        set(auto_def.outputs),
+        set(artifact.inputs),
+        set(artifact.outputs),
         plain_rule_decls,
         cond_rule_decls,
         foreach_rule_decls
@@ -373,7 +375,7 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef {
 
 
   [MembDBVar -> DBSymbol] db_in_auto_vars_types =
-    [memb_db_var(d.name) -> db_symbol(d.type) : d <~ auto_def.nested_dbs];
+    [memb_db_var(d.name) -> db_symbol(d.type) : d <~ artifact.nested_dbs];
 }
 
 ////////////////////////////////////////////////////////////////////////////////

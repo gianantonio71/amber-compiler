@@ -1,18 +1,18 @@
-implicit syn_prg : SynPrg, db_def : SynDBDef {
+implicit syn_prg : SynPrg, artifact : SynDBDef {
   Database desugared_data_base {
     state_vars = [
       memb_var(v.name) -> (
         type:       desugar_plain_type(v.type),
-        init_value: desugar_expr(v.init_value, [], artifact=db_def, impl_args=[])
+        init_value: desugar_expr(v.init_value, [], impl_args=[])
       ) : v <- db_state_vars
     ];
 
-    methods  = [desugar_db_method(m) : m <- lookup(methods_by_db, db_def.name, [])];
-    updates  = [desugar_update(u)    : u <- lookup(updates_by_db, db_def.name, [])];
-    handlers = [desugar_handler(h)   : h <- lookup(handlers_by_db, db_def.name, [])];
+    methods  = [desugar_db_method(m) : m <- lookup(methods_by_db, artifact.name, [])];
+    updates  = [desugar_update(u)    : u <- lookup(updates_by_db, artifact.name, [])];
+    handlers = [desugar_handler(h)   : h <- lookup(handlers_by_db, artifact.name, [])];
 
     db = data_base(
-      name:         db_symbol(db_def.name),
+      name:         db_symbol(artifact.name),
       state_vars:   state_vars,
       rel_vars:     desugared_relvars,
       nested_dbs:   db_vars_types,
@@ -21,7 +21,7 @@ implicit syn_prg : SynPrg, db_def : SynDBDef {
       handlers:     handlers
     );
 
-    return transfer(db, db_def);
+    return transfer(db, artifact);
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -72,8 +72,8 @@ implicit syn_prg : SynPrg, db_def : SynDBDef {
     args = ((desugar_plain_type(t), just(var(n))) : t, n <- method_def.args);
     ret_type = desugar_plain_type(method_def.ret_type);
     arg_vars = [var(n) : _, n <~ method_def.args];
-    artifact = using_block_method_def(db_def.name, method_def);
-    expr = desugar_expr(method_def.expr, arg_vars, artifact = artifact, impl_args = []);
+    method_artifact = using_block_method_def(artifact.name, method_def);
+    expr = desugar_expr(method_def.expr, arg_vars, artifact = method_artifact, impl_args = []);
     method = method(method_symbol(method_def.name), args, ret_type, expr);
     return transfer(method, method_def);
   }
@@ -82,8 +82,8 @@ implicit syn_prg : SynPrg, db_def : SynDBDef {
   Update desugar_update(UpdateDef update_def) {
     args = ((desugar_plain_type(t), v) : t, v <- update_def.args);
     arg_vars = [v : _, v <~ update_def.args];
-    artifact = using_block_update_def(db_def.name, update_def);
-    body = desugar_stmts(update_def.body, arg_vars, artifact = artifact, impl_args = []);
+    update_artifact = using_block_update_def(artifact.name, update_def);
+    body = desugar_stmts(update_def.body, arg_vars, artifact = update_artifact, impl_args = []);
     update = update(update_symbol(update_def.name), args, body);
     return transfer(update, update_def);
   }

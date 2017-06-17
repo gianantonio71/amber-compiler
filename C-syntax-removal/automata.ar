@@ -1,13 +1,13 @@
-implicit syn_prg : SynPrg, auto_def : SynAutoDef {
+implicit syn_prg : SynPrg, artifact : SynAutoDef {
   Automaton desugar_automaton {
     // Inputs
-    inputs = [auto_memb_var(i.name) -> input(desugar_plain_type(i.type), i.discrete) : i <~ auto_def.inputs];
+    inputs = [auto_memb_var(i.name) -> input(desugar_plain_type(i.type), i.discrete) : i <~ artifact.inputs];
 
     // Outputs
-    if auto_def.res_type?:
-      outputs = [auto_memb_var(auto_def.name) -> output(desugar_plain_type(auto_def.res_type), false)];
+    if artifact.res_type?:
+      outputs = [auto_memb_var(artifact.name) -> output(desugar_plain_type(artifact.res_type), false)];
     else
-      outputs = [auto_memb_var(o.name) -> output(desugar_plain_type(o.type), o.discrete) : o <~ auto_def.outputs];
+      outputs = [auto_memb_var(o.name) -> output(desugar_plain_type(o.type), o.discrete) : o <~ artifact.outputs];
     ;
 
     // Desugaring constants
@@ -15,7 +15,7 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef {
       auto_memb_var(c.name) -> (
         type:  desugar_plain_type(c.type) if c.type?,
         value: desugar_auto_expr(c.value, [])
-      ) : c <~ auto_def.consts
+      ) : c <~ artifact.consts
     ];
 
     // Plain, conditional and foreach rules
@@ -33,7 +33,7 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef {
         init_value = desugar_auto_expr(v.init_value, []);
         var_updates = lookup(updates, var, []);
         return state_var(type, init_value, var_updates);
-      } : v <~ auto_def.state_vars, var = auto_memb_var(v.name)
+      } : v <~ artifact.state_vars, var = auto_memb_var(v.name)
     ];
 
     // Time-varying rules
@@ -45,7 +45,7 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef {
     // Nested databases
     nested_dbs = [
       db_var -> (type: db_symbol(db.type), msg_send_rule: msg_sends[db_var] if msg_sends(db_var, *))
-      : db <~ auto_def.nested_dbs, db_var = memb_db_var(db.name)
+      : db <~ artifact.nested_dbs, db_var = memb_db_var(db.name)
     ];
 
     // Nested automata
@@ -75,10 +75,10 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef {
     // const_rules = select_by_key(rules, const_rules_ids);
     // rules = remove_keys(rules, const_rules_ids);
 
-    methods = [desugar_method(m) : m <- lookup(methods_by_automaton, auto_def.name, [])];
+    methods = [desugar_method(m) : m <- lookup(methods_by_automaton, artifact.name, [])];
 
     automaton = automaton(
-      name:           auto_symbol(auto_def.name),
+      name:           auto_symbol(artifact.name),
       params:         params,
       inputs:         inputs,
       outputs:        outputs,
@@ -90,7 +90,7 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef {
       nested_dbs:     nested_dbs,
       methods:        methods
     );
-    return transfer(automaton, auto_def);
+    return transfer(automaton, artifact);
   }
 
 
@@ -194,5 +194,5 @@ implicit syn_prg : SynPrg, auto_def : SynAutoDef {
 
 
   Expr desugar_auto_expr(SynExpr expr, [StdVar] def_vars) =
-    desugar_expr(expr, def_vars, artifact = auto_def, impl_args = []);
+    desugar_expr(expr, def_vars, impl_args = []);
 }
