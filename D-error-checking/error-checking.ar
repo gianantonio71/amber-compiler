@@ -88,10 +88,26 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
       [nested_auto_errs(id, info.type, info.args) : id, info <- automaton.nested_autos],
       [nested_db_errs(id, info.msg_send_rule) : id, info <- automaton.nested_dbs, info.msg_send_rule?]
     ]));
-    errs = overlap_errs & var_errs;
+    errs = overlap_errs & var_errs & output_errs;
     errs = dependency_errors if errs == [];
     return if errs != [] then [error_cluster(automaton, errs)] else [];
 
+
+    [CoreWFError] output_errs {
+      candidate_outputs = merge([
+        [id -> false : id, unused_var <- automaton.params],
+        [id -> input.discrete : id, input <- automaton.inputs],
+        [id -> false : id, unused_var <- automaton.state],
+        [id -> false : id, unused_var <- automaton.rules],
+        [id -> false : id, unused_var <- automaton.time_rules],
+        [id -> true : id, unused_var <- automaton.discrete_rules]
+      ]);
+
+      return [
+        if candidate_outputs(id, *) then wrong_output_nature(id, output.discrete) else undefined_output(id)
+        : id, output <- automaton.outputs, not candidate_outputs(id, *) or candidate_outputs[id] != output.discrete
+      ];
+    }
 
     [CoreWFError] param_errs(AutoMembVar id, Expr value) = [
       invalid_auto_var(v, id, value) : v <- auto_expr_extern_vars(value), not is_key(v, automaton.params)
@@ -144,14 +160,13 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
 
     [CoreWFError] time_rule_errs(AutoMembVar id, TimeRule rule) {
       continuous_signals = continuous_signals_level_2;
-      discrete_signals = all_discrete_signals;
       return match (rule)
         boolean_time_rule()   |
         unchanged_time_rule() = [ invalid_auto_var(v, id, rule.expr)
                                   : v <- auto_expr_extern_vars(rule.expr),
                                     not (v :: QualDBMembVar or in(v, continuous_signals))
                                 ],
-        since_time_rule()     = [invalid_auto_var(v, id, v) : v <- rule.signals, not discrete_signals(v)];
+        since_time_rule()     = [invalid_auto_var(v, id, v) : v <- rule.signals, not is_discrete(v)];
     }
 
 
@@ -171,15 +186,19 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
 
 
     [CoreWFError] nested_auto_errs(MembAutoVar id, AutoSymbol type, [Atom -> Expr] args) {
-      continuous_signals = continuous_signals_level_2;
-      discrete_signals = all_discrete_signals;
-      return [
-        invalid_nested_auto_input_var(v, id, input_id, e)
-        : input_id, e <- args,
-          is_discrete = input_is_discrete(type, auto_memb_var(input_id)),
-          v <- auto_expr_extern_vars(e),
-          not (v :: QualDBMembVar or in(v, continuous_signals) or (is_discrete and in(v, discrete_signals)))
-      ];
+      nested_auto = automaton_by_id(type);
+      exp_inputs = [bare_id(v) : v, unused_var <- nested_auto.inputs];
+      errs  = [invalid_input(id, type, input_id) : input_id, unused_var <- args, not exp_inputs(input_id)] &
+              [undefined_input(id, type, input_id) : input_id <- exp_inputs, not args(input_id, *)];
+      return errs if errs != [];
+      return union([{
+          input_is_discrete = nested_auto.inputs[auto_memb_var(input_id)].discrete;
+          discrete_vars = [v : v <- auto_expr_extern_vars(e), is_discrete(v)];
+          return if input_is_discrete
+            then [continous_expr_for_discrete_input(id, input_id) if discrete_vars == []]
+            else [invalid_nested_auto_input_var(v, id, input_id, e) : v <- discrete_vars];
+        } : input_id, e <- args
+      ]);
     }
 
 
@@ -194,6 +213,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
     }
   }
 
+  //////////////////////////////////////////////////////////////////////////////
 
   [CoreWFError] dependency_errors {
     shallow_deps = merge([
@@ -276,15 +296,14 @@ implicit program : Program, typedefs : [TypeName -> NeType], automaton : Automat
   [<AnyAutoMembVar, PrevVarValue>] delayed_signals =
     [prev_var_value(id) : id, input <- automaton.inputs, not input.discrete] &
     [prev_var_value(id) : id, unused_var <- automaton.state];
+}
 
-  [AnyAutoMembVar] all_discrete_signals =
-    [id : id, input <- automaton.inputs, input.discrete] &
-    keys(automaton.discrete_rules) &
-    [ qual_auto_memb_var(id, out_id)
-      : id, info <- automaton.nested_autos,
-        out_id, out_info <- automaton_by_id(info.type).outputs,
-        out_info.discrete
-    ];
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+## THE IMPLICIT ARGUMENTS ARE TOTALLY UNNECESSARY, BUT THE TYPECHECKER IS TO DUMB TO FIGURE THAT OUT
+implicit program : Program, automaton : Automaton {
+  Bool is_discrete(<PrevVarValue, QualDBMembVar>) = false;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

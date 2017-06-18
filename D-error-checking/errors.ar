@@ -10,7 +10,12 @@ type CoreWFError  = error_cluster(AnyAuto, [+CoreWFError]),
                     dependency_loop(signal: AnyReactAutoVar, deps: [AnyReactAutoVar]),
                     invalid_auto_var(var: Var, signal: AutoMembVar, expr: <Expr, TimeRule>),
                     invalid_nested_auto_input_var(var: Var, auto_id: MembAutoVar, input_id: Atom, expr: Expr),
-                    invalid_nested_db_msg_var(var: Var, id: MembDBVar, rule: MsgSendRule);
+                    invalid_nested_db_msg_var(var: Var, id: MembDBVar, rule: MsgSendRule),
+                    wrong_output_nature(signal: AutoMembVar, discrete: Bool),
+                    undefined_output(signal: AutoMembVar),
+                    invalid_input(var: MembAutoVar, type: AutoSymbol, input: Atom),
+                    undefined_input(var: MembAutoVar, type: AutoSymbol, input: Atom),
+                    continous_expr_for_discrete_input(var: MembAutoVar, input: Atom);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -21,6 +26,11 @@ CoreWFError invalid_auto_var(Var v, AutoMembVar s, <Expr, TimeRule> e) = invalid
 CoreWFError dependency_loop(AnyReactAutoVar s, [+AnyReactAutoVar] ds) = dependency_loop(signal: s, deps: ds);
 CoreWFError invalid_nested_auto_input_var(Var v, MembAutoVar a, Atom i, Expr e) = invalid_nested_auto_input_var(var: v, auto_id: a, input_id: i, expr: e);
 CoreWFError invalid_nested_db_msg_var(Var v, MembDBVar id, MsgSendRule r) = invalid_nested_db_msg_var(var: v, id: id, rule: r);
+CoreWFError wrong_output_nature(AutoMembVar s, Bool d) = wrong_output_nature(signal: s, discrete: d);
+CoreWFError undefined_output(AutoMembVar s) = undefined_output(signal: s);
+CoreWFError invalid_input(MembAutoVar v, AutoSymbol t, Atom i) = invalid_input(var: v, type: t, input: i);
+CoreWFError undefined_input(MembAutoVar v, AutoSymbol t, Atom i) = undefined_input(var: v, type: t, input: i);
+CoreWFError continous_expr_for_discrete_input(MembAutoVar v, Atom i) = continous_expr_for_discrete_input(var: v, input: i);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -31,7 +41,12 @@ String* error_message(CoreWFError err) =
   dependency_loop()                   = dependency_loop_error_message(err.signal, err.deps),
   invalid_auto_var()                  = invalid_auto_var_error_message(err.var, err.signal, err.expr),
   invalid_nested_auto_input_var()     = invalid_nested_auto_input_var_error_message(err.var, err.auto_id, err.input_id, err.expr),
-  invalid_nested_db_msg_var()         = invalid_nested_db_msg_var_error_message(err.var, err.id, err.rule);
+  invalid_nested_db_msg_var()         = invalid_nested_db_msg_var_error_message(err.var, err.id, err.rule),
+  wrong_output_nature()               = wrong_output_nature_error_message(err.signal, err.discrete),
+  undefined_output()                  = undefined_output_error_message(err.signal),
+  invalid_input()                     = invalid_input_error_message(err.var, err.type, err.input),
+  undefined_input()                   = undefined_input_error_message(err.var, err.type, err.input),
+  continous_expr_for_discrete_input() = continous_expr_for_discrete_input_error_message(err.var, err.input);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -44,11 +59,11 @@ String* overlapping_signatures_error_message(SgnDecl d1, SgnDecl d2) = (
 
 String* recursively_defined_auto_or_db_error_message(AnyAuto auto_or_db) {
   auto_type_str = match (auto_or_db)
-    data_base() = "Transactional",
+    data_base() = "Static",
     automaton() = "Reactive";
 
   return (
-    auto_type_str & " automata cannot contain themselves: " & user_repr(auto_or_db.name),
+    auto_type_str & " automata cannot be defined recursively: " & user_repr(auto_or_db.name),
     "    " & source_code_location_string(source_code_location(auto_or_db))
   );
 }
@@ -74,9 +89,34 @@ String* invalid_nested_auto_input_var_error_message(Var var, MembAutoVar auto_id
   "Input " & _str_(input_id) & " of nested automaton " & user_repr(auto_id) & " is not permitted to depend on signal " & user_repr(var)
 );
 
+
 String* invalid_nested_db_msg_var_error_message(Var var, MembDBVar db_id, MsgSendRule rule) = (
   "Value of message sent to nested static automaton " & user_repr(db_id) & " is not permitted to depend on signal " & user_repr(var)
 );
+
+
+String* wrong_output_nature_error_message(AutoMembVar signal, Bool discrete) {
+  decl_type, actual_type = ("continous", "discrete");
+  decl_type, actual_type = (actual_type, decl_type) if discrete;
+  return ("Output " & user_repr(signal) & " is declared as " & decl_type & " but actual signal is " & actual_type);
+}
+
+
+String* undefined_output_error_message(AutoMembVar signal) = ("Undefined output: " & user_repr(signal));
+
+
+String* invalid_input_error_message(MembAutoVar var, AutoSymbol type, Atom input) =
+  ("Nested automaton " & user_repr(var) & " of type " & user_repr(type) & " does not have input " & _str_(input));
+
+
+String* undefined_input_error_message(MembAutoVar var, AutoSymbol type, Atom input) =
+  ("Nested automaton " & user_repr(var) & " of type " & user_repr(type) & " requires input " & _str_(input));
+
+
+String* continous_expr_for_discrete_input_error_message(MembAutoVar var, Atom input) =
+  ( "Input " & _str_(input) & " of nested automaton " & user_repr(var) &
+    " is discrete, but the provided expression is continuous"
+  );
 
 ////////////////////////////////////////////////////////////////////////////////
 
