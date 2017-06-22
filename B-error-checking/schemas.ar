@@ -1,5 +1,24 @@
 implicit syn_prg : SynPrg {
+  [WFError] schemas_wf_errors([SynDBDef] schemas, [BasicTypeSymbol -> [+Nat]] type_arity_map) {
+    errs = [duplicate_schema_defs(rand_sort(dbs)) : id, dbs <- group_by(schemas, $.name), |dbs| > 1];
+    if errs != []:
+      let type_arity_map = type_arity_map:
+        errs = [db_def_errors(d, es) : d <- schemas, es = schema_wf_errors(d), es != ()];
+      ;
+    ;
+    return errs;
+  }
+}
+
+
+implicit syn_prg : SynPrg, type_arity_map : [BasicTypeSymbol -> [+Nat]] {
   ExprWFError* schema_wf_errors(SynDBDef db_def) {
+    confl_type_name = type_symbol(db_def.name);
+    if type_arity_map(confl_type_name, *):
+      confl_tdefs = rand_sort([td : td <- syn_tdefs | td <- syn_par_tdefs, td.name == confl_type_name]);
+      return (schema_def_duplicates_type(db_def, nonempty(confl_tdefs)));
+    ;
+
     state_vars = (d : d <- db_def.decls, d :: StateVarDecl);
     rel_vars   = (d : d <- db_def.decls, d :: RelVarsDecl);
     nested_dbs = (d : d <- db_def.decls, d :: NestedDBDecl);
@@ -34,7 +53,7 @@ implicit syn_prg : SynPrg {
   //////////////////////////////////////////////////////////////////////////////
 
   ExprWFError* schema_decl_wf_errors(StateVarDecl decl) {
-    type_errs = plain_type_wf_errors(decl.type);
+    type_errs = plain_type_wf_errors(decl.type, type_arity_map);
     let artifact = :null_artifact, impl_args = [], actual_arg_arity = 0:
       expr_errs = expr_wf_errors(decl.init_value, []);
     ;
@@ -54,8 +73,8 @@ implicit syn_prg : SynPrg {
     return (invalid_relvar_arity(decl)) if arity > 3 or (decl.attributes != () and arity > 2);
 
     type_errs = join(
-      (plain_type_wf_errors(t) : t <- decl.col_types) &
-      (plain_type_wf_errors(a.type) : a <- decl.attributes)
+      (plain_type_wf_errors(t, type_arity_map) : t <- decl.col_types) &
+      (plain_type_wf_errors(a.type, type_arity_map) : a <- decl.attributes)
     );
     return type_errs if type_errs != ();
 

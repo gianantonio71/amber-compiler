@@ -1,6 +1,5 @@
-type WFError            = dupl_typedef((SynAnyTypedef, SynAnyTypedef)),
-                          typedef_errors(typedef: SynAnyTypedef, errors: TypeWFError+),
-                          typevar_decl_errs(typevar_decl: TypeVarDecl, errs: TypeWFError+),
+type WFError            = dupl_typedef((AnyTypedef, AnyTypedef)),
+                          typedef_errors(typedef: AnyTypedef, errors: TypeWFError+),
                           dupl_impl_arg((ImplArgDecl, ImplArgDecl)),
                           signature_errors(sgn: ImplArgDecl, errors: TypeWFError+),
                           incomp_pos_args(fndefs: (SynFnDef, SynFnDef), arg_indexes: Nat+),
@@ -14,7 +13,12 @@ type WFError            = dupl_typedef((SynAnyTypedef, SynAnyTypedef)),
                           db_method_def_errors(db: SynDBDef, method: DBMethodDef, errors: FnDefWFError+),
                           update_def_errs(db: SynDBDef, update: UpdateDef, errors: UpdateDefWFError+),
                           handler_def_errs(handler: HandlerDef, errors: UpdateDefWFError+),
-                          same_name_proc_defs(SynProcDef+);
+                          same_name_proc_defs(SynProcDef+),
+                          duplicate_schema_defs(defs: SynDBDef+),
+                          protocol_redef(type: Atom, protocols: [+ProtDecl]),
+                          protocol_errors(prot: ProtDecl, errors: ProtWFError+),
+                          dupl_auto_defs(defs: [+SynAutoDef]),
+                          typevar_decl_errs(decl: TypeVarDecl, errors: TypeVarDeclError+);
 
 type TypeWFError        = invalid_int_range(<syn_int_range(min: Int, max: Int)>),
                           undef_type_var(TypeVar),
@@ -25,10 +29,21 @@ type TypeWFError        = invalid_int_range(<syn_int_range(min: Int, max: Int)>)
                           type_var_in_union(TypeVar),
                           type_vars_not_allowed(type: SynType, var: TypeVar);
 
-type SchemaSpecWFError  = duplicate_schema_decl(<DatabaseDecl, AttrRelVar>, <DatabaseDecl, AttrRelVar>),
+type SchemaSpecWFError  = schema_def_duplicates_type(db_def: SynDBDef, tdefs: AnyTypedef+),
+                          duplicate_schema_decl(<DatabaseDecl, AttrRelVar>, <DatabaseDecl, AttrRelVar>),
                           invalid_relvar_arity(RelVarsDecl),
                           invalid_relvar_keys(RelVarsDecl),
                           incomp_relvar_decls(relvars: [RelVarsDecl], attr_relvars: [(RelVarsDecl, Nat)]);
+
+type ProtSpecWFError    = prot_type_conflict(name: Atom, typedef: AnyTypedef),
+                          prot_schema_conflict(name: Atom, schema: SynDBDef),
+                          dupl_prot_methods(methods: (AtomicFnSymb, SynType+, SynType)+);
+
+type TypeVarDeclError   = dupl_type_vars(vars: [+Atom]),
+                          dupl_prot_types(types: [+Atom]),
+                          wrong_number_of_prot_types,
+                          undef_prot_type(type: Atom),
+                          unrelated_prot_types(types: Atom+);
 
 type ExprSpecWFError    = already_def_var(Var),
                           undef_var_or_const(Atom),
@@ -118,6 +133,8 @@ type ExprWFError        = TypeWFError, SchemaSpecWFError, ExprSpecWFError;
 type FnDefWFError       = ExprWFError, GenDefSpecWFError, FnDefSpecWFError;
 type ProcDefWFError     = ExprWFError, GenDefSpecWFError, ProcDefSpecWFError;
 
+type ProtWFError        = TypeWFError, ProtSpecWFError;
+
 type UpdateDefWFError   = FnDefWFError;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -126,9 +143,8 @@ type AnyAutoDecl = InputDecl, OutputDecl, StateVarDecl, NestedDBDecl, ConstDecl,
 
 ////////////////////////////////////////////////////////////////////////////////
 
-WFError dupl_typedef(SynAnyTypedef td1, SynAnyTypedef td2)      = :dupl_typedef((td1, td2));
-WFError typedef_errors(SynAnyTypedef td, TypeWFError+ errs)     = typedef_errors(typedef: td, errors: errs);
-WFError typevar_decl_errs(TypeVarDecl tvd, TypeWFError+ es)     = typevar_decl_errs(typevar_decl: tvd, errs: es);
+WFError dupl_typedef(AnyTypedef td1, AnyTypedef td2)            = :dupl_typedef((td1, td2));
+WFError typedef_errors(AnyTypedef td, TypeWFError+ errs)        = typedef_errors(typedef: td, errors: errs);
 WFError dupl_impl_arg(ImplArgDecl s1, ImplArgDecl s2)           = :dupl_impl_arg((s1, s2));
 WFError signature_errors(ImplArgDecl s, TypeWFError+ es)        = signature_errors(sgn: s, errors: es);
 WFError incomp_pos_args(SynFnDef fd1, SynFnDef fd2, Nat+ is)    = incomp_pos_args(fndefs: (fd1, fd2), arg_indexes: is);
@@ -141,9 +157,13 @@ WFError db_def_errors(SynDBDef db, ExprWFError+ es)             = db_def_errors(
 WFError db_method_def_errors(SynDBDef db, DBMethodDef m, FnDefWFError+ es)  = db_method_def_errors(db: db, method: m, errors: es);
 WFError update_def_errs(SynDBDef db, UpdateDef u, UpdateDefWFError+ es) = update_def_errs(db: db, update: u, errors: es);
 WFError handler_def_errs(HandlerDef h, UpdateDefWFError+ es)    = handler_def_errs(handler: h, errors: es);
-
 WFError proc_def_errors(SynProcDef pd, ProcDefWFError+ es)      = proc_def_errors(proc_def: pd, errors: es);
 WFError same_name_proc_defs(SynProcDef+ pds)                    = :same_name_proc_defs(pds);
+WFError duplicate_schema_defs(SynDBDef+ ds)                     = duplicate_schema_defs(defs: ds);
+WFError protocol_redef(Atom t, [+ProtDecl] ps)                  = protocol_redef(type: t, protocols: ps);
+WFError protocol_errors(ProtDecl p, ProtWFError+ es)            = protocol_errors(prot: p, errors: es);
+WFError dupl_auto_defs([+SynAutoDef] ds)                        = dupl_auto_defs(defs: ds);
+WFError typevar_decl_errs(TypeVarDecl d, TypeVarDeclError+ es)  = typevar_decl_errs(decl: d, errors: es);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -158,10 +178,25 @@ TypeWFError type_vars_not_allowed(SynType t, TypeVar v)               = type_var
 
 ////////////////////////////////////////////////////////////////////////////////
 
+SchemaSpecWFError schema_def_duplicates_type(SynDBDef db, AnyTypedef+ ts) = schema_def_duplicates_type(db_def: db, tdefs: ts);
 SchemaSpecWFError duplicate_schema_decl(<DatabaseDecl, AttrRelVar> d1, <DatabaseDecl, AttrRelVar> d2) = :duplicate_schema_decl(d1, d2);
 SchemaSpecWFError invalid_relvar_arity(RelVarsDecl d) = :invalid_relvar_arity(d);
 SchemaSpecWFError invalid_relvar_keys(RelVarsDecl d) = :invalid_relvar_keys(d);
 SchemaSpecWFError incomp_relvar_decls([RelVarsDecl] rvs, [(RelVarsDecl, Nat)] arvs) = incomp_relvar_decls(relvars: rvs, attr_relvars: arvs);
+
+////////////////////////////////////////////////////////////////////////////////
+
+ProtSpecWFError prot_type_conflict(Atom n, AnyTypedef td) = prot_type_conflict(name: n, typedef: td);
+ProtSpecWFError prot_schema_conflict(Atom n, SynDBDef s) = prot_schema_conflict(name: n, schema: s);
+ProtSpecWFError dupl_prot_methods((AtomicFnSymb, SynType+, SynType)+ ms) = dupl_prot_methods(methods: ms);
+
+////////////////////////////////////////////////////////////////////////////////
+
+TypeVarDeclError dupl_type_vars([+Atom] vs)     = dupl_type_vars(vars: vs);
+TypeVarDeclError dupl_prot_types([+Atom] ts)    = dupl_prot_types(types: ts);
+TypeVarDeclError wrong_number_of_prot_types     = :wrong_number_of_prot_types;
+TypeVarDeclError undef_prot_type(Atom t)        = undef_prot_type(type: t);
+TypeVarDeclError unrelated_prot_types(Atom+ ts) = unrelated_prot_types(types: ts);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -175,8 +210,8 @@ FnDefSpecWFError nested_functions_errors(WFError+ es)             = :nested_func
 
 ////////////////////////////////////////////////////////////////////////////////
 
-ProcDefSpecWFError builtin_proc_redef                   = :builtin_proc_redef;
-ProcDefSpecWFError wrong_main_proc_arity                = :wrong_main_proc_arity;
+ProcDefSpecWFError builtin_proc_redef     = :builtin_proc_redef;
+ProcDefSpecWFError wrong_main_proc_arity  = :wrong_main_proc_arity;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -264,10 +299,11 @@ Any anchor_obj(TypeWFError err)     = :none;
 
 
 Any anchor_obj(SchemaSpecWFError err) =
-  duplicate_schema_decl()   = :none,
-  invalid_relvar_arity(d?)  = d,
-  invalid_relvar_keys(d?)   = d,
-  incomp_relvar_decls()     = :none;
+  schema_def_duplicates_type()  = :none,
+  duplicate_schema_decl()       = :none,
+  invalid_relvar_arity(d?)      = d,
+  invalid_relvar_keys(d?)       = d,
+  incomp_relvar_decls()         = :none;
 
 
 Any anchor_obj(ExprSpecWFError err) =
@@ -390,8 +426,8 @@ String source_code_loc_str(ImplArgDecl sgn1, ImplArgDecl sgn2) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-String user_name(SynTypedef td)     = user_repr(td.name);
-String user_name(SynParTypedef td)  = user_repr(td.name) & "/" & printed(|td.params|);
+String user_name(Typedef td)        = user_repr(td.name);
+String user_name(ParTypedef td)     = user_repr(td.name) & "/" & printed(|td.params|);
 String user_name(ImplArgDecl s)     = _str_(bare_id(s.name));
 String user_name(SynFnDef fd)       = user_repr(fd.name) & "/" & printed(arity(fd));
 String user_name(AutoMethodDef md)  = user_repr(auto_symbol(md.target)) & "." & user_repr(method_symbol(md.name)) & "/" & printed(arity(md));
@@ -416,56 +452,57 @@ String plural([+Any] objs)  = if |objs| > 1 then "s" else "";
 ////////////////////////////////////////////////////////////////////////////////
 
 String* create_error_msg(WFError err) =
-  dupl_typedef(tds?)                  = create_dupl_typedef_error_msg(left(tds), right(tds)),
-  typedef_errors()                    = create_typedef_error_msg(err.typedef, err.errors),
-  typevar_decl_errs()                 = create_typevar_decl_err_msg(err.typevar_decl, err.errs),
-  dupl_impl_arg(ss?)                  = create_dupl_impl_arg_err_msg(left(ss), right(ss)),
-  signature_errors()                  = create_signature_errors_err_msg(err.sgn, err.errors),
-  incomp_pos_args()                   = create_incomp_pos_pars_err_msg(left(err.fndefs), right(err.fndefs), err.arg_indexes),
-  overlapping_pos_args_types(fds?)    = create_overlapping_pos_pars_types_err_msg(left(fds), right(fds)),
-  incomp_impl_args()                  = create_incomp_impl_args_err_msg(err.fd1, err.fd2, err.nargs1, err.nargs2),
-  fndef_errors()                      = create_fndef_errs_msg(err.fndef, err.errors),
-  proc_def_errors()                   = create_proc_def_errs_msg(err.proc_def, err.errors),
-  auto_def_errors()                   = create_auto_def_err_msg(err.auto_def, err.errors),
-  auto_method_def_errors()            = create_auto_method_def_err_msg(err.meth_def, err.errors),
-  db_def_errors()                     = create_db_def_err_msg(err.db, err.errors),
-  db_method_def_errors()              = create_db_method_def_err_msg(err.db, err.method, err.errors),
-  update_def_errs()                   = create_update_def_err_msg(err.db, err.update, err.errors),
-  handler_def_errs()                  = create_handler_def_err_msg(err.handler, err.errors),
-  same_name_proc_defs(pds?)           = create_same_name_proc_defs_err_msg(pds);
+  dupl_typedef(tds?)                  = dupl_typedef_error_msg(left(tds), right(tds)),
+  typedef_errors()                    = typedef_error_msg(err.typedef, err.errors),
+  dupl_impl_arg(ss?)                  = dupl_impl_arg_err_msg(left(ss), right(ss)),
+  signature_errors()                  = signature_errors_err_msg(err.sgn, err.errors),
+  incomp_pos_args()                   = incomp_pos_pars_err_msg(left(err.fndefs), right(err.fndefs), err.arg_indexes),
+  overlapping_pos_args_types(fds?)    = overlapping_pos_pars_types_err_msg(left(fds), right(fds)),
+  incomp_impl_args()                  = incomp_impl_args_err_msg(err.fd1, err.fd2, err.nargs1, err.nargs2),
+  fndef_errors()                      = fndef_errs_msg(err.fndef, err.errors),
+  proc_def_errors()                   = proc_def_errs_msg(err.proc_def, err.errors),
+  auto_def_errors()                   = auto_def_err_msg(err.auto_def, err.errors),
+  auto_method_def_errors()            = auto_method_def_err_msg(err.meth_def, err.errors),
+  db_def_errors()                     = db_def_err_msg(err.db, err.errors),
+  db_method_def_errors()              = db_method_def_err_msg(err.db, err.method, err.errors),
+  update_def_errs()                   = update_def_err_msg(err.db, err.update, err.errors),
+  handler_def_errs()                  = handler_def_err_msg(err.handler, err.errors),
+  same_name_proc_defs(pds?)           = same_name_proc_defs_err_msg(pds),
+  duplicate_schema_defs()             = duplicate_schema_defs_err_msg(err.defs),
+  protocol_redef()                    = protocol_redef_err_msg(err.type, err.protocols),
+  protocol_errors()                   = protocol_errs_msg(err.prot, err.errors),
+  dupl_auto_defs()                    = dupl_auto_defs_err_msg(err.defs),
+  typevar_decl_errs()                 = typevar_decl_err_msg(err.decl, err.errors);
 
 
-String* create_dupl_typedef_error_msg(SynAnyTypedef td1, SynAnyTypedef td2) = (
-    "Duplicated type definition: " & user_name(td1),
+String* dupl_typedef_error_msg(AnyTypedef td1, AnyTypedef td2) = (
+    "Duplicate type definition: " & user_name(td1),
     "    " & source_code_loc_str(td1),
     "    " & source_code_loc_str(td2)
   );
 
 
-String* create_typedef_error_msg(SynAnyTypedef tdef, TypeWFError+ errs) =
+String* typedef_error_msg(AnyTypedef tdef, TypeWFError+ errs) =
   ("Type definition errors: " & user_name(tdef), source_code_loc_str(tdef)) &
   ("    " & l : l <- join((create_error_msg(e) : e <- errs)));
 
 
-String* create_typevar_decl_err_msg(TypeVarDecl typevar_decl, TypeWFError+ errs) = join((create_error_msg(e) : e <- errs));
-
-
-String* create_dupl_impl_arg_err_msg(ImplArgDecl sgn1, ImplArgDecl sgn2) =
+String* dupl_impl_arg_err_msg(ImplArgDecl sgn1, ImplArgDecl sgn2) =
   ("Duplicated implicit argument: " & user_name(sgn1), source_code_loc_str(sgn1, sgn2));
 
 
-String* create_signature_errors_err_msg(ImplArgDecl sgn, TypeWFError+ errs) =
+String* signature_errors_err_msg(ImplArgDecl sgn, TypeWFError+ errs) =
   (join((create_error_msg(e) : e <- errs)) | "    " & source_code_loc_str(sgn));
 
 
-String* create_incomp_pos_pars_err_msg(SynFnDef fd1, SynFnDef fd2, Nat+ par_idxs) = (
+String* incomp_pos_pars_err_msg(SynFnDef fd1, SynFnDef fd2, Nat+ par_idxs) = (
     "Incompatible argument types in polymorphic function: " & user_name(fd1) & ", arguments: " & append((printed(i) : i <- par_idxs)),
     "    " & source_code_loc_str(fd1),
     "    " & source_code_loc_str(fd2)
   );
 
 
-String* create_incomp_impl_args_err_msg(SynFnDef fd1, SynFnDef fd2, [Atom] nargs1, [Atom] nargs2) {
+String* incomp_impl_args_err_msg(SynFnDef fd1, SynFnDef fd2, [Atom] nargs1, [Atom] nargs2) {
   diff_args = rand_sort(union(nargs1, nargs2) - intersection(nargs1, nargs2));
   return (
     "The following two " & user_repr(fd1.name, arity(fd1)) & " polymorphic functions:",
@@ -476,56 +513,83 @@ String* create_incomp_impl_args_err_msg(SynFnDef fd1, SynFnDef fd2, [Atom] nargs
 }
 
 
-String* create_overlapping_pos_pars_types_err_msg(SynFnDef fd1, SynFnDef fd2) = (
+String* overlapping_pos_pars_types_err_msg(SynFnDef fd1, SynFnDef fd2) = (
     "Overlapping argument types in polymorphic functions: " & user_name(fd1),
     "    " & source_code_loc_str(fd1),
     "    " & source_code_loc_str(fd2)
   );
 
 
-String* create_fndef_errs_msg(SynFnDef fndef, FnDefWFError+ errs) =
+String* fndef_errs_msg(SynFnDef fndef, FnDefWFError+ errs) =
   ("Error" & plural(errs) & " in function definition: " & user_name(fndef), source_code_loc_str(fndef)) &
   ("    " & l : l <- join((create_error_msg(e) : e <- errs)));
 
 
-String* create_auto_def_err_msg(SynAutoDef auto_def, ExprWFError+ errs) =
+String* auto_def_err_msg(SynAutoDef auto_def, ExprWFError+ errs) =
   ("Error" & plural(errs) & " in reactive automaton definition: " & user_name(auto_def), source_code_loc_str(auto_def)) &
   ("    " & l : l <- join((create_error_msg(e) : e <- errs)));
 
 
-String* create_auto_method_def_err_msg(AutoMethodDef meth_def, FnDefWFError+ errs) =
+String* auto_method_def_err_msg(AutoMethodDef meth_def, FnDefWFError+ errs) =
   ("Error" & plural(errs) & " in method definition: " & user_name(meth_def), source_code_loc_str(meth_def)) &
   ("    " & l : l <- join((create_error_msg(e) : e <- errs)));
 
 
-String* create_db_method_def_err_msg(SynDBDef db, DBMethodDef method, FnDefWFError+ errs) =
+String* db_method_def_err_msg(SynDBDef db, DBMethodDef method, FnDefWFError+ errs) =
   ("Error" & plural(errs) & " in method definition: " & user_name(db, method), source_code_loc_str(method)) &
   ("    " & l : l <- join((create_error_msg(e) : e <- errs)));
 
 
-String* create_db_def_err_msg(SynDBDef db, ExprWFError+ errs) =
+String* db_def_err_msg(SynDBDef db, ExprWFError+ errs) =
   ("Error" & plural(errs) & " in schema declaration: " & user_name(db), source_code_loc_str(db)) &
   ("    " & l : l <- join((create_error_msg(e) : e <- errs)));
 
 
-String* create_update_def_err_msg(SynDBDef db, UpdateDef upd, UpdateDefWFError+ errs) =
+String* update_def_err_msg(SynDBDef db, UpdateDef upd, UpdateDefWFError+ errs) =
   ("Error" & plural(errs) & " in update definition: " & user_name(db, upd), source_code_loc_str(upd)) &
   ("    " & l : l <- join((create_error_msg(e) : e <- errs)));
 
 
-String* create_handler_def_err_msg(HandlerDef handler, UpdateDefWFError+ errs) =
+String* handler_def_err_msg(HandlerDef handler, UpdateDefWFError+ errs) =
   ("Error" & plural(errs) & " in message handler definition") &
   ("    " & l : l <- join((create_error_msg(e) : e <- errs)));
 
 
-String* create_proc_def_errs_msg(SynProcDef proc_def, ProcDefWFError+ errs) =
+String* proc_def_errs_msg(SynProcDef proc_def, ProcDefWFError+ errs) =
   ("Error" & plural(errs) & " in procedure definition: " & user_name(proc_def), source_code_loc_str(proc_def)) &
   ("    " & l : l <- join((create_error_msg(e) : e <- errs)));
 
 
-String* create_same_name_proc_defs_err_msg(SynProcDef+ proc_defs) =
+String* same_name_proc_defs_err_msg(SynProcDef+ proc_defs) =
   ("Multiple definitions of the same procedure: " & user_name(head(proc_defs))) &
   ("    " & source_code_loc_str(pd) : pd <- proc_defs);
+
+
+String* duplicate_schema_defs_err_msg(SynDBDef+ db_defs) =
+  ("Multiple definition of schema " & user_name(head(db_defs))) &
+  ("    " & source_code_loc_str(db) : db <- db_defs);
+
+
+String* protocol_redef_err_msg(Atom type, [+ProtDecl] protocols) =
+  ("Conflicting protocol declarations: " & upper_camel_case(type)) &
+  ("    " & source_code_loc_str(p) : p <- rand_sort(protocols));
+
+
+String* protocol_errs_msg(ProtDecl prot, ProtWFError+ errors) =
+  ( "Error in protocol definition: " & append((upper_camel_case(t) : t <- prot.types), ", "),
+    source_code_loc_str(prot)
+  ) & ("    " & l : l <- join((basic_err_msg(e) : e <- errors)));
+
+
+String* dupl_auto_defs_err_msg([+SynAutoDef] defs) =
+  ("Duplicate reactive automata definitions: " & _str_(an_elem(defs).name)) &
+  ("    " & source_code_loc_str(d) : d <- rand_sort(defs));
+
+
+String* typevar_decl_err_msg(TypeVarDecl decl, TypeVarDeclError+ errors) =
+  ( "Errors in type variable(s) declaration: " & append((user_repr(type_var(id)) : id <- decl.type_vars), ", "),
+    source_code_loc_str(decl)
+  ) & ("    " & l : l <- join((basic_err_msg(e) : e <- errors)));
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -557,6 +621,7 @@ String* basic_err_msg(TypeWFError err) =
 ////////////////////////////////////////////////////////////////////////////////
 
 String* basic_err_msg(SchemaSpecWFError err) =
+  schema_def_duplicates_type()    = ("A type with the same name already exists: " & user_repr(type_symbol(err.db_def.name))),
   duplicate_schema_decl(d1?, d2?) = ("Duplicate declaration: " & _str_(d1.name)),
   invalid_relvar_arity(d?)        = ("Invalid arity: " & _str_(d.name)),
   invalid_relvar_keys(d?)         = ("Invalid keys: " & _str_(d.name)),
@@ -572,6 +637,24 @@ String* incomp_relvar_decls_basic_err_msg([RelVarsDecl] relvars, [(RelVarsDecl, 
   ;
   return ("Overloaded relation variables declarations are incompatible: " & _str_(name));
 }
+
+////////////////////////////////////////////////////////////////////////////////
+
+String* basic_err_msg(ProtSpecWFError err) =
+  prot_type_conflict()    = ("A type with the same name already exists: " & upper_camel_case(err.name)),
+  prot_schema_conflict()  = ("A schema with the same name already exists: " & upper_camel_case(err.name)),
+  dupl_prot_methods()     = { id, ats, unused_var = err.methods(0);
+                              return ("Duplicate protocol method: " & user_repr(id, |ats|));
+                            };
+
+////////////////////////////////////////////////////////////////////////////////
+
+String* basic_err_msg(TypeVarDeclError err) =
+  dupl_type_vars()            = ("Duplicate type variable: " & user_repr(type_var(v)) : v <- rand_sort(err.vars)),
+  dupl_prot_types()           = ("Duplicate protocol type: " & upper_camel_case(t) : t <- rand_sort(err.types)),
+  wrong_number_of_prot_types  = ("Number of types does not match the number of type variables"),
+  undef_prot_type()           = ("Undefined protocol type: " & upper_camel_case(err.type)),
+  unrelated_prot_types()      = ("Using together unrelated protocol types: " & append((upper_camel_case(t) : t <- err.types), ", "));
 
 ////////////////////////////////////////////////////////////////////////////////
 
