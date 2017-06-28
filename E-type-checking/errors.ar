@@ -31,6 +31,7 @@ type TypeCheckingError =
   loop_did_not_converge(iteractions: NzNat),
   ptrn_cannot_match_type(pattern: Pattern, type: Type),
   invalid_main_arg_type(type: Type),
+  invalid_main_ret_type(type: Type),
   duplicate_map_key(key: Expr, entries: [+(key: Expr, value: Expr, cond: Expr?)]),
 
   auto_typechecking_cycle(name: AutoSymbol, signals: [+AutoMembVar]),
@@ -140,6 +141,8 @@ TypeCheckingError ptrn_cannot_match_type(Pattern p, Type t) = add_anchor_if_need
 
 TypeCheckingError invalid_main_arg_type(Type t) = invalid_main_arg_type(type: t);
 
+TypeCheckingError invalid_main_ret_type(Type t) = invalid_main_ret_type(type: t);
+
 TypeCheckingError duplicate_map_key(Expr k, [+(key: Expr, value: Expr, cond: Expr?)] es) = duplicate_map_key(key: k, entries: es);
 
 TypeCheckingError auto_typechecking_cycle(AutoSymbol n, [+AutoMembVar] ss) = auto_typechecking_cycle(name: n, signals: ss);
@@ -238,7 +241,7 @@ String* create_error_msg(TypeCheckingError err) =
   no_matching_relvar()                = no_matching_relvar_err_msg(err.name, err.args_types, err.signatures),
   invalid_args_types()                = invalid_args_types_err_msg(err.fn_name, err.target_signature, err.invalid_params),
   invalid_cls_var_type()              = ("Invalid closure variable: " & user_repr(err.var) & ". Expected type: " & user_repr(err.expected_type)),
-  invalid_cls_param_types()           = ("Unable to instantiate type variables"),
+  invalid_cls_param_types()           = invalid_cls_arg_types_err_msg(err.target_signature, err.errors),
   invalid_rel_arg_type()              = ( "Invalid " & pos_name(err.idx) & " argument type in relation membership test",
                                           "  Expected type: " & user_repr(err.expected_type),
                                           "  Actual type:   " & user_repr(err.actual_type)
@@ -262,6 +265,9 @@ String* create_error_msg(TypeCheckingError err) =
   loop_did_not_converge()             = ("Cannot infer types of variables updated in loop"),
   ptrn_cannot_match_type()            = ("Pattern cannot match type: " & user_repr(err.pattern)),
   invalid_main_arg_type()             = ( "The argument of Main() must be of type String*",
+                                          "Actual type: " & user_repr(err.type)
+                                        ),
+  invalid_main_ret_type()             = ( "The return type of Main(), if present, must be Int",
                                           "Actual type: " & user_repr(err.type)
                                         ),
   duplicate_map_key()                 = ("Duplicate map or record key"),
@@ -325,6 +331,12 @@ String* create_error_msg(TypeCheckingError err) =
 
     return msg_header & reqs_sgns & sgns;
   };
+
+
+String* invalid_cls_arg_types_err_msg(FnType target_signature, [TypeCheckingError] errors) {
+  msg = join((create_error_msg(e) : e <- rand_sort(errors)));
+  return ("Closure argument does not typecheck") & ("  " & l : l <- msg);
+}
 
 
 String* no_disp_fn_found_err_msg(FnSymbol name, NzNat arity, [+FnType] signatures, Maybe[Type]* par_types) =

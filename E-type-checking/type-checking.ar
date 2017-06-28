@@ -36,6 +36,10 @@ implicit program : Program, typedefs : [TypeName -> NeType] {
     if proc.name == proc_symbol(:main):
       arg_type = only(proc.args).type;
       return [invalid_main_arg_type(arg_type)] if not is_subset(type_seq(type_string), arg_type);
+      if proc.res_type != nothing:
+        ret_type = value(proc.res_type);
+        return [invalid_main_ret_type(ret_type)] if not is_subset(ret_type, integer);
+      ;
     ;
     env = [a.var -> a.type : a <~ proc.args];
     ret_type = if proc.res_type != nothing then value(proc.res_type) else empty_type;
@@ -63,17 +67,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   }
 
 
-  [TypeCheckingError] typecheck(FnPtr expr, Type+ arg_types, Type ret_type, [EnvVar -> Type] env) {
-    sgn_set = signatures[(expr.name, expr.arity)];
-    sgns = sgn_set.sgns;
-    assert |sgns| == 1;
-    sgn = only(sgns);
-    assert sgn.impl_args == []; ## BUG BUG BUG: THIS IS NOT CHECKED IN THE WELL-FORMEDNESS CHECKING LAYER
-    assert not (a <~ sgn.args : not a :: NeType);
-    sgn_cls = cls_type(cast_type_ne_seq(sgn.args), sgn.ret_type);
-    is_subtype = is_fn_subtype(sgn_cls.in_types, sgn_cls.out_type, arg_types, ret_type);
-    return [invalid_cls_param_type(sgn_cls, arg_types, ret_type) if not is_subtype];
-  }
+  [TypeCheckingError] typecheck(FnPtr ptr, Type+ arg_types, Type ret_type, [EnvVar -> Type] env) =
+    typecheck(rewrite_cls_expr(ptr), arg_types, ret_type, env);
 
 
   [TypeCheckingError] typecheck(ClsExpr expr, Type+ arg_types, Type ret_type, [EnvVar -> Type] env) {
@@ -150,8 +145,49 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
   [TypeCheckingError] typecheck_match_clause(Pattern ptrn, Expr source, [EnvVar -> Type] env) {
     errs = typecheck(source, type_any, env);
-    return errs if errs != [];
-    type = expr_type(source, env);
-    return [ptrn_cannot_match_type(ptrn, type) if type != empty_type and not may_match(ptrn, type)];
+    return if errs != [] then errs else typecheck_pattern(ptrn, expr_type(source, env));
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+implicit typedefs : [TypeName -> NeType] {
+  [TypeCheckingError] typecheck_pattern(Pattern ptrn, Type type) {
+    return [] if type == empty_type;
+
+    return match (ptrn)
+      ptrn_symbol         |
+      ptrn_float          |
+      ptrn_empty_seq      |
+      ptrn_empty_rel      |
+      ptrn_ne_seq         |
+      ptrn_ne_set         |
+      ptrn_ne_map         |
+      ptrn_ne_bin_rel     |
+      ptrn_ne_tern_rel    |
+      ptrn_symbol()       |
+      ptrn_integer()      = [ptrn_cannot_match_type(ptrn, type) if not may_match(ptrn, type)],
+      ptrn_any            = [],
+      ptrn_var()          = typecheck_pattern(ptrn.ptrn, type),
+      ptrn_tuple()        = typecheck_tuple_pattern(ptrn, type),
+      ptrn_tag_obj()      = typecheck_tag_obj_pattern(ptrn, type),
+      ptrn_union(ps?)     = union([typecheck_pattern(p, type) : p <- ps]);
+
+
+    [TypeCheckingError] typecheck_tuple_pattern(<ptrn_tuple(Pattern+)> ptrn, NeType type) {
+      ptrns = match (ptrn) ptrn_tuple(ts?) = ts;
+      type_tuples = tuple_types_field_types(type, |ptrns|);
+      return [ptrn_cannot_match_type(ptrn, type)] if type_tuples == [];
+      errs = [union([typecheck_pattern(p, t) : p, t <~ zip(ptrns, types)]) : types <- type_tuples];
+      return if errs([]) then [] else an_elem(errs);
+    }
+
+
+    [TypeCheckingError] typecheck_tag_obj_pattern(<ptrn_tag_obj(tag: TagPtrn, obj: Pattern)> ptrn, NeType type) {
+      types = tag_obj_types(type);
+      return [ptrn_cannot_match_type(ptrn, type)] if types == [];
+      errs = [typecheck_pattern(ptrn.tag, t.tag_type) & typecheck_pattern(ptrn.obj, t.obj_type) : t <- types];
+      return if errs([]) then [] else an_elem(errs);
+    }
   }
 }

@@ -41,7 +41,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     Var                 = [],
     fn_call()           = fully_typecheck_fn_call(expr.name, expr.args, expr.impl_args, exp_type, env),
     cls_call()          = seq_union((typecheck(e, t, env) : e, t <- zip(expr.args, closures[expr.name].in_types))),
-    builtin_call()      = seq_union((typecheck(p, t, env) : p, t <- zip(expr.args, builtin_signature(expr.name).param_types))),
+    builtin_call()      = pre_typecheck_builtin_call(expr.name, expr.args, env),
     size_expr()         = typecheck(expr.coll, type_coll, env),
     unary_pseudo_call() = pre_typecheck_unary_pseudo_call(expr.target, expr.arg, env),
     rel_memb_test()     = pre_typecheck_rel_memb_test(expr.rel, expr.args, env),
@@ -71,6 +71,12 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     output_is_def()     = [],
     output_is_set()     = [];
 
+
+  [TypeCheckingError] pre_typecheck_builtin_call(BuiltIn name, Expr+ args, [EnvVar -> Type] env) =
+    union([
+      typecheck(a, replace_type_vars_with_type_any(t), env)
+      : a, t <~ zip(args, builtin_signature(name).args_types)
+    ]);
 
 
   [TypeCheckingError] pre_typecheck_rel_entry((args: Expr+, cond: Expr?) entry, [EnvVar -> Type] env) {
@@ -130,6 +136,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       exp_value_type = integer;
     elif is_subset(target_type, type_set):
       exp_value_type = set_elem_supertype(target_type);
+      errs = typecheck(value, type_any, env);
+      return errs if errs != [];
+      actual_value_type = expr_type(value, env);
+      types_are_disjoint = are_ptype_disjoint(actual_value_type, exp_value_type);
+      return [invalid_rel_arg_type(0, actual_value_type, exp_value_type) if types_are_disjoint];
     else
       ## BAD BAD: THIS ERROR MESSAGE IS ACTUALLY WRONG...
       return [unexpected_actual_type(target_type, type_unary_pseudocall_target)];
@@ -145,34 +156,46 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       (_, _, _)   = pre_typecheck_tern_rel_memb_test(rel, args, env);
 
 
-    [TypeCheckingError] pre_typecheck_bin_rel_memb_test(Expr rel, Maybe[Expr] maybe_arg0, Maybe[Expr] maybe_arg1, [EnvVar -> Type] env) {
+    [TypeCheckingError] pre_typecheck_bin_rel_memb_test(Expr rel, Maybe[Expr] arg0, Maybe[Expr] arg1, [EnvVar -> Type] env) {
       errs = typecheck(rel, type_bin_rel, env);
+      errs = errs & union([typecheck(value(a), type_any, env) : a <~ (arg0, arg1), a != nothing]);
       return errs if errs != [];
-      rel_type = expr_type(rel, env);
-      exp_arg0_type, exp_arg1_type = if rel_type != empty_type
-        then bin_rel_args_supertypes(rel_type)
-        else (type_any, type_any);
 
-      if maybe_arg0 != nothing:
-        arg0 = value(maybe_arg0);
-        errs = typecheck(arg0, exp_arg0_type, env);
-        return errs if errs != [];
-        actual_arg0_type = expr_type(arg0, env);
+      rel_type = expr_type(rel, env);
+      return [] if rel_type == empty_type;
+      exp_arg0_type, exp_arg1_type = bin_rel_args_supertypes(rel_type);
+
+      if arg0 != nothing:
+        actual_arg0_type = expr_type(value(arg0), env);
+        if are_ptype_disjoint(actual_arg0_type, exp_arg0_type):
+          return [invalid_rel_arg_type(0, actual_arg0_type, exp_arg0_type)];
+        ;
         if rel_type != empty_type and actual_arg0_type != empty_type and is_subset(rel_type, type_map):
           exp_arg1_type = restricted_bin_rel_arg1_supertype(rel_type, actual_arg0_type);
         ;
       ;
 
-      return if maybe_arg1 != nothing then typecheck(value(maybe_arg1), exp_arg1_type, env) else [];
+      return [] if arg1 == nothing;
+      actual_arg1_type = expr_type(value(arg1), env);
+      types_are_disjoint = actual_arg1_type != empty_type and are_ptype_disjoint(actual_arg1_type, exp_arg1_type);
+      return [invalid_rel_arg_type(0, actual_arg1_type, exp_arg1_type) if types_are_disjoint];
     }
 
 
     [TypeCheckingError] pre_typecheck_tern_rel_memb_test(Expr rel, (Maybe[Expr], Maybe[Expr], Maybe[Expr]) args, [EnvVar -> Type] env) {
       errs = typecheck(rel, type_tern_rel, env);
+      errs = errs & union([typecheck(value(a), type_any, env) : a <~ args, a != nothing]);
       return errs if errs != [];
+
       rel_type = expr_type(rel, env);
-      exp_args_types = if rel_type != empty_type then tern_rel_args_supertypes(rel_type) else (type_any : i < 3);
-      return seq_union((typecheck(value(a), t, env) : a, t <- zip(args, exp_args_types), a != nothing));
+      return [] if rel_type == empty_type;
+      rel_arg_types = tern_rel_args_supertypes(rel_type);
+
+      return [
+        invalid_rel_arg_type(i, at, et)
+        : a @ i <~ args, a != nothing, at = expr_type(value(a), env),
+          et = rel_arg_types(i), are_ptype_disjoint(at, et)
+      ];
     }
   }
 
@@ -373,8 +396,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
 
     [TypeCheckingError] fully_typecheck_case(Expr+ exprs, Type+ types, Pattern+ ptrns, Expr expr, Type exp_type, [EnvVar -> Type] env) {
-      errs = (ptrn_cannot_match_type(p, t) : p, t <- zip(ptrns, types), t != empty_type and not may_match(p, t));
-      return set(errs) if errs != ();
+      errs = union([typecheck_pattern(p, t) : p, t <~ zip(ptrns, types)]);
+      return errs if errs != [];
       case_expr_env = update_env(exprs, ptrns, env);
       return typecheck(expr, exp_type, case_expr_env);
     }

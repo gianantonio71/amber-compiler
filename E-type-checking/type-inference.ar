@@ -361,10 +361,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
 
   Type set_comp_expr_type(Expr expr, Clause source, [EnvVar -> Type] env) {
-    expr_env = generate_env(source, env);
-    actual_elem_type = expr_type(expr, expr_env);
-    nonempty = always_yields_results(source, env);
-    return type_set(actual_elem_type, nonempty);
+    iter_tree = full_iter_tree(source, env);
+    return set_comp_type(iter_tree, expr);
   }
 
 
@@ -538,17 +536,45 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     env_delta_eq, env_delta_not_eq =
       if left :: EnvVar
         then refine(left, right, env)
-
       elif right :: EnvVar
         then refine(right, left, env)
       elif left :: VarField
         then refine(left.expr, left.field, right, env)
       elif right :: VarField
         then refine(right.expr, right.field, left, env)
+      elif left :: <size_expr(coll: <EnvVar, VarField>)> and right :: <object(Nat)>
+        then refine(left.coll, _obj_(right), env)
+      elif right :: <size_expr(coll: <EnvVar, VarField>)> and left :: <object(Nat)>
+        then refine(right.coll, _obj_(left), env)
       else
         ([], []);
 
     return (update(env, env_delta_eq), update(env, env_delta_not_eq));
+
+
+    ([EnvVar -> Type], [EnvVar -> Type]) refine(EnvVar var, Nat size, [EnvVar -> Type] env) {
+      return refine_eq_env(var, seq_expr(()), env) if size == 0;
+      var_type = env[var];
+      return (env, env) if size > 32 or not is_subset(var_type, type_seq);
+      var_type_if_true = tuple_type(tuple_field_supertypes(var_type, size));
+      ## HERE THE THEN BRANCH COULD BE IMPROVED...
+      return (update(env, var, var_type_if_true), env);
+    }
+
+
+    ([EnvVar -> Type], [EnvVar -> Type]) refine(VarField expr, Nat size, [EnvVar -> Type] env) {
+      return refine_eq_env(expr, seq_expr(()), env) if size == 0;
+      var = expr.expr;
+      field = expr.field;
+      var_type = env[var];
+      field_type = accessor_expr_type(var, field, env);
+      return (env, env) if size > 32 or var_type == empty_type or not is_subset(field_type, type_seq);
+      field_type_if_true = tuple_type(tuple_field_supertypes(field_type, size));
+      return (unreachable_env(env), env) if field_type_if_true == empty_type;
+      var_type_if_true = update_mandatory_field_type(var_type, field, field_type_if_true);
+      ## HERE THE THEN BRANCH COULD BE IMPROVED...
+      return (update(env, var, var_type_if_true), env);
+    }
 
 
     ([EnvVar -> Type], [EnvVar -> Type]) refine(EnvVar var, Expr expr, [EnvVar -> Type] env) {
@@ -885,28 +911,6 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
     return new_env & generate_env(ptrn, type);
   }
-
-  //////////////////////////////////////////////////////////////////////////////
-  //////////////////////////////////////////////////////////////////////////////
-
-  Bool always_yields_results(Clause cls, [EnvVar -> Type] env) = ## FIND BETTER NAME
-    set_clause()        = is_subset(expr_type(cls.src, env), type_ne_set),
-    rel_clause()        = rel_clause_always_yields_results(cls.vars, cls.src, cls.args, env),
-    relvar_clause()     = false, ## CAN WE DO BETTER HERE?
-    seq_clause()        = is_subset(expr_type(cls.src, env), type_ne_seq),
-    and_clause()        = always_yields_results(cls.left, env) and always_yields_results(cls.right, env),
-    or_clause()         = always_yields_results(cls.left, env) or always_yields_results(cls.right, env),
-    match_clause()      = false, ## WE CAN DO BETTER HERE
-    asgnm_clause()      = true,
-    filter_clause()     = false;
-
-
-  Bool rel_clause_always_yields_results(StdVar+ vars, Expr src, Maybe[Expr]+ args, [EnvVar -> Type] env) {
-    supertype = match (args)
-      (_, _)    = type_ne_bin_rel,
-      (_, _, _) = type_ne_tern_rel;
-    return is_subset(expr_type(src, env), supertype) and all((a == nothing : a <- args));
-  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1039,6 +1043,22 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
+  SetType set_comp_type(IterTree tree, Expr expr) =
+    never         = empty_rel_type,
+    once(e?)      = once_set_comp_type(e, expr),
+    repeated(t?)  = set_comp_type(t, expr),
+    any(ts?)      = set_comp_union_type([set_comp_type(t, expr) : t <- ts]),
+    all(ts?)      = fold((set_comp_type(t, expr) : t <- ts), set_both);
+
+
+  SetType once_set_comp_type([EnvVar -> Type] env, Expr expr) {
+    type = expr_type(expr, env);
+    return if type != empty_type then ne_set_type(type) else empty_rel_type;
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
   MapCompType map_comp_type(IterTree tree, Expr expr1, Expr expr2) =
     never           = empty_rel_type,
     once(e?)        = once_map_comp_type(e, expr1, expr2),
@@ -1117,6 +1137,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
+type SetType  = empty_rel_type, NeSetType, union_type([+<empty_rel_type, NeSetType>]);
+
 type MapCompType  = empty_rel_type,
                     ne_map_type(key_type: NeType, value_type: NeType),
                     ne_record_type(RecordTypeFields),
@@ -1125,6 +1147,22 @@ type MapCompType  = empty_rel_type,
 type BinRelCompType = empty_rel_type, NeBinRelType, union_type([+<empty_rel_type, NeBinRelType>]);
 
 type TernRelCompType = empty_rel_type, NeTernRelType, union_type([+<empty_rel_type, NeTernRelType>]);
+
+
+SetType set_comp_union_type([+SetType] types) {
+  nu_types = union([nu_types(t) : t <- types]);
+  elem_types = [t.elem_type : t <- nu_types, t != empty_rel_type];
+  assert elem_types != [] or (types == [empty_rel_type] and nu_types == types);
+  return empty_rel_type if elem_types == [];
+  type = ne_set_type(ne_union_superset(elem_types));
+  type = :union_type([empty_rel_type, type]) if nu_types(empty_rel_type); ## BAD, SKIPPING CONSTRUCTOR HERE...
+  return type;
+
+  [+<empty_rel_type, NeSetType>] nu_types(SetType type) =
+    empty_rel_type  |
+    ne_set_type()   = [type],
+    union_type(ts?) = ts;
+}
 
 
 MapCompType map_comp_union_type([+MapCompType] ts) {
@@ -1159,6 +1197,16 @@ TernRelCompType tern_rel_comp_union_type([+TernRelCompType] types) {
   ]));
   return if |nu_types| == 1 then only(nu_types) else :union_type(nu_types);
 }
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+SetType set_both(SetType type1, SetType type2) =
+  empty_rel_type,   _               = type2,
+  _,                empty_rel_type  = type1,
+  union_type(ts?),  _               = fold(rand_sort(ts & [type2]), set_both),
+  _,                union_type(ts?) = fold(rand_sort(ts & [type1]), set_both),
+  ne_set_type(),    ne_set_type()   = ne_set_type(ne_union_superset([type1.elem_type, type2.elem_type]));
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
