@@ -1064,7 +1064,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     once(e?)        = once_map_comp_type(e, expr1, expr2),
     repeated(t?)    = map_comp_type(t, expr1, expr2),
     any(ts?)        = map_comp_union_type([map_comp_type(t, expr1, expr2) : t <- ts]),
-    all(ts?)        = fold((map_comp_type(t, expr1, expr2) : t <- ts), both($a, $b)); ## BAD: WORKAROUND FOR TYPECHECKING BUG
+    all(ts?)        = fold((map_comp_type(t, expr1, expr2) : t <- ts), map_both);
 
 
   MapCompType once_map_comp_type([EnvVar -> Type] env, Expr expr1, Expr expr2) {
@@ -1090,11 +1090,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     once(e?)      = once_bin_rel_comp_type(e, expr1, expr2),
     repeated(t?)  = repeated_bin_rel_comp_type(bin_rel_comp_type(t, expr1, expr2)),
     any(ts?)      = bin_rel_comp_union_type([bin_rel_comp_type(t, expr1, expr2) : t <- ts]),
-    ## BUG BUG BUG: THERE IS A HUGE BUG HERE. bin_rel_both SHOULD NOT BE CALLABLE AT
-    ## ALL IN THIS CONTEXT IF IT HAS IMPLICIT ARGUMENTS THAT ARE NOT EXPLICITLY PROVIDED
-    ## IN THIS CASE IT SHOULDN'T HAVE ANY, BUT I ACCIDENTALLY DECLARED IT IN A IMPLICIT BLOCK
-    ## ALSO, OMITTING THE ARGUMENTS ($a, $b) CRASHES THE COMPILER, IF bin_rel_both HAS IMPLICIT ARGUMENTS
-    all(ts?)      = fold((bin_rel_comp_type(t, expr1, expr2) : t <- ts), bin_rel_both($a, $b));
+    all(ts?)      = fold((bin_rel_comp_type(t, expr1, expr2) : t <- ts), bin_rel_both);
 
 
   BinRelCompType once_bin_rel_comp_type([EnvVar -> Type] env, Expr expr1, Expr expr2) {
@@ -1115,10 +1111,6 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     once(e?)      = once_tern_rel_comp_type(e, expr0, expr1, expr2),
     repeated(t?)  = repeated_tern_rel_comp_type(tern_rel_comp_type(t, expr0, expr1, expr2)),
     any(ts?)      = tern_rel_comp_union_type([tern_rel_comp_type(t, expr0, expr1, expr2) : t <- ts]),
-    ## BUG BUG BUG: THERE IS A HUGE BUG HERE. tern_rel_both SHOULD NOT BE CALLABLE AT
-    ## ALL IN THIS CONTEXT IF IT HAS IMPLICIT ARGUMENTS THAT ARE NOT EXPLICITLY PROVIDED
-    ## IN THIS CASE IT SHOULDN'T HAVE ANY, BUT I ACCIDENTALLY DECLARED IT IN A IMPLICIT BLOCK
-    ## ALSO, OMITTING THE ARGUMENTS ($a, $b, $c) CRASHES THE COMPILER, IF tern_rel_both HAS IMPLICIT ARGUMENTS
     all(ts?)      = fold((tern_rel_comp_type(t, expr0, expr1, expr2) : t <- ts), tern_rel_both);
 
 
@@ -1212,7 +1204,7 @@ SetType set_both(SetType type1, SetType type2) =
 ////////////////////////////////////////////////////////////////////////////////
 
 implicit typedefs : [TypeName -> NeType] {
-  MapCompType both(MapCompType type1, MapCompType type2) =
+  MapCompType map_both(MapCompType type1, MapCompType type2) =
     empty_rel_type,         _                     = type2,
     _,                      empty_rel_type        = type1,
 
@@ -1220,8 +1212,8 @@ implicit typedefs : [TypeName -> NeType] {
     union_type(ts1?),       ne_record_type()      = union_both(ts1, [type2]),
     ne_record_type(),       union_type(ts2?)      = union_both([type1], ts2),
 
-    union_type(ts1?),       _                     = map_comp_union_type([both(t, type2) : t <- ts1]),
-    _,                      union_type(ts2?)      = map_comp_union_type([both(type1, t) : t <- ts2]),
+    union_type(ts1?),       _                     = map_comp_union_type([map_both(t, type2) : t <- ts1]),
+    _,                      union_type(ts2?)      = map_comp_union_type([map_both(type1, t) : t <- ts2]),
 
     ne_record_type(fs1?),   ne_record_type(fs2?)  = ne_record_type(merge_fields(fs1, fs2)),
 
@@ -1244,7 +1236,7 @@ implicit typedefs : [TypeName -> NeType] {
 
 
     MapCompType union_both_default([+MapCompType] types1, [+MapCompType] types2) =
-      map_comp_union_type([both(t1, t2) : t1 <- types1, t2 <- types2]);
+      map_comp_union_type([map_both(t1, t2) : t1 <- types1, t2 <- types2]);
 
 
     MapCompType union_both_special_case(RecordTypeFields fs1, RecordTypeFields fs2, Bool nonempty_1, Bool nonempty_2) {
