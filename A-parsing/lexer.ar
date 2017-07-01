@@ -121,36 +121,17 @@ ParseTokenResult read_lowercase_id(Nat* bytes, Nat offset) {
 }
 
 ParseTokenResult read_mixed_or_upper_case_id(Nat* bytes, Nat offset) {
-  mixed_case_res = read_mixedcase_id(bytes, offset);
-  return mixed_case_res if is_success(mixed_case_res);
-  uppercase_res = read_uppercase_id(bytes, offset);
-  return uppercase_res if is_success(uppercase_res);
-  return failure(nat(max(get_error(mixed_case_res), get_error(uppercase_res))));
-}
-
-ParseTokenResult read_mixedcase_id(Nat* bytes, Nat offset) {
   assert is_upper(bytes, offset);
   len = alphanum_length(bytes, offset);
   next_idx = nat(offset + len);
   is_quoted = is_char(bytes, next_idx, ascii_single_quote);
   fail if len == 0; // Shutting up the typechecker
   return failure(next_idx) if is_char(bytes, next_idx, ascii_underscore);
-  return failure(offset) if not is_quoted and none((is_lower(bytes, nat(offset+i)) : i < len));
+  // return failure(offset) if not is_quoted and none((is_lower(bytes, nat(offset+i)) : i < len));
+  return failure(offset) if len == 1 and is_quoted;
   symbol = symb(to_lower_with_underscores(nonempty(subseq(bytes, offset, len))));
-  token = if is_quoted then uppercase_id(symbol) else mixedcase_id(symbol);
+  token = if len == 1 or is_quoted then uppercase_id(symbol) else mixedcase_id(symbol);
   return success(token_line_info(token, offset, nz_nat(len + if is_quoted then 1 else 0)));
-}
-
-ParseTokenResult read_uppercase_id(Nat* bytes, Nat offset) {
-  assert is_upper(bytes, offset);
-  len = identifier_length(bytes, offset, :upper);
-  fail if len == 0; // Shutting up the typechecker
-  next_idx = offset + len;
-  next_ch = at(bytes, next_idx, 0);
-  return failure(nat(next_idx)) if is_lower(next_ch) or next_ch == ascii_underscore;
-  symbol = symb(to_lower_with_underscores(nonempty(subseq(bytes, offset, len))));
-  // symbol = symb((lower(ch) : ch <- subseq(bytes, offset, len)));
-  return success(token_line_info(uppercase_id(symbol), offset, len));
 }
 
 ParseTokenResult read_qualified_symbol(Nat* bytes, Nat offset) {
