@@ -86,11 +86,15 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   Type rel_lookup_expr_type(RelLookup expr, [EnvVar -> Type] env) {
     rel_type = expr_type(expr.rel, env);
     args_types = (expr_type(a, env) : a <- expr.set_args);
-    return if args_types == ()
-      then set_elem_supertype(rel_type)
-      else match (args_types, expr.unknown_arg_idx)
-        (_),      <0..1>  = bin_rel_arg_supertype(rel_type, expr.unknown_arg_idx),
-        (_, _),   <0..2>  = tern_rel_arg_supertype(rel_type, expr.unknown_arg_idx);
+    if args_types == ():
+      return set_elem_supertype(rel_type);
+    elif |args_types| == 1 and expr.unknown_arg_idx :: <0..1>:
+      return bin_rel_arg_supertype(rel_type, expr.unknown_arg_idx);
+    elif |args_types| == 2 and expr.unknown_arg_idx :: <0..2>:
+      return tern_rel_arg_supertype(rel_type, expr.unknown_arg_idx);
+    else
+      fail;
+    ;
   }
 
 
@@ -632,35 +636,44 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     );
 
 
-    (Type, Type) accessor_test_refine(Type type, SymbObj field, Bool look_inside) =
-      LeafType                = (empty_type, type),
-      type_var()              = (type, type),
-      type_ref(ts?)           = accessor_test_refine(expand_type_ref(ts, typedefs), field, look_inside),
-      ne_seq_type()           = (empty_type, type),
-      ne_set_type()           = (empty_type, type),
-      ne_map_type()           = (type, type),
-      ne_record_type(fs?)     =
-        if fs(field, *)
-          then (record_type([l -> (type: f.type, optional: l != field and f.optional) : l, f <- fs]), type)
-          else (empty_type, type),
-      tuple_type()            = (empty_type, type),
-      tag_obj_type()          = {
-        if look_inside:
-          ref_types = accessor_test_refine(type.obj_type, field, false);
-          return (tag_obj_type(type.tag_type, left(ref_types)), tag_obj_type(type.tag_type, right(ref_types)));
-        else
-          return (empty_type, type);
-        ;
-      },
-      union_type(ts?)         = {
-        rts = [accessor_test_refine(t, field, look_inside) : t <- ts];
-        rts_if_true = [rtt : rt <- rts, rtt = left(rt), rtt != empty_type];
-        rts_if_false = [rtf : rt <- rts, rtf = right(rt), rtf != empty_type];
-        return (
-          if rts_if_true  == [] then empty_type else union_type(rts_if_true),
-          if rts_if_false == [] then empty_type else union_type(rts_if_false)
-        );
-      };
+    (Type, Type) accessor_test_refine(
+      <empty_type, LeafType, NeSeqType, NeSetType, TupleType, NeTernRelType> type,
+      SymbObj field, Bool look_inside
+    ) = (empty_type, type); ## IS THIS EVER CALLED? OR IS IT STOPPED BY THE TYPECHECKER BEFORE WE EVER GET HERE?
+
+    (Type, Type) accessor_test_refine(<TypeVar, NeMapType, NeBinRelType> type, SymbObj field, Bool look_inside) = (type, type);
+
+    (Type, Type) accessor_test_refine(TypeRef type, SymbObj field, Bool look_inside) {
+      type_symb = match (type) type_ref(ts?) = ts;
+      return accessor_test_refine(expand_type_ref(type_symb, typedefs), field, look_inside);
+    }
+
+    (Type, Type) accessor_test_refine(RecordType type, SymbObj field, Bool look_inside) {
+      fields = match (type) ne_record_type(fs?) = fs;
+      return if fields(field, *)
+        then (record_type([l -> (type: f.type, optional: l != field and f.optional) : l, f <- fields]), type)
+        else (empty_type, type);
+    }
+
+    (Type, Type) accessor_test_refine(TagObjType type, SymbObj field, Bool look_inside) {
+      if look_inside:
+        ref_types = accessor_test_refine(type.obj_type, field, false);
+        return (tag_obj_type(type.tag_type, left(ref_types)), tag_obj_type(type.tag_type, right(ref_types)));
+      else
+        return (empty_type, type);
+      ;
+    }
+
+    (Type, Type) accessor_test_refine(UnionType type, SymbObj field, Bool look_inside) {
+      types = match (type) union_type(ts?) = ts;
+      rts = [accessor_test_refine(t, field, look_inside) : t <- types];
+      rts_if_true = [rtt : rt <- rts, rtt = left(rt), rtt != empty_type];
+      rts_if_false = [rtf : rt <- rts, rtf = right(rt), rtf != empty_type];
+      return (
+        if rts_if_true  == [] then empty_type else union_type(rts_if_true),
+        if rts_if_false == [] then empty_type else union_type(rts_if_false)
+      );
+    }
   }
 
 
@@ -821,7 +834,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
 
   Type get_return_type(AnyClsExpr expr, ClsType type, [TypeVar -> Type] type_var_insts, [EnvVar -> Type] env) =
-    ClsVar      = closures[expr].out_type,
+    cls_var()   = closures[expr].out_type,
     fn_ptr()    = {fail;},
     cls_expr()  = { inst_formal_par_types = (replace_type_vars(t, type_var_insts) : t <- type.in_types);
                     new_env = get_updated_env(env, expr.args, inst_formal_par_types);

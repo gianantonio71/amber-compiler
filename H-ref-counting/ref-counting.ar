@@ -210,7 +210,8 @@ implicit flow_map : NodeId**, live_vars_after_map : [TrkVar]*, entry_vars_states
   RCNodeInfo add_ref_counting(NodeInfo info, NodeId* next_nodes, VarsState entry_state, VarsState exit_state, Instr* pre_instrs, Instr* post_instrs) =
     std_node(terminate)                     = std_node((terminate)),
     std_node(ret_val(e?))                   = {assert post_instrs == (); return rc_ret_node(e, entry_state, pre_instrs);},
-    std_node(<break_loop, exit_block> i?)   = { assert pre_instrs == () and post_instrs == ();
+    ## THIS PATTERN IS PRETTY UGLY...
+    std_node(break_loop i? | exit_block i?) = { assert pre_instrs == () and post_instrs == ();
                                                 return rc_break_or_exit_node(i, only(next_nodes), exit_state);
                                               },
     std_node(i?)                            = rc_std_node(i, only(next_nodes), exit_state, pre_instrs, post_instrs),
@@ -316,5 +317,6 @@ Instr ref_count_closures_single_instruction(Instr instr) =
 AtomicExpr ref_count_closure(AtomicExpr expr) = expr; ## NOT THE BEST NAME IN THIS CASE...
 
 BoundCls ref_count_closure(BoundCls cls) =
-  AnyClsVar     = cls,
-  bound_cls()   = bound_cls(cls_def(cls.cls.arity, add_ref_counting(cls.cls.body)), cls.capt_vars, cls.capt_cls_vars);
+  cls_var()       |
+  capt_cls_var()  = cls,
+  bound_cls()     = bound_cls(cls_def(cls.cls.arity, add_ref_counting(cls.cls.body)), cls.capt_vars, cls.capt_cls_vars);

@@ -72,23 +72,21 @@ Maybe[ParserError] choose_error(Maybe[ParserError] current, ParserError new, Ann
 ////////////////////////////////////////////////////////////////////////////////
 
 Bool matches(TokenMatchingRule rule, PlainToken token) =
-  AmberSymb,          AmberSymb                 = rule == token,
   lowercase_id,       lowercase_id()            = true,
   mixedcase_id,       mixedcase_id()            = true,
   uppercase_id,       uppercase_id()            = true,
   qualified_symbol,   qualified_symbol()        = true,
-  integer,            Int                       = true,
+  integer,            <*..*>                    = true,
   float,              float_lit()               = true,
-  string,             String                    = true,
-  char,               Char                      = true,
-  unary_operator,     operator(UnaryOperator)   = true,
-  binary_operator,    operator(BinaryOperator)  = true,
+  string,             string()                  = true,
+  unary_operator,     operator(op?)             = op :: UnaryOperator,
+  binary_operator,    operator(op?)             = op :: BinaryOperator,
   builtin,            builtin()                 = true,
   qual_var,           qual_var()                = true,
   pref_lowercase_id,  pref_lowercase_id()       = true,
   time_span,          nanoseconds()             = true,
   keyword(kw?),       lowercase_id(a?)          = kw == a,
-  _,                  _                         = false;
+  _,                  _                         = rule :: AmberSymb and rule == token;
 
 
 ParserResult parse_all(ParsingRule rule, AnnotatedToken+ tokens, [Atom -> ParsingRule] rec_rules) {
@@ -270,21 +268,22 @@ ParserResult parse_rule_neg(ParsingRule r, AnnotatedToken+ tokens, Nat offset, [
 type FastParserRes  = no_match, (RuleMatch, Nat);
 
 
-TokenMatchingRule matching_atomic_rule(PlainToken token) =
-  AmberSymb           = token,
-  lowercase_id()      = lowercase_id,
-  mixedcase_id()      = mixedcase_id,
-  uppercase_id()      = uppercase_id,
-  qualified_symbol()  = qualified_symbol,
-  Int                 = integer,
-  float_lit()         = float,
-  String              = string,
-  Char                = char,
-  operator(op?)       = operator_matching_rule(op),
-  builtin()           = builtin,
-  qual_var()          = qual_var,
-  pref_lowercase_id() = pref_lowercase_id,
-  nanoseconds()       = time_span;
+TokenMatchingRule matching_atomic_rule(PlainToken token) {
+  return token if token :: AmberSymb;
+  return match (token)
+    lowercase_id()      = lowercase_id,
+    mixedcase_id()      = mixedcase_id,
+    uppercase_id()      = uppercase_id,
+    qualified_symbol()  = qualified_symbol,
+    <*..*>              = integer,
+    float_lit()         = float,
+    string()            = string,
+    operator(op?)       = operator_matching_rule(op),
+    builtin()           = builtin,
+    qual_var()          = qual_var,
+    pref_lowercase_id() = pref_lowercase_id,
+    nanoseconds()       = time_span;
+}
 
 TokenMatchingRule operator_matching_rule(UnaryOperator)   = unary_operator;
 TokenMatchingRule operator_matching_rule(BinaryOperator)  = binary_operator;

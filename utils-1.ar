@@ -42,23 +42,24 @@
 
 [TypeVar] syn_type_vars(SynClsType type) = seq_union((syn_type_vars(t) : t <- type.in_types)) & syn_type_vars(type.out_type);
 
-[TypeVar] syn_type_vars(SynType type) =
-  SynLeafType         = [],
-  type_ref(ts?)       = syn_type_vars(ts),
-  type_var()          = [type],
-  ne_seq_type()       = syn_type_vars(type.elem_type),
-  ne_set_type()       = syn_type_vars(type.elem_type),
-  ne_map_type()       = syn_type_vars(type.key_type) & syn_type_vars(type.value_type),
-  ne_bin_rel_type()   |
-  ne_tern_rel_type()  = seq_union((seq_union((syn_type_vars(t) : t <- s)) : s <- type.signatures)),
-  record_type(fs?)    = seq_union((syn_type_vars(f.type) : f <- fs)),
-  tuple_type(ts?)     = seq_union((syn_type_vars(t) : t <- ts)),
-  tag_obj_type()      = syn_type_vars(type.tag_type) & syn_type_vars(type.obj_type),
-  union_type(ts?)     = seq_union((syn_type_vars(t) : t <- ts));
+[TypeVar] syn_type_vars(SynType type) {
+  return [] if type :: SynLeafType;
+  return match (type)
+    type_ref(ts?)       = syn_type_vars(ts),
+    type_var()          = [type],
+    ne_seq_type()       = syn_type_vars(type.elem_type),
+    ne_set_type()       = syn_type_vars(type.elem_type),
+    ne_map_type()       = syn_type_vars(type.key_type) & syn_type_vars(type.value_type),
+    ne_bin_rel_type()   |
+    ne_tern_rel_type()  = seq_union((seq_union((syn_type_vars(t) : t <- s)) : s <- type.signatures)),
+    record_type(fs?)    = seq_union((syn_type_vars(f.type) : f <- fs)),
+    tuple_type(ts?)     = seq_union((syn_type_vars(t) : t <- ts)),
+    tag_obj_type()      = syn_type_vars(type.tag_type) & syn_type_vars(type.obj_type),
+    union_type(ts?)     = seq_union((syn_type_vars(t) : t <- ts));
+}
 
-[TypeVar] syn_type_vars(SynTypeSymbol type_symb) =
-  BasicTypeSymbol   = [],
-  par_type_symbol() = seq_union((syn_type_vars(t) : t <- type_symb.params));
+[] syn_type_vars(BasicTypeSymbol) = [];
+[TypeVar] syn_type_vars(SynParTypeSymbol type_symb) = seq_union((syn_type_vars(t) : t <- type_symb.params));
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -123,49 +124,54 @@ NeType desugar_type_ref(SynTypeRef, (<SynTypeRef, SynTypeVar> -> NeType) desugar
   type_ref(ts?) = type_ref(desugar_type_symb(ts, desugar));
 
 
-TypeSymbol desugar_type_symb(SynTypeSymbol type_symb, (<SynTypeRef, SynTypeVar> -> NeType) desugar) =
-  BasicTypeSymbol   = type_symb,
-  par_type_symbol() = { type_pars = (desugar_type(p, desugar) : p <- type_symb.params);
-                        return par_type_symbol(type_symb.symbol, type_pars);
-                      };
+BasicTypeSymbol desugar_type_symb(BasicTypeSymbol type_symb, (<SynTypeRef, SynTypeVar> -> NeType) desugar) = type_symb;
+
+TypeSymbol desugar_type_symb(SynParTypeSymbol type_symb, (<SynTypeRef, SynTypeVar> -> NeType) desugar) {
+  type_pars = (desugar_type(p, desugar) : p <- type_symb.params);
+  return par_type_symbol(type_symb.symbol, type_pars);
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 
-NeType desugar_type(SynType type, (<SynTypeRef, SynTypeVar> -> NeType) desugar) =
-  LeafType            = type,
-  type_var()          = desugar(type),
-  type_ref()          = desugar(type),
-  syn_int_range()     = int_range(type.min, type.max),
-  ne_seq_type()       = ne_seq_type(desugar_type(type.elem_type, desugar)),
-  ne_set_type()       = ne_set_type(desugar_type(type.elem_type, desugar)),
-  ne_map_type()       = ne_map_type(desugar_type(type.key_type, desugar), desugar_type(type.value_type, desugar)),
-  ne_bin_rel_type()   = ne_bin_rel_type_nonvoid([(desugar_type(t, desugar) : t <- s) : s <~ type.signatures]),
-  ne_tern_rel_type()  = ne_tern_rel_type_nonvoid([(desugar_type(t, desugar) : t <- s) : s <~ type.signatures]),
-  record_type(fs?)    = ne_record_type([f.label -> (type: desugar_type(f.type, desugar), optional: f.optional) : f <~ fs]),
-  tuple_type(ts?)     = ne_tuple_type((desugar_type(t, desugar) : t <- ts)),
-  tag_obj_type()      = { tag_type = type.tag_type;
-                          fail if not tag_type :: TagType; ## BAD: HANDLE THE ERROR
-                          return tag_obj_type(tag_type, desugar_type(type.obj_type, desugar));
-                        },
-  union_type(ts?)     = ne_union_type([desugar_type(t, desugar) : t <~ ts]);
+NeType desugar_type(SynType type, (<SynTypeRef, SynTypeVar> -> NeType) desugar) {
+  return type if type :: LeafType;
+  return match(type)
+    type_var()          = desugar(type),
+    type_ref()          = desugar(type),
+    syn_int_range()     = int_range(type.min, type.max),
+    ne_seq_type()       = ne_seq_type(desugar_type(type.elem_type, desugar)),
+    ne_set_type()       = ne_set_type(desugar_type(type.elem_type, desugar)),
+    ne_map_type()       = ne_map_type(desugar_type(type.key_type, desugar), desugar_type(type.value_type, desugar)),
+    ne_bin_rel_type()   = ne_bin_rel_type_nonvoid([(desugar_type(t, desugar) : t <- s) : s <~ type.signatures]),
+    ne_tern_rel_type()  = ne_tern_rel_type_nonvoid([(desugar_type(t, desugar) : t <- s) : s <~ type.signatures]),
+    record_type(fs?)    = ne_record_type([f.label -> (type: desugar_type(f.type, desugar), optional: f.optional) : f <~ fs]),
+    tuple_type(ts?)     = ne_tuple_type((desugar_type(t, desugar) : t <- ts)),
+    tag_obj_type()      = { tag_type = type.tag_type;
+                            fail if not tag_type :: TagType; ## BAD: HANDLE THE ERROR
+                            return tag_obj_type(tag_type, desugar_type(type.obj_type, desugar));
+                          },
+    union_type(ts?)     = ne_union_type([desugar_type(t, desugar) : t <~ ts]);
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-[Atom] refd_prot_types(SynType type, [Atom] prot_types) =
-  type_ref(ts?)       = {match (ts) type_symbol(a?) = [a if prot_types(a)], _ = []},
-  LeafType            = [],
-  type_var()          = [],
-  syn_int_range()     = [],
-  ne_seq_type()       = refd_prot_types(type.elem_type, prot_types),
-  ne_set_type()       = refd_prot_types(type.elem_type, prot_types),
-  ne_map_type()       = refd_prot_types(type.key_type, prot_types) & refd_prot_types(type.value_type, prot_types),
-  ne_bin_rel_type()   |
-  ne_tern_rel_type()  = seq_union((seq_union((refd_prot_types(t, prot_types) : t <- s)) : s <- type.signatures)),
-  record_type(fs?)    = seq_union((refd_prot_types(f.type, prot_types) : f <- fs)),
-  tuple_type(ts?)     = seq_union((refd_prot_types(t, prot_types) : t <- ts)),
-  tag_obj_type()      = refd_prot_types(type.obj_type, prot_types),
-  union_type(ts?)     = seq_union((refd_prot_types(t, prot_types) : t <- ts));
+[Atom] refd_prot_types(SynType type, [Atom] prot_types) {
+  return [] if type :: LeafType;
+  return match (type)
+    type_ref(ts?)       = {match (ts) type_symbol(a?) = [a if prot_types(a)], _ = []},
+    type_var()          = [],
+    syn_int_range()     = [],
+    ne_seq_type()       = refd_prot_types(type.elem_type, prot_types),
+    ne_set_type()       = refd_prot_types(type.elem_type, prot_types),
+    ne_map_type()       = refd_prot_types(type.key_type, prot_types) & refd_prot_types(type.value_type, prot_types),
+    ne_bin_rel_type()   |
+    ne_tern_rel_type()  = seq_union((seq_union((refd_prot_types(t, prot_types) : t <- s)) : s <- type.signatures)),
+    record_type(fs?)    = seq_union((refd_prot_types(f.type, prot_types) : f <- fs)),
+    tuple_type(ts?)     = seq_union((refd_prot_types(t, prot_types) : t <- ts)),
+    tag_obj_type()      = refd_prot_types(type.obj_type, prot_types),
+    union_type(ts?)     = seq_union((refd_prot_types(t, prot_types) : t <- ts));
+}
 
 
 [Atom] refd_prot_types(SynClsType type, [Atom] prot_types) =
