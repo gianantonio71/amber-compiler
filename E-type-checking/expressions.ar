@@ -3,27 +3,35 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     // Preliminary typechecking, just to make sure we can safely calculate the expression type
     // For some types of expressions, this ends up being a complete type check
     errs = pre_typecheck(expr, exp_type, env);
-    // Some types of expressions need errors to be made more detailed
-    if errs != [] and expr :: <UnaryPseudoCall, RelMembTest, AccExpr, AccTestExpr>:
-      ref_errs = gen_err_msgs(expr, exp_type, env);
-      errs = ref_errs if ref_errs != [];
-    ;
-    if errs == [] and needs_res_type_check(expr):
-      // Checking that the result type is (a subset of) the expected one
-      actual_type = expr_type(expr, env);
-      if not is_subset(actual_type, exp_type):
-        errs = [unexpected_actual_type(actual_type, exp_type)];
-      ;
-    ;
-    return [add_anchor_if_needed(err, expr) : err <- errs];
 
-
-    Bool needs_res_type_check(Expr) =
+    needs_res_type_check = match (expr)
       fn_call()     |
       if_expr()     |
       match_expr()  |
       do_expr()     = false,
       _             = true;
+
+    if errs == [] and needs_res_type_check:
+      // Checking that the result type is (a subset of) the expected one
+      actual_type = expr_type(expr, env);
+      if not is_subset(actual_type, exp_type):
+        errs = match (expr)
+          seq_expr()          |
+          tuple_expr()        |
+          set_expr()          |
+          map_expr()          |
+          bin_rel_expr()      |
+          tern_rel_expr()     |
+          tag_obj_expr()      |
+          unary_pseudo_call() |
+          rel_memb_test()     |
+          accessor()          |
+          accessor_test()     = gen_err_msgs(expr, exp_type, env),
+          _                   = [unexpected_actual_type(actual_type, exp_type)];
+      ;
+    ;
+
+    return [add_anchor_if_needed(err, expr) : err <- errs];
   }
 
 
@@ -112,8 +120,8 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
     // This is well-formedness, not type, checking. It's done here because
     // it's safer to do it with desugared expressions, and because of the
-    // similarities with the checks that follows, which involves types and
-    // is critical to avoid clashes
+    // similarities with the check that follows, which involves types and
+    // is critical to avoiding clashes
     ## THIS CHECK IS NOT CRITICAL AND PROBABLY NOT THAT USEFUL EITHER. MOVE IT TO
     ## LEVEL 1 WELL-FORMEDNESS CHECKING, OR REMOVE IT ALTOGETHER?
     dup_key_errs = [duplicate_map_key(k, es) : k, es <- group_by(entries, $.key), |es| > 1];

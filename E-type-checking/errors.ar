@@ -1,14 +1,17 @@
 type TypeCheckingError =
   obj_does_not_belong_to_type(obj: <Atom, Int, (), []>, type: Type),
-  exp_type_not_a_seq_type(Type),
-  not_a_tuple_or_seq_type(Type),
+
+  unexpected_coll_expr(exp_type: Type, coll_type: <tuple, seq, set, map, rel(<2..3>)>),
+  missing_rec_field(field: SymbObj),
+  unexpected_rec_field(field: SymbObj),
+  rec_field_is_mandatory(field: SymbObj),
+  tagged_values_not_in_type(tag: SymbObj, exp_type: Type),
+
   not_a_record_type(type: Type),
   exp_type_not_a_tag_type,
   wrong_tuple_type_length(actual_length: NzNat, expected_lenghts: [+NzNat]),
   non_symbol_keys_with_record_type(keys: [+Expr]),
   may_not_have_field(type: Type, field: SymbObj),
-  missing_rec_fields(fields: [+SymbObj]),
-  invalid_rec_fields(fields: [+SymbObj]),
   invalid_var_type(var: Var, actual_type: Type, expected_type: Type),
   no_disp_fn_found(name: FnSymbol, arity: NzNat, signatures: [+FnType], par_types: Maybe[Type]*),
   no_disp_db_method(name: MethodSymbol, args_types: Type*, exp_ret_type: Type, signatures: [FnType]),
@@ -44,9 +47,6 @@ type TypeCheckingError =
   missing_impl_argument(fn: FnSymbol, arg: ImplArg),
   invalid_impl_argument(arg: ImplArg),
   actual_tag_type_not_a_symb_type(type: Type),
-  actual_type_not_a_map_type(type: Type),
-  exp_type_does_not_contain_maps(type: Type),
-  exp_type_does_not_contain_sets(type: Type),
   accessor_test_not_permitted_error(type: Type, field: SymbObj),
   not_a_valid_unary_pseudocall_target(type: Type),
   invalid_set_memb_test_elem_type(exp_type: Type, actual_type: Type),
@@ -74,13 +74,15 @@ type TypeCheckingError =
 
 TypeCheckingError obj_does_not_belong_to_type(<Atom, Int, (), []> o, Type t) = obj_does_not_belong_to_type(obj: o, type: t);
 
-TypeCheckingError exp_type_does_not_contain_sets(Type t) = exp_type_does_not_contain_sets(type: t);
-TypeCheckingError exp_type_not_a_seq_type(Type t) = :exp_type_not_a_seq_type(t);
-TypeCheckingError not_a_tuple_or_seq_type(Type t) = :not_a_tuple_or_seq_type(t);
-TypeCheckingError exp_type_does_not_contain_maps(Type t) = exp_type_does_not_contain_maps(type: t);
+TypeCheckingError unexpected_coll_expr(Type et, <tuple, seq, set, map, rel(<2..3>)> ct) = unexpected_coll_expr(exp_type: et, coll_type: ct);
+
+TypeCheckingError missing_rec_field(SymbObj f)                  = missing_rec_field(field: f);
+TypeCheckingError unexpected_rec_field(SymbObj f)               = unexpected_rec_field(field: f);
+TypeCheckingError rec_field_is_mandatory(SymbObj f)             = rec_field_is_mandatory(field: f);
+TypeCheckingError tagged_values_not_in_type(SymbObj s, Type t)  = tagged_values_not_in_type(tag: s, exp_type: t);
+
 TypeCheckingError not_a_record_type(Type t) = not_a_record_type(type: t);
 TypeCheckingError exp_type_not_a_tag_type = :exp_type_not_a_tag_type;
-TypeCheckingError actual_type_not_a_map_type(Type t) = actual_type_not_a_map_type(type: t);
 
 TypeCheckingError wrong_tuple_type_length(NzNat al, [+NzNat] els) = wrong_tuple_type_length(actual_length: al, expected_lenghts: els);
 
@@ -88,9 +90,6 @@ TypeCheckingError non_symbol_keys_with_record_type([+Expr] ks) = non_symbol_keys
 
 TypeCheckingError may_not_have_field(Type t, SymbObj f) = may_not_have_field(type: t, field: f);
 TypeCheckingError accessor_test_not_permitted_error(Type t, SymbObj f) = accessor_test_not_permitted_error(type: t, field: f);
-
-TypeCheckingError missing_rec_fields([+SymbObj] fs) = missing_rec_fields(fields: fs);
-TypeCheckingError invalid_rec_fields([+SymbObj] fs) = invalid_rec_fields(fields: fs);
 
 TypeCheckingError actual_tag_type_not_a_symb_type(Type t) = actual_tag_type_not_a_symb_type(type: t);
 
@@ -213,21 +212,33 @@ String source_file(<Function, Database, Method, Update, Handler, Automaton, Proc
 
 String* create_error_msg(TypeCheckingError err) =
   obj_does_not_belong_to_type()       = ("Object " & printed(err.obj) & " does not belong to type " & user_repr(err.type)),
-  exp_type_does_not_contain_sets()    = ("Set expression used but the expected type does not include sets"),
-  exp_type_not_a_seq_type()           = ("Sequence expression used but the expected type does not include sequences"),
-  not_a_tuple_or_seq_type()           = ("Tuple expression used but the expected type does not include tuples"),
-  exp_type_does_not_contain_maps()    = ("Map/record expression used but the expected type does not include maps or records"),
+  unexpected_coll_expr()              = { s1, s2 = match (err.coll_type)
+                                            tuple   = ("tuple/sequence",    "sequences"),
+                                            seq     = ("sequence",          "sequences"),
+                                            set     = ("set",               "sets"),
+                                            map     = ("map",               "maps"),
+                                            rel(2)  = ("binary relation",   "binary relations"),
+                                            rel(3)  = ("ternary relation",  "ternary relations");
+                                          return (
+                                            "Expression evaluates to a " & s1 & ", but the expected type does not include " & s2,
+                                            "  Expected type: " & user_repr(err.exp_type)
+                                          );
+                                        },
+  missing_rec_field()                 = ("Record field is missing: " & user_repr(err.field)),
+  unexpected_rec_field()              = ("Unexpected record field: " & user_repr(err.field)),
+  rec_field_is_mandatory()            = ("Record field is mandatory: " & user_repr(err.field)),
+  tagged_values_not_in_type()         = ( "Expression evaluates to a tagged value of the form " & user_repr(err.tag) & "(..) but such values do not belong to the expected type",
+                                          "  Expected type: " & user_repr(err.exp_type)
+                                        ),
+
   not_a_record_type()                 = ( "Dot operator can only be used with records or tagged records",
                                           "  Actual target type: " & user_repr(err.type)
                                         ),
   exp_type_not_a_tag_type             = ("Tag expression used but the expected type does not include tagged objects"),
-  actual_type_not_a_map_type()        = ("The type of the expression must be a map type"),
   wrong_tuple_type_length()           = ("Wrong tuple size"),
   non_symbol_keys_with_record_type()  = ("Record expected, but map expression doesn't have only symbols for keys"),
   may_not_have_field()                = ("Object may not have field: " & user_repr(err.field)),
   accessor_test_not_permitted_error() = ("Object doesn't have field: " & user_repr(err.field)),
-  missing_rec_fields()                = ("Record fields required: " & append((user_repr(f) : f <- rand_sort(err.fields)), " ")),
-  invalid_rec_fields()                = ("Invalid record fields: " & append((user_repr(f) : f <- rand_sort(err.fields)), " ")),
   missing_impl_argument()             = ("In call to " & user_repr(err.fn) & "(..) implicit argument was not specified: " & user_repr(err.arg)),
   invalid_impl_argument()             = ("Invalid implicit argument: " & user_repr(err.arg)),
   actual_tag_type_not_a_symb_type()   = ("Tag expression must yield a symbol"),

@@ -1,4 +1,177 @@
 implicit program : Program, typedefs : [TypeName -> NeType], context : Context, var_aliases : [[LocVar2]], typed_vars : [StdVar -> NeType] {
+  [TypeCheckingError] gen_err_msgs(TagObjExpr expr, Type exp_type, [EnvVar -> Type] env) {
+    errs = typecheck(expr.tag, atom_type, env);
+    if errs == []:
+      tag_type = expr_type(expr.tag, env);
+      if is_symb_singl_type(tag_type):
+        tag = only_symb(tag_type);
+        if are_ptype_disjoint(exp_type, tag_obj_type(symb_type(tag), type_any)):
+          return [tagged_values_not_in_type(tag, exp_type)];
+        else
+          exp_obj_type = restricted_untagged_objs_supertype(exp_type, bare_obj(tag));
+          return typecheck(expr.obj, exp_obj_type, env);
+        ;
+      ;
+    ;
+    return [];
+  }
+
+
+  [TypeCheckingError] gen_err_msgs(TernRelExpr expr, Type exp_type, [EnvVar -> Type] env) {
+    entries = match (expr) tern_rel_expr(es?) = es;
+    return [] if entries == [];
+    return [unexpected_coll_expr(exp_type, :rel(3))] if are_ptype_disjoint(exp_type, type_ne_tern_rel);
+    exp_args_types = tern_rel_args_supertypes(exp_type);
+    return [] if (t <~ exp_args_types : t == empty_type);
+    return union([{
+      if e.cond?:
+        errs = typecheck(e.cond, type_bool, env);
+        return errs if errs != [];
+        new_env, unused_var = refine_env(e.cond, env);
+      else
+        new_env = env;
+      ;
+      return union([typecheck(a, exp_args_types(i), new_env) : a @ i <~ e.args]);
+    } : e <- entries]);
+  }
+
+
+  [TypeCheckingError] gen_err_msgs(BinRelExpr expr, Type exp_type, [EnvVar -> Type] env) {
+    entries = match (expr) bin_rel_expr(es?) = es;
+    return [] if entries == [];
+    return [unexpected_coll_expr(exp_type, :rel(2))] if are_ptype_disjoint(exp_type, type_ne_bin_rel);
+    exp_arg0_type = bin_rel_arg_supertype(exp_type, 0);
+    return [] if exp_arg0_type == empty_type;
+    return union([{
+      if e.cond?:
+        errs = typecheck(e.cond, type_bool, env);
+        return errs if errs != [];
+        new_env, unused_var = refine_env(e.cond, env);
+      else
+        new_env = env;
+      ;
+
+      arg0, arg1 = e.args;
+      errs = typecheck(arg0, exp_arg0_type, new_env);
+      return errs if errs != [];
+      ## BUG BUG BUG: IF THE RELATION TYPE IS POLYMORPHIC, AND THE TYPE OF THE FIRST
+      ## ARGUMENT OVERLAPS WITH MORE THAN ONE OF THE POSSIBLE FORMS, THIS IS NOT GOING
+      ## TO WORK. THE DEFAULT ERROR WILL STILL BE REPORTED THOUGH.
+      exp_arg1_type = restricted_bin_rel_arg1_supertype(exp_type, expr_type(arg0, new_env));
+      return if exp_arg1_type != empty_type then typecheck(arg1, exp_arg1_type, new_env) else [];
+    } : e <- entries]);
+  }
+
+
+  [TypeCheckingError] gen_err_msgs(MapExpr expr, Type exp_type, [EnvVar -> Type] env) {
+    // If the map is empty, the default error message is OK
+    entries = match (expr) map_expr(es?) = es;
+    return [] if entries == [];
+
+    // The expected type of the expression must include binary relations
+    return [unexpected_coll_expr(exp_type, :map)] if are_ptype_disjoint(exp_type, type_ne_bin_rel);
+
+    // All inclusion conditions must typecheck
+    errs = union([typecheck(e.cond, type_bool, env) : e <- entries, e.cond?]);
+    return errs if errs != [];
+
+    // Special treatment for record expressions
+    if not (e <- entries : not e.key :: SymbObj):
+      rec_entries = ();
+      all_errs = [];
+      for e <- rand_sort(entries):
+        new_env = if e.cond? then left(refine_env(e.cond, env)) else env;
+        errs = typecheck(e.value, type_any, new_env);
+        if errs == []:
+          fail if not e.key :: SymbObj; ## BAD BAD BAD: REPEATING MEMBERSHIP TEST
+          rec_entries = (rec_entries | (e.key, e.value, new_env, e.cond?));
+        else
+          all_errs = all_errs & errs;
+        ;
+      ;
+      return if all_errs == [] then record_expr_err_msgs(exp_type, rec_entries) else all_errs;
+    ;
+
+    exp_key_type = bin_rel_arg_supertype(exp_type, 0);
+    return [] if exp_key_type == empty_type; ## CAN THIS ACTUALLY HAPPEN?
+
+    // Checking all entries one by one
+    return union([{
+      new_env = if e.cond? then left(refine_env(e.cond, env)) else env;
+      entry_errs = typecheck(e.key, exp_key_type, new_env);
+      return entry_errs if entry_errs != [];
+      exp_value_type = restricted_bin_rel_arg1_supertype(exp_type, expr_type(e.key, new_env));
+      return if exp_value_type != empty_type then typecheck(e.value, exp_value_type, new_env) else [];
+    } : e <- entries]);
+
+
+    [TypeCheckingError] record_expr_err_msgs(Type exp_type, (SymbObj, Expr, [EnvVar -> Type], Bool)* entries) =
+      ne_record_type(fs?) = record_expr_and_type_err_msgs(fs, entries),
+      type_ref(ts?)       = record_expr_err_msgs(expand_type_ref(ts, typedefs), entries),
+      union_type(ts?)     = record_expr_union_type_err_msgs(ts, entries),
+      _                   = [];
+
+
+    [TypeCheckingError] record_expr_union_type_err_msgs([+NeType] types, (SymbObj, Expr, [EnvVar -> Type], Bool)* entries) {
+      all_errs = [record_expr_err_msgs(t, entries) : t <- types] - [[]];
+      return [] if all_errs == [];
+      return reduce(all_errs, if |$b| < |$a| then $b else $a);
+    }
+
+
+    [TypeCheckingError] record_expr_and_type_err_msgs(RecordTypeFields type_fields, (SymbObj, Expr, [EnvVar -> Type], Bool)* entries) {
+      // Searching first for missing or unexpected fields
+      expr_fields = [e(0) : e <~ entries];
+      unexpected_fields = [l : e <~ entries, l = e(0), not type_fields(l, *)];
+      missing_fields = [l : l, unused_var <- type_fields, not expr_fields(l)];
+      if unexpected_fields != [] or missing_fields != []:
+        return [unexpected_rec_field(f) : f <- unexpected_fields] & [missing_rec_field(f) : f <- missing_fields];
+      ;
+
+      // Checking type and optionality status of individual fields
+      return union([{
+        field_info = type_fields[label];
+        return [rec_field_is_mandatory(label) if opt and not field_info.optional] &
+               typecheck(expr, field_info.type, env);
+      } : label, expr, env, opt <~ entries]);
+    }
+  }
+
+
+  [TypeCheckingError] gen_err_msgs(SetExpr expr, Type exp_type, [EnvVar -> Type] env) {
+    subexprs = match (expr) set_expr(es?) = es;
+    return [] if subexprs == [];
+    return [unexpected_coll_expr(exp_type, :set)] if are_ptype_disjoint(exp_type, type_ne_set);
+    exp_elt_type = set_elem_supertype(exp_type);
+    return if exp_elt_type != empty_type
+      then union([typecheck(e, exp_elt_type, env) : e <- subexprs])
+      else [];
+  }
+
+
+  [TypeCheckingError] gen_err_msgs(SeqExpr expr, Type exp_type, [EnvVar -> Type] env) {
+    subexprs = match (expr) seq_expr(es?) = es;
+    return [] if subexprs == ();
+    return [unexpected_coll_expr(exp_type, :seq)] if are_ptype_disjoint(exp_type, type_ne_seq);
+    return union([{
+      exp_elt_type = restricted_seq_elem_supertype(exp_type, singleton_type(i));
+      return if exp_elt_type != empty_type then typecheck(e, exp_elt_type, env) else [];
+    } : e @ i <~ subexprs]);
+  }
+
+
+  [TypeCheckingError] gen_err_msgs(TupleExpr expr, Type exp_type, [EnvVar -> Type] env) {
+    return [unexpected_coll_expr(exp_type, :tuple)] if are_ptype_disjoint(exp_type, type_ne_seq);
+    exprs = match (expr) tuple_expr(es?) = es;
+    // if are_ptype_disjoint(exp_type, type_tuple(|exprs|)):
+    //   return ...
+    // ;
+    return union([{
+      exp_elt_type = restricted_seq_elem_supertype(exp_type, singleton_type(i));
+      return if exp_elt_type != empty_type then typecheck(e, exp_elt_type, env) else [];
+    } : e @ i <~ exprs]);
+  }
+
 
   [TypeCheckingError] gen_err_msgs(AccExpr expr, Type exp_type, [EnvVar -> Type] env) {
     errs = typecheck(expr.expr, type_any, env);
