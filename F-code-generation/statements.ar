@@ -21,7 +21,7 @@ implicit program : Program, context : Context, var_subst_map : [StdVar -> CaptVa
     assert_stmt()             = gen_code_for_assert_stmt(stmt.cond, stmt.env, stmt.file, stmt.line, stmt.text),
     let_stmt()                = gen_code_for_let_stmt(stmt.asgnms, stmt.body, res_var),
     assignment_stmt()         = gen_code_for_assignment_stmt(stmt.vars, stmt.value, res_var),
-    imp_update_stmt()         = gen_code_for_imp_update_stmt(stmt.obj, stmt.idx, stmt.value, res_var),
+    seq_update_stmt()         = gen_code_for_seq_update_stmt(stmt.seq_var, stmt.idx, stmt.value, res_var),
     if_stmt()                 = gen_code_for_if_stmt(stmt.cond, stmt.body, stmt.else, res_var),
     for_stmt()                = gen_code_for_for_stmt(if stmt.var? then just(stmt.var) else nothing, stmt.start_val, stmt.end_val, stmt.end_val_incl, stmt.body, res_var),
     foreach_stmt()            = gen_code_for_foreach_stmt(stmt.vars, if stmt.idx_var? then just(stmt.idx_var) else nothing, stmt.values, stmt.body, res_var),
@@ -231,19 +231,19 @@ implicit program : Program, context : Context, var_subst_map : [StdVar -> CaptVa
   }
 
 
-  Instr+ gen_code_for_imp_update_stmt(StdVar obj, Expr idx, Expr value, EvalDestVar res_var) {
+  Instr+ gen_code_for_seq_update_stmt(StdVar seq_var, Expr idx, Expr value, EvalDestVar res_var) {
     idx_var, var_gen = next_obj_var(next_var_gen);
     idx_info = gen_eval_info(idx, idx_var, next_var_gen = var_gen);
 
     value_var, var_gen = next_obj_var(var_gen);
     val_info = gen_eval_info(value, value_var, next_var_gen = var_gen);
 
-    ## SINCE THE INDEX VARIABLE IS AN INTEGER, THERE'S NO NEED TO WORRY ABOUT
-    ## ABOUT MEMORY ALLOCATION AND DEALLOCATION. BUT IF WE EXTEND THE CONSTRUCT
-    ## TO MAPS AS WELL, THE CODE WILL HAVE TO BE CHANGED...
-    return nonempty(
-      idx_info.eval_code & val_info.eval_code &
-      (set_at(obj, get_int_val(idx_info.expr), val_info.expr))
+    tmp_var, var_gen = next_obj_var(var_gen);
+
+    return (
+      idx_info.eval_code & val_info.eval_code |
+      update_seq_at(tmp_var, seq_var, idx_info.expr, val_info.expr),
+      set_var(seq_var, tmp_var)
     );
   }
 

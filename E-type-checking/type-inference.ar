@@ -1384,20 +1384,18 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
 
   Type return_type(Statement stmt, [EnvVar -> Type] env) =
-    assignment_stmt()   = empty_type,
     return_stmt(e?)     = expr_type(e, env),
     if_stmt()           = if_stmt_return_type(stmt.cond, stmt.body, stmt.else, env),
     loop_stmt(ss?)      = loop_stmt_return_type(ss, env),
     foreach_stmt()      = foreach_stmt_return_type(stmt.vars, if stmt.idx_var? then just(stmt.idx_var) else nothing, stmt.values, stmt.body, env),
     for_stmt()          = for_stmt_return_type(if stmt.var? then just(stmt.var) else nothing, stmt.start_val, stmt.end_val, stmt.end_val_incl, stmt.body, env),
     let_stmt()          = let_stmt_return_type(stmt.asgnms, stmt.body, env),
-    break_stmt          = empty_type,
-    fail_stmt           = empty_type,
-    assert_stmt()       = empty_type,
-    print_stmt()        = empty_type,
-    imp_update_stmt()   = {fail;},
-    return_stmt         = {fail;},
-    proc_call_stmt()    = {fail;};
+    assignment_stmt()   |
+    break_stmt          |
+    fail_stmt           |
+    assert_stmt()       |
+    print_stmt()        |
+    seq_update_stmt()   = empty_type;
 
 
   Type if_stmt_return_type(Expr cond, Statement+ body, Statement* else_body, [EnvVar -> Type] env) {
@@ -1460,6 +1458,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   // Returns the empty map when the statement cannot fall through
   [EnvVar -> Type] update_env(Statement stmt, [EnvVar -> Type] env) =
     assignment_stmt()   = assignment_stmt_update_env(stmt.vars, stmt.value, env),
+    seq_update_stmt()   = seq_update_stmt_update_env(stmt.seq_var, stmt.idx, stmt.value, env),
     return_stmt(e?)     = unreachable_env(env),
     if_stmt()           = if_stmt_update_env(stmt.cond, stmt.body, stmt.else, env),
     loop_stmt(ss?)      = loop_stmt_update_env(ss, env),
@@ -1488,6 +1487,23 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     send_msg_ctrl_stmt()          |
     restore_state_ctrl_stmt()     = update(env, stmt.res_var, type_bool),
     read_state_ctrl_stmt()        = update(env, stmt.res_var, db_state_type(data_bases_by_id[var_type(stmt.db_var)]));
+
+
+  [EnvVar -> Type] seq_update_stmt_update_env(StdVar seq_var, Expr idx, Expr value, [EnvVar -> Type] env) {
+    return env if typed_vars(seq_var, *);
+    new_type = updated_type(env[seq_var], expr_type(value, env));
+    return update(env, seq_var, new_type);
+
+
+    Type updated_type(Type seq_type, Type elt_type) =
+      empty_type        = empty_type,
+      empty_seq_type    = empty_type,
+      ne_seq_type()     = ne_seq_type(union_superset(seq_type.elem_type, elt_type)),
+      tuple_type(ts?)   = tuple_type((union_superset(t, elt_type) : t <- ts)),
+      union_type(ts?)   = union_type([updated_type(t, elt_type) : t <- ts]),
+      type_ref(ts?)     = updated_type(expand_type_ref(ts, typedefs), elt_type),
+      _                 = {fail;};
+  }
 
 
   [EnvVar -> Type] assignment_stmt_update_env(StdVar+ vars, Expr value, [EnvVar -> Type] env) {
