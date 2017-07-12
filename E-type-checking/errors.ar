@@ -13,11 +13,11 @@ type TypeCheckingError =
   non_symbol_keys_with_record_type(keys: [+Expr]),
   may_not_have_field(type: Type, field: SymbObj),
   invalid_var_type(var: Var, actual_type: Type, expected_type: Type),
-  no_disp_fn_found(name: FnSymbol, arity: NzNat, signatures: [+FnType], par_types: Maybe[Type]*),
+  no_disp_fn_found(name: FnFamilyId, arity: NzNat, signatures: [+FnType], par_types: Maybe[Type]*),
   no_disp_db_method(name: MethodSymbol, args_types: Type*, exp_ret_type: Type, signatures: [FnType]),
   no_disp_db_update(name: UpdateSymbol, args_types: Type*, signatures: [+NeType*]),
   no_matching_relvar(name: AnyRelVar, args_types: Maybe[Type]+, signatures: [+NeType+]),
-  invalid_args_types(fn_name: FnSymbol, target_signature: FnType, invalid_params: [+<(Nat, Expr, Type)>]),
+  invalid_args_types(fn_name: FnFamilyId, target_signature: FnType, invalid_params: [+<(Nat, Expr, Type)>]),
   invalid_cls_var_type(var: ClsVar, expected_type: ClsType, type_var_insts: [TypeVar -> Type]),
   invalid_cls_param_types(target_signature: FnType, errors: [TypeCheckingError]),
   invalid_implicit_par_type(
@@ -44,7 +44,7 @@ type TypeCheckingError =
 
   annotated_error(error: TypeCheckingError, anchor: Any),
 
-  missing_impl_argument(fn: FnSymbol, arg: ImplArg),
+  missing_impl_argument(fn_id: FnFamilyId, arg: ImplArg),
   invalid_impl_argument(arg: ImplArg),
   actual_tag_type_not_a_symb_type(type: Type),
   accessor_test_not_permitted_error(type: Type, field: SymbObj),
@@ -56,13 +56,13 @@ type TypeCheckingError =
   expression_can_never_belong_to_type(actual_type: Type, type: Type),
 
   invalid_prot_method_return_type(
-    method_name:      AtomicFnSymb,
+    method_name:      FnSymbol,
     args_types:       Type+,
     ret_type:         Type,
     actual_ret_type:  Type
   ),
   no_suitable_prot_method_found(
-    method_name:    AtomicFnSymb,
+    method_name:    FnSymbol,
     args_types:     Type+,
     ret_type:       Type,
     instantiations: [TypeVar -> Type],
@@ -95,7 +95,7 @@ TypeCheckingError actual_tag_type_not_a_symb_type(Type t) = actual_tag_type_not_
 
 TypeCheckingError invalid_var_type(Var v, Type at, Type et) = invalid_var_type(var: v, actual_type: at, expected_type: et);
 
-TypeCheckingError no_disp_fn_found(FnSymbol n, NzNat a, [+FnType] ss, Maybe[Type]+ ts) =
+TypeCheckingError no_disp_fn_found(FnFamilyId n, NzNat a, [+FnType] ss, Maybe[Type]+ ts) =
   no_disp_fn_found(name: n, arity: a, signatures: ss, par_types: ts);
 
 TypeCheckingError no_disp_db_method(MethodSymbol n, Type* ats, Type rt, [FnType] ss) =
@@ -110,7 +110,7 @@ TypeCheckingError no_matching_relvar(AnyRelVar n, Maybe[Type]+ ats, [+NeType+] s
 ////////////////////////////////////////////////////////////////////////////////
 
 ## CAN I OMMIT THE ANGLE BRACKETS FOR THE TYPE OF THE SECOND PARAMETER?
-TypeCheckingError invalid_args_types(FnSymbol n, FnType s, [+<(Nat, Expr, Type)>] ps) = invalid_args_types(fn_name: n, target_signature: s, invalid_params: ps);
+TypeCheckingError invalid_args_types(FnFamilyId id, FnType s, [+<(Nat, Expr, Type)>] ps) = invalid_args_types(fn_name: id, target_signature: s, invalid_params: ps);
 
 TypeCheckingError invalid_cls_var_type(ClsVar v, ClsType t, [TypeVar -> Type] tvis) = invalid_cls_var_type(var: v, expected_type: t, type_var_insts: tvis);
 
@@ -153,7 +153,7 @@ TypeCheckingError internal_typechecking_error = :internal_typechecking_error;
 TypeCheckingError annotated_error(TypeCheckingError e, Any a) = annotated_error(error: e, anchor: a);
 
 
-TypeCheckingError missing_impl_argument(FnSymbol n, ImplArg a) = missing_impl_argument(fn: n, arg: a);
+TypeCheckingError missing_impl_argument(FnFamilyId id, ImplArg a) = missing_impl_argument(fn_id: id, arg: a);
 TypeCheckingError invalid_impl_argument(ImplArg a)  = invalid_impl_argument(arg: a);
 
 TypeCheckingError not_a_valid_unary_pseudocall_target(Type t) = not_a_valid_unary_pseudocall_target(type: t);
@@ -166,7 +166,7 @@ TypeCheckingError expressions_can_never_be_equal(Type lt, Type rt)  = expression
 
 TypeCheckingError expression_can_never_belong_to_type(Type at, Type t)  = expression_can_never_belong_to_type(actual_type: at, type: t);
 
-TypeCheckingError invalid_prot_method_return_type(AtomicFnSymb n, Type+ ats, Type rt, Type art) =
+TypeCheckingError invalid_prot_method_return_type(FnSymbol n, Type+ ats, Type rt, Type art) =
   invalid_prot_method_return_type(method_name: n, args_types: ats, ret_type: rt, actual_ret_type: art);
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -239,7 +239,7 @@ String* create_error_msg(TypeCheckingError err) =
   non_symbol_keys_with_record_type()  = ("Record expected, but map expression doesn't have only symbols for keys"),
   may_not_have_field()                = ("Object may not have field: " & user_repr(err.field)),
   accessor_test_not_permitted_error() = ("Object doesn't have field: " & user_repr(err.field)),
-  missing_impl_argument()             = ("In call to " & user_repr(err.fn) & "(..) implicit argument was not specified: " & user_repr(err.arg)),
+  missing_impl_argument()             = ("In call to " & user_repr(err.fn_id) & "(..) implicit argument was not specified: " & user_repr(err.arg)),
   invalid_impl_argument()             = ("Invalid implicit argument: " & user_repr(err.arg)),
   actual_tag_type_not_a_symb_type()   = ("Tag expression must yield a symbol"),
   invalid_var_type()                  = ( "Invalid variable type: " & user_repr(err.var),
@@ -350,8 +350,8 @@ String* invalid_cls_arg_types_err_msg(FnType target_signature, [TypeCheckingErro
 }
 
 
-String* no_disp_fn_found_err_msg(FnSymbol name, NzNat arity, [+FnType] signatures, Maybe[Type]* par_types) =
-  ("No suitable function found: " & user_repr(name, arity) & ". Possible function signatures:") &
+String* no_disp_fn_found_err_msg(FnFamilyId name, NzNat arity, [+FnType] signatures, Maybe[Type]* par_types) =
+  ("No suitable function found: " & user_repr(name) & ". Possible function signatures:") &
   ("  " & user_repr(s) : s <- rand_sort(signatures)) &
   ("Actual types:") &
   ("  " & if t != nothing then user_repr(value(t)) else "CLOSURE" : t <- par_types);
@@ -378,7 +378,7 @@ String* no_matching_relvar_err_msg(AnyRelVar name, Maybe[Type]+ args_types, [+Ne
   ("  " & if t != nothing then user_repr(value(t)) else "?" : t <- args_types);
 
 
-String* invalid_args_types_err_msg(FnSymbol fn_name, FnType signature, [+(Nat, Expr, Type)] invalid_params) {
+String* invalid_args_types_err_msg(FnFamilyId fn_name, FnType signature, [+(Nat, Expr, Type)] invalid_params) {
   errs = ();
   for i, e, t <- rand_sort(invalid_params):
     errs = (errs | "  Invalid argument " & printed(i) & " type in function call: " & user_repr(fn_name) &

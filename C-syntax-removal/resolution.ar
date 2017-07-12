@@ -12,15 +12,20 @@ Nat resol_priority(QualDBMembVar)             = 2;
 Nat resol_priority(SymbChainAcc symb_chain)   = resol_priority(symb_chain.expr);
 Nat resol_priority(AutoMethodCall call)       = if call.var? then 2 else 3;
 Nat resol_priority(DBMethodCall call)         = if call.var? then 2 else 3;
-Nat resol_priority(FnCallExpr call)           = resol_priority(call.name);
 
-Nat resol_priority(NestedFnSymb)              = 3;
-Nat resol_priority(BasicFnSymb)               = 4;
+Nat resol_priority(FnCallExpr call) =
+  match (call.fn_id)
+    nested_fn_id()  = 3,
+    fn_family_id()  = 4;
+
+Nat resol_priority(PreFnCall)       = 4;
+Nat resol_priority(PreNestedFnCall) = 3;
 
 Nat resol_priority(ClsVar)                    = 0;
 Nat resol_priority(RelVar)                    = 1;
 Nat resol_priority(QualRelVar)                = 2;
-Nat resol_priority(PreCall precall)           = if precall.var? then 2 else 3;
+Nat resol_priority(PreAutoCall precall)       = if precall.var? then 2 else 3;
+Nat resol_priority(PreDBCall precall)         = if precall.var? then 2 else 3;
 
 Nat resol_priority(LocAutoVar)                = 0;
 Nat resol_priority(LocDBVar)                  = 0;
@@ -30,16 +35,18 @@ Nat resol_priority(MembDBVar)                 = 1;
 ////////////////////////////////////////////////////////////////////////////////
 
 implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
-  Bool arity_is_compatible(AtomicFnSymb fn_symb, Nat arity) {
-    fn_arities = keys(lookup(top_level_fndefs_by_name_arity, fn_symb, []));
-    prot_meth_arities = lookup(protocol_methods, fn_symb, []);
+  Bool arity_is_compatible(PreFnCall precall, Nat arity) {
+    fn_arities = keys(lookup(top_level_fndefs_by_name_arity, precall.symbol, []));
+    prot_meth_arities = lookup(protocol_methods, precall.symbol, []);
     return fn_arities(arity) or (arity != 0 and prot_meth_arities(arity));
   }
 
-  Bool arity_is_compatible(NestedFnFamilyId fn_symb, Nat arity) {
-    arities = local_fn_defs_arities[fn_symb.inner];
+
+  Bool arity_is_compatible(PreNestedFnCall precall, Nat arity) {
+    arities = local_fn_defs_arities[precall.symbol];
     return arities(arity);
   }
+
 
   Bool arity_is_compatible(PreAutoCall precall, Nat arity) {
     arities : [Nat];
@@ -88,27 +95,27 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
 
   [FnFamilyId] resolve_by_priority_as_fn_name(Atom symbol, Nat arity, [Var] def_vars) {
     raw_resols = resolve_symbol(symbol, def_vars);
-    resols = [r : r <- raw_resols, r :: FnFamilyId, arity_is_compatible(r, arity)];
+    resols = [r : r <- raw_resols, r :: <PreFnCall, PreNestedFnCall>, arity_is_compatible(r, arity)];
     res = min_by(resols, resol_priority);
     assert |res| <= 1;
-    return res;
+    return [fn_family_id(pc, arity) : pc <- res];
   }
 
 
-  [<SymbObjVar, ClsVar, RelVar, FnFamilyId, PreCall>]
+  [<SymbObjVar, ClsVar, RelVar, PreCall>]
   resolve_by_priority_as_call_lookalike_target(Atom target, Nat arity, [Var] def_vars) {
     raw_resols = resolve_symbol(target, def_vars);
     resols = [r : r <- raw_resols, arity_is_compatible(r, arity)];
-    fail if not resols :: [<StdVar, ImplArg, MembVar, QualAutoMembVar, ClsVar, RelVar, FnFamilyId, PreCall>];
+    fail if not resols :: [<StdVar, ImplArg, MembVar, QualAutoMembVar, ClsVar, RelVar, PreCall>];
     return min_by(resols, resol_priority);
   }
 
 
-  [<SymbChainExpr, ClsVar, AnyRelVar, FnFamilyId, PreCall>]
+  [<SymbChainExpr, ClsVar, AnyRelVar, PreCall>]
   resolve_by_priority_as_call_lookalike_target(Atom+ symbols, Nat arity, [Var] def_vars) {
     raw_resols = resolve_symbol_chain(symbols, def_vars);
     resols = [r : r <- raw_resols, arity_is_compatible(r, arity)];
-    fail if not resols :: [<SymbChainExpr, ClsVar, AnyRelVar, FnFamilyId, PreCall>];
+    fail if not resols :: [<SymbChainExpr, ClsVar, AnyRelVar, PreCall>];
     return min_by(resols, resol_priority);
   }
 
@@ -158,12 +165,47 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
     return min_by(keys(resols_priorities), resols_priorities[$]);
 
 
-    [AnyClsExpr] resolve(FnFamilyId fn_symb, NzNat exp_arity) {
-      ## BUG BUG BUG: HERE I MUST ALSO CHECK THAT IT HAS NO IMPLICIT ARGUMENTS...
-      has_exp_arity = function_exists(fn_symb, exp_arity) and all((a == 0 : a <- arg_arities(fn_symb, exp_arity)));
+    [AnyClsExpr] resolve(PreFnCall precall, NzNat exp_arity) {
+      ## BUG BUG BUG: HERE I MUST ALSO CHECK THAT IT HAS NO IMPLICIT ARGUMENTS.
+      ## OR IS IT ALREADY CHECKED DURING TYPECHECKING?
+      arity_is_ok = non_nested_function_exists(precall.symbol, exp_arity);
+      fn_id = fn_family_id(precall.symbol, exp_arity);
+      if arity_is_ok:
+        args_arities = arg_arities(fn_id);
+        fn_ptr_ok = all((a == 0 : a <- args_arities));
+      else
+        fn_ptr_ok = false;
+      ;
+
+      const_ok = non_nested_function_exists(precall.symbol, 0);
+      const_id = fn_family_id(precall.symbol, 0);
+
       return [
-        fn_ptr(fn_symb, exp_arity) if has_exp_arity,
-        no_args_cls_expr(exp_arity, fn_call(fn_symb, ())) if function_exists(fn_symb, 0)
+        fn_ptr(fn_id) if fn_ptr_ok,
+        no_args_cls_expr(exp_arity, fn_call(const_id, ())) if const_ok
+      ];
+    }
+
+
+    ## THIS FUNCTION IS ALMOST THE SAME AS THE ONE ABOVE...
+    [AnyClsExpr] resolve(PreNestedFnCall precall, NzNat exp_arity) {
+      ## BUG BUG BUG: HERE I MUST ALSO CHECK THAT IT HAS NO IMPLICIT ARGUMENTS.
+      ## OR IS IT ALREADY CHECKED DURING TYPECHECKING?
+      arity_is_ok = nested_function_exists(precall.symbol, exp_arity);
+      if arity_is_ok:
+        args_arities = local_fn_arity_args_arities(precall.symbol, exp_arity, !!);
+        fn_ptr_ok = all((a == 0 : a <- args_arities));
+      else
+        fn_ptr_ok = false;
+      ;
+      fn_id = nested_fn_id(precall.parent_id, fn_family_id(precall.symbol, exp_arity));
+
+      const_ok = nested_function_exists(precall.symbol, 0);
+      const_id = nested_fn_id(precall.parent_id, fn_family_id(precall.symbol, 0));
+
+      return [
+        fn_ptr(fn_id) if fn_ptr_ok,
+        no_args_cls_expr(exp_arity, fn_call(const_id, ())) if const_ok
       ];
     }
 
@@ -174,7 +216,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
     [AnyClsExpr] resolve(SymbObjVar var, NzNat exp_arity) = [no_args_cls_expr(exp_arity, var)];
 
 
-    [] resolve(<LocAutoVar, MembAutoVar, LocDBVar, MembDBVar, RelVar, PreCall>, NzNat) = [];
+    [] resolve(<LocAutoVar, MembAutoVar, LocDBVar, MembDBVar, RelVar, PreAutoCall, PreDBCall>, NzNat) = [];
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -186,9 +228,15 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
   Nothing try_resolve_as_expr(<ClsVar, AnyAutoVar, AnyDBVar, AnyRelVar>) = nothing;
 
 
-  Maybe[FnCallExpr] try_resolve_as_expr(FnFamilyId fn_symb) =
-    if function_exists(fn_symb, 0)
-      then just(fn_call(fn_symb, (), []))
+  Maybe[FnCallExpr] try_resolve_as_expr(PreFnCall precall) =
+    if non_nested_function_exists(precall.symbol, 0)
+      then just(fn_call(fn_family_id(precall, 0), (), []))
+      else nothing;
+
+
+  Maybe[FnCallExpr] try_resolve_as_expr(PreNestedFnCall precall) =
+    if nested_function_exists(precall.symbol, 0)
+      then just(fn_call(fn_family_id(precall, 0), (), []))
       else nothing;
 
 
@@ -218,7 +266,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  [<SymbChainExpr, ClsVar, AnyAutoVar, AnyDBVar, AnyRelVar, FnFamilyId, PreCall>]
+  [<SymbChainExpr, ClsVar, AnyAutoVar, AnyDBVar, AnyRelVar, PreCall>]
   resolve_symbol_chain(Atom+ symbols, [Var] def_vars) {
     resols = resolve_symbol(head(symbols), def_vars);
     for s <- tail(symbols):
@@ -230,7 +278,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
     Nothing try_resolve_accessor(<ClsVar, AnyRelVar>, Atom) = nothing;
 
 
-    Maybe[SymbChainExpr] try_resolve_accessor(<FnFamilyId, PreCall> target, Atom field) {
+    Maybe[SymbChainExpr] try_resolve_accessor(PreCall target, Atom field) {
       maybe_resol_target = try_resolve_as_expr(target);
       return if maybe_resol_target != nothing
         then just(accessor(expr: value(maybe_resol_target), field: object(field)))
@@ -287,7 +335,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
     LocAutoVar, MembAutoVar,
     LocDBVar, MembDBVar,
     RelVar,
-    FnFamilyId, PreCall
+    PreCall
   >]
   resolve_symbol(Atom symbol, [Var] def_vars) {
     std_var = var(symbol);
@@ -296,7 +344,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
     gen_resols = [
       std_var if def_vars(std_var),
       impl_arg if impl_args(impl_arg),
-      fn_symb if top_level_fndefs_by_name_arity(fn_symb, *) or protocol_methods(fn_symb, *)
+      pre_fn_call(fn_symb) if top_level_fndefs_by_name_arity(fn_symb, *) or protocol_methods(fn_symb, *)
     ];
     ctx_resols = resolve_symbol(artifact, symbol);
     return gen_resols & ctx_resols;
@@ -386,27 +434,25 @@ implicit syn_prg : SynPrg {
   }
 
 
-  [<ClsVar, StdFnSymb, NestedFnFamilyId>] resolve_symbol(TopLevelFnDef artifact, Atom symbol) {
+  [<ClsVar, PreNestedFnCall>] resolve_symbol(TopLevelFnDef artifact, Atom symbol) {
     cls_var = cls_var(symbol);
     fn_symb = fn_symbol(symbol);
-    nested_fn_symb = nested_fn_symbol(artifact.unique_name, fn_symb);
 
     may_be_cls_var = (a <~ artifact.fndef.args, cls_arg() ?= a : a.name == symbol);
     may_be_loc_fn = (fn <~ artifact.fndef.local_fns : fn.name == fn_symb);
 
-    return [cls_var if may_be_cls_var, nested_fn_symb if may_be_loc_fn];
+    return [cls_var if may_be_cls_var, pre_nested_fn_call(fn_symb, artifact.unique_name) if may_be_loc_fn];
   }
 
 
-  [<ClsVar, StdFnSymb, NestedFnFamilyId>] resolve_symbol(NestedFnDef artifact, Atom symbol) {
+  [<ClsVar, PreNestedFnCall>] resolve_symbol(NestedFnDef artifact, Atom symbol) {
     cls_var = cls_var(symbol);
     fn_symb = fn_symbol(symbol);
-    nested_fn_symb = nested_fn_symbol(artifact.parent_unique_name, fn_symb);
 
     may_be_cls_var = (a <~ artifact.fndef.args, cls_arg() ?= a : a.name == symbol);
     may_be_loc_fn = (fn <~ artifact.parent_fndef.local_fns : fn.name == fn_symb);
 
-    return [cls_var if may_be_cls_var, nested_fn_symb if may_be_loc_fn];
+    return [cls_var if may_be_cls_var, pre_nested_fn_call(fn_symb, artifact.parent_unique_name) if may_be_loc_fn];
   }
 
 

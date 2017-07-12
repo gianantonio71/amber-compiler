@@ -227,13 +227,12 @@ String pending_updates_var_type(Table table) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-String to_c_semi_const_memo_var_name(<ProcSymbol, BoolFnName>) = fail;
+String to_c_memo_var_name(<ProcSymbol, BoolFnName>) = fail;
 
-String to_c_semi_const_memo_var_name(FnSymbol fn_symb) =
-  fn_symbol(symb?)    = _str_(symb) & "_E",
-  op_symbol(op?)      = fail,
-  nested_fn_symbol()  = to_c_semi_const_memo_var_name(fn_symb.outer) & "_" & to_c_semi_const_memo_var_name(fn_symb.inner),
-  unique_fn_symbol()  = to_c_semi_const_memo_var_name(fn_symb.symbol) & uppercase_encoding(fn_symb.id); ## IS THIS ENOUGHT TO AVOID CONFLICTS?
+String to_c_memo_var_name(FnId id) =
+  fn_family_id()  = to_c_fn_symb_name(id.symbol) & "_E",
+  unique_fn_id()  = to_c_memo_var_name(id.family) & printed(id.id),
+  nested_fn_id()  = to_c_fn_name(id.outer) & "_" & to_c_memo_var_name(id.inner);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -260,17 +259,6 @@ String table_c_type(Table table) {
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
-
-String fn_name_to_str(FnSymbol fn_symb) =
-  fn_symbol(symb?)    = _str_(symb),
-  op_symbol(op?)      = _str_(op),
-  ## BUG: THIS DOESN'T SPECIFY WHICH OF THE OUTER FUNCTIONS
-  ## WITH THE SAME NAME THE NESTED FUNCTION BELONGS TO
-  nested_fn_symbol()  = fn_name_to_str(fn_symb.outer) & ":" & fn_name_to_str(fn_symb.inner),
-  unique_fn_symbol()  = fn_name_to_str(fn_symb.symbol); ## BAD: THE DISPATCH FUNCTION WILL APPEAR ON THE STACK, AND IT WILL BE INDISTINGUISHABLE FROM ONE OF THE REAL FUNCTIONS
-
-String fn_name_to_str(ProcSymbol proc_symbol) = proc_symbol(s?) = capitalize(_str_(s), false); ## UGLY UGLY UGLY
-
 
 String to_c_const(<blank, undefined> state) = if state == :blank then "make_blank_obj()" else "make_null_obj()";
 
@@ -338,18 +326,25 @@ String const_int_seq_c_name(Nat seq_id) = "const_int_seq_" & printed(seq_id);
 //////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////
 
-String to_c_fn_name(FnSymbol fn_symb, Nat arity) =
-  fn_symbol(symb?)    = _str_(symb) & "_F" & printed(arity),
-  op_symbol(op?)      = _str_(op),
-  nested_fn_symbol()  = to_c_fn_name(fn_symb.outer, arity) & "_" & to_c_fn_name(fn_symb.inner, arity),
-  unique_fn_symbol()  = to_c_fn_name(fn_symb.symbol, arity) & uppercase_encoding(fn_symb.id);
+String to_c_fn_name(FnId id) =
+  fn_family_id()    = to_c_fn_symb_name(id.symbol, id.arity),
+  unique_fn_id()    = to_c_fn_name(id.family) & uppercase_encoding(id.id),
+  nested_fn_id()    = to_c_fn_name(id.outer) & "_" & to_c_fn_name(id.inner);
 
-String to_c_fn_name(BoolFnName n, Nat) = to_c_fn_name(n);
+String to_c_fn_symb_name(FnSymbol fn_symb, Nat arity) =
+  fn_symbol(symb?)    = _str_(symb) & "_F" & printed(arity),
+  op_symbol(op?)      = _str_(op);
+
+String to_c_fn_symb_name(FnSymbol fn_symb) =
+  fn_symbol(symb?)    = _str_(symb),
+  op_symbol(op?)      = _str_(op);
+
+
 String to_c_fn_name(BoolFnName) =
   memb_test(<+> a?)         = "is" & upper_camel_case(a),
   memb_test(<*..*> n?)      = "is_type_" & printed(n),
   memb_test(a1?, <+> a2?)   = "is" & upper_camel_case(a2) & "_" & upper_camel_case(a1),
   memb_test(a?, <*..*> n?)  = "is" & upper_camel_case(a) & "_" & printed(n);
 
-String to_c_fn_name(ProcSymbol s, Nat) = to_c_fn_name(s);
+
 String to_c_fn_name(ProcSymbol) = proc_symbol(s?)  = upper_camel_case(s) & "_P"; ## UGLY UGLY UGLY

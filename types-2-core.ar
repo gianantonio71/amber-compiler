@@ -54,7 +54,7 @@ type FnType   = fn_type(
                   args:       AnyType*,
                   impl_args:  [ImplArg -> NeType],
                   ret_type:   NeType,
-                  constrs:    [AtomicFnSymb -> [+ClsType]]
+                  constrs:    [FnSymbol -> [+ClsType]]
                 );
 
 type BuiltInType  = builtin_type(args_types: NeType+, ret_type: NeType);
@@ -72,19 +72,20 @@ type BuiltIn  = neg, add, sub, mult, div, mod, lt, le, gt, ge,
                 slice, cat, rev, tag, obj, parse, print,
                 rand_nat, rand_elem, counter, ticks;
 
-type StdFnSymb      = fn_symbol(Atom);
-type OpSymb         = op_symbol(Operator);
-type UniqueFnSymb   = unique_fn_symbol(symbol: AtomicFnSymb, id: Nat);
-type NestedFnSymb   = nested_fn_symbol(outer: BasicFnSymb, inner: BasicFnSymb);
+type StdFnSymb        = fn_symbol(Atom);
+type OpSymb           = op_symbol(Operator);
+type FnSymbol         = StdFnSymb, OpSymb;
 
-type AtomicFnSymb   = StdFnSymb, OpSymb;
-type BasicFnSymb    = AtomicFnSymb, UniqueFnSymb;
-type FnSymbol       = BasicFnSymb, NestedFnSymb;
+type PlainFnFamilyId  = fn_family_id(symbol: FnSymbol, arity: Nat);
 
-type NestedFnFamilyId = nested_fn_symbol(outer: BasicFnSymb, inner: AtomicFnSymb);
-type FnFamilyId       = AtomicFnSymb, NestedFnFamilyId;
+type UniqueFnId       = unique_fn_id(family: PlainFnFamilyId, id: Nat);
+type PlainFnId        = PlainFnFamilyId, UniqueFnId;
 
-type FnClassId      = fn_class_id(name: FnFamilyId, arity: Nat);
+type NestedFnFamilyId = nested_fn_id(outer: PlainFnId, inner: PlainFnFamilyId);
+type NestedFnId       = nested_fn_id(outer: PlainFnId, inner: PlainFnId);
+
+type FnFamilyId       = PlainFnFamilyId, NestedFnFamilyId;
+type FnId             = PlainFnId, NestedFnId;
 
 type MethodSymbol   = method_symbol(Atom);
 type UpdateSymbol   = msg_handler, update_symbol(Atom);
@@ -157,7 +158,7 @@ type BinRelExpr     = bin_rel_expr([+(args: (Expr, Expr), cond: Expr?)]);
 type TernRelExpr    = tern_rel_expr([+(args: (Expr, Expr, Expr), cond: Expr?)]);
 type TagObjExpr     = tag_obj_expr(tag: Expr, obj: Expr);
 
-type FnCallExpr     = fn_call(name: FnFamilyId, args: AnyExpr*, impl_args: [ImplArg -> Expr]);
+type FnCallExpr     = fn_call(fn_id: FnFamilyId, args: AnyExpr*, impl_args: [ImplArg -> Expr]);
 type ClsCall        = cls_call(name: ClsVar, args: Expr+);
 type BuiltinCall    = builtin_call(name: BuiltIn, args: Expr+);
 
@@ -205,7 +206,7 @@ type OutputIsSetExpr  = output_is_set(var: LocAutoVar, output: Atom);
 
 ///////////////////////////////////////////////////////////////////////////////
 
-type FnPtr    = fn_ptr(name: FnFamilyId, arity: NzNat);
+type FnPtr    = fn_ptr(FnFamilyId);
 type ClsExpr  = cls_expr(args: Maybe[StdVar]+, expr: Expr);
 
 type AnyClsExpr = ClsVar, FnPtr, ClsExpr;
@@ -293,18 +294,18 @@ type FormalClsArg = formal_cls_arg(var: ClsVar, type: ClsType);
 type FormalArg    = FormalObjArg, FormalClsArg;
 
 type Function   = function(
-                    name:       FnSymbol,
+                    id:         FnId,
                     args:       FormalArg*,
                     impl_args:  [ImplArg -> NeType], // Types here should not contain type variables
                     res_type:   NeType,
                     expr:       Expr,
-                    constrs:    [AtomicFnSymb -> [+ClsType]]
+                    constrs:    [FnSymbol -> [+ClsType]]
                   );
 
 type ProcSymbol = proc_symbol(Atom);
 
 type Procedure  = procedure(
-                    name:       ProcSymbol,
+                    id:         ProcSymbol,
                     args:       (var: StdVar, type: NeType)*,
                     res_type:   Maybe[NeType],
                     auto_vars:  [LocAutoVar -> AutoSymbol],

@@ -1,10 +1,9 @@
 implicit program : Program, typedefs : [TypeName -> NeType], context : Context, var_aliases : [[LocVar2]], typed_vars : [StdVar -> NeType] {
-  Type fn_call_expr_type(FnSymbol name, AnyExpr* args, [ImplArg -> Expr] impl_args, [EnvVar -> Type] env) {
+  Type fn_call_expr_type(FnFamilyId fn_id, AnyExpr* args, [ImplArg -> Expr] impl_args, [EnvVar -> Type] env) {
     // If I already have a matching signature among the constraints, I just need that one
-    if constraints != [] and name :: AtomicFnSymb and impl_args == [] and args :: Expr+:
-      fn_key = (name, |args|);
-      if constraints(fn_key, *):
-        ret_types = [rs.out_type : rs <- constraints[fn_key], will_dispatch_to(rs, args, env)];
+    if constraints != [] and fn_id :: PlainFnFamilyId and impl_args == [] and args :: Expr+:
+      if constraints(fn_id, *):
+        ret_types = [rs.out_type : rs <- constraints[fn_id], will_dispatch_to(rs, args, env)];
         ## IF THERE IS MORE THAN ONE MATCHING SIGNATURE, I SHOULD SELECT THE MOST
         ## SPECIFIC ONE, OR A SUPERSET OF THE INTERSECTION MAYBE. CERTAINLY NOT
         ## A SUPERSET OF THE UNION
@@ -13,8 +12,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     ;
 
     // If all the functions have the same, non-parametric return type we just return that
-    fn_key = (name, |args|);
-    sgn_set = signatures[fn_key];
+    sgn_set = signatures[fn_id];
     ret_type = sgn_set.ret_type;
     return value(ret_type) if ret_type != nothing;
 
@@ -48,11 +46,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
     // If we are here, it means at least one of the functions is parametric...
 
-    return fn_call_expr_type_last_resort_impl(name, args, impl_args, env);
+    return fn_call_expr_type_last_resort_impl(fn_id, args, impl_args, env);
 
 
-    Type fn_call_expr_type_last_resort_impl(FnSymbol name, AnyExpr* args, [ImplArg -> Expr] impl_args, [EnvVar -> Type] env) {
-      sgns_set = signatures[(name, |args|)];
+    Type fn_call_expr_type_last_resort_impl(FnFamilyId fn_id, AnyExpr* args, [ImplArg -> Expr] impl_args, [EnvVar -> Type] env) {
+      sgns_set = signatures[fn_id];
 
       actual_args_types, args_idxs = unzip(((expr_type(a, env), i) : a @ i <- args, is_expr(a)));
       return empty_type if in(empty_type, actual_args_types);
@@ -98,16 +96,15 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 ////////////////////////////////////////////////////////////////////////////////
 
 implicit program : Program, typedefs : [TypeName -> NeType], context : Context, var_aliases : [[LocVar2]], typed_vars : [StdVar -> NeType] {
-  [TypeCheckingError] fully_typecheck_fn_call(FnSymbol name, AnyExpr* args, [ImplArg -> Expr] impl_args, Type exp_type, [EnvVar -> Type] env) {
+  [TypeCheckingError] fully_typecheck_fn_call(FnFamilyId fn_id, AnyExpr* args, [ImplArg -> Expr] impl_args, Type exp_type, [EnvVar -> Type] env) {
     // Making sure the scalar, positional arguments typecheck on their own
     errs = seq_union((typecheck(a, type_any, env) : a <- args, a :: Expr));
     return errs if errs != [];
 
     // Trying with required functions first
-    if constraints != [] and name :: AtomicFnSymb and impl_args == [] and args :: Expr+:
-      fn_key = (name, |args|);
-      if constraints(fn_key, *):
-        for rs <- rand_sort(constraints[fn_key]):
+    if constraints != [] and fn_id :: PlainFnFamilyId and impl_args == [] and args :: Expr+:
+      if constraints(fn_id, *):
+        for rs <- rand_sort(constraints[fn_id]):
           if seq_union((typecheck(a, t, env) : a, t <- zip(args, rs.in_types))) == []:
             return [invalid_return_type(rs.out_type, exp_type) if not is_subset(rs.out_type, exp_type)];
           ;
@@ -116,42 +113,39 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     ;
 
     // Simple case first. If there's only one signature, we just typecheck that one directly
-    fn_key = (name, |args|);
-    if is_key(fn_key, signatures):
-      sgn_set = signatures[fn_key];
+    if signatures(fn_id, *):
+      sgn_set = signatures[fn_id];
       all_sgns = sgn_set.sgns;
-      // return typecheck_fn_call(name, only(all_sgns), args, impl_args, exp_type) if |all_sgns| == 1;
+      // return typecheck_fn_call(fn_id, only(all_sgns), args, impl_args, exp_type) if |all_sgns| == 1;
       for s <- rand_sort(all_sgns):
-        errs = fully_typecheck_fn_call(name, s, args, impl_args, exp_type, env);
+        errs = fully_typecheck_fn_call(fn_id, s, args, impl_args, exp_type, env);
         return [] if errs == [];
       ;
       all_agg_sgns = sgn_set.agg_sgns;
       for s <- rand_sort(all_agg_sgns):
-        errs = fully_typecheck_fn_call(name, s, args, impl_args, exp_type, env);
+        errs = fully_typecheck_fn_call(fn_id, s, args, impl_args, exp_type, env);
         return [] if errs == [];
       ;
     ;
 
-    return gen_fn_call_err_msg(name, args, impl_args, exp_type, env);
+    return gen_fn_call_err_msg(fn_id, args, impl_args, exp_type, env);
   }
 
 
-  [TypeCheckingError] gen_fn_call_err_msg(FnSymbol name, AnyExpr* args, [ImplArg -> Expr] impl_args, Type exp_type, [EnvVar -> Type] env) {
+  [TypeCheckingError] gen_fn_call_err_msg(FnFamilyId fn_id, AnyExpr* args, [ImplArg -> Expr] impl_args, Type exp_type, [EnvVar -> Type] env) {
     // If we get here, it means that the function call is not going to typecheck,
     // even though all its scalar, positional arguments do.
     // So we'll just try to determine the type of error.
 
     // Gathering all the type constraint signatures
     req_sgns = [];
-    if name :: AtomicFnSymb and impl_args == [] and args :: Expr+:
-      fn_key = (name, |args|);
-      req_sgns = constraints[fn_key] if constraints(fn_key, *);
+    if fn_id :: PlainFnFamilyId and impl_args == [] and args :: Expr+:
+      req_sgns = constraints[fn_id] if constraints(fn_id, *);
     ;
 
     // Gathering all "real" function signatures
-    fn_key = (name, |args|);
-    if is_key(fn_key, signatures):
-      sgn_set = signatures[fn_key];
+    if signatures(fn_id, *):
+      sgn_set = signatures[fn_id];
       all_sgns = sgn_set.sgns;
       agg_sgns = sgn_set.agg_sgns;
     else
@@ -170,18 +164,18 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       if candidate_signatures == []:
         arg_types = (if a :: Expr then just(expr_type(a, env)) else nothing : a <- args);
         avail_sgns = nonempty(all_sgns & [cls_to_fn_type(rs) : rs <- req_sgns]);
-        return [no_disp_fn_found(name, nz_nat(|args|), avail_sgns, nonempty(arg_types))];
+        return [no_disp_fn_found(fn_id, nz_nat(|args|), avail_sgns, nonempty(arg_types))];
       ;
     ;
 
     // There might be more than one candidate signature
     // if the type of one or more parameters is the empty type
-    err_sets = [fully_typecheck_fn_call(name, s, args, impl_args, exp_type, env) : s <- candidate_signatures];
+    err_sets = [fully_typecheck_fn_call(fn_id, s, args, impl_args, exp_type, env) : s <- candidate_signatures];
     return if in([], err_sets) then [] else an_elem(err_sets);
   }
 
 
-  [TypeCheckingError] fully_typecheck_fn_call(FnSymbol name, FnType signature, AnyExpr* args, [ImplArg -> Expr] impl_args, Type exp_type, [EnvVar -> Type] env) {
+  [TypeCheckingError] fully_typecheck_fn_call(FnFamilyId fn_id, FnType signature, AnyExpr* args, [ImplArg -> Expr] impl_args, Type exp_type, [EnvVar -> Type] env) {
     // We first check that all scalar positional parameters (and those parameters only) match
     // the type of the corresponding formal parameter (we already know they typecheck)
     invalid_args = [];
@@ -193,7 +187,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
         ;
       ;
     ;
-    return [invalid_args_types(name, signature, invalid_args)] if invalid_args != [];
+    return [invalid_args_types(fn_id, signature, invalid_args)] if invalid_args != [];
 
     // Now we can instantiate the concrete type for type variables
     if is_param_type(signature):
@@ -244,7 +238,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
         ;
       else
         // The implicit argument has not been provided, either implicitly or explicitly
-        impl_arg_errs = impl_arg_errs & [missing_impl_argument(name, n)];
+        impl_arg_errs = impl_arg_errs & [missing_impl_argument(fn_id, n)];
       ;
     ;
 
@@ -255,7 +249,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     // Now let's see if the type of the result is OK.
     ## actual_ret_type = replace_type_vars(signature.ret_type, type_var_insts);
     ## if actual_ret_type == #{type_ref(builtin_type_symbol(any))}:
-    actual_ret_type = fn_call_expr_type(name, args, impl_args, env);
+    actual_ret_type = fn_call_expr_type(fn_id, args, impl_args, env);
     ret_type_errs = [invalid_return_type(actual_ret_type, exp_type) if not is_subset(actual_ret_type, exp_type)];
 
     ## BAD: HERE I SHOULD PROVIDE MORE INFORMATION ABOUT THESE ERRORS
@@ -265,13 +259,13 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  [TypeCheckingError] check_type_var_insts([TypeVar -> Type] insts, AtomicFnSymb fn_name, ClsType fn_type) {
+  [TypeCheckingError] check_type_var_insts([TypeVar -> Type] insts, FnSymbol fn_name, ClsType fn_type) {
     args_types = (replace_type_vars(t, insts) : t <- fn_type.in_types);
     ret_type = replace_type_vars(fn_type.out_type, insts);
 
-    fn_key = (fn_name, |args_types|);
+    fn_id = fn_family_id(fn_name, |args_types|);
 
-    constrs = if constraints(fn_key, *) then constraints[fn_key] else [];
+    constrs = if constraints(fn_id, *) then constraints[fn_id] else [];
     for rs <- rand_sort(constrs):
       if all((is_subset(at, et) : at, et <- zip(args_types, rs.in_types))):
         err = invalid_prot_method_return_type(fn_name, args_types, ret_type, rs.out_type);
@@ -279,9 +273,10 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       ;
     ;
 
-    fn_key = (fn_name, arity(fn_type));
-    if signatures(fn_key, *):
-      sgn_set = signatures[fn_key];
+    assert fn_id == fn_family_id(fn_name, arity(fn_type));
+
+    if signatures(fn_id, *):
+      sgn_set = signatures[fn_id];
       all_sgns = sgn_set.sgns;
       all_agg_sgns = sgn_set.agg_sgns;
       for s <- rand_sort(all_sgns) & rand_sort(all_agg_sgns):

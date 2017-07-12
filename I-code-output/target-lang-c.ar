@@ -106,7 +106,7 @@ String* gen_env_decl(CompiledPrg prg) {
   env_decl = ("struct ENV {") & ("  OBJ " & to_c_var_decl_name(impl_arg(bare_id(a))) & ";" : a <- rand_sort(all_impl_args));
 
   semi_consts_cache_vars = rand_sort([p.name : p <- prg.procs, p.cached and p.impl_args != []]);
-  semi_consts_cache_vars_decls = ("  OBJ " & to_c_semi_const_memo_var_name(v) & ";" : v <- semi_consts_cache_vars);
+  semi_consts_cache_vars_decls = ("  OBJ " & to_c_memo_var_name(v) & ";" : v <- semi_consts_cache_vars);
   env_decl = (env_decl | "") & semi_consts_cache_vars_decls if semi_consts_cache_vars_decls != ();
 
   env_decl = env_decl & ("};");
@@ -222,7 +222,7 @@ implicit sorted_cls_defs : ClsDef* {
 implicit {
   sorted_cls_defs                 : ClsDef*,
   int_seqs_types_and_lengths      : (String, Nat)*,
-  cached_semi_consts_by_impl_arg  : [ImplArg -> [+FnSymbol]];
+  cached_semi_consts_by_impl_arg  : [ImplArg -> [+FnId]];
 
 
   CCodeOutput compile_to_c(ObjProcDef* obj_proc_defs, BoolProcDef* bool_proc_defs, ClsDef* cls_defs, Block* blocks, TransBlock* trans_blocks, Int+* int_seqs) {
@@ -274,7 +274,7 @@ implicit {
   String gen_c_decl(ObjProcDef pd) {
     args_types = (if p == :obj then "OBJ" else "const CLS &" : p <- pd.args);
     args_list = append(args_types & ("ENV &"), ", ");
-    return "OBJ " & to_c_fn_name(pd.name, in_arity(pd)) & "(" & args_list & ");";
+    return "OBJ " & to_c_fn_name(pd.name) & "(" & args_list & ");";
   }
 
 
@@ -293,7 +293,7 @@ implicit {
   String* compile_to_c(ProcDef pd) {
     cached = pd.cached? and pd.cached;
 
-    fn_name = to_c_fn_name(pd.name, in_arity(pd));
+    fn_name = to_c_fn_name(pd.name);
 
     suffix = if cached then "__CALCULATE_CONSTANT" else "";
 
@@ -322,7 +322,7 @@ implicit {
 
     if cached:
       is_real_const = pd.cached? and pd.impl_args == [];
-      cache_var_name = if is_real_const then "cached_res" else "env." & to_c_semi_const_memo_var_name(pd.name);
+      cache_var_name = if is_real_const then "cached_res" else "env." & to_c_memo_var_name(pd.name);
 
       wrapper_code = (
         "",
@@ -438,7 +438,7 @@ implicit {
     symb_switch()         = compile_symb_switch_to_c(instr.value, instr.cases, instr.else, block_id),
     call_proc()           = compile_call_proc_to_c(if instr.var? then just(instr.var) else nothing, instr.name, instr.args, block_id),
     call_cls()            = mk_cls_call(instr.cls_var, instr.var, instr.args), ## INLINE THE FUNCTION
-    push_call_info()      = { fn_name = (printed(fn_name_to_str(instr.fn_name)));
+    push_call_info()      = { fn_name = (printed(user_repr(instr.fn_name)));
                               params = (if p == nothing then :blank_obj else value(p) : p <- instr.params);
                               return (mk_gen_call("push_call_info_wrapper", fn_name, params, ()));
                             },
@@ -709,8 +709,8 @@ implicit {
 
   String* gen_cache_clearing_code(ImplArg arg) {
     code = ();
-    for fn_symb <- rand_sort(lookup(cached_semi_consts_by_impl_arg, arg, [])):
-      cache_var_name = to_c_semi_const_memo_var_name(fn_symb);
+    for fn_id <- rand_sort(lookup(cached_semi_consts_by_impl_arg, arg, [])):
+      cache_var_name = to_c_memo_var_name(fn_id);
       code = (code | "release(env." & cache_var_name & ");", "env." & cache_var_name & " = make_blank_obj();");
     ;
     return code;
@@ -834,8 +834,8 @@ implicit {
     pars_info = (gen_par_info(p) : p <- params);
     code_frags, args = unzip(pars_info);
     call_code = if var != nothing
-      then mk_fn_call(value(var), to_c_fn_name(name, |params|), args)
-      else mk_fn_call(to_c_fn_name(name, |params|), args);
+      then mk_fn_call(value(var), to_c_fn_name(name), args)
+      else mk_fn_call(to_c_fn_name(name), args);
     return join(code_frags) & call_code;
 
 

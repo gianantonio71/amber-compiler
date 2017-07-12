@@ -93,13 +93,13 @@ implicit program : Program, options : CompilationOptions {
     body = body & rand_sort([auto_cleanup(v, t) : v, t <- procedure.auto_vars]);
     body = body & rand_sort([cleanup_db(v, t) : v, t <- procedure.db_vars]);
 
-    debug_code = (push_call_info(procedure.name, (just(fn_arg(i)) : p @ i <- procedure.args)));
+    debug_code = (push_call_info(procedure.id, (just(fn_arg(i)) : p @ i <- procedure.args)));
 
     val = if procedure.res_type != nothing then fn_res_var else object(:void); ## BAD: HERE I'M CHEATING...
     body = debug_code & body & (pop_call_info, ret_val(val));
 
     return obj_proc_def(
-      name:           procedure.name,
+      name:           procedure.id,
       args:           arity(procedure) * (:obj),
       impl_args:      [],
       loc_auto_vars:  procedure.auto_vars,
@@ -122,7 +122,7 @@ implicit program : Program, options : CompilationOptions {
       body = body & gen_eval_code(func.expr, fn_res_var);
     ;
 
-    body = (push_call_info(func.name, (maybe(fn_arg(i), a :: FormalObjArg) : a @ i <- func.args))) & body & (pop_call_info, ret_val(fn_res_var));
+    body = (push_call_info(func.id, (maybe(fn_arg(i), a :: FormalObjArg) : a @ i <- func.args))) & body & (pop_call_info, ret_val(fn_res_var));
 
     args = (
       match (a)
@@ -134,7 +134,7 @@ implicit program : Program, options : CompilationOptions {
     cached = func.args == () and not is_too_simple_to_be_worth_caching(func.expr);
 
     return obj_proc_def(
-      name:           func.name,
+      name:           func.id,
       args:           args,
       impl_args:      keys(func.impl_args),
       loc_auto_vars:  [],
@@ -161,7 +161,7 @@ implicit program : Program, options : CompilationOptions {
 
 
   [ObjProcDef] dispatch_functions {
-    fns_by_name_and_arity = group_by(program.fndefs, (family_id($.name), arity($)));
+    fns_by_name_and_arity = group_by(program.fndefs, family_id($.id));
     overloaded_fns = [fns : unused_var, fns <- fns_by_name_and_arity, |fns| > 1];
     return [dispatch_function(fns) : fns <- overloaded_fns];
   }
@@ -169,7 +169,7 @@ implicit program : Program, options : CompilationOptions {
 
   ObjProcDef dispatch_function([+Function] fns) {
     assert |fns| > 1;
-    assert |[family_id(f.name) : f <- fns]| == 1;
+    assert |[family_id(f.id) : f <- fns]| == 1;
     assert |[|fn.args| : fn <- fns]| == 1; // All functions have the same arity
     assert |an_elem(fns).args| > 0;
 
@@ -178,7 +178,7 @@ implicit program : Program, options : CompilationOptions {
     count = |fns|;
 
     rand_fn         = an_elem(fns);
-    name            = rand_fn.name;
+    id              = rand_fn.id;
     rand_args       = nonempty(rand_fn.args);
     obj_args        = (i : a @ i <- rand_args, a :: FormalObjArg);
     rand_impl_args  = rand_fn.impl_args;
@@ -192,7 +192,7 @@ implicit program : Program, options : CompilationOptions {
         ptrns = if i < count-1
           then (type_to_pseudotype_pattern(cast_type(fn.args(j).type), program.typedefs) : j <- disp_args)
           else (ptrn_any : unused_var <- disp_args);
-        code = (call_proc(l0, fn.name, call_args), exit_block);
+        code = (call_proc(l0, fn.id, call_args), exit_block);
         return (ptrns: ptrns, code: code);
       } : fn @ i <- rand_sort(fns)
     );
@@ -207,7 +207,7 @@ implicit program : Program, options : CompilationOptions {
     );
 
     return obj_proc_def(
-      name:           family_id(name),
+      name:           family_id(id),
       args:           args,
       impl_args:      [], ## THIS IS WRONG, BUT IT SHOULDN'T MATTER FOR NOW
       loc_auto_vars:  [],

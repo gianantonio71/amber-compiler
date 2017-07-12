@@ -1,8 +1,8 @@
-type TopLevelFnDef        = top_level_fn_def(fndef: SynFnDef, unique_name: BasicFnSymb, impl_args: [ImplArgDecl]);
+type TopLevelFnDef        = top_level_fn_def(fndef: SynFnDef, unique_name: PlainFnId, impl_args: [ImplArgDecl]);
 type NestedFnDef          = nested_fn_def(
                               fndef:              SynFnDef,
                               parent_fndef:       SynFnDef,
-                              parent_unique_name: BasicFnSymb,
+                              parent_unique_name: PlainFnId,
                               impl_args:          [ImplArgDecl]
                             );
 type UsingBlockFnDef      = using_block_method_def(target: Atom, fndef: DBMethodDef);
@@ -13,22 +13,28 @@ type Artifact = null_artifact, SynProcDef, SynAutoDef, SynDBDef, AutoMethodDef, 
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type PreAutoCall  = pre_auto_method_call(var: AnyAutoVar?, method: MethodSymbol);
-type PreDBCall    = pre_db_method_call(var: AnyDBVar?, method: MethodSymbol);
-type PreCall      = PreAutoCall, PreDBCall;
+type PreFnCall        = pre_fn_call(symbol: FnSymbol);
+type PreNestedFnCall  = pre_nested_fn_call(symbol: FnSymbol, parent_id: PlainFnId);
+type PreAutoCall      = pre_auto_method_call(var: AnyAutoVar?, method: MethodSymbol);
+type PreDBCall        = pre_db_method_call(var: AnyDBVar?, method: MethodSymbol);
+type PreCall          = PreFnCall, PreNestedFnCall, PreAutoCall, PreDBCall;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-TopLevelFnDef top_level_fn_def(SynFnDef fd, BasicFnSymb un, [ImplArgDecl] ias) =
+TopLevelFnDef top_level_fn_def(SynFnDef fd, PlainFnId un, [ImplArgDecl] ias) =
   top_level_fn_def(fndef: fd, unique_name: un, impl_args: ias);
 
-NestedFnDef nested_fn_def(SynFnDef fd, SynFnDef pfd, BasicFnSymb pun, [ImplArgDecl] ias) =
+NestedFnDef nested_fn_def(SynFnDef fd, SynFnDef pfd, PlainFnId pun, [ImplArgDecl] ias) =
   nested_fn_def(fndef: fd, parent_fndef: pfd, parent_unique_name: pun, impl_args: ias);
 
 UsingBlockFnDef     using_block_method_def(Atom t, DBMethodDef fd)  = using_block_method_def(target: t, fndef: fd);
 UsingBlockUpdateDef using_block_update_def(Atom t, UpdateDef ud)    = using_block_update_def(target: t, fndef: ud);
 
 ////////////////////////////////////////////////////////////////////////////////
+
+PreFnCall pre_fn_call(FnSymbol s) = pre_fn_call(symbol: s);
+
+PreNestedFnCall pre_nested_fn_call(FnSymbol s, PlainFnId p) = pre_nested_fn_call(symbol: s, parent_id: p);
 
 PreAutoCall pre_auto_method_call(MethodSymbol m)                = pre_auto_method_call(method: m);
 PreAutoCall pre_auto_method_call(AnyAutoVar v, MethodSymbol m)  = pre_auto_method_call(var: v, method: m);
@@ -37,6 +43,11 @@ PreDBCall pre_db_method_call(MethodSymbol m)              = pre_db_method_call(m
 PreDBCall pre_db_method_call(AnyDBVar v, MethodSymbol m)  = pre_db_method_call(var: v, method: m);
 
 ////////////////////////////////////////////////////////////////////////////////
+
+FnFamilyId fn_family_id(PreFnCall precall, Nat arity) = fn_family_id(precall.symbol, arity);
+
+FnFamilyId fn_family_id(PreNestedFnCall precall, Nat arity) =
+  nested_fn_id(precall.parent_id, fn_family_id(precall.symbol, arity));
 
 AutoMethodCall apply_args(PreAutoCall pre_call, Expr* args) =
   auto_method_call(
@@ -175,11 +186,11 @@ implicit syn_prg : SynPrg {
                                                 [(fd, set(b.args)) : b <- impl_blocks, fd <~ b.fn_defs];
 
 
-  [AtomicFnSymb -> [Nat -> [+(SynFnDef, [ImplArgDecl])]]] top_level_fndefs_by_name_arity =
+  [FnSymbol -> [Nat -> [+(SynFnDef, [ImplArgDecl])]]] top_level_fndefs_by_name_arity =
     [s -> group_by(fs, arity(left($))) : s, fs <- group_by(ext_syn_fn_defs, left($).name)];
 
 
-  [AtomicFnSymb -> [Nat -> Nat*]] fn_defs_arg_arities {
+  [FnSymbol -> [Nat -> Nat*]] fn_defs_arg_arities {
     arities = merge_values([
       [fd.name -> [arity(fd) -> (arity(a) : a <- fd.args)]]
       : efd <- ext_syn_fn_defs, (fd?, _) ?= efd
@@ -260,10 +271,10 @@ implicit syn_prg : SynPrg {
 
   ## BAD BAD BAD: THESE TWO FUNCTIONS EXISTS ONLY BECAUSE OF A LIMITATION OF THE TYPECHECKER...
 
-  Bool non_nested_function_exists(AtomicFnSymb fn_symb) = fn_defs_arg_arities(fn_symb, *);
+  Bool non_nested_function_exists(FnSymbol fn_symb) = fn_defs_arg_arities(fn_symb, *);
 
 
-  Bool non_nested_function_exists(AtomicFnSymb fn_symb, Nat arity) =
+  Bool non_nested_function_exists(FnSymbol fn_symb, Nat arity) =
     fn_defs_arg_arities(fn_symb, *) and fn_defs_arg_arities[fn_symb](arity, *);
 }
 
@@ -359,7 +370,7 @@ implicit syn_prg : SynPrg, artifact : SynAutoDef {
 ////////////////////////////////////////////////////////////////////////////////
 
 implicit syn_prg : SynPrg, artifact : Artifact {
-  [AtomicFnSymb -> [+NzNat]] protocol_methods {
+  [FnSymbol -> [+NzNat]] protocol_methods {
     args, typevars = match (artifact)
       top_level_fn_def()  |
       nested_fn_def()     = (artifact.fndef.args, artifact.fndef.typevars),
@@ -516,17 +527,22 @@ implicit syn_prg : SynPrg, artifact : Artifact {
       _                   = [];
 
 
-  [AtomicFnSymb -> [+Nat]] local_fn_defs_arities =
+  [FnSymbol -> [+Nat]] local_fn_defs_arities =
     merge_values([[fd.name -> arity(fd)] : fd <- local_fn_defs]);
 
 
-  [AtomicFnSymb -> [+Nat -> Nat*]] local_fn_defs_arg_arities {
-    arities = merge_values([
-      [fd.name -> [arity(fd) -> (arity(a) : a <- fd.args)]]
-      : fd <- local_fn_defs]
-    );
-    return [sgn -> nonempty_map(merge(pas)) : sgn, pas <- arities];
-  }
+  // [FnSymbol -> [+Nat -> Nat*]] local_fn_defs_arg_arities {
+  //   arities = merge_values([
+  //     [fd.name -> [arity(fd) -> (arity(a) : a <- fd.args)]]
+  //     : fd <- local_fn_defs]
+  //   );
+  //   return [sgn -> nonempty_map(merge(pas)) : sgn, pas <- arities];
+  // }
+
+  [FnSymbol, Nat, Nat*] local_fn_arity_args_arities = [
+    fd.name, arity(fd), (arity(a) : a <- fd.args) : fd <- local_fn_defs
+  ];
+
 
 
   [ClsVar -> NzNat] cls_vars_arities =
@@ -538,41 +554,29 @@ implicit syn_prg : SynPrg, artifact : Artifact {
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  Bool function_exists(AtomicFnSymb fn_symb) = non_nested_function_exists(fn_symb);
+  Bool nested_function_exists(FnSymbol fn_symb, Nat arity) = local_fn_arity_args_arities(fn_symb, arity, *);
 
 
-  Bool function_exists(AtomicFnSymb fn_symb, Nat arity) = non_nested_function_exists(fn_symb, arity);
-
-
-  Bool function_exists(NestedFnFamilyId fn_symb) =
-    local_fn_defs_arg_arities(fn_symb.inner, *);
-
-
-  Bool function_exists(NestedFnFamilyId fn_symb, Nat arity) =
-    local_fn_defs_arg_arities(fn_symb.inner, *) and
-    local_fn_defs_arg_arities[fn_symb.inner](arity, *);
-
-
-  Nat* arg_arities(AtomicFnSymb fn_symb, Nat arity) =
-    if arity == 0 or lookup(protocol_methods, fn_symb, [])(arity)
-      then (0 : i < arity)
-      else fn_defs_arg_arities[fn_symb][arity];
+  Nat* arg_arities(PlainFnFamilyId id) =
+    if id.arity == 0 or lookup(protocol_methods, id.symbol, [])(id.arity)
+      then (0 : i < id.arity)
+      else fn_defs_arg_arities[id.symbol][id.arity];
       ## BUG BUG BUG: THIS CRASHES THE COMPILER...
-      // else fn_defs_arg_arities(fn_symb)(arity);
+      // else fn_defs_arg_arities(id.symbol)(arity);
 
 
-  Nat* arg_arities(NestedFnFamilyId fn_symb, Nat arity) =
-    local_fn_defs_arg_arities[fn_symb.inner][arity];
+  Nat* arg_arities(NestedFnFamilyId id) =
+    local_fn_arity_args_arities(id.inner.symbol, id.inner.arity, !!);
 
 
-  [+[ImplArg]] fn_impl_args(AtomicFnSymb fn_symb, Nat arity) {
-    return [[]] if arity != 0 and lookup(protocol_methods, fn_symb, [])(arity);
-    ext_fds = top_level_fndefs_by_name_arity[fn_symb][arity];
+  [+[ImplArg]] fn_impl_args(PlainFnFamilyId id) {
+    return [[]] if id.arity != 0 and lookup(protocol_methods, id.symbol, [])(id.arity);
+    ext_fds = top_level_fndefs_by_name_arity[id.symbol][id.arity];
     return [[a.name : a <- ias] : efd <- ext_fds, ias = right(efd)];
   }
 
 
-  [+[ImplArg]] fn_impl_args(NestedFnFamilyId nested_fn_symb, Nat arity) =
+  [+[ImplArg]] fn_impl_args(NestedFnFamilyId) =
     match (artifact)
       top_level_fn_def() | nested_fn_def()  = [[a.name : a <- artifact.impl_args]];
 }
