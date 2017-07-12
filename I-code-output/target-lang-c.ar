@@ -4,19 +4,10 @@ CCodeOutput compile_to_c(CompiledPrg prg) {
   symbs = used_symbols(prg);
   assert |symbs| <= 64 * 1024; ## IMPLEMENT PROPERLY
 
-  symb_names = ("symb_idx_" & printed(match (s) object(a?) = a) : s <- symbs);
-
-  symb_strs = (to_c_expr(s) : s <- symbs);
-
-  c_code = ("const uint16 " & symb_names(i) & " = " & printed(i) & ";" : i < |symbs|) & 4 * ("") &
-           ("const OBJ " & symb_strs(i) & " = make_symb(" & symb_names(i) & ");" : i < |symbs|) & 4 * ("");
-
-  symb_decls = ("const uint32 EMB_SYMB_COUNT = " & printed(|symbs|) & ";") & 4 * ("");
-  c_code = c_code & symb_decls;
+  c_code = ("const uint16 " & symb_idx_name(s) & " = " & printed(i) & ";" : s @ i <- symbs) & 4 * ("");
 
   symb_strs  = ("  \"" & _str_(_obj_(s)) & "\"," : s <- symbs);
-  c_code     = c_code & ("const char *map_symb_to_str[EMB_SYMB_COUNT] = {") & symb_strs & ("};") & 4 * ("");
-  symb_decls = symb_decls & ("extern const char *map_symb_to_str[EMB_SYMB_COUNT];") & 4 * ("");
+  c_code     = c_code & ("const char *map_symb_to_str[" & printed(|symbs|) & "] = {") & symb_strs & ("};") & 4 * ("");
 
   cls_defs = cls_defs(prg);
 
@@ -79,7 +70,7 @@ CCodeOutput compile_to_c(CompiledPrg prg) {
     "namespace generated {"
   ) & indent_lines(c_code & proc_code.body & int_seqs_defs & ("", "") & wrappers_decls & ("", "") & wrappers_impls) & ("}");
 
-  body = body & runtime_callbacks;
+  body = body & runtime_callbacks(|symbs|);
   body = body & c_main_fn if (p <- prg.procs : p.name == proc_symbol(:main));
 
   header = if wrappers_decls != ()
@@ -112,7 +103,7 @@ CCodeOutput compile_to_c(CompiledPrg prg) {
 String* gen_env_decl(CompiledPrg prg) {
   all_impl_args = union([p.impl_args : p <- prg.procs]);
 
-  env_decl = ("struct ENV {") & ("  OBJ " & _str_(bare_id(a)) & "_V;" : a <- rand_sort(all_impl_args));
+  env_decl = ("struct ENV {") & ("  OBJ " & to_c_var_decl_name(impl_arg(bare_id(a))) & ";" : a <- rand_sort(all_impl_args));
 
   semi_consts_cache_vars = rand_sort([p.name : p <- prg.procs, p.cached and p.impl_args != []]);
   semi_consts_cache_vars_decls = ("  OBJ " & to_c_semi_const_memo_var_name(v) & ";" : v <- semi_consts_cache_vars);
@@ -202,14 +193,15 @@ Int pow(Int b, Nat e) {
 
 
 String+ generate_push_call_info_wrapper(Nat arity) {
-  signature = "void push_call_info_wrapper(const char *fn_name" & append((", OBJ p" & printed(i) : i < arity)) & ")";
+  signature = "void push_call_info_wrapper(const char *fn_name" &
+              append((", OBJ " & to_c_var_decl_name(fn_arg(i)) : i < arity)) & ")";
   code = (signature & " {", "#ifndef NDEBUG");
   if arity == 0:
     code = code & ("  push_call_info(fn_name, 0, (OBJ *)0);");
   else
     code = code & ("  OBJ *params = new_obj_array(" & printed(arity) & ");");
     for i < arity:
-      code = code & ("  params[" & printed(i) & "] = p" & printed(i) & ";");
+      code = code & ("  params[" & printed(i) & "] = " & to_c_var_decl_name(fn_arg(i)) & ";");
     ;
     code = code & ("  push_call_info(fn_name, " & printed(arity) & ", params);");
   ;
@@ -294,7 +286,7 @@ implicit {
 
   String gen_c_decl(ClsDef cd, Nat id) {
     par_list = append(cd.arity * ("OBJ") & ("const OBJ *", "const CLS *", "ENV &"), ", ");
-    return "OBJ cls_" & printed(id) & "(" & par_list & ");";
+    return "OBJ lambda_" & printed(id) & "(" & par_list & ");";
   }
 
 
@@ -367,13 +359,13 @@ implicit {
       obj_proc_def()    = "OBJ ",
       bool_proc_def()   = "bool ";
 
-    String gen_fn_par(ObjProcPar par, Nat pos) =
-      obj   = "OBJ p" & printed(pos),
+    String gen_fn_arg(ObjProcPar par, Nat pos) =
+      obj   = "OBJ " & to_c_var_decl_name(fn_arg(pos)),
       cls() = "const CLS &" & to_c_var_decl_name(if par.name? then par.name else cls_var(pos));
 
     String* gen_fn_pars(ProcDef pd) =
-      obj_proc_def()  = (gen_fn_par(p, i) : p @ i <- pd.args) & ("ENV &env"),
-      bool_proc_def() = ("OBJ p" & printed(n) : n < arity(pd));
+      obj_proc_def()  = (gen_fn_arg(p, i) : p @ i <- pd.args) & ("ENV &env"),
+      bool_proc_def() = ("OBJ " & to_c_var_decl_name(fn_arg(n)) : n < arity(pd));
   }
 
 
@@ -399,8 +391,8 @@ implicit {
 
   ## DUPLICATED CODE
   String* compile_to_c(ClsDef cd, Nat id) {
-    par_list  = ("OBJ p" & printed(n) : n < cd.arity) & ("const OBJ *D", "const CLS *C", "ENV &env"); ## BAD
-    signature = "OBJ cls_" & printed(id) & "(" & append(par_list, ", ") & ")";
+    par_list  = ("OBJ " & to_c_var_decl_name(fn_arg(n)) : n < cd.arity) & ("const OBJ *captured", "const CLS *captured_cls", "ENV &env"); ## BAD
+    signature = "OBJ lambda_" & printed(id) & "(" & append(par_list, ", ") & ")";
 
     vars_decls = gen_vars_decls(cd.body);
     comp_body = compile_to_c(cd.body, nothing);
@@ -487,7 +479,7 @@ implicit {
 
 
   String* compile_queue_update_to_c(AutoSymbol type, BlockNodeId node_id, Nat* args) {
-    method_name = queue_update_method_name(node_id, type);
+    method_name = queue_update_method_name(type, node_id);
     args_str = append((", " & printed(a) : a <- args));
     return (method_name & "(self" & args_str & ");");
   }
@@ -757,7 +749,7 @@ implicit {
 
     body_code = (
       ("" if i > 0) &
-      ("case symb_idx_" & _str_(a) & ":" : a <- rand_sort(as)) &
+      ("case " & symb_idx_name(a) & ":" : a <- rand_sort(as)) &
       indent_lines((compile_to_c(is, block_id) | "break;"))
       : as, is @ i <- rand_sort(cases)
     );
@@ -870,7 +862,7 @@ implicit {
         par_name = to_c_expr(par_var);
         code = (
           "CLS " & par_name & ";",
-          par_name & ".fn_ptr_" & printed(p.cls.arity) & " = " & "cls_" & printed(cls2id(p.cls)) & ";"
+          par_name & ".fn_ptr_" & printed(p.cls.arity) & " = " & "lambda_" & printed(cls2id(p.cls)) & ";"
         );
 
         if p.capt_vars != ():
@@ -923,7 +915,7 @@ implicit {
   String* compile_runtime_check_to_c(AtomicExpr cond, String file, NzNat line, Maybe[String] text, <StdVar, ImplArg>* vars) {
     text_arg = if text != nothing then printed(value(text)) else "0";
     header = (
-      "if (is_symb(" & to_c_expr(cond) & ", symb_idx_false)) {",
+      "if (is_symb(" & to_c_expr(cond) & ", " & symb_idx_name(false) & ")) {",
       "  print_assertion_failed_msg(" & printed(file) & ", " & printed(line) & ", " & text_arg & ");"
     );
     vars_content = ("  dump_var(" & printed(_str_(bare_id(v))) & ", " & to_c_var_ref_name(v) & ");" : v <- vars);
@@ -973,14 +965,14 @@ implicit {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-String* runtime_callbacks = (
+String* runtime_callbacks(Nat symbs_count) = (
   "",
   "const char *symb_repr(uint16 idx) {",
   "  return generated::map_symb_to_str[idx];",
   "}",
   "",
   "uint32 embedded_symbs_count() {",
-  "  return generated::EMB_SYMB_COUNT;",
+  "  return " & printed(symbs_count) & ";",
   "}"
 );
 

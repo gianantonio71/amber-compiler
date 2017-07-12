@@ -79,7 +79,7 @@ implicit program : Program, options : CompilationOptions {
 
     body = rand_sort([auto_pre_init(v, t) : v, t <- procedure.auto_vars]) &
            rand_sort([init_db(v, t) : v, t <- procedure.db_vars]) &
-           (set_var(a.var, fn_par(i)) : a @ i <- procedure.args);
+           (set_var(a.var, fn_arg(i)) : a @ i <- procedure.args);
 
     // Evaluating the expression
     proc_body = procedure.body;
@@ -93,7 +93,7 @@ implicit program : Program, options : CompilationOptions {
     body = body & rand_sort([auto_cleanup(v, t) : v, t <- procedure.auto_vars]);
     body = body & rand_sort([cleanup_db(v, t) : v, t <- procedure.db_vars]);
 
-    debug_code = (push_call_info(procedure.name, (just(fn_par(i)) : p @ i <- procedure.args)));
+    debug_code = (push_call_info(procedure.name, (just(fn_arg(i)) : p @ i <- procedure.args)));
 
     val = if procedure.res_type != nothing then fn_res_var else object(:void); ## BAD: HERE I'M CHEATING...
     body = debug_code & body & (pop_call_info, ret_val(val));
@@ -115,14 +115,14 @@ implicit program : Program, options : CompilationOptions {
     tmp_bvar,   var_gen = next_bool_var(var_gen);
 
     // Setting named variables for parameters
-    body = (set_var(a.var, fn_par(i)) : a @ i <- func.args, a :: FormalObjArg and a.var?);
+    body = (set_var(a.var, fn_arg(i)) : a @ i <- func.args, a :: FormalObjArg and a.var?);
 
     // Evaluating the expression
     let context=func, var_subst_map = [], cls_var_subst_map = [], next_var_gen=var_gen:
       body = body & gen_eval_code(func.expr, fn_res_var);
     ;
 
-    body = (push_call_info(func.name, (maybe(fn_par(i), a :: FormalObjArg) : a @ i <- func.args))) & body & (pop_call_info, ret_val(fn_res_var));
+    body = (push_call_info(func.name, (maybe(fn_arg(i), a :: FormalObjArg) : a @ i <- func.args))) & body & (pop_call_info, ret_val(fn_res_var));
 
     args = (
       match (a)
@@ -184,7 +184,7 @@ implicit program : Program, options : CompilationOptions {
     rand_impl_args  = rand_fn.impl_args;
 
     disp_args = choose_disp_args(((a.type : a <- nonempty(fn.args)) : fn <- rand_sort(fns)), program.typedefs);
-    call_args = (if a :: FormalObjArg then fn_par(i) else cls_var(i) : a @ i <- rand_args);
+    call_args = (if a :: FormalObjArg then fn_arg(i) else cls_var(i) : a @ i <- rand_args);
 
     ## HERE WE SHOULD LEAVE THE FUNCTION WITH THE MOST EXPENSIVE CHECKING LAST
     ## SO THAT IT CAN BE MATCHED BY THE CHEAP "ANY" PATTERN.
@@ -197,7 +197,7 @@ implicit program : Program, options : CompilationOptions {
       } : fn @ i <- rand_sort(fns)
     );
 
-    code = gen_switch_code((fn_par(i) : i <- disp_args), cases, next_var_gen = blank_var_gen);
+    code = gen_switch_code((fn_arg(i) : i <- disp_args), cases, next_var_gen = blank_var_gen);
 
     args = (
       match (a)
