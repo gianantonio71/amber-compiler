@@ -299,4 +299,52 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       ];
     }
   }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////
+
+  [TypeCheckingError] type_err_msgs(Type actual_type, Type exp_type) {
+    errs = match (actual_type, exp_type)
+      ne_record_type(afs?), ne_record_type(efs?)  = ne_record_type_err_msgs(afs, efs),
+      ne_record_type(),     type_ref(ts?)         = type_err_msgs(actual_type, expand_type_ref(ts, typedefs)),
+      tag_obj_type(),       _                     = tag_obj_type_err_msgs(actual_type, exp_type),
+      union_type(ts?),      _                     = union([type_err_msgs(t, exp_type) : t <- ts]),
+      _,                    _                     = [];
+
+    return if errs != [] then errs else [unexpected_actual_type(actual_type, exp_type)];
+  }
+
+
+  [TypeCheckingError] ne_record_type_err_msgs(RecordTypeFields actual_fields, RecordTypeFields exp_fields) {
+    // Searching first for missing or unexpected fields
+    unexpected_fields = [l : l, unused_var <- actual_fields, not exp_fields(l, *)];
+    missing_fields = [l : l, unused_var <- exp_fields, not actual_fields(l, *)];
+    if unexpected_fields != [] or missing_fields != []:
+      return [unexpected_rec_field(f) : f <- unexpected_fields] & [missing_rec_field(f) : f <- missing_fields];
+    ;
+
+    // Checking type and optionality status of individual fields
+    return union([{
+      exp_field = exp_fields[l];
+      return [
+        rec_field_is_mandatory(l) if f.optional and not exp_field.optional,
+        unexpected_rec_field_type(l, f.type, exp_field.type) if not is_subset(f.type, exp_field.type)
+      ];
+    } : l, f <- actual_fields]);
+  }
+
+
+  [TypeCheckingError] tag_obj_type_err_msgs(TagObjType actual_type, Type exp_type) {
+    actual_tag_type = actual_type.tag_type;
+    if is_symb_singl_type(actual_tag_type):
+      actual_tag = only_symb(actual_tag_type);
+      if are_ptype_disjoint(exp_type, tag_obj_type(symb_type(actual_tag), type_any)):
+        return [tagged_values_not_in_type(actual_tag, exp_type)];
+      else
+        exp_obj_type = restricted_untagged_objs_supertype(exp_type, bare_obj(actual_tag));
+        return type_err_msgs(actual_type.obj_type, exp_obj_type) if not is_subset(actual_type.obj_type, exp_obj_type);
+      ;
+    ;
+    return [];
+  }
 }
