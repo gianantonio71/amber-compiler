@@ -20,11 +20,11 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     var()                 |
     fn_arg()              |
     impl_arg()            |
-    auto_memb_var()       = env[expr],
+    signal_var()          = env[expr],
     prev_var_value(v?)    = env[v],
     memb_var()            = memb_var_type(expr),
-    qual_db_memb_var()    = qual_db_memb_var_type(expr),
-    qual_auto_memb_var()  = qual_auto_memb_var_type(expr),
+    qual_memb_var()       = qual_memb_var_type(expr),
+    qual_signal_var()     = qual_signal_var_type(expr),
     fn_call()             = fn_call_expr_type(expr.fn_id, expr.args, expr.impl_args, env),
     cls_call()            = closures[cast_cls_var(expr.name)].out_type,
     builtin_call()        = builtin_call_expr_type(expr.name, expr.args, env),
@@ -62,14 +62,14 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     data_base() = context.state_vars[var].type;
 
 
-  Type qual_db_memb_var_type(QualDBMembVar var) {
+  Type qual_memb_var_type(QualMembVar var) {
     db_type = var_type(var.db_var);
     db = data_bases_by_id[db_type];
     return db.state_vars[var.memb_var].type;
   }
 
 
-  Type qual_auto_memb_var_type(QualAutoMembVar var) {
+  Type qual_signal_var_type(QualSignalVar var) {
     auto_type = var_type(var.auto_var);
     auto = automaton_by_id(auto_type);
     memb_var = var.memb_var;
@@ -269,7 +269,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
 
   Type builtin_call_expr_type(BuiltIn name, Expr+ params, [EnvVar -> Type] env) =
-    obj   = untagged_objs_supertype(expr_type(params(0), env)),
+    untag = untagged_objs_supertype(expr_type(params(0), env)),
     tag   = tag_supertype(expr_type(params(0), env)),
     _     = fn_call_type(builtin_to_fn_type(builtin_signature(name)), params, [], env);
 
@@ -547,9 +547,9 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
       elif right :: VarField
         then refine(right.expr, right.field, left, env)
       elif left :: <size_expr(coll: <EnvVar, VarField>)> and right :: <object(Nat)>
-        then refine(left.coll, _obj_(right), env)
+        then refine(left.coll, bare_obj(right), env)
       elif right :: <size_expr(coll: <EnvVar, VarField>)> and left :: <object(Nat)>
-        then refine(right.coll, _obj_(left), env)
+        then refine(right.coll, bare_obj(left), env)
       else
         ([], []);
 

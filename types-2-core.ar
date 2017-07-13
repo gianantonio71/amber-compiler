@@ -69,7 +69,7 @@ type Operator = UnaryOperator, BinaryOperator;
 type BuiltIn  = neg, add, sub, mult, div, mod, lt, le, gt, ge,
                 fneg, fadd, fsub, fmult, fdiv, fsqrt, floor, ceiling, float, mantissa, dec_exp,
                 str, symb, isort,
-                slice, cat, rev, tag, obj, parse, print,
+                slice, cat, rev, tag, untag, parse, print,
                 rand_nat, rand_elem, counter, ticks;
 
 type StdFnSymb        = fn_symbol(Atom);
@@ -93,32 +93,32 @@ type UpdateSymbol   = msg_handler, update_symbol(Atom);
 type AutoSymbol     = auto_symbol(Atom);
 type DBSymbol       = db_symbol(Atom);
 
-type StdVar           = var(Atom);
-type FnArg            = fn_arg(Nat);
-type ImplArg          = impl_arg(Atom);
+type StdVar         = var(Atom);
+type FnArg          = fn_arg(Nat);
+type ImplArg        = impl_arg(Atom);
 
-type MembVar          = memb_var(Atom);
+type MembVar        = memb_var(Atom);
 
-type AutoMembVar      = auto_memb_var(Atom);
+type SignalVar      = signal_var(Atom);
 
-type QualDBMembVar    = qual_db_memb_var(db_var: AnyDBVar, memb_var: MembVar);
-type QualAutoMembVar  = qual_auto_memb_var(auto_var: AnyAutoVar, memb_var: AutoMembVar);
+type QualMembVar    = qual_memb_var(db_var: AnyDBVar, memb_var: MembVar);
+type QualSignalVar  = qual_signal_var(auto_var: AnyAutoVar, memb_var: SignalVar);
 
-type AnyMembVar     = MembVar, QualDBMembVar;
-type AnyAutoMembVar = AutoMembVar, QualAutoMembVar;
+type AnyMembVar     = MembVar, QualMembVar;
+type AnySignalVar   = SignalVar, QualSignalVar;
 
-type PrevVarValue = prev_var_value(AnyAutoMembVar);
+type PrevVarValue   = prev_var_value(AnySignalVar);
 
-type LocAutoVar   = loc_auto_var(Atom);
-type MembAutoVar  = memb_auto_var(Atom);
-type AnyAutoVar   = LocAutoVar, MembAutoVar;
+type LocAutoVar     = loc_auto_var(Atom);
+type NestedAutoVar  = nested_auto_var(Atom);
+type AnyAutoVar     = LocAutoVar, NestedAutoVar;
 
 type LocDBVar     = loc_db_var(Atom);
-type MembDBVar    = memb_db_var(Atom);
-type NestedDBVar  = nested_db_var(outer: AnyDBVar, inner: MembDBVar);
-type AnyDBVar     = LocDBVar, MembDBVar, NestedDBVar;
+type NestedDBVar  = nested_db_var(Atom);
+type QualDBVar    = qual_db_var(outer: AnyDBVar, inner: NestedDBVar);
+type AnyDBVar     = LocDBVar, NestedDBVar, QualDBVar;
 
-type Var        = StdVar, FnArg, ImplArg, AnyMembVar, AnyAutoMembVar, PrevVarValue;
+type Var        = StdVar, FnArg, ImplArg, AnyMembVar, AnySignalVar, PrevVarValue;
 
 type RelVar     = rel_var(Atom);
 type QualRelVar = qual_rel_var(db_var: AnyDBVar, rel_var: RelVar);
@@ -262,7 +262,7 @@ type AtomicFnStmt   = assignment_stmt(vars: StdVar+, value: Expr),
                       print_stmt(Expr),
                       seq_update_stmt(seq_var: StdVar, idx: Expr, value: Expr); ## NOT SURE IT BELONGS HERE...
 
-type AtomicUpdateStmt = send_msg_stmt(target: MembDBVar, msg: Expr),
+type AtomicUpdateStmt = send_msg_stmt(target: NestedDBVar, msg: Expr),
                         try_update_stmt(name: UpdateSymbol, args: Expr*),
                         set_memb_var_stmt(var: MembVar, value: Expr),
                         delete_stmt(var: RelVar, fields: Maybe[Expr]+),
@@ -321,7 +321,7 @@ type Output     = output(type: NeType, discrete: Bool);
 // A signals state entry x -> true means the signal must be set or have changed, for discrete and continuous
 // signals, respectively. x -> false means the opposite. Signals not in the map do not affect the condition
 type ReactCond    = on_becoming_true_cond(cond: Expr),
-                    react_cond(cond: Expr, signals_state: [+AnyAutoMembVar -> Bool]);
+                    react_cond(cond: Expr, signals_state: [+AnySignalVar   -> Bool]);
 
 type StateVar       = state_var(type: NeType, init_value: Expr, updates: [StateVarUpdate]);
 type StateVarUpdate = state_var_update(value: Expr, cond: ReactCond);
@@ -343,21 +343,21 @@ type TimeExpr   = BasicTimeExpr, CyclicTimeExpr;
 
 type TimeRule   = boolean_time_rule(expr: Expr, time_expr: TimeExpr),
                   unchanged_time_rule(expr: Expr, time_expr: TimeExpr),
-                  since_time_rule(signals: [+AutoMembVar], time_expr: TimeExpr, starts_at_time_0: Bool);
+                  since_time_rule(signals: [+SignalVar], time_expr: TimeExpr, starts_at_time_0: Bool);
 
 ///////////////////////////////////////////////////////////////////////////////
 
 type Automaton  = automaton(
                     name:           AutoSymbol,
-                    params:         [AutoMembVar -> (type: NeType?, value: Expr)],
-                    inputs:         [AutoMembVar -> Input],
-                    outputs:        [AutoMembVar -> Output],
-                    state:          [AutoMembVar -> StateVar],
-                    rules:          [AutoMembVar -> Expr],
-                    time_rules:     [AutoMembVar -> TimeRule],
-                    discrete_rules: [AutoMembVar -> [+DiscreteRule]],
-                    nested_autos:   [MembAutoVar -> (type: AutoSymbol, args: [Atom -> Expr])],
-                    nested_dbs:     [MembDBVar -> (type: DBSymbol, msg_send_rule: MsgSendRule?)],
+                    params:         [SignalVar -> (type: NeType?, value: Expr)],
+                    inputs:         [SignalVar -> Input],
+                    outputs:        [SignalVar -> Output],
+                    state:          [SignalVar -> StateVar],
+                    rules:          [SignalVar -> Expr],
+                    time_rules:     [SignalVar -> TimeRule],
+                    discrete_rules: [SignalVar -> [+DiscreteRule]],
+                    nested_autos:   [NestedAutoVar -> (type: AutoSymbol, args: [Atom -> Expr])],
+                    nested_dbs:     [NestedDBVar -> (type: DBSymbol, msg_send_rule: MsgSendRule?)],
                     methods:        [Method]
                   );
 
@@ -373,7 +373,7 @@ type Database   = data_base(
                     name:       DBSymbol,
                     state_vars: [MembVar -> (type: NeType, init_value: Expr)],
                     rel_vars:   [RelVar -> (signatures: [+NeType+], keys: [[+Nat]])], ## HOW TO ENFORCE THE FACT THAT ALL SIGNATURE MUST HAVE THE SAME ARITY?
-                    nested_dbs: [MembDBVar -> DBSymbol],
+                    nested_dbs: [NestedDBVar -> DBSymbol],
                     methods:    [Method],
                     updates:    [Update],
                     handlers:   [Handler]

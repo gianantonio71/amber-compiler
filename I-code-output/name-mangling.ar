@@ -16,7 +16,7 @@
 //  P                                                                             ProcSymbol
 //  Q
 //  R     AutoSymbol
-//  S     AutoMembVar
+//  S     SignalVar
 //  T     AnyDBVar                                                                DBSymbol
 //  U     up_to_date_var()                                            UpdateId
 //  V     StdVar, env. + ImplArg, internal var + description
@@ -65,9 +65,9 @@ String to_c_var_name(AnyClsVar v) =
 
 String to_c_var_name(<ObjVar, PendingInputVar> var, Bool add_prefix) {
   assert match (var)
-    qual_auto_memb_var()  |
-    qual_db_memb_var()    = add_prefix,
-    _                     = true;
+    qual_signal_var() |
+    qual_memb_var()   = add_prefix,
+    _                 = true;
 
   prefix = if add_prefix
     then match (var)
@@ -83,9 +83,9 @@ String to_c_var_name(<ObjVar, PendingInputVar> var, Bool add_prefix) {
     impl_arg(<+> a?)              = prefix & _str_(a) & "_V",
     capt_var(<*..*> n?)           = "captured["  & printed(n) & "]",
     memb_var(<+> a?)              = prefix & _str_(a) & "_M",
-    auto_memb_var(a?)             = prefix & _str_(a) & "_S",
-    qual_auto_memb_var()          = to_c_var_name(var.auto_var, true) & "." & to_c_var_name(var.memb_var, false),
-    qual_db_memb_var()            = to_c_var_name(var.db_var, true) & "." & to_c_var_name(var.memb_var, false),
+    signal_var(a?)                = prefix & _str_(a) & "_S",
+    qual_signal_var()             = to_c_var_name(var.auto_var, true) & "." & to_c_var_name(var.memb_var, false),
+    qual_memb_var()               = to_c_var_name(var.db_var, true) & "." & to_c_var_name(var.memb_var, false),
     watched_signal_value_var(a?)  = prefix & _str_(a) & "_Sw",
     prev_var_value(v?)            = prefix & ad_hoc_var_name(v) & "_Sd",
     pending_state_var(a?)         = prefix & _str_(a) & "_Mp",
@@ -94,10 +94,10 @@ String to_c_var_name(<ObjVar, PendingInputVar> var, Bool add_prefix) {
     pending_input_var(<+> a?)     = prefix & _str_(a) & "_Sp";
 
 
-  String ad_hoc_var_name(AutoMembVar var) = to_c_var_decl_name(var);
-  String ad_hoc_var_name(QualAutoMembVar var) = ad_hoc_var_name(var.auto_var) & "_" & ad_hoc_var_name(var.memb_var);
-  String ad_hoc_var_name(MembAutoVar var) = to_c_var_name(var, false);
-  String ad_hoc_var_name(LocAutoVar) = fail;
+  String ad_hoc_var_name(SignalVar var)     = to_c_var_decl_name(var);
+  String ad_hoc_var_name(QualSignalVar var) = ad_hoc_var_name(var.auto_var) & "_" & ad_hoc_var_name(var.memb_var);
+  String ad_hoc_var_name(NestedAutoVar var) = to_c_var_name(var, false);
+  String ad_hoc_var_name(LocAutoVar)        = fail;
 }
 
 
@@ -148,14 +148,14 @@ String to_c_var_name(IntVar v, Bool add_prefix) {
 
 
 String to_c_var_name(AnyAutoVar v, Bool add_prefix) =
-  loc_auto_var(a?)  = _str_(a) & "_Z",
-  memb_auto_var(a?) = {if add_prefix then "self->" else ""} & _str_(a) & "_Z";
+  loc_auto_var(a?)    = _str_(a) & "_Z",
+  nested_auto_var(a?) = {if add_prefix then "self->" else ""} & _str_(a) & "_Z";
 
 
 String to_c_var_name(AnyDBVar v, Bool add_prefix) =
-  loc_db_var(a?)  = _str_(a) & "_T",
-  memb_db_var(a?) = {if add_prefix then "self->" else ""} & _str_(a) & "_T",
-  nested_db_var() = to_c_var_name(v.outer, add_prefix) & "." & to_c_var_name(v.inner, false);
+  loc_db_var(a?)    = _str_(a) & "_T",
+  nested_db_var(a?) = {if add_prefix then "self->" else ""} & _str_(a) & "_T",
+  qual_db_var()     = to_c_var_name(v.outer, add_prefix) & "." & to_c_var_name(v.inner, false);
 
 
 String to_c_var_name(AnyRelVar v, Bool add_prefix) =
@@ -185,9 +185,9 @@ String pending_updates_var_decl_name(RelVar rel_var) =
 String pending_updates_var_ref_name(RelVar rel_var) = "self_aux->" & pending_updates_var_decl_name(rel_var);
 
 
-String aux_struct_var_decl_name(MembDBVar db_var) = to_c_var_decl_name(db_var) & "x";
+String aux_struct_var_decl_name(NestedDBVar db_var) = to_c_var_decl_name(db_var) & "x";
 
-String aux_struct_var_ref_name(MembDBVar db_var) = "&self_aux->" & aux_struct_var_decl_name(db_var);
+String aux_struct_var_ref_name(NestedDBVar db_var) = "&self_aux->" & aux_struct_var_decl_name(db_var);
 
 String aux_struct_var_decl_name(ValueStoreId vs) =
   value_store_id(n?)  = "value_store_aux_" & printed(n);

@@ -257,16 +257,16 @@ implicit syn_prg : SynPrg {
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  [MembAutoVar -> AutoSymbol] memb_auto_vars(AutoSymbol auto_symb) =
-    [memb_auto_var(n) -> auto_symbol(t) : n, t <- auto_internals[auto_symb].nested_autos];
+  [NestedAutoVar -> AutoSymbol] nested_auto_vars(AutoSymbol auto_symb) =
+    [nested_auto_var(n) -> auto_symbol(t) : n, t <- auto_internals[auto_symb].nested_autos];
 
 
-  [MembDBVar -> DBSymbol] memb_db_vars(AutoSymbol auto_symb) =
-    [memb_db_var(n) -> db_symbol(t) : n, t <- auto_internals[auto_symb].nested_dbs];
+  [NestedDBVar -> DBSymbol] nested_db_vars(AutoSymbol auto_symb) =
+    [nested_db_var(n) -> db_symbol(t) : n, t <- auto_internals[auto_symb].nested_dbs];
 
 
-  [MembDBVar -> DBSymbol] memb_db_vars(DBSymbol db_symb) =
-    [memb_db_var(n) -> db_symbol(t) : n, t <- db_interfaces[db_symb].nested_dbs];
+  [NestedDBVar -> DBSymbol] nested_db_vars(DBSymbol db_symb) =
+    [nested_db_var(n) -> db_symbol(t) : n, t <- db_interfaces[db_symb].nested_dbs];
 
 
   ## BAD BAD BAD: THESE TWO FUNCTIONS EXISTS ONLY BECAUSE OF A LIMITATION OF THE TYPECHECKER...
@@ -290,7 +290,7 @@ implicit syn_prg : SynPrg, artifact : SynDBDef {
 
   [MembVar] db_memb_vars = [memb_var(d.name) : d <- db_state_vars];
 
-  [MembDBVar -> DBSymbol] db_vars_types = [memb_db_var(d.name) -> db_symbol(d.type) : d <- db_nested_dbs];
+  [NestedDBVar -> DBSymbol] db_vars_types = [nested_db_var(d.name) -> db_symbol(d.type) : d <- db_nested_dbs];
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -324,7 +324,7 @@ implicit syn_prg : SynPrg, artifact : SynAutoDef {
   [TimeRuleDecl] time_rule_decls = [r : r <- time_rule_lookalike_decls, not is_fake(r)];
 
 
-  [AutoMembVar] auto_memb_vars {
+  [SignalVar] auto_memb_vars {
     memb_var_def_decls = [
       set(artifact.inputs),
       set(artifact.outputs),
@@ -335,11 +335,11 @@ implicit syn_prg : SynPrg, artifact : SynAutoDef {
       foreach_rule_decls,
       time_rule_decls
     ];
-    return union([[auto_memb_var(d.name) : d <- decls] : decls <- memb_var_def_decls]);
+    return union([[signal_var(d.name) : d <- decls] : decls <- memb_var_def_decls]);
   }
 
 
-  Bool signal_is_discrete(AutoMembVar signal) {
+  Bool signal_is_discrete(SignalVar signal) {
     return in(bare_id(signal), discrete_signals);
 
     [Atom] discrete_signals {
@@ -349,7 +349,7 @@ implicit syn_prg : SynPrg, artifact : SynAutoDef {
   }
 
 
-  Bool signal_is_discrete(QualAutoMembVar signal) {
+  Bool signal_is_discrete(QualSignalVar signal) {
     auto_type = syn_auto_vars_types[signal.auto_var];
     interface = auto_interfaces[auto_type];
     ## HERE I ASSUME THE SIGNAL THAT IS BEING READ IS AN OUTPUT
@@ -358,12 +358,12 @@ implicit syn_prg : SynPrg, artifact : SynAutoDef {
   }
 
 
-  [MembAutoVar -> AutoSymbol] syn_auto_vars_types =
-    [memb_auto_var(a.name) -> auto_symbol(a.auto_name) : a <- nested_auto_decls];
+  [NestedAutoVar -> AutoSymbol] syn_auto_vars_types =
+    [nested_auto_var(a.name) -> auto_symbol(a.auto_name) : a <- nested_auto_decls];
 
 
-  [MembDBVar -> DBSymbol] db_in_auto_vars_types =
-    [memb_db_var(d.name) -> db_symbol(d.type) : d <~ artifact.nested_dbs];
+  [NestedDBVar -> DBSymbol] db_in_auto_vars_types =
+    [nested_db_var(d.name) -> db_symbol(d.type) : d <~ artifact.nested_dbs];
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -418,27 +418,27 @@ implicit syn_prg : SynPrg, artifact : Artifact {
       _               = [];
 
 
-  [MembAutoVar -> AutoSymbol] memb_auto_vars =
+  [NestedAutoVar -> AutoSymbol] nested_auto_vars =
     match (artifact)
-      syn_auto_def()    = memb_auto_vars(auto_symbol(artifact.name)),
-      auto_method_def() = memb_auto_vars(auto_symbol(artifact.target)),
+      syn_auto_def()    = nested_auto_vars(auto_symbol(artifact.name)),
+      auto_method_def() = nested_auto_vars(auto_symbol(artifact.target)),
       _                 = [];
 
 
-  [MembDBVar -> DBSymbol] memb_db_vars =
+  [NestedDBVar -> DBSymbol] nested_db_vars =
     match (artifact)
-      syn_auto_def()            = memb_db_vars(auto_symbol(artifact.name)),
-      auto_method_def()         = memb_db_vars(auto_symbol(artifact.target)),
-      syn_db_def()              = memb_db_vars(db_symbol(artifact.name)),
+      syn_auto_def()            = nested_db_vars(auto_symbol(artifact.name)),
+      auto_method_def()         = nested_db_vars(auto_symbol(artifact.target)),
+      syn_db_def()              = nested_db_vars(db_symbol(artifact.name)),
       handler_def()             |
       using_block_method_def()  |
-      using_block_update_def()  = memb_db_vars(db_symbol(artifact.target)),
+      using_block_update_def()  = nested_db_vars(db_symbol(artifact.target)),
       _                         = [];
 
   //////////////////////////////////////////////////////////////////////////////
 
   [AnyDBVar -> DBSymbol] all_db_vars {
-    db_vars = loc_db_vars & memb_db_vars;
+    db_vars = loc_db_vars & nested_db_vars;
     last_round = db_vars;
     while last_round != []:
       new_round = merge([nested_db_vars(v, t) : v, t <- last_round]);
@@ -448,9 +448,9 @@ implicit syn_prg : SynPrg, artifact : Artifact {
     return db_vars;
 
 
-    [NestedDBVar -> DBSymbol] nested_db_vars(AnyDBVar var, DBSymbol type) {
+    [QualDBVar -> DBSymbol] nested_db_vars(AnyDBVar var, DBSymbol type) {
       nested_dbs = db_interfaces[type].nested_dbs;
-      return [nested_db_var(var, memb_db_var(v)) -> db_symbol(t) : v, t <- nested_dbs];
+      return [qual_db_var(var, nested_db_var(v)) -> db_symbol(t) : v, t <- nested_dbs];
     }
   }
 
@@ -508,14 +508,14 @@ implicit syn_prg : SynPrg, artifact : Artifact {
 
 
   AutoSymbol auto_var_type(AnyAutoVar var) =
-    loc_auto_var()  = loc_auto_vars[var],
-    memb_auto_var() = memb_auto_vars[var];
+    loc_auto_var()    = loc_auto_vars[var],
+    nested_auto_var() = nested_auto_vars[var];
 
 
   DBSymbol syn_db_var_type(AnyDBVar var) =
     loc_db_var()    = loc_db_vars[var],
-    memb_db_var()   = memb_db_vars[var],
-    nested_db_var() = { interface = db_interfaces[syn_db_var_type(var.outer)];
+    nested_db_var() = nested_db_vars[var],
+    qual_db_var()   = { interface = db_interfaces[syn_db_var_type(var.outer)];
                         return db_symbol(interface.nested_dbs[bare_id(var.inner)]);
                       };
 

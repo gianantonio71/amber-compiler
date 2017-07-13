@@ -137,7 +137,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
   }
 
 
-  Instr* gen_pre_init_code([(MembBoolVar, Bool)] memb_bool_vars, [(MembIntVar, Int)] memb_int_vars, [(<AutoMembVar, MembObjVar, PendingInputVar>, <blank, undefined>)] memb_obj_vars) {
+  Instr* gen_pre_init_code([(MembBoolVar, Bool)] memb_bool_vars, [(MembIntVar, Int)] memb_int_vars, [(<SignalVar, MembObjVar, PendingInputVar>, <blank, undefined>)] memb_obj_vars) {
     // Initializing all boolean member variables
     code_0 = (set_bvar(var, init_val) : var, init_val <- rand_sort(memb_bool_vars));
 
@@ -184,9 +184,9 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
 
     for id <- rand_sort(continuous_inputs_ids):
       instr = do_if(
-        is_null(auto_memb_var(id)),
+        is_null(signal_var(id)),
         ## HERE I SHOULD DO AN init_memb_var() INSTEAD, I THINK
-        (reset_memb_var(auto_memb_var(id), :blank), clear_input(automaton.name, id))
+        (reset_memb_var(signal_var(id), :blank), clear_input(automaton.name, id))
       );
       first_pass_finish_code = (first_pass_finish_code | instr);
     ;
@@ -210,7 +210,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
 
     first_pass_finish_code = (first_pass_finish_code | auto_apply(automaton.name));
 
-    apply_code = (reset_memb_var(auto_memb_var(id), :blank) : id <- rand_sort(discrete_signals_ids)) &
+    apply_code = (reset_memb_var(signal_var(id), :blank) : id <- rand_sort(discrete_signals_ids)) &
                  (init_memb_var(prev_var_value(v), :blank) : v <- ord_signals_to_copy) &
                  (set_var(prev_var_value(v), v) : v <- ord_signals_to_copy) &
                  (set_ivar(changed_outputs_count, 0) if automaton.outputs != []) &
@@ -314,7 +314,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
 
   Instr* gen_params_init_code {
     param_ids = keys(automaton.params);
-    dep_map = [a -> [cast_auto_memb_var(v) : v <- extern_vars(p.value)] : a, p <- automaton.params];
+    dep_map = [a -> [cast_signal_var(v) : v <- extern_vars(p.value)] : a, p <- automaton.params];
     assert not (s, ts <- dep_map, t <- ts : not in(t, param_ids));
     sorted_params = topological_sort(dep_map);
     let next_var_gen = blank_var_gen:

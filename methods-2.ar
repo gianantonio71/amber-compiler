@@ -1,15 +1,15 @@
-Atom bare_id(StdVar)          = var(a?)                 = a;
-Atom bare_id(ImplArg)         = impl_arg(a?)            = a;
-Atom bare_id(MembVar)         = memb_var(a?)            = a;
-Atom bare_id(AutoMembVar)     = auto_memb_var(a?)       = a;
+Atom bare_id(StdVar)      = var(a?)         = a;
+Atom bare_id(ImplArg)     = impl_arg(a?)    = a;
+Atom bare_id(MembVar)     = memb_var(a?)    = a;
+Atom bare_id(SignalVar)   = signal_var(a?)  = a;
 
 Atom bare_id(AnyAutoVar) =
-  loc_auto_var(a?)  |
-  memb_auto_var(a?) = a;
+  loc_auto_var(a?)    |
+  nested_auto_var(a?) = a;
 
 Atom bare_id(AnyDBVar) =
   loc_db_var(a?)    |
-  memb_db_var(a?)   = a;
+  nested_db_var(a?) = a;
 
 Atom bare_id(FnSymbol) =
   fn_symbol(a?)   = a;
@@ -34,8 +34,10 @@ Atom bare_id(ProcSymbol) =
 
 ////////////////////////////////////////////////////////////////////////////////
 
-Atom bare_obj(SymbObj) =
-  object(a?)  = a;
+T bare_obj(<object(T)>) =
+  object(x?)  = x;
+
+AnySignalVar target_var(PrevVarValue) = prev_var_value(v?) = v;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -121,11 +123,11 @@ ClsVar cast_cls_var(CaptClsVar) = fail;
 LocAutoVar cast_loc_auto_var(AnyAutoVar var) =
   loc_auto_var()  = var;
 
-MembAutoVar cast_memb_auto_var(AnyAutoVar var) =
-  memb_auto_var() = var;
+NestedAutoVar cast_nested_auto_var(AnyAutoVar var) =
+  nested_auto_var() = var;
 
-MembDBVar cast_memb_db_var(AnyDBVar var) =
-  memb_db_var()   = var;
+NestedDBVar cast_nested_db_var(AnyDBVar var) =
+  nested_db_var()   = var;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -134,8 +136,8 @@ Database cast_database(Context context) =
 
 ////////////////////////////////////////////////////////////////////////////////
 
-AutoMembVar cast_auto_memb_var(Var v) =
-  auto_memb_var() = v;
+SignalVar cast_signal_var(Var v) =
+  signal_var() = v;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -176,25 +178,25 @@ NestedFnFamilyId family_id(NestedFnId id) = nested_fn_id(id.outer, family_id(id.
 
 ## FIND BETTER NAME FOR THESE FUNCTIONS
 
-AutoMembVar one_level_down(QualAutoMembVar var) = var.memb_var;
+SignalVar one_level_down(QualSignalVar var) = var.memb_var;
 
-<MembVar, QualDBMembVar> one_level_down(QualDBMembVar var) =
+<MembVar, QualMembVar> one_level_down(QualMembVar var) =
   match (var.db_var)
     loc_db_var()    = var.memb_var,
-    memb_db_var()   = var.memb_var,
-    nested_db_var() = qual_db_memb_var(one_level_down(var.db_var), var.memb_var);
+    nested_db_var() = var.memb_var,
+    qual_db_var()   = qual_memb_var(one_level_down(var.db_var), var.memb_var);
 
-AnyDBVar one_level_down(NestedDBVar var) =
+AnyDBVar one_level_down(QualDBVar var) =
   match (var.outer)
     loc_db_var()    = var.inner,
-    memb_db_var()   = var.inner,
-    nested_db_var() = one_level_down(var.outer);
+    nested_db_var() = var.inner,
+    qual_db_var()   = one_level_down(var.outer);
 
 AnyRelVar one_level_down(QualRelVar var) =
   match (var.db_var)
     loc_db_var()    = var.rel_var,
-    memb_db_var()   = var.rel_var,
-    nested_db_var() = qual_rel_var(one_level_down(var.db_var), var.rel_var);
+    nested_db_var() = var.rel_var,
+    qual_db_var()   = qual_rel_var(one_level_down(var.db_var), var.rel_var);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////

@@ -33,7 +33,7 @@ type AutoCondNode         = cond_node(
 type AutoRepCondNode      = rep_cond_node(
                               id:             CondNodeId,
                               cond:           Expr,
-                              signals_state:  [+AnyAutoMembVar -> Bool],
+                              signals_state:  [+AnySignalVar -> Bool],
                               actions:        [+AutoNodeAction],
                               level:          Nat
                             );
@@ -53,7 +53,7 @@ type AutoTimeVaryingNode  = time_varying_node(
 
 type AutoDiscTimeVaryingNode = discrete_time_varying_node(
                                 id:               StdBlockNodeId,
-                                signals:          [+AutoMembVar],
+                                signals:          [+SignalVar],
                                 time_expr:        TimeExpr,
                                 starts_at_time_0: Bool,
                                 downstream_nodes: [BlockNodeId],
@@ -63,20 +63,20 @@ type AutoDiscTimeVaryingNode = discrete_time_varying_node(
 type AutoNestedAutoInputNode  = nested_auto_input_node(
                                   id:               NestedAutoInputNodeId,
                                   value:            Expr,
-                                  discrete_signals: [AnyAutoMembVar],
+                                  discrete_signals: [AnySignalVar],
                                   level:            Nat
                                 );
 
 type AutoNestedAutoNode   = nested_auto_node(
                               id:                         NestedAutoNodeId,
-                              downstream_nodes_by_output: [AutoMembVar -> [BlockNodeId]],
+                              downstream_nodes_by_output: [SignalVar -> [BlockNodeId]],
                               level:                      Nat
                             );
 
 type AutoNestedDBNode   = nested_db_node(
                             id:                             StdBlockNodeId,
                             message:                        Expr,
-                            downstream_nodes_by_state_var:  [<MembVar, QualDBMembVar, AnyRelVar> -> [BlockNodeId]],
+                            downstream_nodes_by_state_var:  [<MembVar, QualMembVar, AnyRelVar> -> [BlockNodeId]],
                             level:                          Nat
                           );
 
@@ -97,17 +97,17 @@ AutoNode derived_discrete(StdBlockNodeId id, Expr* es, [BlockNodeId] ns, Nat l) 
 AutoNode time_varying_node(StdBlockNodeId id, Expr c, TimeExpr te, <unchanged, boolean> t, [BlockNodeId] ns, Nat l) =
   time_varying_node(id: id, cond: c, time_expr: te, rule_type: t, downstream_nodes: ns, level: l);
 
-AutoDiscTimeVaryingNode discrete_time_varying_node(StdBlockNodeId id, [+AutoMembVar] ss, TimeExpr te, Bool at0, [BlockNodeId] dns, Nat l) =
+AutoDiscTimeVaryingNode discrete_time_varying_node(StdBlockNodeId id, [+SignalVar] ss, TimeExpr te, Bool at0, [BlockNodeId] dns, Nat l) =
   discrete_time_varying_node(id: id, signals: ss, time_expr: te, starts_at_time_0: at0, downstream_nodes: dns, level: l);
 
-AutoNode nested_auto_input_node(NestedAutoInputNodeId id, Expr v, [AnyAutoMembVar] ds, Nat l) =
+AutoNode nested_auto_input_node(NestedAutoInputNodeId id, Expr v, [AnySignalVar] ds, Nat l) =
   nested_auto_input_node(id: id, value: v, discrete_signals: ds, level: l);
 
-AutoNode nested_auto_node(NestedAutoNodeId id, [AutoMembVar -> [BlockNodeId]] ns, Nat l) =
+AutoNode nested_auto_node(NestedAutoNodeId id, [SignalVar -> [BlockNodeId]] ns, Nat l) =
   nested_auto_node(id: id, downstream_nodes_by_output: ns, level: l);
 
 ## WHY IS A MembVar ALLOWED HERE? ONLY QUALIFIED VARIABLES SHOULD BE ALLOWED, SHOULDN'T THEY?
-AutoNode nested_db_node(StdBlockNodeId id, Expr m, [<MembVar, QualDBMembVar, AnyRelVar> -> [BlockNodeId]] ns, Nat l) =
+AutoNode nested_db_node(StdBlockNodeId id, Expr m, [<MembVar, QualMembVar, AnyRelVar> -> [BlockNodeId]] ns, Nat l) =
   nested_db_node(id: id, message: m, downstream_nodes_by_state_var: ns, level: l);
 
 StateUpdateNodeAction state_update_action(Atom t, Nat i) = state_update_action(target_var: t, expr_idx: i);
@@ -131,7 +131,7 @@ Bool needs_initial_update(AutoNode node) =
 
 implicit automaton : Automaton {
   Bool requires_null_locking(StateUpdateNodeAction action) {
-    memb_var = auto_memb_var(action.target_var);
+    memb_var = signal_var(action.target_var);
     if automaton.state(memb_var, *):
       return |automaton.state[memb_var].updates| > 1;
     else
@@ -212,25 +212,25 @@ BlockNodeId downstream_node_id(AutoNodeAction action) =
 }
 
 
-[(<AutoMembVar, MembObjVar, PendingInputVar>, <blank, undefined>)] memb_obj_vars(AutoNode node) =
+[(<SignalVar, MembObjVar, PendingInputVar>, <blank, undefined>)] memb_obj_vars(AutoNode node) =
   input()                       = { bare_id = get_inner_id(node.id);
                                     return [
-                                      (auto_memb_var(bare_id),      :blank),
+                                      (signal_var(bare_id),      :blank),
                                       (pending_input_var(bare_id),  if node.discrete then :blank else :undefined)
                                     ];
                                   },
-  derived()                     = [(auto_memb_var(get_inner_id(node.id)), :blank)],
-  state()                       = [(auto_memb_var(get_inner_id(node.id)), :blank)],
-  derived_discrete()            = [(auto_memb_var(get_inner_id(node.id)), :blank)],
+  derived()                     = [(signal_var(get_inner_id(node.id)), :blank)],
+  state()                       = [(signal_var(get_inner_id(node.id)), :blank)],
+  derived_discrete()            = [(signal_var(get_inner_id(node.id)), :blank)],
   cond_node()                   = [],
   rep_cond_node()               = [],
   time_varying_node()           = { bare_id = get_inner_id(node.id);
                                     return [
-                                      (auto_memb_var(bare_id),            :blank),
+                                      (signal_var(bare_id),            :blank),
                                       (watched_signal_value_var(bare_id), :blank)
                                     ];
                                   },
-  discrete_time_varying_node()  = [(auto_memb_var(get_inner_id(node.id)), :blank)],
+  discrete_time_varying_node()  = [(signal_var(get_inner_id(node.id)), :blank)],
   nested_auto_input_node()      = [],
   nested_auto_node()            = [],
   nested_db_node()              = [];
