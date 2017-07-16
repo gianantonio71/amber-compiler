@@ -25,10 +25,8 @@ implicit syn_prg : SynPrg {
     errs = typevar_decls_wf_errors(tvar_decls, prot_decls);
     return rand_sort(errs) if errs != [];
 
-
-
-
-    return reactive_autos_wf_errors if reactive_autos_wf_errors != ();
+    errs = reactive_autos_wf_errors(type_arity_map);
+    return errs if errs != ();
 
     args_errs = join(rand_sort([block_args_wf_errors(b.args) : b <- impl_blocks]));
     return args_errs if args_errs != ();
@@ -144,10 +142,10 @@ implicit syn_prg : SynPrg {
   }
 
 
-  WFError* reactive_autos_wf_errors {
+  WFError* reactive_autos_wf_errors([BasicTypeSymbol -> [+Nat]] type_arity_map) {
     errs = [dupl_auto_defs(ds) : unused_var, ds <- group_by(syn_auto_defs, $.name), |ds| > 1];
     return rand_sort(errs) if errs != [];
-    return rand_sort([auto_def_errors(d, es) : d <- syn_auto_defs, es = reactive_auto_wf_errors(d), es != ()]);
+    return rand_sort([auto_def_errors(d, es) : d <- syn_auto_defs, es = reactive_auto_wf_errors(d, type_arity_map), es != ()]);
   }
 
 
@@ -268,6 +266,16 @@ implicit syn_prg : SynPrg {
 
 
   ProcDefWFError* proc_def_wf_errors(SynProcDef proc_def) {
+    dups = duplicates((v.var : v <- proc_def.auto_or_db_vars));
+    return (dup_auto_or_db_var(v) : v <- rand_sort(dups)) if dups != [];
+
+    errs = (
+      undef_auto_or_db(v.var, v.type)
+      : v <- proc_def.auto_or_db_vars,
+        not db_defs_by_id(db_symbol(v.type), *) and not auto_defs_by_id(auto_symbol(v.type), *)
+    );
+    return errs if errs != ();
+
     body = proc_def.body;
     return () if body == ();
     vars = [p.var : p <~ proc_def.args];

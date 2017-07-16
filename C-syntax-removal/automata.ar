@@ -14,7 +14,7 @@ implicit syn_prg : SynPrg, artifact : SynAutoDef {
     params = [
       signal_var(c.name) -> (
         type:  desugar_plain_type(c.type) if c.type?,
-        value: desugar_auto_expr(c.value, [])
+        value: desugar_auto_expr(c.value)
       ) : c <~ artifact.consts
     ];
 
@@ -30,7 +30,7 @@ implicit syn_prg : SynPrg, artifact : SynAutoDef {
     state_vars = [
       var -> {
         type = desugar_plain_type(v.type);
-        init_value = desugar_auto_expr(v.init_value, []);
+        init_value = desugar_auto_expr(v.init_value);
         var_updates = lookup(updates, var, []);
         return state_var(type, init_value, var_updates);
       } : v <~ artifact.state_vars, var = signal_var(v.name)
@@ -50,11 +50,13 @@ implicit syn_prg : SynPrg, artifact : SynAutoDef {
 
     // Nested automata
     nested_autos = [
-      nested_auto_var(na.name) -> (
-        type: auto_symbol(na.auto_name),
-        args: merge(([f -> desugar_auto_expr(e, [])] : f, e <- na.args))
-      )
-      : na <- nested_auto_decls
+      nested_auto_var(na.name) -> {
+        auto_symb = auto_symbol(na.auto_name);
+        auto_def = auto_defs_by_id[auto_symb];
+        args = ([f -> desugar_auto_expr(e)] : f, e <- na.args) &
+               ([auto_def.pos_inputs(i) -> desugar_auto_expr(e)] : e @ i <- na.pos_args);
+        return (type: auto_symb, args: merge(args));
+      } : na <- nested_auto_decls
     ];
 
     // Creating shadow member variables for automata with default output
@@ -95,9 +97,9 @@ implicit syn_prg : SynPrg, artifact : SynAutoDef {
 
 
   [NestedDBVar -> MsgSendRule] desugar_msg_send(MsgSendDecl msg_send_decl) {
-    message = desugar_auto_expr(msg_send_decl.message, []);
+    message = desugar_auto_expr(msg_send_decl.message);
     cond_expr = if msg_send_decl.cond != nothing
-      then desugar_auto_expr(value(msg_send_decl.cond), [])
+      then desugar_auto_expr(value(msg_send_decl.cond))
       else object(true);
 
     // If the list of discrete signals is not given explicitly, we search
@@ -134,7 +136,7 @@ implicit syn_prg : SynPrg, artifact : SynAutoDef {
 
   ([SignalVar -> Expr], [SignalVar -> StateVarUpdate], [SignalVar -> DiscreteRule]) desugar_plain_rule(PlainRuleDecl rule) {
     target = signal_var(rule.name);
-    expr = desugar_auto_expr(rule.expr, []);
+    expr = desugar_auto_expr(rule.expr);
 
     ## WE ARE IGNORING THE output_is_def()/output_is_set() EXPRESSIONS, WHICH SHOULD BE ALLOWED
     ## ONLY INSIDE THE BODY OF A PROCEDURE (MAKE SURE THAT'S TRUE)
@@ -157,8 +159,8 @@ implicit syn_prg : SynPrg, artifact : SynAutoDef {
 
 
   ([SignalVar -> StateVarUpdate], [SignalVar -> DiscreteRule]) desugar_cond_rule(CondRuleDecl rule_decl) {
-    cond_expr = desugar_auto_expr(rule_decl.cond, []);
-    expr = desugar_auto_expr(rule_decl.expr, []);
+    cond_expr = desugar_auto_expr(rule_decl.cond);
+    expr = desugar_auto_expr(rule_decl.expr);
     signals = auto_expr_extern_vars(cond_expr) & auto_expr_extern_vars(expr);
     signals_state = [s -> true : s <- signals, s :: AnySignalVar, signal_is_discrete(s)];
 
@@ -175,8 +177,8 @@ implicit syn_prg : SynPrg, artifact : SynAutoDef {
 
 
   ([SignalVar -> StateVarUpdate], [SignalVar -> DiscreteRule]) desugar_foreach_rule(ForeachRuleDecl rule) {
-    value = desugar_auto_expr(rule.value, []);
-    cond_expr = if rule.cond? then desugar_auto_expr(rule.cond, []) else object(true);
+    value = desugar_auto_expr(rule.value);
+    cond_expr = if rule.cond? then desugar_auto_expr(rule.cond) else object(true);
     signals_state = [signal_var(id) -> state : id, state <~ rule.signals];
     cond = react_cond(cond_expr, signals_state);
     target = signal_var(rule.name);
@@ -188,11 +190,10 @@ implicit syn_prg : SynPrg, artifact : SynAutoDef {
 
 
   TimeRule desugar_time_rule(TimeRuleDecl rule) =
-    true_for_rule_decl()      = boolean_time_rule(desugar_auto_expr(rule.cond, []), rule.time_expr),
-    unchanged_for_rule_decl() = unchanged_time_rule(desugar_auto_expr(rule.cond, []), rule.time_expr),
+    true_for_rule_decl()      = boolean_time_rule(desugar_auto_expr(rule.cond), rule.time_expr),
+    unchanged_for_rule_decl() = unchanged_time_rule(desugar_auto_expr(rule.cond), rule.time_expr),
     inactive_for_rule_decl()  = since_time_rule([signal_var(s) : s <~ rule.signals], rule.time_expr, rule.starts_at_time_0);
 
 
-  Expr desugar_auto_expr(SynExpr expr, [StdVar] def_vars) =
-    desugar_expr(expr, def_vars, impl_args = []);
+  Expr desugar_auto_expr(SynExpr expr) = desugar_expr(expr, [], impl_args = []);
 }

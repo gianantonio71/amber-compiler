@@ -35,6 +35,15 @@ type SchemaSpecWFError  = schema_def_duplicates_type(db_def: SynDBDef, tdefs: An
                           invalid_relvar_keys(RelVarsDecl),
                           incomp_relvar_decls(relvars: [RelVarsDecl], attr_relvars: [(RelVarsDecl, Nat)]);
 
+type AutoSpecWFError    = auto_type_conflict(name: Atom, tdefs: AnyTypedef+),
+                          auto_schema_conflict(name: Atom, schema_def: SynDBDef),
+                          auto_prot_conflict(name: Atom, prot_decl: ProtDecl),
+                          duplicate_pos_input(name: Atom),
+                          undef_pos_input(name: Atom),
+                          undef_def_output(name: Atom),
+                          wrong_num_of_pos_inputs(decl: NestedAutoDecl, exp_num: Nat),
+                          duplicate_actual_inputs(decl: NestedAutoDecl, dupl_args: [+Atom]);
+
 type ProtSpecWFError    = prot_type_conflict(name: Atom, typedef: AnyTypedef),
                           prot_schema_conflict(name: Atom, schema: SynDBDef),
                           dupl_prot_methods(methods: (FnSymbol, SynType+, SynType)+);
@@ -127,9 +136,12 @@ type FnDefSpecWFError   = invalid_cls_type_vars(par_idx: Nat, var_name: Atom, ty
                           invalid_res_type_vars(type_vars: [+TypeVar]),
                           nested_functions_errors(WFError+);
 
-type ProcDefSpecWFError = builtin_proc_redef, wrong_main_proc_arity;
+type ProcDefSpecWFError = builtin_proc_redef,
+                          wrong_main_proc_arity,
+                          dup_auto_or_db_var(name: Atom),
+                          undef_auto_or_db(var: Atom, type: Atom);
 
-type ExprWFError        = TypeWFError, SchemaSpecWFError, ExprSpecWFError;
+type ExprWFError        = TypeWFError, SchemaSpecWFError, AutoSpecWFError, ExprSpecWFError;
 type FnDefWFError       = ExprWFError, GenDefSpecWFError, FnDefSpecWFError;
 type ProcDefWFError     = ExprWFError, GenDefSpecWFError, ProcDefSpecWFError;
 
@@ -186,6 +198,17 @@ SchemaSpecWFError incomp_relvar_decls([RelVarsDecl] rvs, [(RelVarsDecl, Nat)] ar
 
 ////////////////////////////////////////////////////////////////////////////////
 
+AutoSpecWFError auto_type_conflict(Atom n, AnyTypedef+ ts)            = auto_type_conflict(name: n, tdefs: ts);
+AutoSpecWFError auto_schema_conflict(Atom n, SynDBDef s)              = auto_schema_conflict(name: n, schema_def: s);
+AutoSpecWFError auto_prot_conflict(Atom n, ProtDecl p)                = auto_prot_conflict(name: n, prot_decl: p);
+AutoSpecWFError duplicate_pos_input(Atom n)                           = duplicate_pos_input(name: n);
+AutoSpecWFError undef_pos_input(Atom n)                               = undef_pos_input(name: n);
+AutoSpecWFError undef_def_output(Atom n)                              = undef_def_output(name: n);
+AutoSpecWFError wrong_num_of_pos_inputs(NestedAutoDecl d, Nat n)      = wrong_num_of_pos_inputs(decl: d, exp_num: n);
+AutoSpecWFError duplicate_actual_inputs(NestedAutoDecl d, [+Atom] as) = duplicate_actual_inputs(decl: d, dupl_args: as);
+
+////////////////////////////////////////////////////////////////////////////////
+
 ProtSpecWFError prot_type_conflict(Atom n, AnyTypedef td) = prot_type_conflict(name: n, typedef: td);
 ProtSpecWFError prot_schema_conflict(Atom n, SynDBDef s) = prot_schema_conflict(name: n, schema: s);
 ProtSpecWFError dupl_prot_methods((FnSymbol, SynType+, SynType)+ ms) = dupl_prot_methods(methods: ms);
@@ -210,8 +233,10 @@ FnDefSpecWFError nested_functions_errors(WFError+ es)             = :nested_func
 
 ////////////////////////////////////////////////////////////////////////////////
 
-ProcDefSpecWFError builtin_proc_redef     = :builtin_proc_redef;
-ProcDefSpecWFError wrong_main_proc_arity  = :wrong_main_proc_arity;
+ProcDefSpecWFError builtin_proc_redef               = :builtin_proc_redef;
+ProcDefSpecWFError wrong_main_proc_arity            = :wrong_main_proc_arity;
+ProcDefSpecWFError dup_auto_or_db_var(Atom n)       = dup_auto_or_db_var(name: n);
+ProcDefSpecWFError undef_auto_or_db(Atom v, Atom t) = undef_auto_or_db(var: v, type: t);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -304,6 +329,17 @@ Any anchor_obj(SchemaSpecWFError err) =
   invalid_relvar_arity(d?)      = d,
   invalid_relvar_keys(d?)       = d,
   incomp_relvar_decls()         = :none;
+
+
+Any anchor_obj(AutoSpecWFError err) =
+  auto_type_conflict()      = :none,
+  auto_schema_conflict()    = :none,
+  auto_prot_conflict()      = :none,
+  duplicate_pos_input()     = :none,
+  undef_pos_input()         = :none,
+  undef_def_output()        = :none,
+  wrong_num_of_pos_inputs() = err.decl,
+  duplicate_actual_inputs() = err.decl;
 
 
 Any anchor_obj(ExprSpecWFError err) =
@@ -582,7 +618,7 @@ String* protocol_errs_msg(ProtDecl prot, ProtWFError+ errors) =
 
 
 String* dupl_auto_defs_err_msg([+SynAutoDef] defs) =
-  ("Duplicate reactive automata definitions: " & _str_(an_elem(defs).name)) &
+  ("Duplicate reactive automata definitions: " & upper_camel_case(an_elem(defs).name)) &
   ("    " & source_code_loc_str(d) : d <- rand_sort(defs));
 
 
@@ -626,6 +662,19 @@ String* basic_err_msg(SchemaSpecWFError err) =
   invalid_relvar_arity(d?)        = ("Invalid arity: " & _str_(d.name)),
   invalid_relvar_keys(d?)         = ("Invalid keys: " & _str_(d.name)),
   incomp_relvar_decls()           = incomp_relvar_decls_basic_err_msg(err.relvars, err.attr_relvars);
+
+
+String* basic_err_msg(AutoSpecWFError err) =
+  auto_type_conflict()      = ("A type with the same name already exists: " & upper_camel_case(err.name)),
+  auto_schema_conflict()    = ("A schema with the same name already exists: " & upper_camel_case(err.name)),
+  auto_prot_conflict()      = ("A protocol with the same name already exists: " & upper_camel_case(err.name)),
+  duplicate_pos_input()     = ("Input '" & _str_(err.name) & "' appears twice in the list of positional inputs"),
+  undef_pos_input()         = ("Positional input '" & _str_(err.name) & "' is not defined"),
+  undef_def_output()        = ("Default output '" & _str_(err.name) & "' is not defined"),
+  wrong_num_of_pos_inputs() = if err.exp_num != 0
+                                then ("Wrong number of positional inputs (expected " & printed(err.exp_num) & ")")
+                                else ("Nested automaton does not accept positional inputs"),
+  duplicate_actual_inputs() = ("Duplicate nested automaton inputs: " & append((_str_(a) : a <- rand_sort(err.dupl_args)), ", "));
 
 
 String* incomp_relvar_decls_basic_err_msg([RelVarsDecl] relvars, [(RelVarsDecl, Nat)] attr_relvars) {
@@ -815,8 +864,10 @@ String* create_error_msg(FnDefSpecWFError err) =
 
 
 String* create_error_msg(ProcDefSpecWFError err) =
-  builtin_proc_redef     = ("Redefinition of builtin procedure"),
-  wrong_main_proc_arity  = ("Main procedure can only have one parameter");
+  builtin_proc_redef    = ("Redefinition of builtin procedure"),
+  wrong_main_proc_arity = ("Main procedure can only have one parameter"),
+  dup_auto_or_db_var()  = ("Duplicate automaton variable: " & _str_(err.name)),
+  undef_auto_or_db()    = ("Automaton is not defined: " & upper_camel_case(err.type));
 
 ////////////////////////////////////////////////////////////////////////////////
 

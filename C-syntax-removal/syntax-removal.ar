@@ -16,8 +16,8 @@ implicit syn_prg : SynPrg {
       then just(desugar_schema_aware_type(value(pd.res_type), schema_names))
       else nothing;
     body = desugar_stmts(pd.body, [p.var : p <~ pd.args], artifact = pd, impl_args = []);
-    auto_vars = merge(([loc_auto_var(v.var) -> auto_symbol(v.type)] : v <- pd.auto_vars));
-    db_vars = merge(([loc_db_var(v.var) -> db_symbol(v.type)] : v <- pd.db_vars));
+    auto_vars = merge(([loc_auto_var(v.var) -> auto_symbol(v.type)] : v <- pd.auto_or_db_vars, automaton_is_reactive(v.type)));
+    db_vars = merge(([loc_db_var(v.var) -> db_symbol(v.type)] : v <- pd.auto_or_db_vars, automaton_is_static(v.type)));
 
     proc = procedure(
       id:         pd.name,
@@ -124,10 +124,10 @@ implicit syn_prg : SynPrg, artifact : Artifact {
 
 
     [FnSymbol -> [+ClsType]] constraints([+TypeVar -> Atom] binds) {
-      assert |[prot_decl_by_type[t] : unused_var, t <- binds]| == 1;
+      assert |[prot_decl_by_type(t) : unused_var, t <- binds]| == 1;
 
       bound_types = values(binds);
-      prot = only([prot_decl_by_type[t] : unused_var, t <- binds]);
+      prot = only([prot_decl_by_type(t) : unused_var, t <- binds]);
       subst_map = reverse(binds);
 
       return merge_values([{
@@ -141,7 +141,7 @@ implicit syn_prg : SynPrg, artifact : Artifact {
 
     [[+TypeVar -> Atom]] type_vars_bindings(Atom* sorted_prot_types) {
       var_type_pairs = seq_union(([(type_var(i), pt)] : pt @ i <- sorted_prot_types));
-      var_type_by_prot = group_by(var_type_pairs, prot_decl_by_type[right($)]);
+      var_type_by_prot = group_by(var_type_pairs, prot_decl_by_type(right($)));
       return [[left(vt) -> right(vt) : vt <- vts] : p, vts <- var_type_by_prot];
     }
 
