@@ -86,6 +86,7 @@ type ExprSpecWFError    = already_def_var(Var),
 
                           ro_vars_asgnm(vars: [+Var]),
                           wrong_return(<SynReturnStmt, return_stmt>),
+                          return_in_let_body(<SynReturnStmt, return_stmt>),
                           vars_redef(anchor: Any, vars: [+Var]),
                           undef_update_var(stmt: SynSeqUpdateStmt, var: StdVar),
                           wrong_proc_arity(stmt: SynProcCallStmt, exp_arity: Nat),
@@ -94,6 +95,7 @@ type ExprSpecWFError    = already_def_var(Var),
                           undef_proc(SynProcCallStmt),
                           proc_call_not_allowed(SynProcCallStmt),
                           break_outside_loop(SynBreakStmt),
+                          break_in_let_body(SynBreakStmt),
                           missing_ret_stmt(SynStmt+),
                           unreachable_stmt(SynStmt),
 
@@ -272,6 +274,7 @@ ExprSpecWFError iter_clause_wrong_arity(StdVar+ vs, [+NzNat] as)        = iter_c
 
 ExprSpecWFError ro_vars_asgnm([+Var] vs)                        = ro_vars_asgnm(vars: vs);
 ExprSpecWFError wrong_return(<SynReturnStmt, return_stmt> s)    = :wrong_return(s);
+ExprSpecWFError return_in_let_body(<SynReturnStmt, return_stmt> s)  = :return_in_let_body(s);
 ExprSpecWFError vars_redef(Any a, [+Var] vs)                    = vars_redef(anchor: a, vars: vs);
 ExprSpecWFError undef_update_var(SynSeqUpdateStmt s, StdVar v)  = undef_update_var(stmt: s, var: v);
 ExprSpecWFError wrong_proc_arity(SynProcCallStmt s, Nat a)      = wrong_proc_arity(stmt: s, exp_arity: a);
@@ -280,6 +283,7 @@ ExprSpecWFError proc_has_no_ret_val(SynProcCallStmt s)          = :proc_has_no_r
 ExprSpecWFError undef_proc(SynProcCallStmt s)                   = :undef_proc(s);
 ExprSpecWFError proc_call_not_allowed(SynProcCallStmt s)        = :proc_call_not_allowed(s);
 ExprSpecWFError break_outside_loop(SynBreakStmt s)              = :break_outside_loop(s);
+ExprSpecWFError break_in_let_body(SynBreakStmt s)               = :break_in_let_body(s);
 ExprSpecWFError missing_ret_stmt(SynStmt+ ss)                   = :missing_ret_stmt(ss);
 ExprSpecWFError unreachable_stmt(SynStmt s)                     = :unreachable_stmt(s);
 
@@ -372,6 +376,7 @@ Any anchor_obj(ExprSpecWFError err) =
 
   ro_vars_asgnm()                         = :none,
   wrong_return(s?)                        = s,
+  return_in_let_body(s?)                  = s,
   vars_redef()                            = err.anchor,
   undef_update_var()                      = err.stmt,
   wrong_proc_arity()                      = err.stmt,
@@ -380,6 +385,7 @@ Any anchor_obj(ExprSpecWFError err) =
   undef_proc(s?)                          = s,
   proc_call_not_allowed()                 = fail,
   break_outside_loop(s?)                  = s,
+  break_in_let_body(s?)                   = s,
   missing_ret_stmt(ss?)                   = head(ss),
   unreachable_stmt(s?)                    = s,
 
@@ -767,6 +773,7 @@ String* basic_err_msg(ExprSpecWFError err) =
 
   ro_vars_asgnm()             = ("Invalid assignment to read-only variable: " & user_repr(v) : v <- rand_sort(err.vars)),
   wrong_return(s?)            = (if s == return_stmt then "Return value required" else "Cannot return a value"),
+  return_in_let_body()        = ("Return statements are not allowed inside the body of a let statement"),
   vars_redef()                = ("Variable is already defined: " & user_repr(v) : v <- rand_sort(err.vars)),
   undef_update_var()          = ("Variable is not defined: " & user_repr(err.var)),
   wrong_proc_arity()          = ("Wrong number of arguments: " & user_repr(err.stmt.proc_name) & ", expected arity: " & printed(err.exp_arity)),
@@ -775,6 +782,7 @@ String* basic_err_msg(ExprSpecWFError err) =
   undef_proc(p?)              = ("Undefined procedure: " & user_repr(p.proc_name)),
   proc_call_not_allowed()     = fail,
   break_outside_loop()        = ("Break statement outside a loop"),
+  break_in_let_body()         = ("Break statements are not allowed to jump outside the body of an enclosing let block"),
   missing_ret_stmt()          = ("Missing return statement"),
   unreachable_stmt()          = ("Unreachable statement"),
 

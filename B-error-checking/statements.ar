@@ -6,7 +6,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg], actual_ar
       errs = (errs | vars_redef(typed_vars(i), [var(v)])) if is_already_def;
       errs = errs & (undef_type_var(tv) : tv <- rand_sort(syn_type_vars(t) - def_type_vars));
     ;
-    let allow_proc_calls=allow_proc_calls, has_return_value=has_ret_val, is_inside_loop=false:
+    let allow_proc_calls=allow_proc_calls, has_return_value=has_ret_val, stmt_stack=():
       errs = errs & stmts_wf_errors(stmts, ext_vars, []);
     ;
     return if errs != () then errs else (missing_ret_stmt(stmts) if has_ret_val and syn_may_fall_through(stmts));
@@ -21,7 +21,7 @@ implicit {
   actual_arg_arity  : Nat,
   allow_proc_calls  : Bool,
   has_return_value  : Bool,
-  is_inside_loop    : Bool;
+  stmt_stack        : <loop, let>*;
 
 
   ExprWFError* stmts_wf_errors(SynStmt+ stmts, [DefVar] ro_vars, [StdVar] rw_vars) {
@@ -52,7 +52,7 @@ implicit {
       return_stmt(e?)         = expr_wf_errors(e, all_vars),
       if_stmt()               = if_stmt_wf_errors(stmt, ro_vars, rw_vars, all_vars),
       loop_stmt()             = loop_stmt_wf_errors(stmt.cond, stmt.skip_first, stmt.body, ro_vars, rw_vars, all_vars),
-      inf_loop_stmt(ss?)      = stmts_wf_errors(ss, ro_vars, rw_vars, is_inside_loop=true),
+      inf_loop_stmt(ss?)      = stmts_wf_errors(ss, ro_vars, rw_vars, stmt_stack = (stmt_stack | :loop)),
       for_stmt()              = for_stmt_wf_errors(stmt, ro_vars, rw_vars, all_vars),
       let_stmt()              = (),
       break_stmt              = (),
@@ -79,7 +79,7 @@ implicit {
 
 
     ExprWFError* loop_stmt_wf_errors(SynExpr cond, Bool skip_first, SynStmt+ body, [DefVar] ro_vars, [StdVar] rw_vars, [DefVar] all_vars) {
-      body_errs = stmts_wf_errors(body, ro_vars, rw_vars, is_inside_loop=true);
+      body_errs = stmts_wf_errors(body, ro_vars, rw_vars, stmt_stack = (stmt_stack | :loop));
       return body_errs if body_errs != ();
       body_vars = if skip_first then syn_new_vars(body) else [];
       return expr_wf_errors(cond, all_vars & body_vars);
@@ -102,7 +102,9 @@ implicit {
         new_vars = new_vars & syn_new_vars(it);
       ;
       assert disjoint(new_vars, all_vars);
-      body_errs = stmts_wf_errors(stmt.body, ro_vars & new_vars, rw_vars - new_vars, is_inside_loop=true);
+      let stmt_stack = (stmt_stack | :loop):
+        body_errs = stmts_wf_errors(stmt.body, ro_vars & new_vars, rw_vars - new_vars);
+      ;
       return iter_errs & body_errs;
     }
 
@@ -123,7 +125,7 @@ implicit {
     seq_update_stmt()         = seq_update_stmt_local_wf_errors(stmt, ro_vars, rw_vars),
     proc_call_stmt()          = proc_call_stmt_local_wf_errors(stmt, ro_vars, rw_vars),
     return_stmt               = ret_stmt_local_wf_errors(stmt, false),
-    break_stmt                = (break_outside_loop(stmt) if not is_inside_loop),
+    break_stmt                = break_stmt_local_wf_errors(stmt),
 
     send_msg_stmt()           = send_msg_stmt_local_wf_errors(stmt.var, stmt.msg, ro_vars, rw_vars),
     try_update_stmt()         = try_update_stmt_local_wf_errors(stmt.name, stmt.args, ro_vars, rw_vars),
@@ -145,6 +147,13 @@ implicit {
     if_stmt()                 = (),
     loop_stmt()               = (),
     inf_loop_stmt(ss?)        = ();
+
+
+  ExprWFError* break_stmt_local_wf_errors(SynBreakStmt stmt) {
+    outside_loop = not in(:loop, stmt_stack);
+    invalid_jump = not outside_loop and stmt_stack != () and last(stmt_stack) == :let;
+    return (break_outside_loop(stmt) if outside_loop, break_in_let_body(stmt) if invalid_jump);
+  }
 
 
   ExprWFError* apply_ctrl_stmt_local_wf_errors(Atom auto_var, Atom res_var, [DefVar] ro_vars, [StdVar] rw_vars) {
@@ -217,8 +226,10 @@ implicit {
   }
 
 
-  ExprWFError* ret_stmt_local_wf_errors(<SynReturnStmt, return_stmt> stmt, Bool has_value) =
-    (wrong_return(stmt) if has_value != has_return_value);
+  ExprWFError* ret_stmt_local_wf_errors(<SynReturnStmt, return_stmt> stmt, Bool has_value) = (
+    wrong_return(stmt) if has_value != has_return_value,
+    return_in_let_body(stmt) if in(:let, stmt_stack)
+  );
 
 
   ExprWFError* for_stmt_local_wf_errors(SynForStmt[SynStmt] stmt, [DefVar] ro_vars, [StdVar] rw_vars) {
@@ -239,9 +250,13 @@ implicit {
 
 
   ExprWFError* let_stmt_local_wf_errors(SynLetStmt[SynStmt] stmt, [DefVar] ro_vars, [StdVar] rw_vars) {
-    exprs_errs = join((expr_wf_errors(right(a), ro_vars & rw_vars) : a <- stmt.asgnms));
+    ## CHECK THAT THERE ARE NOT DUPLICATES AMONG IMPLICIT ARGUMENTS
+    ## AND THAT THERE ARE NOT MUTUAL DEPENDENCIES
+    exprs_errs = join((expr_wf_errors(e, ro_vars & rw_vars) : unused_var, e <- stmt.asgnms));
     new_impl_args = impl_args & [left(a) : a <~ stmt.asgnms];
-    body_errs = stmts_wf_errors(stmt.body, ro_vars, rw_vars, impl_args=new_impl_args);
+    let impl_args = new_impl_args, stmt_stack = (stmt_stack | :let):
+      body_errs = stmts_wf_errors(stmt.body, ro_vars, rw_vars);
+    ;
     return exprs_errs & body_errs;
   }
 
