@@ -4,11 +4,7 @@ implicit syn_prg : SynPrg, artifact : SynAutoDef {
     inputs = [signal_var(i.name) -> input(desugar_plain_type(i.type), i.discrete) : i <~ artifact.inputs];
 
     // Outputs
-    if artifact.res_type?:
-      outputs = [signal_var(artifact.name) -> output(desugar_plain_type(artifact.res_type), false)];
-    else
-      outputs = [signal_var(o.name) -> output(desugar_plain_type(o.type), o.discrete) : o <~ artifact.outputs];
-    ;
+    outputs = [signal_var(o.name) -> output(desugar_plain_type(o.type), o.discrete) : o <~ artifact.outputs];
 
     // Desugaring constants
     params = [
@@ -19,12 +15,13 @@ implicit syn_prg : SynPrg, artifact : SynAutoDef {
     ];
 
     // Plain, conditional and foreach rules
-    unmerged_rules, unmerged_updates_1, unmerged_discrete_rules_1 = unzip3([desugar_plain_rule(r) : r <- plain_rule_decls]);
-    unmerged_updates_2, unmerged_discrete_rules_2 = unzip([desugar_cond_rule(r) : r <- cond_rule_decls]);
-    unmerged_updates_3, unmerged_discrete_rules_3 = unzip([desugar_foreach_rule(r) : r <- foreach_rule_decls]);
+    unmerged_rules, us_1, drs_1 = unzip3([desugar_plain_rule(r) : r <- plain_rule_decls]);
+    us_2, drs_2 = unzip([desugar_when_rule(r) : r <- when_rule_decls]);
+    us_3, drs_3 = unzip([desugar_cond_rule(r) : r <- cond_rule_decls]);
+    us_4, drs_4 = unzip([desugar_foreach_rule(r) : r <- foreach_rule_decls]);
 
-    updates = merge_values(unmerged_updates_1 & unmerged_updates_2 & unmerged_updates_3);
-    discrete_rules = merge_values(unmerged_discrete_rules_1 & unmerged_discrete_rules_2 & unmerged_discrete_rules_3);
+    updates = merge_values(us_1 & us_2 & us_3 & us_4);
+    discrete_rules = merge_values(drs_1 & drs_2 & drs_3 & drs_4);
 
     // State variables
     state_vars = [
@@ -158,16 +155,30 @@ implicit syn_prg : SynPrg, artifact : SynAutoDef {
   }
 
 
+  ([SignalVar -> StateVarUpdate], [SignalVar -> DiscreteRule]) desugar_when_rule(WhenRuleDecl rule_decl) {
+    cond_expr = desugar_auto_expr(rule_decl.cond);
+    expr = desugar_auto_expr(rule_decl.expr);
+    assert {
+      signals = auto_expr_extern_vars(cond_expr) & auto_expr_extern_vars(expr);
+      signals_state = [s -> true : s <- signals, s :: AnySignalVar, signal_is_discrete(s)];
+      return signals_state == [];
+    };
+    cond = on_becoming_true_cond(cond_expr);
+    target = signal_var(rule_decl.name);
+    return (
+        [target -> state_var_update(expr, cond) if not rule_decl.discrete],
+        [target -> discrete_rule(expr, cond)    if rule_decl.discrete]
+    );
+  }
+
+
   ([SignalVar -> StateVarUpdate], [SignalVar -> DiscreteRule]) desugar_cond_rule(CondRuleDecl rule_decl) {
     cond_expr = desugar_auto_expr(rule_decl.cond);
     expr = desugar_auto_expr(rule_decl.expr);
     signals = auto_expr_extern_vars(cond_expr) & auto_expr_extern_vars(expr);
     signals_state = [s -> true : s <- signals, s :: AnySignalVar, signal_is_discrete(s)];
-
-    cond = if signals_state == []
-      then on_becoming_true_cond(cond_expr)
-      else react_cond(cond_expr, signals_state);
-
+    fail if signals_state == [];
+    cond = react_cond(cond_expr, signals_state);
     target = signal_var(rule_decl.name);
     return (
         [target -> state_var_update(expr, cond) if not rule_decl.discrete],

@@ -358,33 +358,10 @@ implicit syn_prg : SynPrg {
   [] resolve_symbol(<null_artifact>, Atom symbol) = [];
 
 
-  [<LocAutoVar, LocDBVar, QualSignalVar>] resolve_symbol(SynProcDef artifact, Atom symbol) {
-    db_resols = [loc_db_var(symbol) : v <~ artifact.auto_or_db_vars, v.var == symbol, automaton_is_static(v.type)];
-    auto_resols = [{
-        interface = auto_interfaces[auto_symbol(v.type)];
-        resol = loc_auto_var(symbol);
-        def_output = interface.default_output;
-        resol = qual_signal_var(loc_auto_var(symbol), signal_var(value(def_output))) if def_output != nothing;
-        return resol;
-      } : v <~ artifact.auto_or_db_vars, v.var == symbol, automaton_is_reactive(v.type)
-    ];
-
-    assert {
-      resols = [loc_db_var(symbol) : v <~ artifact.auto_or_db_vars, v.var == symbol, automaton_is_static(v.type)];
-      for v <- artifact.auto_or_db_vars:
-        if v.var == symbol and automaton_is_reactive(v.type):
-          interface = auto_interfaces[auto_symbol(v.type)];
-          resol = loc_auto_var(symbol);
-          def_output = interface.default_output;
-          resol = qual_signal_var(loc_auto_var(symbol), signal_var(value(def_output))) if def_output != nothing;
-          resols = resols & [resol];
-        ;
-      ;
-      return resols == db_resols & auto_resols;
-    };
-
-    return db_resols & auto_resols;
-  }
+  [<LocAutoVar, LocDBVar>] resolve_symbol(SynProcDef artifact, Atom symbol) = [
+    if automaton_is_static(v.type) then loc_db_var(symbol) else loc_auto_var(symbol)
+    : v <~ artifact.auto_or_db_vars, v.var == symbol
+  ];
 
 
   [<SignalVar, NestedAutoVar, NestedDBVar, QualSignalVar>] resolve_symbol(SynAutoDef artifact, Atom symbol) {

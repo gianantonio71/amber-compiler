@@ -47,10 +47,11 @@ implicit syn_prg : SynPrg {
     return errs;
 
 
-    ExprWFError* conflicts(<PlainRuleDecl, CondRuleDecl, ForeachRuleDecl> rule, [Atom -> AnyAutoDecl] decls_by_key) {
+    ExprWFError* conflicts(<PlainRuleDecl, WhenRuleDecl, CondRuleDecl, ForeachRuleDecl> rule, [Atom -> AnyAutoDecl] decls_by_key) {
+      ## WHAT IS THIS ASSERT DOING HERE?
       assert match (rule)
         plain_rule_decl() = rule.discrete or (decls_by_key(rule.name, *) and decls_by_key[rule.name] :: StateVarDecl),
-        cond_rule_decl() | foreach_rule_decl() = true;
+        when_rule_decl() | cond_rule_decl() | foreach_rule_decl() = true;
       has_conflict = rule.discrete and decls_by_key(rule.name, *);
       return (conflicting_auto_decls(rule, decls_by_key[rule.name]) if has_conflict);
     }
@@ -71,6 +72,7 @@ Maybe[Any] auto_decl_key(InputDecl       decl, [Atom]) = just(decl.name);
 Maybe[Any] auto_decl_key(StateVarDecl    decl, [Atom]) = just(decl.name);
 Maybe[Any] auto_decl_key(ConstDecl       decl, [Atom]) = just(decl.name);
 Maybe[Any] auto_decl_key(NestedDBDecl    decl, [Atom]) = just(decl.name);
+Maybe[Any] auto_decl_key(WhenRuleDecl    decl, [Atom]) = nothing;
 Maybe[Any] auto_decl_key(CondRuleDecl    decl, [Atom]) = nothing;
 Maybe[Any] auto_decl_key(ForeachRuleDecl decl, [Atom]) = nothing;
 Maybe[Any] auto_decl_key(TimeRuleDecl    decl, [Atom]) = just(decl.name);
@@ -116,11 +118,34 @@ implicit syn_prg : SynPrg, artifact : SynAutoDef {
       else (no_discrete_signals_in_expr(decl.name, not decl.discrete) if discrete_signals == []);
   }
 
+  ExprWFError* rule_decl_wf_error(WhenRuleDecl decl) {
+    errs = auto_expr_wf_errors(decl.expr) & auto_expr_wf_errors(decl.cond);
+    return errs if errs != ();
+
+    // Checking that no discrete signal is referenced
+    vars = seq_union((auto_expr_extern_vars(desugar_auto_expr(e)) : e <- (decl.expr, decl.cond)));
+    discrete_signals = [v : v <- vars, v :: AnySignalVar, signal_is_discrete(v)];
+
+    state_vars_ids = auto_def_state_vars_ids;
+    return (
+      unknown_state_var(decl.name) if not decl.discrete and not state_vars_ids(decl.name),
+      discrete_signals_in_countinuous_rule(decl.name, discrete_signals) if discrete_signals != []
+    );
+  }
+
   ExprWFError* rule_decl_wf_error(CondRuleDecl decl) {
     errs = auto_expr_wf_errors(decl.expr) & auto_expr_wf_errors(decl.cond);
+    return errs if errs != ();
+
+    // Checking that at least one discrete signal is referenced
+    vars = seq_union((auto_expr_extern_vars(desugar_auto_expr(e)) : e <- (decl.expr, decl.cond)));
+    discrete_signals = [v : v <- vars, v :: AnySignalVar, signal_is_discrete(v)];
+
     state_vars_ids = auto_def_state_vars_ids;
-    errs = (errs | unknown_state_var(decl.name)) if not decl.discrete and not state_vars_ids(decl.name);
-    return errs;
+    return (
+      unknown_state_var(decl.name) if not decl.discrete and not state_vars_ids(decl.name),
+      no_discrete_signals_in_expr(decl.name, not decl.discrete) if discrete_signals == []
+    );
   }
 
   ExprWFError* rule_decl_wf_error(ForeachRuleDecl decl) {
