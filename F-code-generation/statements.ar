@@ -45,7 +45,13 @@ implicit program : Program, context : Context, var_subst_map : [StdVar -> CaptVa
 
   Instr+ gen_code_for_send_msg_stmt(NestedDBVar target, Expr msg) {
     eval_info = gen_eval_info(msg);
-    return (eval_info.eval_code | send_msg(target, var_type(target), eval_info.expr, false));
+    spent_var = nested_db_spent(target);
+    return (
+      eval_info.eval_code |
+      do_if(spent_var, terminate),
+      send_msg(target, var_type(target), eval_info.expr, false),
+      set_bvar(spent_var, true)
+    );
   }
 
 
@@ -58,7 +64,12 @@ implicit program : Program, context : Context, var_subst_map : [StdVar -> CaptVa
 
   Instr+ gen_code_for_set_memb_var_stmt(MembVar var, Expr value) {
     eval_info = gen_eval_info(value);
-    return (eval_info.eval_code | set_var(pending_state_var(bare_id(var)), eval_info.expr));
+    pvar = pending_state_var(bare_id(var));
+    return (
+      eval_info.eval_code |
+      do_if_not(is_blank(pvar), terminate),
+      set_var(pvar, eval_info.expr)
+    );
   }
 
 

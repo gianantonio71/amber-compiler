@@ -31,12 +31,24 @@ CCodeOutput compile_to_c(CompiledPrg prg) {
 
   int_seqs_types_and_lengths = ((int_type_c_name(min(s), max(s)), |s|) : s <- prg.int_seqs);
 
+  // Sorting static blocks in topological order
+  static_blocks_dep_map = [b.name -> [t : unused_var, t <- b.nested_blocks] : b <- prg.trans_blocks];
+  ord_static_block_names = join((rand_sort(bs) : bs <- topological_sort(static_blocks_dep_map)));
+  static_blocks_by_name = [b.name -> b : b <- prg.trans_blocks];
+  ord_static_blocks = (static_blocks_by_name(b, !!) : b <- ord_static_block_names);
+
+  // Sorting reactive blocks in topological order
+  react_blocks_dep_map = [b.name -> [t : unused_var, t <- b.nested_auto_vars] : b <- prg.blocks];
+  ord_react_blocks_names = join((rand_sort(bs) : bs <- topological_sort(react_blocks_dep_map)));
+  react_blocks_by_name = [b.name -> b : b <- prg.blocks];
+  ord_react_blocks = (react_blocks_by_name(b, !!) : b <- ord_react_blocks_names);
+
   proc_code = compile_to_c(
     rand_sort(prg.procs),
     rand_sort(prg.bool_procs),
     sorted_cls_defs,
-    rand_sort(prg.blocks),
-    rand_sort(prg.trans_blocks),
+    ord_react_blocks,
+    ord_static_blocks,
     prg.int_seqs,
     sorted_cls_defs                 = sorted_cls_defs,
     int_seqs_types_and_lengths      = int_seqs_types_and_lengths,

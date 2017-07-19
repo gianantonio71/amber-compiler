@@ -14,14 +14,15 @@ implicit {
     struct_decl = ("struct " & to_c_name(block.name) & " {") & indent_lines(memb_decls) & ("};");
 
     aux_vars_decls = ["OBJ " & to_c_var_decl_name(pending_state_var(bare_id(v))) & ";" : v, unused_var <- block.state_vars];
+    aux_bool_vars_decls = ["bool " & to_c_var_decl_name(nested_db_spent(v)) & ";" : v, unused_var <- block.nested_blocks];
     aux_stores_decls = ["VALUE_STORE_UPDATES " & aux_struct_var_decl_name(vs) & ";" : vs <- block.value_stores];
     aux_tables_decls = [
       pending_updates_var_type(t) & " " & pending_updates_var_decl_name(v) & ";"
       : v, t <- block.tables
     ];
     nested_aux_blocks_decls = [aux_struct_c_name(t) & " " & aux_struct_var_decl_name(v) & ";" : v, t <- block.nested_blocks];
-    aux_memb_decls = rand_sort(aux_vars_decls) & rand_sort(aux_stores_decls) & rand_sort(aux_tables_decls) &
-      rand_sort(nested_aux_blocks_decls);
+    aux_memb_decls = rand_sort(aux_vars_decls) & rand_sort(aux_bool_vars_decls) & rand_sort(aux_stores_decls) &
+      rand_sort(aux_tables_decls) & rand_sort(nested_aux_blocks_decls);
     aux_struct_decl = ("struct " & aux_struct_c_name(block.name) & " {") & indent_lines(aux_memb_decls) & ("};");
 
     init_decl, init_impl = compile_init_code_to_c(block.name, block.init_code);
@@ -315,6 +316,9 @@ implicit {
     var_ids = (bare_id(v) : v <- rand_sort(keys(block.state_vars)));
     init_vars_code = (to_c_var_ref_name(pending_state_var(id)) & " = make_blank_obj();" : id <- var_ids);
 
+    bool_vars_ids = rand_sort(keys(block.nested_blocks));
+    bool_vars_init_code = (to_c_var_ref_name(nested_db_spent(v)) & " = false;" : v <- bool_vars_ids);
+
     value_stores_init_code = (
       mk_gen_call("value_store_updates_init", (), (vs), (aux_struct_var_ref_name(vs)))
       : vs <- rand_sort(block.value_stores)
@@ -330,7 +334,8 @@ implicit {
       : v, t <- block.nested_blocks
     ];
 
-    body = init_vars_code & value_stores_init_code & rand_sort(tables_init_code) & rand_sort(nested_blocks_init_code);
+    body = init_vars_code & bool_vars_init_code & value_stores_init_code & rand_sort(tables_init_code) &
+          rand_sort(nested_blocks_init_code);
 
     sgn = "void " & aux_struct_init_proc_name(block.name) & "(" & to_c_name(block.name) & " *self, " & aux_struct_c_name(block.name) & " *self_aux)";
 
