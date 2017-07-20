@@ -22,6 +22,7 @@ NePseudoType pseudotype([+BasicPseudoType] pts) {
   pseudotype(pts?)  = pts;
 
 
+PseudoType pseudotype_union([]) = pseudotype_empty;
 NePseudoType pseudotype_union([+NePseudoType] pseudotypes) = pseudotype(nonempty(union([pts : pt <- pseudotypes, pseudotype(pts?) ?= pt])));
 
 
@@ -172,3 +173,32 @@ Maybe[Pattern] restrict_ptrn_union([+Pattern] ptrns, NePseudoType ptype) {
   restr_ptrns = [value(rp) : p <- ptrns, rp = restrict(p, ptype), rp != nothing];
   return if restr_ptrns != [] then just(ptrn_union(restr_ptrns)) else nothing;
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+PseudoType pseudotype(Type type, [TypeName -> Type] typedefs) =
+  empty_type            = pseudotype_empty,
+  symb_type(object(a?)) = pseudotype_symbol(a),
+  atom_type             = pseudotype_symbols,
+  integer               |
+  low_ints()            |
+  high_ints()           |
+  int_range()           = pseudotype_integers,
+  float_type            = pseudotype_floats,
+  empty_seq_type        = pseudotype_empty_seq,
+  empty_rel_type        = pseudotype_empty_rel,
+  type_var()            = pseudotype_any, ## NOT SURE HERE...
+  type_ref(ts?)         = pseudotype(expand_type_ref(ts, typedefs), typedefs),
+  ne_seq_type()         = pseudotype_ne_seqs,
+  ne_set_type()         = pseudotype_ne_sets,
+  ne_map_type()         = pseudotype_ne_bin_rels,
+  ne_bin_rel_type()     = pseudotype_ne_bin_rels,
+  ne_tern_rel_type()    = pseudotype_ne_tern_rels,
+  ne_record_type()      = pseudotype_ne_bin_rels,
+  tuple_type()          = pseudotype_ne_seqs,
+  tag_obj_type()        = { match (type.tag_type)
+                              atom_type             = pseudotype_tag_objs,
+                              symb_type(object(a?)) = pseudotype_tag_obj(a)
+                          },
+  union_type(ts?)       = pseudotype_union([pt : t <- ts, pt = pseudotype(t, typedefs), pt :: NePseudoType]);

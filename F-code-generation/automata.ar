@@ -1,7 +1,6 @@
 implicit program : Program, automaton : Automaton, options : CompilationOptions {
   Block gen_auto_code {
     nodes = gen_auto_nodes;
-    fail if nodes == (); ## BUG BUG BUG
 
     memb_bool_vars = seq_union((memb_bool_vars(n) : n <- nodes)) & [(is_new, true)];
     memb_int_vars = auto_memb_int_vars;
@@ -170,7 +169,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
   }
 
 
-  Instr* gen_apply_code(AutoNode+ nodes) {
+  Instr* gen_apply_code(AutoNode* nodes) {
     ord_signals_to_copy = rand_sort(signals_to_copy);
 
     node_idx_var = ivar(0);
@@ -345,24 +344,31 @@ Instr* gen_dispatch_auto_method_body(AutoSymbol auto_type, Method+ methods, [Typ
 
   disp_args = choose_disp_args(((t : t, unused_var <- nonempty(m.args)) : m <- methods), typedefs);
 
-  cases = ({
-      ptrns = if i < count-1
-        then (type_to_pseudotype_pattern(m.args(j)(0), typedefs) : j <- disp_args)
-        else (ptrn_any : unused_var <- disp_args);
-      code = (
-        invoke_auto_method(
-          l0,
-          auto_type,
-          method_id(name, arity, i),
-          (fn_arg(j) : j < arity)
-        ),
-        exit_block
-      );
-      return (ptrns: ptrns, code: code);
-    } : m @ i <- methods
-  );
+  cases = join(({
+    if i < count-1:
+      ptrns = ();
+      for j <- disp_args:
+        pt = pseudotype(left(m.args(j)), typedefs);
+        // return () if pt == :pseudotype([]); ## THIS SHOULD ACTUALLY WORK
+        return () if not pt :: NePseudoType;
+        ptrns = (ptrns | pseudotype_pattern(pt));
+      ;
+    else
+      ptrns = (ptrn_any : unused_var <- disp_args);
+    ;
+    code = (
+      invoke_auto_method(
+        l0,
+        auto_type,
+        method_id(name, arity, i),
+        (fn_arg(j) : j < arity)
+      ),
+      exit_block
+    );
+    return ((ptrns: nonempty(ptrns), code: code));
+  } : m @ i <- methods));
+  return (terminate) if cases == ();
 
   code = gen_switch_code((fn_arg(i) : i <- disp_args), cases, next_var_gen = blank_var_gen);
-
   return (code | ret_val(l0));
 }

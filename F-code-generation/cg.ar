@@ -188,16 +188,28 @@ implicit program : Program, options : CompilationOptions {
 
     ## HERE WE SHOULD LEAVE THE FUNCTION WITH THE MOST EXPENSIVE CHECKING LAST
     ## SO THAT IT CAN BE MATCHED BY THE CHEAP "ANY" PATTERN.
-    cases = ({
-        ptrns = if i < count-1
-          then (type_to_pseudotype_pattern(cast_type(fn.args(j).type), program.typedefs) : j <- disp_args)
-          else (ptrn_any : unused_var <- disp_args);
-        code = (call_proc(l0, fn.id, call_args), exit_block);
-        return (ptrns: ptrns, code: code);
-      } : fn @ i <- rand_sort(fns)
-    );
+    cases = join(({
+      if i < count-1:
+        ptrns = ();
+        for j <- disp_args:
+          pt = pseudotype(cast_type(fn.args(j).type), program.typedefs);
+          // return () if pt == :pseudotype([]); ## THIS SHOULD ACTUALLY WORK
+          return () if not pt :: NePseudoType;
+          ptrns = (ptrns | pseudotype_pattern(pt));
+        ;
+      else
+        ptrns = (ptrn_any : unused_var <- disp_args);
+      ;
+      code = (call_proc(l0, fn.id, call_args), exit_block);
+      return ((ptrns: nonempty(ptrns), code: code));
+    } : fn @ i <- rand_sort(fns)));
 
-    code = gen_switch_code((fn_arg(i) : i <- disp_args), cases, next_var_gen = blank_var_gen);
+    if cases != ():
+      switch_code = gen_switch_code((fn_arg(i) : i <- disp_args), cases, next_var_gen = blank_var_gen);
+      code = (switch_code | ret_val(lvar(0)));
+    else
+      code = (terminate);
+    ;
 
     args = (
       match (a)
@@ -212,7 +224,7 @@ implicit program : Program, options : CompilationOptions {
       impl_args:      [], ## THIS IS WRONG, BUT IT SHOULDN'T MATTER FOR NOW
       loc_auto_vars:  [],
       loc_db_vars:    [],
-      body:           (code | ret_val(lvar(0))),
+      body:           code,
       cached:         false
     );
   }
