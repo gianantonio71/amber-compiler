@@ -28,7 +28,7 @@ String* create_error_msg(ParserError err, String filename) =
 
 
 Maybe[CCodeOutput] Compile(
-  [String -> Nat*] src_files, Bool run_typechecking, Bool add_rc,
+  [String -> Nat*] src_files, Bool include_runtime, Bool run_typechecking, Bool add_rc,
   Bool ignore_assertions, Bool print_intermediate, Bool print_times, Bool wait_for_key
 ) {
   t0 = _ticks_(:any_value_will_do);
@@ -173,7 +173,7 @@ Maybe[CCodeOutput] Compile(
     FileWrite("dump-rc-code.txt", false, chars(printed(rc_code, 100)));
   ;
 
-  c_code  = compile_to_c(rc_code);
+  c_code  = compile_to_c(rc_code, include_runtime);
   t9 = _ticks_(:any_value_will_do);
   Print("C code generated\n");
   if wait_for_key:
@@ -240,6 +240,7 @@ Int Main(String* args) {
   fname = last(args);
   options = subseq(args, 0, argc-1);
 
+  include_runtime = standard_headers != ();
   run_typechecking = true;
   add_ref_counting = true;
   ignore_assertions = false;
@@ -250,7 +251,9 @@ Int Main(String* args) {
   wait_for_key_at_every_step = false;
 
   for o <- options:
-    if o == "-stc":
+    if o == "-nrt":
+      include_runtime = false;
+    elif o == "-ntc":
       run_typechecking = false;
     elif o == "-nrc":
       add_ref_counting = false;
@@ -292,7 +295,7 @@ Int Main(String* args) {
     src_files = src_files & [fn -> value(fc)];
   ;
 
-  output = Compile(src_files, run_typechecking, add_ref_counting, ignore_assertions,
+  output = Compile(src_files, include_runtime, run_typechecking, add_ref_counting, ignore_assertions,
                    print_intermediate, print_times, wait_for_key_at_every_step);
 
   if output != nothing:

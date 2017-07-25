@@ -1,6 +1,6 @@
 type CCodeOutput = (body: String*, header: String*);
 
-CCodeOutput compile_to_c(CompiledPrg prg) {
+CCodeOutput compile_to_c(CompiledPrg prg, Bool include_runtime) {
   symbs = used_symbols(prg);
   assert |symbs| <= 64 * 1024; ## IMPLEMENT PROPERLY
 
@@ -65,38 +65,84 @@ CCodeOutput compile_to_c(CompiledPrg prg) {
 
   has_automata = prg.blocks != [] or prg.trans_blocks != [];
 
-  body = (
-    "#include <stdlib.h>",
-    "#include <string.h>",
-    "",
-    "#include <vector>" if has_automata,
-    "#include <string>" if has_automata,
-    "#include <tuple>" if has_automata,
-    "#include <memory>" if has_automata,
-    "",
-    "#include \"lib.h\"",
-    "#include \"iolib.h\"",
-    "#include \"lib-cpp.h\"" if has_automata,
-    "#include \"cell-lang.h\"" if has_automata,
-    "",
-    "namespace generated {"
-  ) & indent_lines(c_code & proc_code.body & int_seqs_defs & ("", "") & wrappers_decls & ("", "") & wrappers_impls) & ("}");
+  gen_code = c_code & proc_code.body & int_seqs_defs & ("", "") & wrappers_decls & ("", "") & wrappers_impls;
 
-  body = body & runtime_callbacks(|symbs|);
-  body = body & c_main_fn if (p <- prg.procs : p.name == proc_symbol(:main));
+  body = join((
+    ( "#include <stddef.h>",
+      "#include <stdlib.h>",
+      "#include <string.h>",
+      "#include <ctype.h>",
+      "#include <time.h>",
+      "#include <math.h>",
+      "#include <stdio.h>",
+      "#include <map>",
+      "#include <vector>",
+      "#include <set>",
+      "#include <algorithm>",
+      ""
+    ),
+    ( "#include <tuple>",
+      "#include <memory>",
+      "#include <string>",
+      "#include <sstream>",
+      "#include <ostream>",
+      ""
+    ) if has_automata,
 
-  header = if wrappers_decls != ()
-    then (
+    // Headers for the functional subset of the language
+    standard_headers if include_runtime,
+    ( "#include \"lib.h\"",
+      "#include \"iolib.h\""
+    ) if not include_runtime,
+    (""),
+
+    // Headers for table support code
+    table_headers if include_runtime and has_automata,
+    ("") if include_runtime and has_automata,
+
+    // Headers for interface support code
+    interface_headers if include_runtime and has_automata,
+    ("#include \"lib-cpp.h\"") if not include_runtime and has_automata,
+    ("") if has_automata,
+
+    ("namespace generated {"),
+    indent_lines(gen_code),
+    ("}", ""),
+
+    standard_sources if include_runtime,
+    ("") if include_runtime,
+    table_sources if include_runtime and has_automata,
+    ("") if include_runtime and has_automata,
+    interface_sources if include_runtime and has_automata,
+    ("") if include_runtime and has_automata,
+
+    runtime_callbacks(|symbs|),
+    c_main_fn if (p <- prg.procs : p.name == proc_symbol(:main))
+  ));
+
+  if wrappers_decls != ():
+    header = (
+      "#ifndef CELL_LANG_GEN_",
+      "#define CELL_LANG_GEN_",
+      "",
+      "",
       "#include <vector>",
       "#include <string>",
       "#include <tuple>",
       "#include <memory>",
-      "",
-      "#include \"cell-lang.h\"",
+      "#include <ostream>",
+      ""
+    ) & cell_lang_header & (
       "",
       "namespace generated {"
-    ) & indent_lines(wrappers_decls) & ("}")
-    else ();
+    ) & indent_lines(wrappers_decls) &
+    ( "}",
+      "",
+      "#endif // CELL_LANG_GEN_"
+    );
+  else
+    header = ();
+  ;
 
   return (body: body, header: header);
 
@@ -1014,15 +1060,19 @@ String* c_main_fn = (
   "  release_all_cached_objs();",
   "",
   "#ifndef NDEBUG",
-  "  fprintf(stderr, \"\\nNumber of live objects: %d\\n\", get_live_objs_count());",
-  "  fprintf(stderr, \"Max number of live objects: %d\\n\", get_max_live_objs_count());",
-  "  fprintf(stderr, \"Total number of allocated objects: %d\\n\", get_total_objs_count());",
+  "  if (get_live_objs_count() != 0) {",
+  "    fprintf(stderr, \"\\nMEMORY LEAK DETECTED!\\n\");",
   "",
-  "  fprintf(stderr, \"\\nLive memory usage: %d\\n\", get_live_mem_usage());",
-  "  fprintf(stderr, \"Max live memory usage: %d\\n\", get_max_live_mem_usage());",
-  "  fprintf(stderr, \"Total memory requested: %d\\n\", get_total_mem_requested());",
+  "    fprintf(stderr, \"\\nNumber of live objects: %d\\n\", get_live_objs_count());",
+  "    fprintf(stderr, \"Max number of live objects: %d\\n\", get_max_live_objs_count());",
+  "    fprintf(stderr, \"Total number of allocated objects: %d\\n\", get_total_objs_count());",
   "",
-  "  /" & "/ print_all_live_objs();",
+  "    // fprintf(stderr, \"\\nLive memory usage: %d\\n\", get_live_mem_usage());",
+  "    // fprintf(stderr, \"Max live memory usage: %d\\n\", get_max_live_mem_usage());",
+  "    // fprintf(stderr, \"Total memory requested: %d\\n\", get_total_mem_requested());",
+  "",
+  "    // print_all_live_objs();",
+  "  }",
   "#endif",
   "",
   "  return is_int(res) ? get_int_val(res) : 0;",
