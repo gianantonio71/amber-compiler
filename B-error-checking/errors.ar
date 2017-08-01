@@ -7,17 +7,17 @@ type WFError            = dupl_typedef((AnyTypedef, AnyTypedef)),
                           incomp_impl_args(fd1: SynFnDef, fd2: SynFnDef, nargs1: [Atom], nargs2: [Atom]),
                           fndef_errors(fndef: SynFnDef, errors: FnDefWFError+),
                           proc_def_errors(proc_def: SynProcDef, errors: ProcDefWFError+),
-                          auto_def_errors(auto_def: SynAutoDef, errors: ExprWFError+),
+                          auto_def_errors(auto_def: ReactAutoDef, errors: ExprWFError+),
                           auto_method_def_errors(meth_def: AutoMethodDef, errors: FnDefWFError+),
-                          db_def_errors(db: SynDBDef, errors: ExprWFError+),
-                          db_method_def_errors(db: SynDBDef, method: DBMethodDef, errors: FnDefWFError+),
-                          update_def_errs(db: SynDBDef, update: UpdateDef, errors: UpdateDefWFError+),
+                          db_def_errors(schema: SchemaDef, errors: ExprWFError+),
+                          db_method_def_errors(schema: SchemaDef, method: DBMethodDef, errors: FnDefWFError+),
+                          update_def_errs(schema: SchemaDef, update: UpdateDef, errors: UpdateDefWFError+),
                           handler_def_errs(handler: HandlerDef, errors: UpdateDefWFError+),
                           same_name_proc_defs(SynProcDef+),
-                          duplicate_schema_defs(defs: SynDBDef+),
+                          duplicate_schema_defs(defs: SchemaDef+),
                           protocol_redef(type: Atom, protocols: [+ProtDecl]),
                           protocol_errors(prot: ProtDecl, errors: ProtWFError+),
-                          dupl_auto_defs(defs: [+SynAutoDef]),
+                          dupl_auto_defs(defs: [+ReactAutoDef]),
                           typevar_decl_errs(decl: TypeVarDecl, errors: TypeVarDeclError+);
 
 type TypeWFError        = invalid_int_range(<syn_int_range(min: Int, max: Int)>),
@@ -29,14 +29,14 @@ type TypeWFError        = invalid_int_range(<syn_int_range(min: Int, max: Int)>)
                           type_var_in_union(TypeVar),
                           type_vars_not_allowed(type: SynType, var: TypeVar);
 
-type SchemaSpecWFError  = schema_def_duplicates_type(db_def: SynDBDef, tdefs: AnyTypedef+),
-                          duplicate_schema_decl(<DatabaseDecl, AttrRelVar>, <DatabaseDecl, AttrRelVar>),
+type SchemaSpecWFError  = schema_def_duplicates_type(schema_def: SchemaDef, tdefs: AnyTypedef+),
+                          duplicate_schema_decl(<SchemaItemDecl, AttrRelVar>, <SchemaItemDecl, AttrRelVar>),
                           invalid_relvar_arity(RelVarsDecl),
                           invalid_relvar_keys(RelVarsDecl),
                           incomp_relvar_decls(relvars: [RelVarsDecl], attr_relvars: [(RelVarsDecl, Nat)]);
 
 type AutoSpecWFError    = auto_type_conflict(name: Atom, tdefs: AnyTypedef+),
-                          auto_schema_conflict(name: Atom, schema_def: SynDBDef),
+                          auto_schema_conflict(name: Atom, schema_def: SchemaDef),
                           auto_prot_conflict(name: Atom, prot_decl: ProtDecl),
                           duplicate_pos_input(name: Atom),
                           undef_pos_input(name: Atom),
@@ -45,7 +45,7 @@ type AutoSpecWFError    = auto_type_conflict(name: Atom, tdefs: AnyTypedef+),
                           duplicate_actual_inputs(decl: NestedAutoDecl, dupl_args: [+Atom]);
 
 type ProtSpecWFError    = prot_type_conflict(name: Atom, typedef: AnyTypedef),
-                          prot_schema_conflict(name: Atom, schema: SynDBDef),
+                          prot_schema_conflict(name: Atom, schema: SchemaDef),
                           dupl_prot_methods(methods: (FnSymbol, SynType+, SynType)+);
 
 type TypeVarDeclError   = dupl_type_vars(vars: [+Atom]),
@@ -100,12 +100,12 @@ type ExprSpecWFError    = already_def_var(Var),
                           unreachable_stmt(SynStmt),
 
                           unknown_auto(auto_symb: <AutoSymbol, DBSymbol>),
-                          auto_var_not_defined(var: AnyAutoVar, is_other_var_type: Bool),
-                          unknown_input(name: Atom, automaton: SynAutoDef),
-                          unknown_output(name: Atom, automaton: SynAutoDef),
-                          unknown_db_field(name: Atom, database: SynDBDef),
-                          not_a_discrete_signal(name: Atom, automaton: SynAutoDef),
-                          not_a_memb_copy_var(name: Atom, automaton: Maybe[SynAutoDef]),
+                          undef_react_auto_var(var: AnyAutoVar, is_other_var_type: Bool),
+                          unknown_input(name: Atom, automaton: ReactAutoDef),
+                          unknown_output(name: Atom, automaton: ReactAutoDef),
+                          unknown_db_field(name: Atom, schema: SchemaDef),
+                          not_a_discrete_signal(name: Atom, automaton: ReactAutoDef),
+                          not_a_memb_copy_var(name: Atom, automaton: Maybe[ReactAutoDef]),
                           invalid_signal_copy_context(name: Atom),
                           not_a_copiable_signal(name: Atom),
                           duplicate_tracked_signal(name: Atom),
@@ -115,17 +115,19 @@ type ExprSpecWFError    = already_def_var(Var),
 
                           conflicting_auto_decls(AnyAutoDecl, AnyAutoDecl),
 
-                          not_a_db_var(var: Atom, is_auto_var: Bool, is_obj_var: Bool),
+                          undef_static_auto_var(var: Atom, is_auto_var: Bool, is_obj_var: Bool),
                           db_has_no_handlers(db_type: Atom),
-                          not_a_nested_db_var(var: Atom, db_def: SynDBDef),
-                          unknown_nested_db_var(var: Atom, db_def: SynDBDef),
+                          not_a_nested_db_var(var: Atom, schema_def: SchemaDef),
+                          unknown_nested_db_var(var: Atom, schema_def: SchemaDef),
                           unknown_update(name: Atom, db_type: Atom),
                           invalid_update_arity(name: Atom, arity: Nat, arities: [+Nat]),
-                          not_a_memb_var(var: Atom, db_def: SynDBDef),
-                          unknown_memb_var(var: Atom, db_def: SynDBDef),
+                          not_a_memb_var(var: Atom, schema_def: SchemaDef),
+                          unknown_memb_var(var: Atom, schema_def: SchemaDef),
                           invalid_rel_var_arity(var: Atom, arity: NzNat, relvar_arity: NzNat),
-                          not_a_rel_var(var: Atom, db_def: SynDBDef),
-                          unknown_rel_var(var: Atom, db_def: SynDBDef),
+                          not_a_rel_var(var: Atom, schema_def: SchemaDef),
+                          unknown_rel_var(var: Atom, schema_def: SchemaDef),
+
+                          undef_auto_var(var: Atom, is_data_var: Bool),
 
                           anchored_errors(errors: ExprWFError+, anchor: Any),
 
@@ -165,18 +167,18 @@ WFError incomp_pos_args(SynFnDef fd1, SynFnDef fd2, Nat+ is)    = incomp_pos_arg
 WFError overlapping_pos_args_types(SynFnDef fd1, SynFnDef fd2)  = :overlapping_pos_args_types((fd1, fd2));
 WFError incomp_impl_args(SynFnDef fd1, SynFnDef fd2, [Atom] nas1, [Atom] nas2) = incomp_impl_args(fd1: fd1, fd2: fd2, nargs1: nas1, nargs2: nas2);
 WFError fndef_errors(SynFnDef fd, FnDefWFError+ errs)           = fndef_errors(fndef: fd, errors: errs);
-WFError auto_def_errors(SynAutoDef d, ExprWFError+ es)          = auto_def_errors(auto_def: d, errors: es);
+WFError auto_def_errors(ReactAutoDef d, ExprWFError+ es)        = auto_def_errors(auto_def: d, errors: es);
 WFError auto_method_def_errors(AutoMethodDef m, FnDefWFError+ es) = auto_method_def_errors(meth_def: m, errors: es);
-WFError db_def_errors(SynDBDef db, ExprWFError+ es)             = db_def_errors(db: db, errors: es);
-WFError db_method_def_errors(SynDBDef db, DBMethodDef m, FnDefWFError+ es)  = db_method_def_errors(db: db, method: m, errors: es);
-WFError update_def_errs(SynDBDef db, UpdateDef u, UpdateDefWFError+ es) = update_def_errs(db: db, update: u, errors: es);
+WFError db_def_errors(SchemaDef s, ExprWFError+ es)            = db_def_errors(schema: s, errors: es);
+WFError db_method_def_errors(SchemaDef s, DBMethodDef m, FnDefWFError+ es)  = db_method_def_errors(schema: s, method: m, errors: es);
+WFError update_def_errs(SchemaDef s, UpdateDef u, UpdateDefWFError+ es) = update_def_errs(schema: s, update: u, errors: es);
 WFError handler_def_errs(HandlerDef h, UpdateDefWFError+ es)    = handler_def_errs(handler: h, errors: es);
 WFError proc_def_errors(SynProcDef pd, ProcDefWFError+ es)      = proc_def_errors(proc_def: pd, errors: es);
 WFError same_name_proc_defs(SynProcDef+ pds)                    = :same_name_proc_defs(pds);
-WFError duplicate_schema_defs(SynDBDef+ ds)                     = duplicate_schema_defs(defs: ds);
+WFError duplicate_schema_defs(SchemaDef+ ds)                    = duplicate_schema_defs(defs: ds);
 WFError protocol_redef(Atom t, [+ProtDecl] ps)                  = protocol_redef(type: t, protocols: ps);
 WFError protocol_errors(ProtDecl p, ProtWFError+ es)            = protocol_errors(prot: p, errors: es);
-WFError dupl_auto_defs([+SynAutoDef] ds)                        = dupl_auto_defs(defs: ds);
+WFError dupl_auto_defs([+ReactAutoDef] ds)                      = dupl_auto_defs(defs: ds);
 WFError typevar_decl_errs(TypeVarDecl d, TypeVarDeclError+ es)  = typevar_decl_errs(decl: d, errors: es);
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -192,8 +194,8 @@ TypeWFError type_vars_not_allowed(SynType t, TypeVar v)               = type_var
 
 ////////////////////////////////////////////////////////////////////////////////
 
-SchemaSpecWFError schema_def_duplicates_type(SynDBDef db, AnyTypedef+ ts) = schema_def_duplicates_type(db_def: db, tdefs: ts);
-SchemaSpecWFError duplicate_schema_decl(<DatabaseDecl, AttrRelVar> d1, <DatabaseDecl, AttrRelVar> d2) = :duplicate_schema_decl(d1, d2);
+SchemaSpecWFError schema_def_duplicates_type(SchemaDef s, AnyTypedef+ ts) = schema_def_duplicates_type(schema_def: s, tdefs: ts);
+SchemaSpecWFError duplicate_schema_decl(<SchemaItemDecl, AttrRelVar> d1, <SchemaItemDecl, AttrRelVar> d2) = :duplicate_schema_decl(d1, d2);
 SchemaSpecWFError invalid_relvar_arity(RelVarsDecl d) = :invalid_relvar_arity(d);
 SchemaSpecWFError invalid_relvar_keys(RelVarsDecl d) = :invalid_relvar_keys(d);
 SchemaSpecWFError incomp_relvar_decls([RelVarsDecl] rvs, [(RelVarsDecl, Nat)] arvs) = incomp_relvar_decls(relvars: rvs, attr_relvars: arvs);
@@ -201,7 +203,7 @@ SchemaSpecWFError incomp_relvar_decls([RelVarsDecl] rvs, [(RelVarsDecl, Nat)] ar
 ////////////////////////////////////////////////////////////////////////////////
 
 AutoSpecWFError auto_type_conflict(Atom n, AnyTypedef+ ts)            = auto_type_conflict(name: n, tdefs: ts);
-AutoSpecWFError auto_schema_conflict(Atom n, SynDBDef s)              = auto_schema_conflict(name: n, schema_def: s);
+AutoSpecWFError auto_schema_conflict(Atom n, SchemaDef s)             = auto_schema_conflict(name: n, schema_def: s);
 AutoSpecWFError auto_prot_conflict(Atom n, ProtDecl p)                = auto_prot_conflict(name: n, prot_decl: p);
 AutoSpecWFError duplicate_pos_input(Atom n)                           = duplicate_pos_input(name: n);
 AutoSpecWFError undef_pos_input(Atom n)                               = undef_pos_input(name: n);
@@ -212,7 +214,7 @@ AutoSpecWFError duplicate_actual_inputs(NestedAutoDecl d, [+Atom] as) = duplicat
 ////////////////////////////////////////////////////////////////////////////////
 
 ProtSpecWFError prot_type_conflict(Atom n, AnyTypedef td) = prot_type_conflict(name: n, typedef: td);
-ProtSpecWFError prot_schema_conflict(Atom n, SynDBDef s) = prot_schema_conflict(name: n, schema: s);
+ProtSpecWFError prot_schema_conflict(Atom n, SchemaDef s) = prot_schema_conflict(name: n, schema: s);
 ProtSpecWFError dupl_prot_methods((FnSymbol, SynType+, SynType)+ ms) = dupl_prot_methods(methods: ms);
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -288,12 +290,12 @@ ExprSpecWFError missing_ret_stmt(SynStmt+ ss)                   = :missing_ret_s
 ExprSpecWFError unreachable_stmt(SynStmt s)                     = :unreachable_stmt(s);
 
 ExprSpecWFError unknown_auto(<AutoSymbol, DBSymbol> s)            = unknown_auto(auto_symb: s);
-ExprSpecWFError auto_var_not_defined(AnyAutoVar v, Bool b)        = auto_var_not_defined(var: v, is_other_var_type: b);
-ExprSpecWFError unknown_input(Atom n, SynAutoDef a)               = unknown_input(name: n, automaton: a);
-ExprSpecWFError unknown_output(Atom n, SynAutoDef a)              = unknown_output(name: n, automaton: a);
-ExprSpecWFError unknown_db_field(Atom n, SynDBDef db)             = unknown_db_field(name: n, database: db);
-ExprSpecWFError not_a_discrete_signal(Atom n, SynAutoDef a)       = not_a_discrete_signal(name: n, automaton: a);
-ExprSpecWFError not_a_memb_copy_var(Atom n, Maybe[SynAutoDef] a)  = not_a_memb_copy_var(name: n, automaton: a);
+ExprSpecWFError undef_react_auto_var(AnyAutoVar v, Bool b)        = undef_react_auto_var(var: v, is_other_var_type: b);
+ExprSpecWFError unknown_input(Atom n, ReactAutoDef a)             = unknown_input(name: n, automaton: a);
+ExprSpecWFError unknown_output(Atom n, ReactAutoDef a)            = unknown_output(name: n, automaton: a);
+ExprSpecWFError unknown_db_field(Atom n, SchemaDef s)             = unknown_db_field(name: n, schema: s);
+ExprSpecWFError not_a_discrete_signal(Atom n, ReactAutoDef a)     = not_a_discrete_signal(name: n, automaton: a);
+ExprSpecWFError not_a_memb_copy_var(Atom n, Maybe[ReactAutoDef] a)  = not_a_memb_copy_var(name: n, automaton: a);
 ExprSpecWFError invalid_signal_copy_context(Atom n)               = invalid_signal_copy_context(name: n);
 ExprSpecWFError not_a_copiable_signal(Atom n)                     = not_a_copiable_signal(name: n);
 ExprSpecWFError duplicate_tracked_signal(Atom n)                  = duplicate_tracked_signal(name: n);
@@ -304,17 +306,19 @@ ExprSpecWFError discrete_signals_in_countinuous_rule(Atom n, [+AnySignalVar] vs)
 
 ExprSpecWFError conflicting_auto_decls(AnyAutoDecl d1, AnyAutoDecl d2) = :conflicting_auto_decls(d1, d2);
 
-ExprSpecWFError not_a_db_var(Atom v, Bool a, Bool o)              = not_a_db_var(var: v, is_auto_var: a, is_obj_var: o);
+ExprSpecWFError undef_static_auto_var(Atom v, Bool a, Bool o)     = undef_static_auto_var(var: v, is_auto_var: a, is_obj_var: o);
 ExprSpecWFError db_has_no_handlers(Atom t)                        = db_has_no_handlers(db_type: t);
-ExprSpecWFError not_a_nested_db_var(Atom v, SynDBDef d)           = not_a_nested_db_var(var: v, db_def: d);
-ExprSpecWFError unknown_nested_db_var(Atom v, SynDBDef d)         = unknown_nested_db_var(var: v, db_def: d);
+ExprSpecWFError not_a_nested_db_var(Atom v, SchemaDef d)          = not_a_nested_db_var(var: v, schema_def: d);
+ExprSpecWFError unknown_nested_db_var(Atom v, SchemaDef d)        = unknown_nested_db_var(var: v, schema_def: d);
 ExprSpecWFError unknown_update(Atom n, Atom t)                    = unknown_update(name: n, db_type: t);
 ExprSpecWFError invalid_update_arity(Atom n, Nat a, [+Nat] as)    = invalid_update_arity(name: n, arity: a, arities: as);
-ExprSpecWFError not_a_memb_var(Atom v, SynDBDef d)                = not_a_memb_var(var: v, db_def: d);
-ExprSpecWFError unknown_memb_var(Atom v, SynDBDef d)              = unknown_memb_var(var: v, db_def: d);
+ExprSpecWFError not_a_memb_var(Atom v, SchemaDef d)               = not_a_memb_var(var: v, schema_def: d);
+ExprSpecWFError unknown_memb_var(Atom v, SchemaDef d)             = unknown_memb_var(var: v, schema_def: d);
 ExprSpecWFError invalid_rel_var_arity(Atom v, NzNat a, NzNat ra)  = invalid_rel_var_arity(var: v, arity: a, relvar_arity: ra);
-ExprSpecWFError not_a_rel_var(Atom v, SynDBDef d)                 = not_a_rel_var(var: v, db_def: d);
-ExprSpecWFError unknown_rel_var(Atom v, SynDBDef d)               = unknown_rel_var(var: v, db_def: d);
+ExprSpecWFError not_a_rel_var(Atom v, SchemaDef d)                = not_a_rel_var(var: v, schema_def: d);
+ExprSpecWFError unknown_rel_var(Atom v, SchemaDef d)              = unknown_rel_var(var: v, schema_def: d);
+
+ExprSpecWFError undef_auto_var(Atom v, Bool b)                    = undef_auto_var(var: v, is_data_var: b);
 
 ExprSpecWFError anchored_errors(ExprWFError+ es, Any a)           = anchored_errors(errors: es, anchor: a);
 
@@ -390,7 +394,7 @@ Any anchor_obj(ExprSpecWFError err) =
   unreachable_stmt(s?)                    = s,
 
   unknown_auto()                          = :none,
-  auto_var_not_defined()                  = :none,
+  undef_react_auto_var()                  = :none,
   unknown_input()                         = :none,
   unknown_output()                        = :none,
   unknown_db_field()                      = :none,
@@ -405,7 +409,7 @@ Any anchor_obj(ExprSpecWFError err) =
 
   conflicting_auto_decls()                = :none,
 
-  not_a_db_var()                          = :none,
+  undef_static_auto_var()                 = :none,
   db_has_no_handlers()                    = :none,
   not_a_nested_db_var()                   = :none,
   unknown_nested_db_var()                 = :none,
@@ -416,6 +420,8 @@ Any anchor_obj(ExprSpecWFError err) =
   invalid_rel_var_arity()                 = :none,
   not_a_rel_var()                         = :none,
   unknown_rel_var()                       = :none,
+
+  undef_auto_var()                        = :none,
 
   anchored_errors()                       = err.anchor,
 
@@ -475,11 +481,11 @@ String user_name(SynFnDef fd)       = user_repr(fd.name) & "/" & printed(arity(f
 String user_name(AutoMethodDef md)  = user_repr(auto_symbol(md.target)) & "." & user_repr(method_symbol(md.name)) & "/" & printed(arity(md));
 String user_name(SynProcDef pd)     = capitalize(_str_(bare_id(pd.name)), false);
 
-String user_name(SynAutoDef auto)   = user_repr(auto_symbol(auto.name));
-String user_name(SynDBDef db)       = user_repr(db_symbol(db.name));
+String user_name(ReactAutoDef auto) = user_repr(auto_symbol(auto.name));
+String user_name(SchemaDef s)       = user_repr(db_symbol(s.name));
 
-String user_name(SynDBDef db, DBMethodDef meth) = user_repr(db_symbol(db.name)) & "." & user_repr(method_symbol(meth.name));
-String user_name(SynDBDef db, UpdateDef upd) = user_repr(db_symbol(db.name)) & "." & user_repr(update_symbol(upd.name)) & "/" & printed(arity(upd));
+String user_name(SchemaDef s, DBMethodDef meth) = user_repr(db_symbol(s.name)) & "." & user_repr(method_symbol(meth.name));
+String user_name(SchemaDef s, UpdateDef upd)    = user_repr(db_symbol(s.name)) & "." & user_repr(update_symbol(upd.name)) & "/" & printed(arity(upd));
 
 String user_repr(ClsPar) =
   cls_par(n?) = string((ascii_dollar, nat(ascii_lower_a + n)));
@@ -505,9 +511,9 @@ String* create_error_msg(WFError err) =
   proc_def_errors()                   = proc_def_errs_msg(err.proc_def, err.errors),
   auto_def_errors()                   = auto_def_err_msg(err.auto_def, err.errors),
   auto_method_def_errors()            = auto_method_def_err_msg(err.meth_def, err.errors),
-  db_def_errors()                     = db_def_err_msg(err.db, err.errors),
-  db_method_def_errors()              = db_method_def_err_msg(err.db, err.method, err.errors),
-  update_def_errs()                   = update_def_err_msg(err.db, err.update, err.errors),
+  db_def_errors()                     = db_def_err_msg(err.schema, err.errors),
+  db_method_def_errors()              = db_method_def_err_msg(err.schema, err.method, err.errors),
+  update_def_errs()                   = update_def_err_msg(err.schema, err.update, err.errors),
   handler_def_errs()                  = handler_def_err_msg(err.handler, err.errors),
   same_name_proc_defs(pds?)           = same_name_proc_defs_err_msg(pds),
   duplicate_schema_defs()             = duplicate_schema_defs_err_msg(err.defs),
@@ -567,7 +573,7 @@ String* fndef_errs_msg(SynFnDef fndef, FnDefWFError+ errs) =
   ("    " & l : l <- join((create_error_msg(e) : e <- errs)));
 
 
-String* auto_def_err_msg(SynAutoDef auto_def, ExprWFError+ errs) =
+String* auto_def_err_msg(ReactAutoDef auto_def, ExprWFError+ errs) =
   ("Error" & plural(errs) & " in reactive automaton definition: " & user_name(auto_def), source_code_loc_str(auto_def)) &
   ("    " & l : l <- join((create_error_msg(e) : e <- errs)));
 
@@ -577,18 +583,18 @@ String* auto_method_def_err_msg(AutoMethodDef meth_def, FnDefWFError+ errs) =
   ("    " & l : l <- join((create_error_msg(e) : e <- errs)));
 
 
-String* db_method_def_err_msg(SynDBDef db, DBMethodDef method, FnDefWFError+ errs) =
-  ("Error" & plural(errs) & " in method definition: " & user_name(db, method), source_code_loc_str(method)) &
+String* db_method_def_err_msg(SchemaDef s, DBMethodDef method, FnDefWFError+ errs) =
+  ("Error" & plural(errs) & " in method definition: " & user_name(s, method), source_code_loc_str(method)) &
   ("    " & l : l <- join((create_error_msg(e) : e <- errs)));
 
 
-String* db_def_err_msg(SynDBDef db, ExprWFError+ errs) =
-  ("Error" & plural(errs) & " in schema declaration: " & user_name(db), source_code_loc_str(db)) &
+String* db_def_err_msg(SchemaDef s, ExprWFError+ errs) =
+  ("Error" & plural(errs) & " in schema declaration: " & user_name(s), source_code_loc_str(s)) &
   ("    " & l : l <- join((create_error_msg(e) : e <- errs)));
 
 
-String* update_def_err_msg(SynDBDef db, UpdateDef upd, UpdateDefWFError+ errs) =
-  ("Error" & plural(errs) & " in update definition: " & user_name(db, upd), source_code_loc_str(upd)) &
+String* update_def_err_msg(SchemaDef s, UpdateDef upd, UpdateDefWFError+ errs) =
+  ("Error" & plural(errs) & " in update definition: " & user_name(s, upd), source_code_loc_str(upd)) &
   ("    " & l : l <- join((create_error_msg(e) : e <- errs)));
 
 
@@ -607,9 +613,9 @@ String* same_name_proc_defs_err_msg(SynProcDef+ proc_defs) =
   ("    " & source_code_loc_str(pd) : pd <- proc_defs);
 
 
-String* duplicate_schema_defs_err_msg(SynDBDef+ db_defs) =
-  ("Multiple definition of schema " & user_name(head(db_defs))) &
-  ("    " & source_code_loc_str(db) : db <- db_defs);
+String* duplicate_schema_defs_err_msg(SchemaDef+ schema_defs) =
+  ("Multiple definition of schema " & user_name(head(schema_defs))) &
+  ("    " & source_code_loc_str(db) : db <- schema_defs);
 
 
 String* protocol_redef_err_msg(Atom type, [+ProtDecl] protocols) =
@@ -623,7 +629,7 @@ String* protocol_errs_msg(ProtDecl prot, ProtWFError+ errors) =
   ) & ("    " & l : l <- join((basic_err_msg(e) : e <- errors)));
 
 
-String* dupl_auto_defs_err_msg([+SynAutoDef] defs) =
+String* dupl_auto_defs_err_msg([+ReactAutoDef] defs) =
   ("Duplicate reactive automata definitions: " & upper_camel_case(an_elem(defs).name)) &
   ("    " & source_code_loc_str(d) : d <- rand_sort(defs));
 
@@ -663,7 +669,7 @@ String* basic_err_msg(TypeWFError err) =
 ////////////////////////////////////////////////////////////////////////////////
 
 String* basic_err_msg(SchemaSpecWFError err) =
-  schema_def_duplicates_type()    = ("A type with the same name already exists: " & user_repr(type_symbol(err.db_def.name))),
+  schema_def_duplicates_type()    = ("A type with the same name already exists: " & user_repr(type_symbol(err.schema_def.name))),
   duplicate_schema_decl(d1?, d2?) = ("Duplicate declaration: " & _str_(d1.name)),
   invalid_relvar_arity(d?)        = ("Invalid arity: " & _str_(d.name)),
   invalid_relvar_keys(d?)         = ("Invalid keys: " & _str_(d.name)),
@@ -787,10 +793,10 @@ String* basic_err_msg(ExprSpecWFError err) =
   unreachable_stmt()          = ("Unreachable statement"),
 
   unknown_auto()              = ("Automaton does not exist: " & user_repr(err.auto_symb)),
-  auto_var_not_defined()      = ({if err.is_other_var_type then "Not an automaton" else "Undefined"} & " variable: " & user_repr(err.var)),
+  undef_react_auto_var()      = ({if err.is_other_var_type then "Not an automaton" else "Undefined"} & " variable: " & user_repr(err.var)),
   unknown_input()             = ("Automaton " & user_repr(auto_symbol(err.automaton.name)) & " has no such input: " & _str_(err.name)),
   unknown_output()            = ("Automaton " & user_repr(auto_symbol(err.automaton.name)) & " has no such output: " & _str_(err.name)),
-  unknown_db_field()          = ("Automaton " & user_repr(db_symbol(err.database.name)) & " has no such state variable or nested automaton: " & _str_(err.name)),
+  unknown_db_field()          = ("Automaton " & user_repr(db_symbol(err.schema.name)) & " has no such state variable or nested automaton: " & _str_(err.name)),
   not_a_discrete_signal()     = ("Not a discrete signal: " & user_repr(auto_symbol(err.automaton.name)) & "." & _str_(err.name)),
   not_a_memb_copy_var()       = ("Unknown signal: @" & _str_(err.name)),
   invalid_signal_copy_context() = (
@@ -810,8 +816,8 @@ String* basic_err_msg(ExprSpecWFError err) =
 
   conflicting_auto_decls(d1?, d2?) = conflicting_auto_decls_err_msg(d1, d2),
 
-  not_a_db_var()              = ( if err.is_auto_var
-                                    then _str_(err.var) & " is a reactive automaton, not a transactional one"
+  undef_static_auto_var()     = ( if err.is_auto_var
+                                    then _str_(err.var) & " is a reactive automaton, not a static one"
                                   elif err.is_obj_var
                                     then "Not an automaton variable: " & _str_(err.var)
                                   else
@@ -832,6 +838,11 @@ String* basic_err_msg(ExprSpecWFError err) =
                                 ),
   not_a_rel_var()             = ("Not a relational variable: " & _str_(err.var)),
   unknown_rel_var()           = ("Unknown relational variable: " & _str_(err.var)),
+
+  undef_auto_var()            = ( if err.is_data_var
+                                    then _str_(err.var) & " is not an automaton variable"
+                                    else "Unknown variable: " & _str_(err.var)
+                                ),
 
   anchored_errors()           = join((basic_err_msg(e) : e <- err.errors)),
 

@@ -13,6 +13,8 @@ VecVar vvar(Nat n, NzNat s) = vvar(id: n, size: s);
 
 BoolVar bvar(Nat n)                 = :bvar(n);
 
+QualBoolVar qual_bool_var(LocAutoVar av, MembBoolVar mv) = qual_bool_var(auto_var: av, memb_var: mv);
+
 MembBoolVar nested_db_spent(NestedDBVar v) = :nested_db_spent(v);
 
 MembBoolVar cond_value_var(Nat n)             = :cond_value_var(n);
@@ -65,10 +67,10 @@ TernRelItVar tern_rel_it_var(Nat n) = :tern_rel_it_var(n);
 
 TableItVar table_it_var(Nat id, NzNat a) = table_it_var(id: id, arity: a);
 
-BoolFnName memb_test(Atom a)            = :memb_test(a);
-BoolFnName memb_test(Nat n)             = :memb_test(n);
-BoolFnName memb_test(Atom a1, Atom a2)  = :memb_test(a1, a2);
-BoolFnName memb_test(Atom a, Nat n)     = :memb_test(a, n);
+MembTestPredId memb_test(Atom a)            = :memb_test(a);
+MembTestPredId memb_test(Nat n)             = :memb_test(n);
+MembTestPredId memb_test(Atom a1, Atom a2)  = :memb_test(a1, a2);
+MembTestPredId memb_test(Atom a, Nat n)     = :memb_test(a, n);
 
 AtomicExpr empty_seq = :empty_seq;
 AtomicExpr empty_rel = :empty_rel;
@@ -135,6 +137,9 @@ NatObjOp get_curr_arg(BinRelItVar v, <0..1> a)    = get_curr_arg(var: v, arg: a)
 NatObjOp get_curr_arg(TernRelItVar v, <0..2> a)   = get_curr_arg(var: v, arg: a);
 NatObjOp rand_elem(ObjExpr s)                     = :rand_elem(s);
 
+BoolFnCall is_member(MembTestPredId p, AtomicExpr e)  = is_member(pred: p, obj: e);
+BoolFnCall state_is_def(AnyAutoVar v, AutoSymbol t)   = state_is_def(auto_var: v, type: t);
+
 BoolExpr neg(BoolExpr e) =
   neg(ne?)  = ne,
   _         = :neg(e);
@@ -143,7 +148,6 @@ BoolExpr and(BoolExpr+ es)                            = :and(es);
 BoolExpr or(BoolExpr+ es)                             = :or(es);
 BoolExpr and_then(BoolExpr+ es)                       = :and_then(es);
 BoolExpr or_else(BoolExpr+ es)                        = :or_else(es);
-BoolExpr eval_bool_fn(BoolFnName n, AnyTypeExpr+ ps)  = eval_bool_fn(name: n, params: ps);
 
 BoolExpr and([+BoolExpr] es)                          = :and(rand_sort(es));
 BoolExpr or([+BoolExpr] es)                           = :or(rand_sort(es));
@@ -204,8 +208,10 @@ Instr symb_to_str(WriteObjVar v, AtomicExpr s)  = set_var(v, :symb_to_str(s));
 Instr parse_value(WriteObjVar v, AtomicExpr s)  = set_var(v, parse_value(value: s));
 Instr print_value(WriteObjVar v, AtomicExpr s)  = set_var(v, print_value(value: s));
 
-Instr copy_state(WriteObjVar rv, AnyDBVar dv, DBSymbol t)     = set_var(rv, copy_state(db_var: dv, type: t));
+Instr copy_state(WriteObjVar rv, AnyDBVar dv, DBSymbol t)     = set_var(rv, copy_state(var: dv, type: t));
 Instr copy_table(WriteObjVar ov, RelVar rv, Table t, Nat+ p)  = set_var(ov, copy_table(relvar: rv, table: t, perm: p));
+
+Instr copy_persistent_state(WriteObjVar rv, AnyAutoVar av, AutoSymbol t) = set_var(rv, copy_persistent_state(var: av, type: t));
 
 Instr lookup_surrogate(WriteObjVar v, AnyValueStoreId s, IntExpr e) = set_var(v, lookup_surrogate(s, e));
 
@@ -296,14 +302,16 @@ Instr auto_update_node(AutoSymbol t, BlockNodeId n, IntVar v) = auto_update_node
 Instr auto_apply(AnyAutoVar v, AutoSymbol t)  = auto_apply(var: v, type: t);
 Instr auto_apply(AutoSymbol t)                = auto_apply(type: t);
 
+Instr set_persistent_state(AnyAutoVar v, AtomicExpr e, AutoSymbol t) = set_persistent_state(auto_var: v, state: e, type: t);
+
 Instr init_db(AnyDBVar v, DBSymbol t)     = init_db(db_var: v, type: t);
 Instr cleanup_db(AnyDBVar v, DBSymbol t)  = cleanup_db(db_var: v, type: t);
 Instr send_msg(AnyDBVar v, DBSymbol t, AtomicExpr m, Bool r) = send_msg(db_var: v, type: t, msg: m, is_root: r);
 Instr send_msg(AnyDBVar v, DBSymbol t, AtomicExpr m, Bool r, BoolVar rv) = send_msg(db_var: v, type: t, msg: m, is_root: r, res_var: rv);
 Instr try_update(DBSymbol t, UpdateId id, AtomicExpr* as) = try_update(type: t, update_id: id, args: as);
 
-Instr set_state(AtomicExpr e, AnyDBVar v, DBSymbol t) = set_state(state: e, db_var: v, type: t);
-Instr set_state(BoolVar rv, AtomicExpr e, AnyDBVar v, DBSymbol t) = set_state(res_var: rv, state: e, db_var: v, type: t);
+Instr set_state(AnyDBVar v, AtomicExpr e, DBSymbol t) = set_state(db_var: v, state: e, type: t);
+Instr set_state(BoolVar rv, AnyDBVar v, AtomicExpr e, DBSymbol t) = set_state(res_var: rv, db_var: v, state: e, type: t);
 
 Instr invoke_auto_method(WriteObjVar rv, AutoSymbol t, MethodId id, AtomicExpr* as) =
   invoke_auto_method(res_var: rv, type: t, method_id: id, args: as);
@@ -352,7 +360,7 @@ BoundCls bound_cls(ClsDef c, <StdVar, CaptVar>* vs, AnyClsVar* cs) = bound_cls(c
 ObjProcPar cls(ClsVar n, NzNat a) = cls(name: n, arity: a);
 ObjProcPar cls(NzNat a) = cls(arity: a);
 
-BoolProcDef bool_proc_def(BoolFnName name, NzNat arity, Instr+ body) =
+BoolProcDef bool_proc_def(MembTestPredId name, NzNat arity, Instr+ body) =
   bool_proc_def(
     name:  name,
     arity: arity,
@@ -384,7 +392,7 @@ Table table(ValueStoreId+ vs, [[+Nat]] ks, NeType+ ts, Nat+ p) {
   return table(value_stores: vs, keys: ks, col_types: ts, applied_perm: p);
 }
 
-CompiledMethod compiled_method(NeType* ats, [+BoolFnName*] mps, NeType rt, Instr* c) {
+CompiledMethod compiled_method(NeType* ats, [+MembTestPredId*] mps, NeType rt, Instr* c) {
   assert not (ps <- mps : |ps| != |ats|);
   return compiled_method(args_types: ats, args_memb_preds: mps, ret_type: rt, code: c);
 }

@@ -1,7 +1,7 @@
-implicit syn_prg : SynPrg, artifact : SynAutoDef {
+implicit syn_prg : SynPrg, artifact : ReactAutoDef {
   Automaton desugar_automaton {
     // Inputs
-    inputs = [signal_var(i.name) -> input(desugar_plain_type(i.type), i.discrete) : i <~ artifact.inputs];
+    inputs = [signal_var(i.name) -> input(desugar_plain_type(i.type), i.discrete, false) : i <~ artifact.inputs];
 
     // Outputs
     outputs = [signal_var(o.name) -> output(desugar_plain_type(o.type), o.discrete) : o <~ artifact.outputs];
@@ -29,7 +29,7 @@ implicit syn_prg : SynPrg, artifact : SynAutoDef {
         type = desugar_plain_type(v.type);
         init_value = desugar_auto_expr(v.init_value);
         var_updates = lookup(updates, var, []);
-        return state_var(type, init_value, var_updates);
+        return state_var(type, init_value, false, var_updates);
       } : v <~ artifact.state_vars, var = signal_var(v.name)
     ];
 
@@ -41,8 +41,11 @@ implicit syn_prg : SynPrg, artifact : SynAutoDef {
 
     // Nested databases
     nested_dbs = [
-      db_var -> (type: db_symbol(db.type), msg_send_rule: msg_sends[db_var] if msg_sends(db_var, *))
-      : db <~ artifact.nested_dbs, db_var = nested_db_var(db.name)
+      db_var -> (
+        type:           db_symbol(db.type),
+        volatile:       false,
+        msg_send_rule:  msg_sends[db_var] if msg_sends(db_var, *)
+      ) : db <~ artifact.nested_dbs, db_var = nested_db_var(db.name)
     ];
 
     // Nested automata
@@ -52,7 +55,7 @@ implicit syn_prg : SynPrg, artifact : SynAutoDef {
         auto_def = auto_defs_by_id[auto_symb];
         args = ([f -> desugar_auto_expr(e)] : f, e <- na.args) &
                ([auto_def.pos_inputs(i) -> desugar_auto_expr(e)] : e @ i <- na.pos_args);
-        return (type: auto_symb, args: merge(args));
+        return (type: auto_symb, args: merge(args), volatile: false);
       } : na <- nested_auto_decls
     ];
 

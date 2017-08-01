@@ -64,7 +64,7 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
 
   Type qual_memb_var_type(QualMembVar var) {
     db_type = var_type(var.db_var);
-    db = data_bases_by_id[db_type];
+    db = automaton_by_id(db_type);
     return db.state_vars[var.memb_var].type;
   }
 
@@ -1483,10 +1483,17 @@ implicit program : Program, typedefs : [TypeName -> NeType], context : Context, 
     set_input_ctrl_stmt()         |
     clear_input_ctrl_stmt()       |
     set_elapsed_time_ctrl_stmt()  = env,
-    apply_ctrl_stmt()             |
-    send_msg_ctrl_stmt()          |
-    restore_state_ctrl_stmt()     = update(env, stmt.res_var, type_bool),
-    read_state_ctrl_stmt()        = update(env, stmt.res_var, db_state_type(data_bases_by_id[var_type(stmt.db_var)]));
+
+    apply_ctrl_stmt()         |
+    send_msg_ctrl_stmt()      |
+    restore_state_ctrl_stmt() = update(env, stmt.res_var, type_bool),
+    read_state_ctrl_stmt()    = read_state_ctrl_stmt_update_env(stmt.res_var, stmt.auto_var, env);
+
+
+  [EnvVar -> Type] read_state_ctrl_stmt_update_env(StdVar res_var, <LocAutoVar, LocDBVar> auto_var, [EnvVar -> Type] env) {
+    state_type = state_type_workaround(automaton_by_id(var_type(auto_var)));
+    return update(env, res_var, type_maybe(state_type));
+  }
 
 
   [EnvVar -> Type] seq_update_stmt_update_env(StdVar seq_var, Expr idx, Expr value, [EnvVar -> Type] env) {

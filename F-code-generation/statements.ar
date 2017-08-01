@@ -39,8 +39,8 @@ implicit program : Program, context : Context, var_subst_map : [StdVar -> CaptVa
     set_elapsed_time_ctrl_stmt()  = gen_code_for_set_elapsed_time_ctrl_stmt(stmt.var, stmt.time),
     apply_ctrl_stmt()         = gen_code_for_apply_ctrl_stmt(stmt.auto_var, stmt.res_var),
     send_msg_ctrl_stmt()      = gen_code_for_send_msg_ctrl_stmt(stmt.res_var, stmt.db_var, stmt.msg),
-    read_state_ctrl_stmt()    = (copy_state(stmt.res_var, stmt.db_var, var_type(stmt.db_var))),
-    restore_state_ctrl_stmt() = gen_code_for_restore_state_ctrl_stmt(stmt.res_var, stmt.db_var, stmt.state);
+    read_state_ctrl_stmt()    = gen_code_for_read_state_ctrl_stmt(stmt.res_var, stmt.auto_var),
+    restore_state_ctrl_stmt() = gen_code_for_restore_state_ctrl_stmt(stmt.res_var, stmt.auto_var, stmt.state);
 
 
   Instr+ gen_code_for_send_msg_stmt(NestedDBVar target, Expr msg) {
@@ -181,11 +181,37 @@ implicit program : Program, context : Context, var_subst_map : [StdVar -> CaptVa
   }
 
 
+  Instr+ gen_code_for_read_state_ctrl_stmt(StdVar res_var, LocDBVar db_var) =
+    (copy_state(res_var, db_var, var_type(db_var)));
+
+
+  Instr+ gen_code_for_read_state_ctrl_stmt(StdVar res_var, LocAutoVar auto_var) {
+    tmp_var, unused_var = next_obj_var(next_var_gen);
+    return (
+      branch(
+        state_is_def(auto_var, var_type(auto_var)),
+        ( copy_persistent_state(tmp_var, auto_var, var_type(auto_var)),
+          mk_tagged_obj(res_var, object(:maybe), tmp_var)
+        ),
+        (set_var(res_var, object(:nothing)))
+      )
+    );
+  }
+
+
   Instr+ gen_code_for_restore_state_ctrl_stmt(StdVar res_var, LocDBVar db_var, Expr state) {
     eval_info = gen_eval_info(state);
-    tmp_bool_var, unused_var = next_bool_var(next_var_gen);
-    set_state_instr = set_state(tmp_bool_var, eval_info.expr, db_var, var_type(db_var));
+    tmp_bool_var, unused_var = next_bool_var(next_var_gen); ## SHOULD I USE eval_info.next_var_gen HERE?
+    set_state_instr = set_state(tmp_bool_var, db_var, eval_info.expr, var_type(db_var));
     return (eval_info.eval_code | set_state_instr, set_var(res_var, bool_obj(tmp_bool_var)));
+  }
+
+
+  Instr+ gen_code_for_restore_state_ctrl_stmt(StdVar res_var, LocAutoVar auto_var, Expr state) {
+    eval_info = gen_eval_info(state);
+    check_instr = do_if_not(qual_bool_var(auto_var, is_new), terminate);
+    set_state_instr = set_persistent_state(auto_var, eval_info.expr, var_type(auto_var));
+    return ((check_instr) & eval_info.eval_code | set_state_instr);
   }
 
 

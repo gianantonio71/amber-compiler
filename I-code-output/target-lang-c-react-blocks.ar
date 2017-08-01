@@ -4,14 +4,14 @@ implicit {
   cached_semi_consts_by_impl_arg  : [ImplArg -> [+FnId]];
 
 
-  CCodeOutput compile_block_to_c(Block block) {
+  CCodeOutput compile_block_to_c(ReactBlock block) {
     has_time_rules = block.time_rules_count != 0;
 
     name_str = to_c_name(block.name);
 
     memb_vars_decl = (var_c_type(v) & " " & to_c_var_decl_name(v) & ";" : v <- rand_sort(block.memb_vars));
     auto_vars_decl = (to_c_name(t) & " " & to_c_var_decl_name(v) & ";" : v, t <- rand_sort_pairs(block.nested_auto_vars));
-    db_vars_decl = (to_c_name(t) & " " & to_c_var_decl_name(v) & ";" : v, t <- rand_sort_pairs(block.nested_trans_blocks));
+    db_vars_decl = (to_c_name(t) & " " & to_c_var_decl_name(v) & ";" : v, t <- rand_sort_pairs(block.nested_static_blocks));
     vars_decl = memb_vars_decl & auto_vars_decl & db_vars_decl;
 
     if block.time_rules_count != 0:
@@ -73,9 +73,16 @@ implicit {
     ];
     update_node_procs = join(intermix(rand_sort(update_node_procs_unsorted), ("", "")));
 
-    queue_methods_decls_and_impls = [gen_queue_update_method(block.name, id, method.body, method.args) : id, method <- block.queue_update_code];
+    queue_methods_decls_and_impls = [
+      gen_queue_update_method(block.name, id, method.body, method.args)
+      : id, method <- block.queue_update_code
+    ];
     queue_methods_decls, queue_methods_impls = unzip(rand_sort(queue_methods_decls_and_impls));
     queue_methods_impls = join(intermix(queue_methods_impls, ("", "")));
+
+    state_is_def_decl, state_is_def_impl = compile_state_is_def_code(block.name, block.state_is_def_code);
+    copy_state_decl, copy_state_impl = compile_copy_state_code(block.name, block.copy_state_code);
+    set_state_decl, set_state_impl = compile_set_state_code(block.name, block.set_state_code);
 
     insert_timer_method_decl, insert_timer_method_impl = gen_insert_timer_method(block.name);
     clear_timer_method_decl, clear_timer_method_impl = gen_clear_timer_method(block.name);
@@ -89,28 +96,47 @@ implicit {
 
     const_data = rand_sort([gen_const_data(block.name, c) : c <- block.const_data]);
 
-    header = join(
-               intermix(
-                 ( decl, aux_decls, const_data, pre_init_decl, cleanup_decl, apply_decl, update_node_decls,
-                   input_decls, queue_methods_decls, method_decls,
-                   (insert_timer_method_decl, clear_timer_method_decl) if has_time_rules
-                 ),
-                 ("", "")
-               )
-             );
+    all_decls = (
+      decl, aux_decls, const_data, pre_init_decl, cleanup_decl, apply_decl, update_node_decls,
+      input_decls, queue_methods_decls, (state_is_def_decl, copy_state_decl, set_state_decl), method_decls,
+      (insert_timer_method_decl, clear_timer_method_decl) if has_time_rules
+    );
 
-    body = join(
-             intermix(
-               ( pre_init_proc, cleanup_proc, apply_proc, update_node_procs, input_impls,
-                 queue_methods_impls, method_impls,
-                 insert_timer_method_impl if has_time_rules,
-                 clear_timer_method_impl  if has_time_rules
-               ),
-               ("", "")
-             )
-           );
+    all_impls = (
+      pre_init_proc, cleanup_proc, apply_proc, update_node_procs, input_impls,
+      queue_methods_impls, state_is_def_impl, copy_state_impl, set_state_impl, method_impls,
+      insert_timer_method_impl if has_time_rules, clear_timer_method_impl  if has_time_rules
+    );
 
-    return (body: body, header: header);
+    return (
+      body:   join(intermix(all_impls, ("", ""))),
+      header: join(intermix(all_decls, ("", "")))
+    );
+  }
+
+
+  (String, String*) compile_state_is_def_code(AutoSymbol name, Instr* code) {
+    vars_decls = gen_vars_decls(code);
+    body = vars_decls & ("" if vars_decls != ()) & compile_to_c(code, nothing);
+    sng = "bool " & state_is_def_proc_name(name) & "(" & to_c_name(name) & " *self)";
+    return (sng & ";", (sng & " {") & indent_lines(body) & ("}"));
+  }
+
+
+  (String, String*) compile_copy_state_code(AutoSymbol name, Instr* code) {
+    vars_decls = gen_vars_decls(code);
+    body = vars_decls & ("" if vars_decls != ()) & compile_to_c(code, nothing);
+    sgn = "OBJ " & copy_state_proc_name(name) & "(" & to_c_name(name) & " *self)";
+    return (sgn & ";", (sgn & " {") & indent_lines(body) & ("}"));
+  }
+
+
+  (String, String*) compile_set_state_code(AutoSymbol name, Instr* code) {
+    vars_decls = gen_vars_decls(code);
+    body = vars_decls & ("" if vars_decls != ()) & compile_to_c(code, nothing);
+    ## WHY DOES THIS RETURN AN OBJ?
+    sgn = "void " & set_state_proc_name(name) & "(" & to_c_name(name) & " *self, OBJ a0)";
+    return (sgn & ";", (sgn & " {") & indent_lines(body) & ("}"));
   }
 
 

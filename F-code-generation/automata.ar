@@ -1,5 +1,5 @@
 implicit program : Program, automaton : Automaton, options : CompilationOptions {
-  Block gen_auto_code {
+  ReactBlock gen_auto_code {
     nodes = gen_auto_nodes;
 
     memb_bool_vars = seq_union((memb_bool_vars(n) : n <- nodes)) & [(is_new, true)];
@@ -43,7 +43,7 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
                 [left(v) : v <- memb_obj_vars] &
                 memb_int_vect_vars;
 
-    return block(
+    return react_block(
       name:                 automaton.name,
       ord_inputs:           sorted_input_ids,
       ord_outputs:          sorted_outputs_ids,
@@ -52,15 +52,19 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
       outputs:              [bare_id(id) -> (type: output.type, discrete: output.discrete) : id, output <- automaton.outputs],
       memb_vars:            memb_vars,
       nested_auto_vars:     [id -> auto.type : id, auto <- automaton.nested_autos],
-      nested_trans_blocks:  [id -> db.type : id, db <- automaton.nested_dbs],
+      nested_static_blocks: [id -> db.type : id, db <- automaton.nested_dbs],
       pre_init_code:        pre_init_code,
       cleanup_code:         cleanup_code,
       nodes_update_code:    nodes_update_code,
       apply_code:           apply_code,
       queue_update_code:    queue_update_code,
+      state_is_def_code:    state_is_def_code,
+      copy_state_code:      copy_state_code,
+      set_state_code:       set_state_code,
       methods:              methods,
       const_data:           const_data,
-      time_rules_count:     |time_varying_nodes_indexes|
+      time_rules_count:     |time_varying_nodes_indexes|,
+      state_memb_pred:      memb_test_preds_map[deep_state_type(automaton)]
     );
   }
 
@@ -307,6 +311,87 @@ implicit program : Program, automaton : Automaton, options : CompilationOptions 
     code = (do_if(is_eq(curr_time_var, update_time), code)) if level_idx == 0 and is_time_sensitive and code != ();
 
     return code;
+  }
+
+
+  Instr* state_is_def_code {
+    inputs = [v : v, i <- automaton.inputs, not i.discrete and not i.volatile];
+    state_vars = [v : v, s <- automaton.state, not s.volatile];
+    nested_autos = [v : v, a <- automaton.nested_autos, not a.volatile];
+
+    input_conds = rand_sort([neg(or(is_null(v), is_blank(v))) : v <- inputs]);
+    state_vars_conds = rand_sort([neg(or(is_null(v), is_blank(v))) : v <- state_vars]);
+    let context = automaton:
+      nested_autos_conds = rand_sort([state_is_def(v, var_type(v)) : v <- nested_autos]);
+    ;
+
+    conds = state_vars_conds & input_conds & nested_autos_conds;
+    return (set_bvar(bvar(0), if conds != () then and_then(conds) else true), ret_val(bvar(0)));
+  }
+
+
+  Instr* copy_state_code {
+    inputs = [v : v, i <- automaton.inputs, not i.discrete and not i.volatile];
+    state_vars = [v : v, s <- automaton.state, not s.volatile];
+    nested_autos = [v : v, a <- automaton.nested_autos, not a.volatile];
+    nested_dbs = [v : v, a <- automaton.nested_dbs, not a.volatile];
+
+    count = nat(|inputs| + |state_vars| + |nested_autos| + |nested_dbs|);
+    return (ret_val(empty_rel)) if count == 0;
+
+    res_var, var_gen = next_obj_var(blank_var_gen);
+    keys_var, var_gen = next_vector_var(var_gen, count);
+    values_var, var_gen = next_vector_var(var_gen, count);
+
+    let context = automaton:
+      code = join(({
+        set_label_instr = set_var(evar(keys_var.id, i), object(bare_id(v)));
+        value_var = evar(values_var.id, i);
+        set_value_instr = match (v)
+          signal_var()      = set_var(value_var, v),
+          nested_db_var()   = copy_state(value_var, v, var_type(v)),
+          nested_auto_var() = copy_persistent_state(value_var, v, var_type(v));
+        return (set_label_instr, set_value_instr);
+
+      } : v @ i <- rand_sort(inputs) & rand_sort(state_vars) & rand_sort(nested_autos) & rand_sort(nested_dbs)));
+    ;
+
+    return (code | mk_map(res_var, keys_var, values_var, count), ret_val(res_var));
+  }
+
+
+  Instr* set_state_code {
+    inputs = [v : v, i <- automaton.inputs, not i.discrete and not i.volatile];
+    state_vars = [v : v, s <- automaton.state, not s.volatile];
+    nested_autos = [v : v, a <- automaton.nested_autos, not a.volatile];
+    nested_dbs = [v : v, a <- automaton.nested_dbs, not a.volatile];
+
+    count = nat(|inputs| + |state_vars| + |nested_autos| + |nested_dbs|);
+    return () if count == 0;
+
+    state_var = fn_arg(0);
+    tmp_var = lvar(0);
+    res_var = bvar(0);
+
+    set_vars_code = join(((
+      lookup_field(tmp_var, state_var, object(bare_id(v))),
+      set_var(v, tmp_var),
+      set_bvar(up_to_date_var(std_block_node_id(bare_id(v))), true)
+      ) & flag_as_changed_if_output(bare_id(v))
+    : v <- rand_sort(inputs) & rand_sort(state_vars)));
+
+    set_nested_autos_code = join(((
+      lookup_field(tmp_var, state_var, object(bare_id(v))),
+      set_persistent_state(v, tmp_var, automaton.nested_autos[v].type)
+    ) : v <- rand_sort(nested_autos)));
+
+    set_nested_dbs_code = join(((
+      lookup_field(tmp_var, state_var, object(bare_id(v))),
+      set_state(res_var, v, tmp_var, automaton.nested_dbs[v].type),
+      do_if_not(res_var, terminate)
+    ) : v <- rand_sort(nested_dbs)));
+
+    return set_vars_code & set_nested_autos_code & set_nested_dbs_code;
   }
 
   //////////////////////////////////////////////////////////////////////////////

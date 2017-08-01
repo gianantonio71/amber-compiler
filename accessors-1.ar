@@ -8,7 +8,7 @@ type NestedFnDef          = nested_fn_def(
 type UsingBlockFnDef      = using_block_method_def(target: Atom, fndef: DBMethodDef);
 type UsingBlockUpdateDef  = using_block_update_def(target: Atom, fndef: UpdateDef);
 
-type Artifact = null_artifact, SynProcDef, SynAutoDef, SynDBDef, AutoMethodDef, HandlerDef,
+type Artifact = null_artifact, SynProcDef, ReactAutoDef, SchemaDef, AutoMethodDef, HandlerDef,
                 NestedFnDef, TopLevelFnDef, UsingBlockFnDef, UsingBlockUpdateDef;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -109,17 +109,17 @@ implicit syn_prg : SynPrg {
   }
 
 
-  [Typedef]       syn_tdefs       = [d : d <- all_syn_decls, typedef()          ?= d];
-  [ParTypedef]    syn_par_tdefs   = [d : d <- all_syn_decls, par_typedef()      ?= d];
-  [SynFnDef]      syn_fn_defs     = [d : d <- all_syn_decls, syn_fn_def()       ?= d];
-  [SynProcDef]    syn_proc_defs   = [d : d <- all_syn_decls, syn_proc_def()     ?= d];
-  [ImplBlock]     impl_blocks     = [d : d <- all_syn_decls, impl_block()       ?= d];
-  [SynAutoDef]    syn_auto_defs   = [d : d <- all_syn_decls, syn_auto_def()     ?= d];
-  [SynDBDef]      syn_db_defs     = [d : d <- all_syn_decls, syn_db_def()       ?= d];
-  [AutoMethodDef] auto_methods    = [d : d <- all_syn_decls, auto_method_def()  ?= d];
-  [HandlerDef]    handler_defs    = [d : d <- all_syn_decls, handler_def()      ?= d];
-  [UsingBlock]    using_blocks    = [d : d <- all_syn_decls, using_block()      ?= d];
-  [ProtDecl]      prot_decls      = [d : d <- all_syn_decls, prot_decl()        ?= d];
+  [Typedef]       syn_tdefs         = [d : d <- all_syn_decls, typedef()          ?= d];
+  [ParTypedef]    syn_par_tdefs     = [d : d <- all_syn_decls, par_typedef()      ?= d];
+  [SynFnDef]      syn_fn_defs       = [d : d <- all_syn_decls, syn_fn_def()       ?= d];
+  [SynProcDef]    syn_proc_defs     = [d : d <- all_syn_decls, syn_proc_def()     ?= d];
+  [ImplBlock]     impl_blocks       = [d : d <- all_syn_decls, impl_block()       ?= d];
+  [ReactAutoDef]  react_auto_defs   = [d : d <- all_syn_decls, react_auto_def()   ?= d];
+  [SchemaDef]     schema_defs       = [d : d <- all_syn_decls, schema_def()       ?= d];
+  [AutoMethodDef] auto_methods      = [d : d <- all_syn_decls, auto_method_def()  ?= d];
+  [HandlerDef]    handler_defs      = [d : d <- all_syn_decls, handler_def()      ?= d];
+  [UsingBlock]    using_blocks      = [d : d <- all_syn_decls, using_block()      ?= d];
+  [ProtDecl]      prot_decls        = [d : d <- all_syn_decls, prot_decl()        ?= d];
 
 
   [BasicTypeSymbol -> [+Nat]] type_arity_map =
@@ -138,13 +138,13 @@ implicit syn_prg : SynPrg {
   [TypeName -> NeType] typedefs = create_type_map(syn_tdefs, syn_par_tdefs);
 
 
-  [Atom] schema_names = [d.name : d <- syn_db_defs];
+  [Atom] schema_names = [d.name : d <- schema_defs];
 
 
-  SynDBDef schema_by_id(Atom id) {
+  SchemaDef schema_by_id(Atom id) {
     return schemas_by_id[id];
 
-    [Atom -> SynDBDef] schemas_by_id = [d.name -> d : d <- syn_db_defs];
+    [Atom -> SchemaDef] schemas_by_id = [d.name -> d : d <- schema_defs];
   }
 
 
@@ -177,7 +177,7 @@ implicit syn_prg : SynPrg {
 
 
   [Atom -> [Atom]] method_ids_by_db_id =
-    [db.name -> [m.name : m <- lookup(methods_by_db, db.name, [])] : db <- syn_db_defs];
+    [db.name -> [m.name : m <- lookup(methods_by_db, db.name, [])] : db <- schema_defs];
 
 
   [Atom -> [+UpdateDef]] updates_by_db =
@@ -201,10 +201,10 @@ implicit syn_prg : SynPrg {
   }
 
 
-  [AutoSymbol -> SynAutoDef] auto_defs_by_id = [auto_symbol(a.name) -> a : a <- resolve_inheritance(syn_auto_defs)];
+  [AutoSymbol -> ReactAutoDef] auto_defs_by_id = [auto_symbol(a.name) -> a : a <- resolve_inheritance(react_auto_defs)];
 
 
-  [DBSymbol -> SynDBDef] db_defs_by_id = [db_symbol(db.name) -> db : db <- syn_db_defs];
+  [DBSymbol -> SchemaDef] db_defs_by_id = [db_symbol(db.name) -> db : db <- schema_defs];
 
 
   Bool automaton_is_static(Atom id) =
@@ -244,8 +244,8 @@ implicit syn_prg : SynPrg {
 
 
   [AutoSymbol -> AutoSymbol*] automata_ancestors {
-    resolved = [auto_symbol(a.name) -> () : a <- syn_auto_defs, not a.parent?];
-    remaining = [a : a <- syn_auto_defs, a.parent?];
+    resolved = [auto_symbol(a.name) -> () : a <- react_auto_defs, not a.parent?];
+    remaining = [a : a <- react_auto_defs, a.parent?];
     loop
       newly_resolved = [auto_symbol(a.name) -> (p) & resolved[p] : a <- remaining, p = auto_symbol(a.parent), resolved(p, *)];
       break if newly_resolved == [];
@@ -295,8 +295,8 @@ implicit syn_prg : SynPrg {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-implicit syn_prg : SynPrg, artifact : SynDBDef {
-  [DatabaseDecl] all_db_decls = set(artifact.decls);
+implicit syn_prg : SynPrg, artifact : SchemaDef {
+  [SchemaItemDecl] all_db_decls = set(artifact.decls);
 
   [StateVarDecl] db_state_vars = [d : d <- all_db_decls, state_var_decl() ?= d];
   [RelVarsDecl]  db_rel_vars   = [d : d <- all_db_decls, relvars_decl() ?= d];
@@ -310,7 +310,7 @@ implicit syn_prg : SynPrg, artifact : SynDBDef {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-implicit syn_prg : SynPrg, artifact : SynAutoDef {
+implicit syn_prg : SynPrg, artifact : ReactAutoDef {
   [Atom] auto_def_state_vars_ids = [sv.name : sv <~ artifact.state_vars];
 
   [RuleDecl] rule_decls = set(artifact.rules);
@@ -436,16 +436,16 @@ implicit syn_prg : SynPrg, artifact : Artifact {
 
   [NestedAutoVar -> AutoSymbol] nested_auto_vars =
     match (artifact)
-      syn_auto_def()    = nested_auto_vars(auto_symbol(artifact.name)),
+      react_auto_def()  = nested_auto_vars(auto_symbol(artifact.name)),
       auto_method_def() = nested_auto_vars(auto_symbol(artifact.target)),
       _                 = [];
 
 
   [NestedDBVar -> DBSymbol] nested_db_vars =
     match (artifact)
-      syn_auto_def()            = nested_db_vars(auto_symbol(artifact.name)),
+      react_auto_def()          = nested_db_vars(auto_symbol(artifact.name)),
       auto_method_def()         = nested_db_vars(auto_symbol(artifact.target)),
-      syn_db_def()              = nested_db_vars(db_symbol(artifact.name)),
+      schema_def()              = nested_db_vars(db_symbol(artifact.name)),
       handler_def()             |
       using_block_method_def()  |
       using_block_update_def()  = nested_db_vars(db_symbol(artifact.target)),
@@ -474,7 +474,7 @@ implicit syn_prg : SynPrg, artifact : Artifact {
   [AnyRelVar -> NzNat] rel_vars_arities {
     ## BAD BAD BAD
     has_self_db = match (artifact)
-      syn_db_def()              |
+      schema_def()              |
       handler_def()             |
       using_block_method_def()  |
       using_block_update_def()  = true,
@@ -494,7 +494,7 @@ implicit syn_prg : SynPrg, artifact : Artifact {
 
   //////////////////////////////////////////////////////////////////////////////
 
-  SynDBDef curr_db_def {
+  SchemaDef curr_db_def {
     db_name = match (artifact)
       handler_def()             = artifact.target,
       using_block_method_def()  = artifact.target,
@@ -511,13 +511,13 @@ implicit syn_prg : SynPrg, artifact : Artifact {
 
   AutoSymbol self_auto_type =
     match (artifact)
-      syn_auto_def()    = auto_symbol(artifact.name),
+      react_auto_def()  = auto_symbol(artifact.name),
       auto_method_def() = auto_symbol(artifact.target);
 
 
   DBSymbol self_db_type =
     match (artifact)
-      syn_db_def()              = db_symbol(artifact.name),
+      schema_def()              = db_symbol(artifact.name),
       handler_def()             = db_symbol(artifact.target),
       using_block_method_def()  = db_symbol(artifact.target),
       using_block_update_def()  = db_symbol(artifact.target);

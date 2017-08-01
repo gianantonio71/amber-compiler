@@ -52,7 +52,8 @@ type IntConst       = time_slot_length(automaton: AutoSymbol, expr_id: Atom, tim
 type MembIntVectVar = nodes_to_update_vect_var(level: Nat, size: NzNat), ## BAD: <size> SHOULD BE OF TYPE <3..*>
                       changed_outputs(size: NzNat);
 
-type BoolVar        = bvar(Nat), MembBoolVar;
+type QualBoolVar    = qual_bool_var(auto_var: LocAutoVar, memb_var: MembBoolVar);
+type BoolVar        = bvar(Nat), MembBoolVar, QualBoolVar;
 
 type LocAutoIntVar  = elapsed_time(LocAutoVar); ## BETTER NAME/CLASSIFICATION
 
@@ -81,7 +82,7 @@ type AnyVar         = ObjVar, VecVar, BoolVar, IntVar, ItVar, StreamVar;
 
 type ObjFnName      = FnId, ProcSymbol;
 
-type BoolFnName     = memb_test(<Atom, Nat, (Atom, <Atom, Nat>)>);
+type MembTestPredId = memb_test(<Atom, Nat, (Atom, <Atom, Nat>)>);
 
 type InlineObj      = LeafObj, empty_seq, empty_rel;
 
@@ -145,14 +146,17 @@ type NatObjOp       = at(seq: ObjExpr, idx: IntExpr),
                       get_curr_arg(var: TernRelItVar, arg: <0..2>),
                       rand_elem(ObjExpr); // Non-deterministic (unless applied to a singleton)
 
+type BoolFnCall     = is_member(pred: MembTestPredId, obj: AtomicExpr),
+                      state_is_def(auto_var: AnyAutoVar, type: AutoSymbol);
+
 type BoolExpr       = AtomicBoolExpr,
                       NatBoolOp,
+                      BoolFnCall,
                       neg(BoolExpr),
                       and(BoolExpr+), ## SEQUENCES OR SETS?
                       or(BoolExpr+),  ## DITTO
                       and_then(BoolExpr+),
-                      or_else(BoolExpr+),
-                      eval_bool_fn(name: BoolFnName, params: AnyTypeExpr+);
+                      or_else(BoolExpr+);
 
 type IntExpr        = Int, IntConst, IntVar, NatIntOp;
 
@@ -195,9 +199,10 @@ type RefObjExpr     = mk_set_from_stream(stream: StreamVar),
                       parse_value(value: AtomicExpr),
                       print_value(value: AtomicExpr),
 
-
-                      copy_state(db_var: AnyDBVar, type: DBSymbol),
+                      copy_state(var: AnyDBVar, type: DBSymbol),
                       copy_table(relvar: RelVar, table: Table, perm: Nat+),
+
+                      copy_persistent_state(var: AnyAutoVar, type: AutoSymbol),
 
                       // Can be used only once per pending variable, and does not automatically clear it,
                       // it has to be manually cleared with init_memb_var(...)
@@ -258,6 +263,8 @@ type BasicInstr     = init_stream(StreamVar),
                       // auto_update(var: AnyAutoVar?, type: AutoSymbol),
                       auto_update_node(type: AutoSymbol, node: BlockNodeId, time_var: IntVar?),
                       auto_apply(var: AnyAutoVar?, type: AutoSymbol),
+
+                      set_persistent_state(auto_var: AnyAutoVar, state: AtomicExpr, type: AutoSymbol),
 
                       init_db(db_var: AnyDBVar, type: DBSymbol),
                       cleanup_db(db_var: AnyDBVar, type: DBSymbol),
@@ -335,7 +342,7 @@ type ObjProcDef     = obj_proc_def(
                       );
 
 type BoolProcDef    = bool_proc_def(
-                        name:  BoolFnName,
+                        name:  MembTestPredId,
                         arity: NzNat,
                         body:  Instr+
                       );
@@ -363,32 +370,36 @@ type Table  = table(value_stores: ValueStoreId+, keys: [[+Nat]], col_types: NeTy
 
 type CompiledMethod = compiled_method(
                         args_types:       NeType*,
-                        args_memb_preds:  [+BoolFnName*],
+                        args_memb_preds:  [+MembTestPredId*],
                         ret_type:         NeType,
                         code:             Instr*
                       );
 
-type Block  = block(
-                name:                 AutoSymbol,
-                ord_inputs:           Atom*,
-                ord_outputs:          Atom*,
-                input_memb_preds:     [Atom -> BoolFnName],
-                inputs:               [Atom -> (type: NeType, discrete: Bool)],
-                outputs:              [Atom -> (type: NeType, discrete: Bool)],
-                memb_vars:            [<SignalVar, MembObjVar, PendingInputVar, MembIntVar, MembIntVectVar, MembBoolVar>],
-                nested_auto_vars:     [NestedAutoVar -> AutoSymbol],
-                nested_trans_blocks:  [NestedDBVar -> DBSymbol],
-                pre_init_code:        Instr*,
-                cleanup_code:         Instr*,
-                apply_code:           Instr*,
-                nodes_update_code:    [BlockNodeId -> Instr*],
-                queue_update_code:    [BlockNodeId -> (body: Instr*, args: IntVar*)],
-                methods:              [MethodId -> CompiledMethod],
-                const_data:           [ConstBlockData],
-                time_rules_count:     Nat
-              );
+type ReactBlock = react_block(
+                    name:                 AutoSymbol,
+                    ord_inputs:           Atom*,
+                    ord_outputs:          Atom*,
+                    input_memb_preds:     [Atom -> MembTestPredId],
+                    inputs:               [Atom -> (type: NeType, discrete: Bool)],
+                    outputs:              [Atom -> (type: NeType, discrete: Bool)],
+                    memb_vars:            [<SignalVar, MembObjVar, PendingInputVar, MembIntVar, MembIntVectVar, MembBoolVar>],
+                    nested_auto_vars:     [NestedAutoVar -> AutoSymbol],
+                    nested_static_blocks: [NestedDBVar -> DBSymbol],
+                    pre_init_code:        Instr*,
+                    cleanup_code:         Instr*,
+                    apply_code:           Instr*,
+                    nodes_update_code:    [BlockNodeId -> Instr*],
+                    queue_update_code:    [BlockNodeId -> (body: Instr*, args: IntVar*)],
+                    state_is_def_code:    Instr*,
+                    copy_state_code:      Instr*,
+                    set_state_code:       Instr*,
+                    methods:              [MethodId -> CompiledMethod],
+                    const_data:           [ConstBlockData],
+                    time_rules_count:     Nat,
+                    state_memb_pred:      MembTestPredId
+                  );
 
-type TransBlock = trans_block(
+type StaticBlock = static_block(
                     name:             DBSymbol,
                     state_vars:       [MembVar -> NeType],
                     value_stores:     [ValueStoreId],
@@ -400,15 +411,15 @@ type TransBlock = trans_block(
                     set_state_code:   Instr*,
                     methods:          [MethodId -> CompiledMethod],
                     updates_code:     [UpdateId -> Instr*],
-                    msg_memb_pred:    Maybe[BoolFnName], ## REPLACE THE MAYBE WITH A NULL OBJECT?
-                    state_memb_pred:  BoolFnName
+                    msg_memb_pred:    Maybe[MembTestPredId], ## REPLACE THE MAYBE WITH A NULL OBJECT?
+                    state_memb_pred:  MembTestPredId
                   );
 
 type CompiledPrg  = compiled_prg(
-                      typedefs:     [TypeName -> NeType],
-                      bool_procs:   [BoolProcDef],
-                      procs:        [ObjProcDef],
-                      blocks:       [Block],
-                      trans_blocks: [TransBlock],
-                      int_seqs:     Int+*
+                      typedefs:       [TypeName -> NeType],
+                      bool_procs:     [BoolProcDef],
+                      procs:          [ObjProcDef],
+                      react_blocks:   [ReactBlock],
+                      static_blocks:  [StaticBlock],
+                      int_seqs:       Int+*
                     );

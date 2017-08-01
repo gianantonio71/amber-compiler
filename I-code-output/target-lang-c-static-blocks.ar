@@ -4,7 +4,7 @@ implicit {
   cached_semi_consts_by_impl_arg  : [ImplArg -> [+FnId]];
 
 
-  CCodeOutput compile_trans_block_to_c(TransBlock block) {
+  CCodeOutput compile_static_block_to_c(StaticBlock block) {
     state_vars_decls = ["OBJ " & to_c_var_decl_name(v) & ";" : v, unused_var <- block.state_vars];
     value_store_decls = ["VALUE_STORE " & to_c_var_decl_name(v) & ";" : v <- block.value_stores];
     table_decls = [table_c_type(t) & " " & to_c_var_decl_name(v) & ";" : v, t <- block.tables];
@@ -108,7 +108,7 @@ implicit {
     vars_decls = gen_vars_decls(code);
     body = vars_decls & ("" if vars_decls != ()) & compile_to_c(code, nothing);
     sgn = "OBJ " & set_state_proc_name(name) & "(" & to_c_name(name) & " *self, " &
-          aux_struct_c_name(name) & " *self_aux, OBJ a0, ENV &env)";
+          aux_struct_c_name(name) & " *self_aux, OBJ a0)";
     return (sgn & ";", (sgn & " {") & indent_lines(body) & ("}"));
   }
 
@@ -155,11 +155,11 @@ implicit {
 
 
   (String, String*) set_state_entry_point(DBSymbol block_name) {
-    sgn = "bool " & set_state_entry_point_name(block_name) & "(" & to_c_name(block_name) & " *self, OBJ a0, ENV &env)";
+    sgn = "bool " & set_state_entry_point_name(block_name) & "(" & to_c_name(block_name) & " *self, OBJ a0)";
 
     aux_var_decl = aux_struct_c_name(block_name) & " self_aux;";
     aux_struct_init_call = mk_gen_call(aux_struct_init_proc_name(block_name), ("self", "&self_aux"), (), ());
-    set_state_call = mk_gen_call(set_state_proc_name(block_name), ("self", "&self_aux"), (fn_arg(0)), ("env"));
+    set_state_call = mk_gen_call(set_state_proc_name(block_name), ("self", "&self_aux"), (fn_arg(0)), ());
     updates_check_call = mk_gen_call(updates_check_proc_name(block_name), ("self", "&self_aux"), (), ());
     updates_copy_call = mk_gen_call(updates_copy_proc_name(block_name), ("self", "&self_aux"), (), ());
     updates_apply_call = mk_gen_call(updates_apply_proc_name(block_name), ("self", "&self_aux"), (), ());
@@ -187,7 +187,7 @@ implicit {
   }
 
 
-  (String, String*) updates_check_code(TransBlock block) {
+  (String, String*) updates_check_code(StaticBlock block) {
     tables_check_code = [
       "ok &= " & mk_gen_call(fn_names[arity(t)][t.keys], (), (v), ("&" & pending_updates_var_ref_name(v)))
       : v, t <- block.tables, t.keys != []
@@ -225,7 +225,7 @@ implicit {
   }
 
 
-  (String, String*) updates_copy_code(TransBlock block) {
+  (String, String*) updates_copy_code(StaticBlock block) {
     var_ids = (bare_id(v) : v <- rand_sort(keys(block.state_vars)));
     vars_copy_code = join((var_copy_code(id) : id <- var_ids));
 
@@ -248,7 +248,7 @@ implicit {
   }
 
 
-  (String, String*) updates_apply_code(TransBlock block) {
+  (String, String*) updates_apply_code(StaticBlock block) {
     value_stores_apply_code = (
       mk_gen_call("value_store_apply", (), (vs), (aux_struct_var_ref_name(vs)))
       : vs <- rand_sort(block.value_stores)
@@ -281,7 +281,7 @@ implicit {
   }
 
 
-  (String, String*) updates_finish_code(TransBlock block) {
+  (String, String*) updates_finish_code(StaticBlock block) {
     var_ids = (bare_id(v) : v <- rand_sort(keys(block.state_vars)));
     vars_copy_code = join((var_apply_code(id) : id <- var_ids));
 
@@ -312,7 +312,7 @@ implicit {
   }
 
 
-  (String, String*) aux_struct_init_code(TransBlock block) {
+  (String, String*) aux_struct_init_code(StaticBlock block) {
     var_ids = (bare_id(v) : v <- rand_sort(keys(block.state_vars)));
     init_vars_code = (to_c_var_ref_name(pending_state_var(id)) & " = make_blank_obj();" : id <- var_ids);
 
@@ -350,7 +350,7 @@ implicit {
   }
 
 
-  (String, String*) aux_struct_cleanup_code(TransBlock block) {
+  (String, String*) aux_struct_cleanup_code(StaticBlock block) {
     // var_ids = (bare_id(v) | v <- rand_sort(block.state_vars));
     // init_vars_code = (to_c_var_ref_name(pending_state_var(id)) & " = make_blank_obj();" | id <- var_ids);
 

@@ -1,10 +1,10 @@
-implicit block : Block {
+implicit block : ReactBlock {
   String auto_class_name = upper_camel_case(bare_id(block.name));
   String auto_struct_ptr = "((" & to_c_name(block.name) & " *) ptr)";
 }
 
 
-implicit block : Block, typedefs : [TypeName -> NeType] {
+implicit block : ReactBlock, typedefs : [TypeName -> NeType] {
   // (String*, String*) record_input_setter(Atom id, RecordTypeFields fields, Maybe[SymbObj] maybe_tag) {
   //   return ((), ()) if (l, f <- fields : f.optional);
 
@@ -232,6 +232,8 @@ implicit block : Block, typedefs : [TypeName -> NeType] {
       "  void set_elapsed_secs(unsigned long long time);" if is_time_sensitive,
       "",
       "  " & apply_ret_type & " apply();",
+      "  std::unique_ptr<cell::Value> read_state();",
+      "  void set_state(const char *buffer);",
       "",
       "  unsigned int changed_outputs_count();" if outputs != (),
       "  Output changed_output_id(unsigned int idx);" if outputs != ()
@@ -266,6 +268,25 @@ implicit block : Block, typedefs : [TypeName -> NeType] {
       "  memset(&env, 0, sizeof(ENV));",
       "  " & apply_method_name & "((" & auto_name & " *) ptr, env);",
       "  return " & auto_struct_ptr & "->" & elapsed_time_var_name & " == 0;" if is_time_sensitive,
+      "}",
+      "",
+      "std::unique_ptr<cell::Value> " & auto_class_name & "::read_state() {",
+      "  OBJ obj = " & copy_state_proc_name(block.name) & "(" & auto_struct_ptr & ");",
+      "  std::unique_ptr<cell::Value> result = export_as_value(obj);",
+      "  release(obj);",
+      "  return result;",
+      "}",
+      "",
+      "void " & auto_class_name & "::set_state(const char *buffer) {",
+      "  if (!" & auto_struct_ptr & "->" & to_c_var_decl_name(is_new) & ")",
+      "    throw 0LL;",
+      "  OBJ obj = convert_text(buffer);",
+      "  if (!" & to_c_fn_name(block.state_memb_pred) & "(obj)) {",
+      "    release(obj);",
+      "    throw 0LL;",
+      "  }",
+      "  " & set_state_proc_name(block.name) & "(" & auto_struct_ptr & ", obj);",
+      "  release(obj);",
       "}"
     );
 

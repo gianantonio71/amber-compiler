@@ -1,5 +1,5 @@
 implicit program : Program, database : Database, options : CompilationOptions {
-  TransBlock compiled_database {
+  StaticBlock compiled_database {
     value_stores, tables = value_stores_and_tables;
 
     methods = compiled_database_methods(database.methods);
@@ -9,7 +9,7 @@ implicit program : Program, database : Database, options : CompilationOptions {
     msg_types = [h.type : h <- database.handlers];
     msg_memb_pred = if msg_types != [] then just(memb_test_preds_map[ne_union_type(msg_types)]) else nothing;
 
-    return trans_block(
+    return static_block(
       name:             database.name,
       state_vars:       [v -> info.type : v, info <- database.state_vars],
       value_stores:     value_stores,
@@ -22,7 +22,7 @@ implicit program : Program, database : Database, options : CompilationOptions {
       methods:          methods,
       updates_code:     handlers_code & updates_code,
       msg_memb_pred:    msg_memb_pred,
-      state_memb_pred:  memb_test_preds_map[state_type(database)]
+      state_memb_pred:  memb_test_preds_map[deep_state_type(database)]
     );
   }
 
@@ -64,7 +64,7 @@ implicit program : Program, database : Database, options : CompilationOptions {
 
   Instr* database_copy_state_code {
     count = nat(|database.state_vars| + |database.rel_vars| + |database.nested_dbs|);
-    return () if count == 0;
+    return (ret_val(empty_rel)) if count == 0;
 
     res_var, var_gen = next_obj_var(blank_var_gen);
     keys_var, var_gen = next_vector_var(var_gen, count);
@@ -132,7 +132,7 @@ implicit program : Program, database : Database, options : CompilationOptions {
       db_type = database.nested_dbs[db];
       code = (code |
         lookup_field(tmp_var, state_var, object(bare_id(db))),
-        set_state(tmp_var, db, db_type)
+        set_state(db, tmp_var, db_type)
       );
     ;
 

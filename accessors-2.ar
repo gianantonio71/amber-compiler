@@ -94,7 +94,7 @@ implicit program : Program, context : Context {
 
   [+NeType+] relvar_signatures(QualRelVar relvar) {
     db_type = var_type(relvar.db_var);
-    db = data_bases_by_id[db_type];
+    db = automaton_by_id(db_type);
     return db.rel_vars[relvar.rel_var].signatures;
   }
 
@@ -105,7 +105,7 @@ implicit program : Program, context : Context {
 
   [[+Nat]] relvar_keys(QualRelVar relvar) {
     db_type = var_type(relvar.db_var);
-    db = data_bases_by_id[db_type];
+    db = automaton_by_id(db_type);
     return db.rel_vars[relvar.rel_var].keys;
   }
 }
@@ -148,9 +148,9 @@ implicit program : Program {
   //////////////////////////////////////////////////////////////////////////////
 
   Automaton automaton_by_id(AutoSymbol type) {
-    return automata_by_id[type];
+    return reactive_automata[type];
 
-    [AutoSymbol -> Automaton] automata_by_id = [auto.name -> auto : auto <- program.auto_defs];
+    [AutoSymbol -> Automaton] reactive_automata = [auto.name -> auto : auto <- program.auto_defs];
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -160,7 +160,11 @@ implicit program : Program {
   ];
 
 
-  [DBSymbol -> Database] data_bases_by_id = [db.name -> db : db <- program.data_bases];
+  Database automaton_by_id(DBSymbol type) {
+    return static_automata[type];
+
+    [DBSymbol -> Database] static_automata = [db.name -> db : db <- program.data_bases];
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -188,7 +192,7 @@ implicit program : Program, context : Context {
       procedure()    = context.db_vars[var];
 
 
-  DBSymbol var_type(QualDBVar var) = data_bases_by_id[var_type(var.outer)].nested_dbs[var.inner];
+  DBSymbol var_type(QualDBVar var) = automaton_by_id(var_type(var.outer)).nested_dbs[var.inner];
 
 
   AutoSymbol this_auto_symbol =
@@ -220,7 +224,7 @@ implicit program : Program, context : Context {
   Nat+ relvar_cols_perm(AnyRelVar rel_var) {
     rv_info = match (rel_var)
       rel_var()       = {match (context) data_base() = context.rel_vars[rel_var]},
-      qual_rel_var()  = data_bases_by_id[var_type(rel_var.db_var)].rel_vars[rel_var.rel_var];
+      qual_rel_var()  = automaton_by_id(var_type(rel_var.db_var)).rel_vars[rel_var.rel_var];
     arity = only([|s| : s <- rv_info.signatures]);
     return table_cols_perm(arity, rv_info.keys);
   }
