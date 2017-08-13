@@ -264,14 +264,39 @@ implicit syn_prg : SynPrg {
 
 
   ProcDefWFError* proc_def_wf_errors(SynProcDef proc_def) {
-    dups = duplicates((v.var : v <- proc_def.auto_or_db_vars));
+    auto_or_db_vars = proc_def.auto_or_db_vars;
+
+    dups = duplicates((v.var : v <- auto_or_db_vars));
     return (dup_auto_or_db_var(v) : v <- rand_sort(dups)) if dups != [];
 
     errs = (
       undef_auto_or_db(v.var, v.type)
-      : v <- proc_def.auto_or_db_vars,
+      : v <- auto_or_db_vars,
         not db_defs_by_id(db_symbol(v.type), *) and not auto_defs_by_id(auto_symbol(v.type), *)
     );
+    return errs if errs != ();
+
+    all_vars = [v.var : v <~ auto_or_db_vars];
+    db_vars_types = [
+      v.var -> db_defs_by_id(t, !!)
+      : v <~ auto_or_db_vars, t = db_symbol(v.type), db_defs_by_id(t, *)
+    ];
+    errs = join(({
+      is_static = db_vars_types(v.var, *);
+      if is_static:
+        var_type = db_vars_types(v.var, !!);
+        links = var_type.links;
+        return (wrong_auto_var_arity(v.var, |v.args|, |links|)) if |links| != |v.args|;
+        return join(({
+          return (undef_static_auto_var(a, all_vars(a), false)) if not db_vars_types(a, *);
+          arg_type = db_vars_types(a, !!);
+          exp_type = links(i);
+          return (wrong_auto_arg_type(v.var, a, arg_type.name, exp_type) if arg_type.name != exp_type);
+        } : a @ i <- v.args));
+      else
+        return (wrong_auto_var_arity(v.var, |v.args|, 0) if |v.args| != 0);
+      ;
+    } : v <- auto_or_db_vars));
     return errs if errs != ();
 
     body = proc_def.body;

@@ -1,4 +1,4 @@
-type SymbObjVar     = StdVar, ImplArg, MembVar, AnySignalVar;
+type SymbObjVar     = StdVar, ImplArg, AnyMembVar, AnySignalVar;
 type SymbChainAcc   = accessor(expr: <SymbChainExpr, FnCallExpr, AutoMethodCall, DBMethodCall>, field: SymbObj);
 type SymbChainExpr  = SymbObjVar, QualMembVar, SymbChainAcc;
 
@@ -8,10 +8,12 @@ Nat resol_priority(ImplArg)                   = 0;
 Nat resol_priority(MembVar)                   = 1;
 Nat resol_priority(SignalVar)                 = 1;
 Nat resol_priority(QualSignalVar)             = 2;
-Nat resol_priority(QualMembVar)               = 2;
+Nat resol_priority(QualMembVar var)           = nat(2 + resol_priority_baseline(var.db_var));
 Nat resol_priority(SymbChainAcc symb_chain)   = resol_priority(symb_chain.expr);
 Nat resol_priority(AutoMethodCall call)       = if call.var? then 2 else 3;
-Nat resol_priority(DBMethodCall call)         = if call.var? then 2 else 3;
+Nat resol_priority(DBMethodCall call)         = if call.var?
+                                                  then nat(2 + resol_priority_baseline(call.var))
+                                                  else 3;
 
 Nat resol_priority(FnCallExpr call) =
   match (call.fn_id)
@@ -21,16 +23,27 @@ Nat resol_priority(FnCallExpr call) =
 Nat resol_priority(PreFnCall)       = 4;
 Nat resol_priority(PreNestedFnCall) = 3;
 
-Nat resol_priority(ClsVar)                    = 0;
-Nat resol_priority(RelVar)                    = 1;
-Nat resol_priority(QualRelVar)                = 2;
-Nat resol_priority(PreAutoCall precall)       = if precall.var? then 2 else 3;
-Nat resol_priority(PreDBCall precall)         = if precall.var? then 2 else 3;
+Nat resol_priority(ClsVar)              = 0;
+Nat resol_priority(RelVar)              = 1;
+Nat resol_priority(QualRelVar var)      = nat(2 + resol_priority_baseline(var.db_var));
+Nat resol_priority(PreAutoCall precall) = if precall.var? then 2 else 3;
+Nat resol_priority(PreDBCall precall)   = if precall.var?
+                                            then nat(2 + resol_priority_baseline(precall.var))
+                                            else 3;
 
-Nat resol_priority(LocAutoVar)                = 0;
-Nat resol_priority(LocDBVar)                  = 0;
-Nat resol_priority(NestedAutoVar)             = 1;
-Nat resol_priority(NestedDBVar)               = 1;
+Nat resol_priority(LocAutoVar)      = 0;
+Nat resol_priority(NestedAutoVar)   = 1;
+
+Nat resol_priority(LocDBVar)        = 0;
+Nat resol_priority(NestedDBVar)     = 1;
+Nat resol_priority(LinkedDBVar)     = undefined; ## BAD BAD BAD
+Nat resol_priority(QualDBVar var)   = nat(resol_priority_baseline(var.outer) + resol_priority(var.inner));
+
+Nat resol_priority_baseline(AnyDBVar var) =
+  loc_db_var()    = 0,
+  nested_db_var() = 0,
+  linked_db_var() = 10,
+  qual_db_var()   = nat(min(10, resol_priority_baseline(var.outer) + resol_priority_baseline(var.inner)));
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -216,7 +229,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
     [AnyClsExpr] resolve(SymbObjVar var, NzNat exp_arity) = [no_args_cls_expr(exp_arity, var)];
 
 
-    [] resolve(<LocAutoVar, NestedAutoVar, LocDBVar, NestedDBVar, RelVar, PreAutoCall, PreDBCall>, NzNat) = [];
+    [] resolve(<LocAutoVar, NestedAutoVar, AnyDBVar, AnyRelVar, PreAutoCall, PreDBCall>, NzNat) = [];
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -329,14 +342,7 @@ implicit syn_prg : SynPrg, artifact : Artifact, impl_args : [ImplArg] {
   //////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////
 
-  [<
-    SymbObjVar,
-    ClsVar,
-    LocAutoVar, NestedAutoVar,
-    LocDBVar, NestedDBVar,
-    RelVar,
-    PreCall
-  >]
+  [<SymbObjVar, ClsVar, LocAutoVar, NestedAutoVar, AnyDBVar, AnyRelVar, PreCall>]
   resolve_symbol(Atom symbol, [Var] def_vars) {
     std_var = var(symbol);
     impl_arg = impl_arg(symbol);
@@ -384,14 +390,37 @@ implicit syn_prg : SynPrg {
   }
 
 
-  [<MembVar, RelVar, NestedDBVar, PreCall>] resolve_symbol(SchemaDef artifact, Atom symbol) {
+  [<AnyMembVar, AnyRelVar, AnyDBVar, PreDBCall>] resolve_symbol(SchemaDef artifact, Atom symbol) {
     interface = db_interfaces[db_symbol(artifact.name)];
-    return [
+    resols = [
       memb_var(symbol)                          if in(symbol, interface.memb_vars),
       rel_var(symbol)                           if interface.rel_vars(symbol, *),
       nested_db_var(symbol)                     if interface.nested_dbs(symbol, *),
       pre_db_method_call(method_symbol(symbol)) if method_ids_by_db_id[artifact.name](symbol)
     ];
+    resols = seq_union(({
+      linked_schema = schema_by_id(l);
+      rs = resolve_symbol(linked_schema, symbol);
+      return union([rerouted(r, linked_db_var(i)) : r <- rs]);
+    } : l @ i <- artifact.links)) if resols == [];
+    return resols;
+
+
+    [QualMembVar] rerouted(MembVar var, LinkedDBVar db_var)     = [qual_memb_var(db_var, var)];
+    [QualMembVar] rerouted(QualMembVar var, LinkedDBVar db_var) = [qual_memb_var(redirected(var.db_var, db_var), var.memb_var)];
+    [QualRelVar]  rerouted(RelVar var, LinkedDBVar db_var)      = [qual_rel_var(db_var, var)];
+    [QualRelVar]  rerouted(QualRelVar var, LinkedDBVar db_var)  = [qual_rel_var(redirected(var.db_var, db_var), var.rel_var)];
+    [AnyDBVar]    rerouted(AnyDBVar var, LinkedDBVar db_var)    = [redirected(var, db_var)];
+    [PreDBCall]   rerouted(PreDBCall precall, LinkedDBVar db_var) = [
+      pre_db_method_call(if precall.var? then redirected(precall.var, db_var) else db_var, precall.method)
+    ];
+
+
+    AnyDBVar redirected(AnyDBVar var, LinkedDBVar db_var) =
+      loc_db_var()      = undefined,
+      nested_db_var()   |
+      linked_db_var()   = qual_db_var(outer: db_var, inner: var),
+      qual_db_var()     = qual_db_var(outer: redirected(var.outer, db_var), inner: var.inner);
   }
 
 
@@ -405,7 +434,7 @@ implicit syn_prg : SynPrg {
   }
 
 
-  [<MembVar, RelVar, NestedDBVar, PreCall>] resolve_symbol(HandlerDef artifact, Atom symbol) {
+  [<AnyMembVar, AnyRelVar, AnyDBVar, PreDBCall>] resolve_symbol(HandlerDef artifact, Atom symbol) {
     db_def = db_defs_by_id[db_symbol(artifact.target)];
     return resolve_symbol(db_def, symbol);
   }
@@ -433,13 +462,13 @@ implicit syn_prg : SynPrg {
   }
 
 
-  [<MembVar, RelVar, NestedDBVar, PreCall>] resolve_symbol(UsingBlockFnDef artifact, Atom symbol) {
+  [<AnyMembVar, AnyRelVar, AnyDBVar, PreDBCall>] resolve_symbol(UsingBlockFnDef artifact, Atom symbol) {
     db_def = db_defs_by_id[db_symbol(artifact.target)];
     return resolve_symbol(db_def, symbol);
   }
 
 
-  [<MembVar, RelVar, NestedDBVar, PreCall>] resolve_symbol(UsingBlockUpdateDef artifact, Atom symbol) {
+  [<AnyMembVar, AnyRelVar, AnyDBVar, PreDBCall>] resolve_symbol(UsingBlockUpdateDef artifact, Atom symbol) {
     db_def = db_defs_by_id[db_symbol(artifact.target)];
     return resolve_symbol(db_def, symbol);
   }

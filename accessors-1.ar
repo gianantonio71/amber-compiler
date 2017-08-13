@@ -283,6 +283,10 @@ implicit syn_prg : SynPrg {
     [nested_db_var(n) -> db_symbol(t) : n, t <- db_interfaces[db_symb].nested_dbs];
 
 
+  [LinkedDBVar -> DBSymbol] linked_db_vars(DBSymbol db_symb) =
+    merge(([linked_db_var(i) -> db_symbol(t)] : t @ i <- schema_by_id(bare_id(db_symb)).links));
+
+
   ## BAD BAD BAD: THESE TWO FUNCTIONS EXISTS ONLY BECAUSE OF A LIMITATION OF THE TYPECHECKER...
 
   Bool non_nested_function_exists(FnSymbol fn_symb) = fn_defs_arg_arities(fn_symb, *);
@@ -451,13 +455,21 @@ implicit syn_prg : SynPrg, artifact : Artifact {
       using_block_update_def()  = nested_db_vars(db_symbol(artifact.target)),
       _                         = [];
 
+  [LinkedDBVar -> DBSymbol] linked_db_vars =
+    match (artifact)
+      schema_def()              = linked_db_vars(db_symbol(artifact.name)),
+      handler_def()             |
+      using_block_method_def()  |
+      using_block_update_def()  = linked_db_vars(db_symbol(artifact.target)),
+      _                         = [];
+
   //////////////////////////////////////////////////////////////////////////////
 
   [AnyDBVar -> DBSymbol] all_db_vars {
-    db_vars = loc_db_vars & nested_db_vars;
+    db_vars = loc_db_vars & nested_db_vars & linked_db_vars;
     last_round = db_vars;
     while last_round != []:
-      new_round = merge([nested_db_vars(v, t) : v, t <- last_round]);
+      new_round = merge([nested_db_vars(v, t) & linked_db_vars(v, t) : v, t <- last_round]);
       db_vars = db_vars & new_round;
       last_round = new_round;
     ;
@@ -468,6 +480,10 @@ implicit syn_prg : SynPrg, artifact : Artifact {
       nested_dbs = db_interfaces[type].nested_dbs;
       return [qual_db_var(var, nested_db_var(v)) -> db_symbol(t) : v, t <- nested_dbs];
     }
+
+
+    [QualDBVar -> DBSymbol] linked_db_vars(AnyDBVar var, DBSymbol type) =
+      [qual_db_var(var, v) -> t : v, t <- linked_db_vars(type)];
   }
 
 
@@ -529,11 +545,15 @@ implicit syn_prg : SynPrg, artifact : Artifact {
 
 
   DBSymbol syn_db_var_type(AnyDBVar var) =
-    loc_db_var()    = loc_db_vars[var],
-    nested_db_var() = nested_db_vars[var],
-    qual_db_var()   = { interface = db_interfaces[syn_db_var_type(var.outer)];
-                        return db_symbol(interface.nested_dbs[bare_id(var.inner)]);
-                      };
+    loc_db_var()      = loc_db_vars[var],
+    nested_db_var()   = nested_db_vars[var],
+    linked_db_var()   = linked_db_vars[var],
+    qual_db_var()     = { interface = db_interfaces[syn_db_var_type(var.outer)];
+                          type_name = match (var.inner)
+                            nested_db_var(a?) = interface.nested_dbs(a, !!),
+                            linked_db_var(n?) = interface.linked_dbs(n);
+                          return db_symbol(type_name);
+                        };
 
 
   [SynFnDef] local_fn_defs =

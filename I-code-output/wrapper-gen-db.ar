@@ -216,7 +216,7 @@ implicit block_name : DBSymbol, db_var_chain : NestedDBVar*, root_block_name : D
 
   //////////////////////////////////////////////////////////////////////////////
 
-  (String*, String*) trans_auto_accessors(StaticBlock block, [DBSymbol -> StaticBlock] blocks) {
+  (String*, String*) static_auto_accessors(StaticBlock block, [DBSymbol -> StaticBlock] blocks) {
     state_var_accessors = rand_sort([state_var_accessor(v, t) : v, t <- block.state_vars]);
     state_var_accessors_decls, state_var_accessors_impls = (join(ls) : ls <- unzip(state_var_accessors));
 
@@ -227,7 +227,7 @@ implicit block_name : DBSymbol, db_var_chain : NestedDBVar*, root_block_name : D
     methods_wrappers_decls, methods_wrappers_impls = (join(ls) : ls <- unzip(methods_wrappers));
 
     nested_autos_accessors = rand_sort([
-        trans_auto_accessors(blocks[t], blocks, block_name = blocks[t].name, db_var_chain = (db_var_chain | v))
+        static_auto_accessors(blocks[t], blocks, block_name = blocks[t].name, db_var_chain = (db_var_chain | v))
       : v, t <- block.nested_blocks
     ]);
     nested_autos_decls, nested_autos_impls = (join(ls) : ls <- unzip(nested_autos_accessors));
@@ -244,9 +244,9 @@ implicit block_name : DBSymbol, db_var_chain : NestedDBVar*, root_block_name : D
 ////////////////////////////////////////////////////////////////////////////////
 
 implicit typedefs : [TypeName -> NeType] {
-  (String*, String*) trans_auto_wrapper(StaticBlock root_block, [DBSymbol -> StaticBlock] blocks) {
+  (String*, String*, String*) static_auto_wrapper(StaticBlock root_block, [DBSymbol -> StaticBlock] blocks) {
     let block_name = root_block.name, db_var_chain = (), root_block_name = root_block.name:
-      accessors_decls, accessors_impls = trans_auto_accessors(root_block, blocks);
+      accessors_decls, accessors_impls = static_auto_accessors(root_block, blocks);
       class_name = db_class_name;
       cast_ptr = "(" & to_c_name(root_block.name) & " *) ptr";
     ;
@@ -256,10 +256,12 @@ implicit typedefs : [TypeName -> NeType] {
     init_method_name = init_method_name(root_block.name);
     cleanup_method_name = cleanup_method_name(root_block.name);
 
+    links_types = (upper_camel_case(bare_id(l)) : l <- root_block.links);
+
     class_decl = (
       "class " & class_name & " {",
       "public:",
-      "  " & class_name & "();",
+      "  " & class_name & "(" & append((t & " *" : t <- links_types), ", ") & ");",
       "  ~" & class_name & "();",
       "",
       "  std::unique_ptr<cell::Value> read_state();",
@@ -269,6 +271,13 @@ implicit typedefs : [TypeName -> NeType] {
 
     class_decl = class_decl & ("") & accessors_decls if accessors_decls != ();
 
+    private_class_decl = class_decl & (
+      "",
+      "public:",
+      "  void *ptr;",
+      "};"
+    );
+
     class_decl = class_decl & (
       "",
       "private:",
@@ -276,12 +285,15 @@ implicit typedefs : [TypeName -> NeType] {
       "};"
     );
 
+    ctor_impl_args = (t & " *l" & printed(i) : t @ i <- links_types);
+    init_method_args = (", (" & to_c_name(l) & " *) l" & printed(i) & "->ptr" : l @ i <- root_block.links);
+
     class_impl = (
-      class_name & "::" & class_name & "() {",
+      class_name & "::" & class_name & "(" & append(ctor_impl_args, ", ") & ") {",
       "  ENV env;",
       "  memset(&env, 0, sizeof(ENV));",
       "  ptr = new " & db_name & ";",
-      "  " & init_method_name & "(" & cast_ptr & ", env);",
+      "  " & init_method_name & "(" & cast_ptr & append(init_method_args) & ", env);",
       "}",
       "",
       class_name & "::~" & class_name & "() {",
@@ -330,6 +342,6 @@ implicit typedefs : [TypeName -> NeType] {
 
     class_impl = class_impl & accessors_impls;
 
-    return (class_decl, class_impl);
+    return (class_decl, private_class_decl, class_impl);
   }
 }

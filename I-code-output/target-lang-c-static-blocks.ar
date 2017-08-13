@@ -5,12 +5,13 @@ implicit {
 
 
   CCodeOutput compile_static_block_to_c(StaticBlock block) {
+    links_decls = (to_c_name(l) & " *linked_auto_" & printed(i) & ";" : l @ i <- block.links);
     state_vars_decls = ["OBJ " & to_c_var_decl_name(v) & ";" : v, unused_var <- block.state_vars];
     value_store_decls = ["VALUE_STORE " & to_c_var_decl_name(v) & ";" : v <- block.value_stores];
     table_decls = [table_c_type(t) & " " & to_c_var_decl_name(v) & ";" : v, t <- block.tables];
     nested_blocks_decls = [to_c_name(t) & " " & to_c_var_decl_name(v) & ";" : v, t <- block.nested_blocks];
 
-    memb_decls = rand_sort(state_vars_decls) & rand_sort(value_store_decls) & rand_sort(table_decls) & rand_sort(nested_blocks_decls);
+    memb_decls = links_decls & rand_sort(state_vars_decls) & rand_sort(value_store_decls) & rand_sort(table_decls) & rand_sort(nested_blocks_decls);
     struct_decl = ("struct " & to_c_name(block.name) & " {") & indent_lines(memb_decls) & ("};");
 
     aux_vars_decls = ["OBJ " & to_c_var_decl_name(pending_state_var(bare_id(v))) & ";" : v, unused_var <- block.state_vars];
@@ -25,7 +26,7 @@ implicit {
       rand_sort(aux_tables_decls) & rand_sort(nested_aux_blocks_decls);
     aux_struct_decl = ("struct " & aux_struct_c_name(block.name) & " {") & indent_lines(aux_memb_decls) & ("};");
 
-    init_decl, init_impl = compile_init_code_to_c(block.name, block.init_code);
+    init_decl, init_impl = compile_init_code_to_c(block.name, block.links, block.init_code);
     cleanup_decl, cleanup_impl = compile_cleanup_code_to_c(block.name, block.cleanup_code);
 
     copy_state_decl, copy_state_impl = compile_copy_state_code_to_c(block.name, block.copy_state_code);
@@ -76,11 +77,13 @@ implicit {
   }
 
 
-  (String, String*) compile_init_code_to_c(DBSymbol name, Instr* init_code) {
+  (String, String*) compile_init_code_to_c(DBSymbol name, DBSymbol* links, Instr* init_code) {
+    init_links = ("self->linked_auto_" & printed(i) & " = linked_auto_" & printed(i) & ";" : i < |links|);
     init_vars_decl = gen_vars_decls(init_code);
     init_vars_decl = init_vars_decl & ("") if init_vars_decl != ();
-    init_body = init_vars_decl & compile_to_c(init_code, nothing);
-    init_sgn = "void " & init_method_name(name) & "(" & to_c_name(name) & " *self, ENV &env)";
+    init_body = init_links & init_vars_decl & compile_to_c(init_code, nothing);
+    link_args = append((", " & to_c_name(l) & " *linked_auto_" & printed(i) : l @ i <- links));
+    init_sgn = "void " & init_method_name(name) & "(" & to_c_name(name) & " *self" & link_args & ", ENV &env)";
     init_decl = init_sgn & ";";
     init_proc = (init_sgn & " {") & indent_lines(init_body) & ("}");
     return (init_decl, init_proc);

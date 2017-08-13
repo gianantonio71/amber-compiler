@@ -32,7 +32,7 @@ CCodeOutput compile_to_c(CompiledPrg prg, Bool include_runtime) {
   int_seqs_types_and_lengths = ((int_type_c_name(min(s), max(s)), |s|) : s <- prg.int_seqs);
 
   // Sorting static blocks in topological order
-  static_blocks_dep_map = [b.name -> [t : unused_var, t <- b.nested_blocks] : b <- prg.static_blocks];
+  static_blocks_dep_map = [b.name -> values(b.nested_blocks) & set(b.links) : b <- prg.static_blocks];
   ord_static_block_names = join((rand_sort(bs) : bs <- topological_sort(static_blocks_dep_map)));
   static_blocks_by_name = [b.name -> b : b <- prg.static_blocks];
   ord_static_blocks = (static_blocks_by_name(b, !!) : b <- ord_static_block_names);
@@ -58,14 +58,16 @@ CCodeOutput compile_to_c(CompiledPrg prg, Bool include_runtime) {
   let typedefs = prg.typedefs:
     auto_wrappers_decls, auto_wrappers_impls = unzip(rand_sort([react_auto_wrapper(block=b) : b <- prg.react_blocks]));
     static_blocks = [b.name -> b : b <- prg.static_blocks];
-    db_wrappers_decls, db_wrappers_impls = unzip(rand_sort([trans_auto_wrapper(b, static_blocks) : b <- prg.static_blocks]));
+    db_wrappers = (static_auto_wrapper(b, static_blocks) : b <- ord_static_blocks);
+    db_wrappers_decls, db_wrappers_private_decls, db_wrappers_impls = unzip3(db_wrappers);
   ;
   wrappers_decls = join(intermix(auto_wrappers_decls & db_wrappers_decls, ("", "")));
+  wrappers_private_decls = join(intermix(auto_wrappers_decls & db_wrappers_private_decls, ("", "")));
   wrappers_impls = join(intermix(auto_wrappers_impls & db_wrappers_impls, ("", "")));
 
   has_automata = prg.react_blocks != [] or prg.static_blocks != [];
 
-  gen_code = c_code & proc_code.body & int_seqs_defs & ("", "") & wrappers_decls & ("", "") & wrappers_impls;
+  gen_code = c_code & proc_code.body & int_seqs_defs & ("", "") & wrappers_private_decls & ("", "") & wrappers_impls;
 
   body = join((
     ( "#include <stddef.h>",
@@ -519,7 +521,7 @@ implicit {
     auto_update_node()    = compile_auto_update_node_to_c(instr.type, instr.node, if instr.time_var? then just(instr.time_var) else nothing),
     auto_apply()          = compile_auto_apply_to_c(if instr.var? then just(instr.var) else nothing, instr.type),
     set_persistent_state()= compile_set_persistent_state_to_c(instr.auto_var, instr.state, instr.type),
-    init_db()             = (compile_init_db_to_c(instr.db_var, instr.type)),
+    init_db()             = (compile_init_db_to_c(instr.db_var, instr.links, instr.type)),
     cleanup_db()          = (compile_cleanup_db_to_c(instr.db_var, instr.type)),
     send_msg()            = (compile_send_msg_to_c(instr.db_var, instr.type, instr.msg, instr.is_root, if instr.res_var? then just(instr.res_var) else nothing)),
     try_update()          = (compile_try_update_to_c(instr.type, instr.update_id, instr.args)),
@@ -719,8 +721,10 @@ implicit {
   }
 
 
-  String compile_init_db_to_c(AnyDBVar db_var, DBSymbol type) =
-    mk_gen_call(init_method_name(type), ("&" & to_c_var_ref_name(db_var), "env"));
+  String compile_init_db_to_c(AnyDBVar db_var, LocDBVar* links, DBSymbol type) {
+    links_args = ("&" & to_c_var_ref_name(l) : l <- links);
+    return mk_gen_call(init_method_name(type), ("&" & to_c_var_ref_name(db_var)) & links_args & ("env"));
+  }
 
 
   String compile_cleanup_db_to_c(AnyDBVar db_var, DBSymbol type) =

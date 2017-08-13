@@ -15,6 +15,7 @@ type WFError            = dupl_typedef((AnyTypedef, AnyTypedef)),
                           handler_def_errs(handler: HandlerDef, errors: UpdateDefWFError+),
                           same_name_proc_defs(SynProcDef+),
                           duplicate_schema_defs(defs: SchemaDef+),
+                          recursively_defined_schema(schema: SchemaDef, dependencies: [+Atom]),
                           protocol_redef(type: Atom, protocols: [+ProtDecl]),
                           protocol_errors(prot: ProtDecl, errors: ProtWFError+),
                           dupl_auto_defs(defs: [+ReactAutoDef]),
@@ -116,6 +117,9 @@ type ExprSpecWFError    = already_def_var(Var),
                           conflicting_auto_decls(AnyAutoDecl, AnyAutoDecl),
 
                           undef_static_auto_var(var: Atom, is_auto_var: Bool, is_obj_var: Bool),
+                          wrong_auto_var_arity(var: Atom, actual: Nat, expected: Nat),
+                          wrong_auto_arg_type(var: Atom, arg_var: Atom, actual: Atom, expected: Atom),
+
                           db_has_no_handlers(db_type: Atom),
                           not_a_nested_db_var(var: Atom, schema_def: SchemaDef),
                           unknown_nested_db_var(var: Atom, schema_def: SchemaDef),
@@ -176,6 +180,7 @@ WFError handler_def_errs(HandlerDef h, UpdateDefWFError+ es)    = handler_def_er
 WFError proc_def_errors(SynProcDef pd, ProcDefWFError+ es)      = proc_def_errors(proc_def: pd, errors: es);
 WFError same_name_proc_defs(SynProcDef+ pds)                    = :same_name_proc_defs(pds);
 WFError duplicate_schema_defs(SchemaDef+ ds)                    = duplicate_schema_defs(defs: ds);
+WFError recursively_defined_schema(SchemaDef s, [+Atom] ds)     = recursively_defined_schema(schema: s, dependencies: ds);
 WFError protocol_redef(Atom t, [+ProtDecl] ps)                  = protocol_redef(type: t, protocols: ps);
 WFError protocol_errors(ProtDecl p, ProtWFError+ es)            = protocol_errors(prot: p, errors: es);
 WFError dupl_auto_defs([+ReactAutoDef] ds)                      = dupl_auto_defs(defs: ds);
@@ -306,7 +311,10 @@ ExprSpecWFError discrete_signals_in_countinuous_rule(Atom n, [+AnySignalVar] vs)
 
 ExprSpecWFError conflicting_auto_decls(AnyAutoDecl d1, AnyAutoDecl d2) = :conflicting_auto_decls(d1, d2);
 
-ExprSpecWFError undef_static_auto_var(Atom v, Bool a, Bool o)     = undef_static_auto_var(var: v, is_auto_var: a, is_obj_var: o);
+ExprSpecWFError undef_static_auto_var(Atom v, Bool a, Bool o)         = undef_static_auto_var(var: v, is_auto_var: a, is_obj_var: o);
+ExprSpecWFError wrong_auto_var_arity(Atom v, Nat a, Nat e)            = wrong_auto_var_arity(var: v, actual: a, expected: e);
+ExprSpecWFError wrong_auto_arg_type(Atom v, Atom av, Atom a, Atom e)  = wrong_auto_arg_type(var: v, arg_var: av, actual: a, expected: e);
+
 ExprSpecWFError db_has_no_handlers(Atom t)                        = db_has_no_handlers(db_type: t);
 ExprSpecWFError not_a_nested_db_var(Atom v, SchemaDef d)          = not_a_nested_db_var(var: v, schema_def: d);
 ExprSpecWFError unknown_nested_db_var(Atom v, SchemaDef d)        = unknown_nested_db_var(var: v, schema_def: d);
@@ -410,6 +418,9 @@ Any anchor_obj(ExprSpecWFError err) =
   conflicting_auto_decls()                = :none,
 
   undef_static_auto_var()                 = :none,
+  wrong_auto_var_arity()                  = :none,
+  wrong_auto_arg_type()                   = :none,
+
   db_has_no_handlers()                    = :none,
   not_a_nested_db_var()                   = :none,
   unknown_nested_db_var()                 = :none,
@@ -517,6 +528,7 @@ String* create_error_msg(WFError err) =
   handler_def_errs()                  = handler_def_err_msg(err.handler, err.errors),
   same_name_proc_defs(pds?)           = same_name_proc_defs_err_msg(pds),
   duplicate_schema_defs()             = duplicate_schema_defs_err_msg(err.defs),
+  recursively_defined_schema()        = recursively_defined_schema_err_msg(err.schema, err.dependencies),
   protocol_redef()                    = protocol_redef_err_msg(err.type, err.protocols),
   protocol_errors()                   = protocol_errs_msg(err.prot, err.errors),
   dupl_auto_defs()                    = dupl_auto_defs_err_msg(err.defs),
@@ -616,6 +628,12 @@ String* same_name_proc_defs_err_msg(SynProcDef+ proc_defs) =
 String* duplicate_schema_defs_err_msg(SchemaDef+ schema_defs) =
   ("Multiple definition of schema " & user_name(head(schema_defs))) &
   ("    " & source_code_loc_str(db) : db <- schema_defs);
+
+
+String* recursively_defined_schema_err_msg(SchemaDef schema, [+Atom] dependencies) = (
+    "Schema " & user_name(schema) & " is defined recursively",
+    "    " & source_code_loc_str(schema)
+  );
 
 
 String* protocol_redef_err_msg(Atom type, [+ProtDecl] protocols) =
@@ -821,7 +839,18 @@ String* basic_err_msg(ExprSpecWFError err) =
                                   elif err.is_obj_var
                                     then "Not an automaton variable: " & _str_(err.var)
                                   else
-                                    "Unknown variable: " & _str_(err.var)
+                                    "Unknown automaton variable: " & _str_(err.var)
+                                ),
+  wrong_auto_var_arity()      = ( if err.expected == 0
+                                      then "Automaton variable " & _str_(err.var) & " does not expect arguments"
+                                    elif err.actual == 0
+                                      then "Automaton variable " & _str_(err.var) & " requires " & printed(err.expected) & " arguments"
+                                    else
+                                      "Automaton variable " & _str_(err.var) & " requires " & printed(err.expected) & " arguments"
+                                ),
+  wrong_auto_arg_type()       = ( "Wrong automaton type, argument " & _str_(err.arg_var) & " of automaton variable " & _str_(err.var),
+                                  "  Expected type: " & upper_camel_case(err.expected),
+                                  "  Actual type:   " & upper_camel_case(err.actual)
                                 ),
   db_has_no_handlers()        = ("Automaton " & user_repr(db_symbol(err.db_type)) & " has no message handlers"),
   not_a_nested_db_var()       = ("Not a nested automaton: " & _str_(err.var)),

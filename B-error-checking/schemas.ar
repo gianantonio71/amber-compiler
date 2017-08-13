@@ -1,12 +1,23 @@
 implicit syn_prg : SynPrg {
   [WFError] schemas_wf_errors([SchemaDef] schemas, [BasicTypeSymbol -> [+Nat]] type_arity_map) {
     errs = [duplicate_schema_defs(rand_sort(dbs)) : id, dbs <- group_by(schemas, $.name), |dbs| > 1];
-    if errs == []:
-      let type_arity_map = type_arity_map:
-        errs = [db_def_errors(d, es) : d <- schemas, es = schema_wf_errors(d), es != ()];
-      ;
+    return errs if errs != [];
+
+    shallow_deps = [s.name -> set(s.links) & nested_schemas(s) : s <- schemas];
+    deep_deps = transitive_closure(shallow_deps);
+    errs = [
+      recursively_defined_schema(only([s : s <- schemas, s.name == n]), nonempty(deps))
+      : n, deps <- deep_deps, deps(n)
+    ];
+    return errs if errs != [];
+
+    let type_arity_map = type_arity_map:
+      errs = [db_def_errors(d, es) : d <- schemas, es = schema_wf_errors(d), es != ()];
     ;
     return errs;
+
+
+    [Atom] nested_schemas(SchemaDef schema) = [d.type : d <~ schema.decls, nested_db_decl() ?= d];
   }
 }
 

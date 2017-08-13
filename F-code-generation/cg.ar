@@ -79,7 +79,7 @@ implicit program : Program, options : CompilationOptions {
     tmp_bvar, var_gen = next_bool_var(var_gen);
 
     body = rand_sort([auto_pre_init(v, t) : v, t <- procedure.auto_vars]) &
-           rand_sort([init_db(v, t) : v, t <- procedure.db_vars]) &
+           rand_sort([init_db(v, info.links, info.type) : v, info <- procedure.db_vars]) &
            (set_var(a.var, fn_arg(i)) : a @ i <- procedure.args);
 
     // Evaluating the expression
@@ -92,22 +92,23 @@ implicit program : Program, options : CompilationOptions {
     ;
 
     body = body & rand_sort([auto_cleanup(v, t) : v, t <- procedure.auto_vars]);
-    body = body & rand_sort([cleanup_db(v, t) : v, t <- procedure.db_vars]);
+    body = body & rand_sort([cleanup_db(v, info.type) : v, info <- procedure.db_vars]);
 
     debug_code = (push_call_info(procedure.id, (just(fn_arg(i)) : p @ i <- procedure.args)));
 
     val = if procedure.res_type != nothing then fn_res_var else object(:void); ## BAD: HERE I'M CHEATING...
     body = debug_code & body & (pop_call_info, ret_val(val));
 
-    return obj_proc_def(
+    res = obj_proc_def(
       name:           procedure.id,
       args:           arity(procedure) * (:obj),
       impl_args:      [],
       loc_auto_vars:  procedure.auto_vars,
-      loc_db_vars:    procedure.db_vars,
+      loc_db_vars:    [v -> info.type : v, info <- procedure.db_vars],
       body:           nonempty(body),
       cached:         false
     );
+    return res;
   }
 
 
