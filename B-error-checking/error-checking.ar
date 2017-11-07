@@ -143,7 +143,41 @@ implicit syn_prg : SynPrg {
   WFError* reactive_autos_wf_errors([BasicTypeSymbol -> [+Nat]] type_arity_map) {
     errs = [dupl_auto_defs(ds) : unused_var, ds <- group_by(react_auto_defs, $.name), |ds| > 1];
     return rand_sort(errs) if errs != [];
-    return rand_sort([auto_def_errors(d, es) : d <- react_auto_defs, es = reactive_auto_wf_errors(d, type_arity_map), es != ()]);
+
+    all_autos = [a.name : a <- react_auto_defs];
+    errs = [
+      auto_def_errors(a, (unknown_auto(auto_symbol(a.parent))))
+      : a <- react_auto_defs, a.parent?, not all_autos(a.parent)
+    ];
+    return _isort_(errs) if errs != [];
+
+    shallow_deps = [a.name -> [a.parent if a.parent?] : a <- react_auto_defs];
+    deep_deps = transitive_closure(shallow_deps);
+    ## BAD: THE ps(a) CHECK SHOULD BE ENOUGH TO INFER THAT ps IS NOT EMPTY
+    errs = [auto_inheritance_cycle(nonempty(ps)) : a, ps <- deep_deps, ps(a)];
+    return _isort_(errs) if errs != [];
+
+    sorted_auto_ids = topological_sort(shallow_deps);
+
+    resolved_autos_by_id = [];
+    for ids <- sorted_auto_ids:
+      errs = union([{
+          auto = auto_defs_by_id[auto_symbol(id)];
+          res_auto = resolve_inheritance(auto, resolved_autos_by_id);
+          es = reactive_auto_wf_errors(res_auto, type_arity_map);
+          return [auto_def_errors(auto, es) if es != ()];
+        } : id <- ids
+      ]);
+      return _isort_(errs) if errs != [];
+
+      layer_autos_by_id = [
+        typed_id -> resolve_inheritance(auto_defs_by_id[typed_id], resolved_autos_by_id)
+        : id <- ids, typed_id = auto_symbol(id)
+      ];
+      resolved_autos_by_id = resolved_autos_by_id & layer_autos_by_id;
+    ;
+
+    return ();
   }
 
 

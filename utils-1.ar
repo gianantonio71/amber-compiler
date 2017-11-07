@@ -319,30 +319,34 @@ Atom rule_id(RuleDecl decl) =
   ;
 
   return values(resolved_autos_by_id);
+}
 
 
-  ReactAutoDef resolve_inheritance(ReactAutoDef child, [AutoSymbol -> ReactAutoDef] resolved_autos_by_id) {
-    return child if not child.parent?;
-    parent = resolved_autos_by_id[auto_symbol(child.parent)];
+ReactAutoDef resolve_inheritance(ReactAutoDef child, [AutoSymbol -> ReactAutoDef] resolved_autos_by_id) {
+  return child if not child.parent?;
+  parent = resolved_autos_by_id[auto_symbol(child.parent)];
 
-    overriding_ids = [rule_id(d) : d <~ child.rules & child.consts];
+  overriding_ids = [rule_id(d) : d <~ child.rules & child.consts];
+  overriding_state_vars_ids = [d.name : d <~ child.state_vars];
 
-    inherited_inputs = (i : i <- parent.inputs, not overriding_ids(i.name));
-    inherited_consts = (c : c <- parent.consts, not overriding_ids(c.name));
-    inherited_rules  = (r : r <- parent.rules,  not overriding_ids(rule_id(r)));
+  inherited_inputs = (i : i <- parent.inputs, not overriding_ids(i.name));
+  inherited_state_vars = (v : v <- parent.state_vars, not overriding_state_vars_ids(v.name));
+  inherited_consts = (c : c <- parent.consts, not overriding_ids(c.name));
+  inherited_rules  = (r : r <- parent.rules,  not overriding_ids(rule_id(r)));
 
-    return react_auto_def(
-      name:       child.name,
-      pos_inputs: child.pos_inputs,
-      def_output: child.def_output if child.def_output?,
-      inputs:     inherited_inputs & child.inputs,
-      outputs:    parent.outputs & child.outputs,
-      state_vars: parent.state_vars & child.state_vars,
-      nested_dbs: parent.nested_dbs & child.nested_dbs,
-      consts:     inherited_consts & child.consts,
-      rules:      inherited_rules & child.rules
-    );
-  }
+  res_child = react_auto_def(
+    name:       child.name,
+    pos_inputs: child.pos_inputs,
+    def_output: child.def_output if child.def_output?,
+    inputs:     inherited_inputs & child.inputs,
+    outputs:    parent.outputs & child.outputs,
+    state_vars: inherited_state_vars & child.state_vars,
+    nested_dbs: parent.nested_dbs & child.nested_dbs,
+    consts:     inherited_consts & child.consts,
+    rules:      inherited_rules & child.rules
+  );
+
+  return transfer(res_child, child);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
