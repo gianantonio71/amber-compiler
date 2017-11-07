@@ -84,6 +84,7 @@ type ExprSpecWFError    = already_def_var(Var),
                           dupl_var_mult_asgnm(StdVar),
                           diff_var_sets_in_ptrn_union(SynPtrn+),
                           iter_clause_wrong_arity(vars: StdVar+, valid_arities: [+NzNat]),
+                          invalid_case_arity(actual: Nat, expected: Nat),
 
                           ro_vars_asgnm(vars: [+Var]),
                           wrong_return(<SynReturnStmt, return_stmt>),
@@ -138,7 +139,8 @@ type ExprSpecWFError    = already_def_var(Var),
                           annotated_syn_expr_error(error: ExprWFError, expr: SynExpr),
                           annotated_syn_stmt_error(error: ExprWFError, stmt: SynStmt);
 
-type GenDefSpecWFError  = dupl_par_names(dupl_pos_pars: [Atom], dupl_impl_args: [Atom]);
+type GenDefSpecWFError  = dupl_par_names(dupl_pos_pars: [Atom], dupl_impl_args: [Atom]),
+                          invalid_ptrn_list_len(actual: Nat, max: Nat);
 
 type FnDefSpecWFError   = invalid_cls_type_vars(par_idx: Nat, var_name: Atom, type_vars: [+TypeVar]),
                           invalid_res_type_vars(type_vars: [+TypeVar]),
@@ -233,6 +235,7 @@ TypeVarDeclError unrelated_prot_types(Atom+ ts) = unrelated_prot_types(types: ts
 ////////////////////////////////////////////////////////////////////////////////
 
 GenDefSpecWFError dupl_par_names([Atom] pps, [Atom] nps) = dupl_par_names(dupl_pos_pars: pps, dupl_impl_args: nps);
+GenDefSpecWFError invalid_ptrn_list_len(Nat n, Nat m)    = invalid_ptrn_list_len(actual: n, max: m);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -278,6 +281,7 @@ ExprSpecWFError not_a_scalar_var(Atom+ as)                              = not_a_
 ExprSpecWFError dupl_var_mult_asgnm(StdVar v)                           = :dupl_var_mult_asgnm(v);
 ExprSpecWFError diff_var_sets_in_ptrn_union(SynPtrn+ ps)                = :diff_var_sets_in_ptrn_union(ps);
 ExprSpecWFError iter_clause_wrong_arity(StdVar+ vs, [+NzNat] as)        = iter_clause_wrong_arity(vars: vs, valid_arities: as);
+ExprSpecWFError invalid_case_arity(Nat n, Nat m)                        = invalid_case_arity(actual: n, expected: m);
 
 ExprSpecWFError ro_vars_asgnm([+Var] vs)                        = ro_vars_asgnm(vars: vs);
 ExprSpecWFError wrong_return(<SynReturnStmt, return_stmt> s)    = :wrong_return(s);
@@ -385,6 +389,7 @@ Any anchor_obj(ExprSpecWFError err) =
   dupl_var_mult_asgnm()                   = :none,
   diff_var_sets_in_ptrn_union(ps?)        = head(ps),
   iter_clause_wrong_arity()               = :none,
+  invalid_case_arity()                    = :none,
 
   ro_vars_asgnm()                         = :none,
   wrong_return(s?)                        = s,
@@ -794,6 +799,7 @@ String* basic_err_msg(ExprSpecWFError err) =
                                   suffix = if |err.valid_arities| == 1 then "y" else "ies";
                                   return ("Invalid clause arity. Expected arit" & suffix & ": " & arities_str);
                                 },
+  invalid_case_arity()        = ("Wrong pattern list length"),
 
   ro_vars_asgnm()             = ("Invalid assignment to read-only variable: " & user_repr(v) : v <- rand_sort(err.vars)),
   wrong_return(s?)            = (if s == return_stmt then "Return value required" else "Cannot return a value"),
@@ -901,8 +907,17 @@ String* conflicting_auto_decls_err_msg(AnyAutoDecl decl1, AnyAutoDecl decl2) {
 
 
 String* create_error_msg(GenDefSpecWFError err) =
-  ("Duplicated parameter name: " & _str_(a) : a <- rand_sort(err.dupl_pos_pars)) &
-  ("Implicit and standard arguments cannot have the same name: " & _str_(a) : a <- rand_sort(err.dupl_impl_args));
+  dupl_par_names()        = create_dupl_par_names_error_msg(err.dupl_pos_pars, err.dupl_impl_args),
+  invalid_ptrn_list_len() = create_invalid_ptrn_list_len(err.actual, err.max);
+
+
+String* create_dupl_par_names_error_msg([Atom] pos_args, [Atom] impl_args) =
+  ("Duplicated parameter name: " & _str_(a) : a <- rand_sort(pos_args)) &
+  ("Implicit and standard arguments cannot have the same name: " & _str_(a) : a <- rand_sort(impl_args));
+
+
+String* create_invalid_ptrn_list_len(Nat actual, Nat max) =
+  ("The number of patterns (" & _print_(actual) &  ") exceeds then number of arguments (" & _print_(max) & ")");
 
 
 String* create_error_msg(FnDefSpecWFError err) =

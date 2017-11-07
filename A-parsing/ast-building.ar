@@ -1181,7 +1181,7 @@ implicit filename : String, lines : Nat** {
       ctrl_apply        = build_apply_ctrl_stmt_ast(inner_match),
       ctrl_send_msg     = build_send_msg_ctrl_stmt_ast(inner_match),
       ctrl_read         = build_read_state_ctrl_stmt_ast(inner_match),
-      ctrl_restore      = build_restore_state_ctrl_stmt_ast(inner_match);
+      ctrl_write        = build_write_state_ctrl_stmt_ast(inner_match);
 
     return attach_src_code_info(stmt, mtc);
   }
@@ -1476,9 +1476,9 @@ implicit filename : String, lines : Nat** {
 
   SynCtrlStmt build_apply_ctrl_stmt_ast(RuleMatch mtc) {
     nodes = rule_seq_nodes(mtc);
-    assert |nodes| == 4;
-    auto_var = get_lowercase_id(nodes(1));
-    res_var = get_lowercase_id(nodes(2));
+    assert |nodes| == 5;
+    res_var = get_lowercase_id(nodes(0));
+    auto_var = get_lowercase_id(nodes(3));
     return syn_apply_ctrl_stmt(auto_var, res_var);
   }
 
@@ -1494,15 +1494,15 @@ implicit filename : String, lines : Nat** {
   SynCtrlStmt build_read_state_ctrl_stmt_ast(RuleMatch mtc) {
     nodes = rule_seq_nodes(mtc);
     assert |nodes| == 5;
-    obj_var = get_lowercase_id(nodes(1));
+    obj_var = get_lowercase_id(nodes(0));
     db_var = get_lowercase_id(nodes(3));
     return syn_read_state_ctrl_stmt(obj_var, db_var);
   }
 
-  SynCtrlStmt build_restore_state_ctrl_stmt_ast(RuleMatch mtc) {
+  SynCtrlStmt build_write_state_ctrl_stmt_ast(RuleMatch mtc) {
     nodes = rule_seq_nodes(mtc);
     assert |nodes| == 7;
-    res_var = get_lowercase_id(nodes(1));
+    res_var = get_lowercase_id(nodes(0));
     db_var = get_lowercase_id(nodes(3));
     expr = build_expr_ast(nodes(5));
     return syn_restore_state_ctrl_stmt(res_var, db_var, expr);
@@ -1786,7 +1786,6 @@ implicit filename : String, lines : Nat** {
       when_rule         = build_when_rule_ast(inner_match),
       cond_rule         = build_cond_rule_ast(inner_match),
       foreach_rule      = build_foreach_rule_ast(inner_match),
-      inactive_for_rule = build_inactive_for_rule_ast(inner_match),
       time_varying_rule = build_time_varying_rule_ast(inner_match),
       since_rule        = build_time_varying_since_rule_ast(inner_match),
       nested_auto       = build_nested_auto_ast(inner_match),
@@ -1975,16 +1974,6 @@ implicit filename : String, lines : Nat** {
     return update_def(name, args, stmts);
   }
 
-  TimeRuleDecl build_inactive_for_rule_ast(RuleMatch mtc) {
-    nodes = rule_seq_nodes(mtc);
-    assert |nodes| == 6;
-    name = get_lowercase_id(nodes(0));
-    time_expr = build_time_expr_ast(nodes(4));
-    signals = nonempty((get_lowercase_id(n, 1) : n <- rep_rule_nodes(nodes(2))));
-    return inactive_for_rule_decl(name, signals, time_expr, true);
-
-  }
-
   TimeRuleDecl build_time_varying_rule_ast(RuleMatch mtc) {
     nodes = rule_seq_nodes(mtc);
     assert |nodes| == 6;
@@ -2001,8 +1990,11 @@ implicit filename : String, lines : Nat** {
     assert |nodes| == 6;
     name = get_lowercase_id(nodes(0));
     time_expr = build_time_expr_ast(nodes(2));
+    starts_at_init = match (get_lowercase_id(nodes(3)))
+      sans  = true,
+      since = false;
     signals = nonempty((get_lowercase_id(n) : n <- rep_rule_nodes(nodes(4))));
-    return inactive_for_rule_decl(name, signals, time_expr, false);
+    return inactive_for_rule_decl(name, signals, time_expr, starts_at_init);
   }
 
   TimeExpr build_time_expr_ast(RuleMatch mtc) {

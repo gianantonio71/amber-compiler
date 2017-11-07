@@ -122,31 +122,31 @@ VarGen blank_var_gen = counter_set(nz_ctrs: []);
 implicit program : Program {
   ## WHAT'S THE DIFFERENCE BETWEEN THIS AND state_type()? IS IT JUST THE DEPTH?
   ## AND DO I REALLY NEED THIS ONE, OR CAN I MAKE DO WITH JUST state_type()?
-  NeType deep_state_type(Database data_base) {
-    state_var_field_types = [object(bare_id(v)) -> info.type : v, info <- data_base.state_vars];
-    rel_var_field_types = [
-        object(bare_id(v)) -> {
-          sgns = info.signatures;
-          return type_set(ne_union_superset([only(s) : s <- sgns])) if sgns :: [+(NeType)];
-          return type_bin_rel(sgns, false)  if sgns :: [+(NeType, NeType)];
-          return type_tern_rel(sgns, false) if sgns :: [+(NeType, NeType, NeType)];
-          fail; ## BAD BAD BAD
-        }
-      : v, info <- data_base.rel_vars
-    ];
-    nested_db_field_types = [object(bare_id(v)) -> deep_state_type(automaton_by_id(s)) : v, s <- data_base.nested_dbs];
-    all_field_types = state_var_field_types & rel_var_field_types & nested_db_field_types;
-    return empty_rel_type if all_field_types == [];
-    all_fields = [s -> (type: t, optional: false) : s, t <- all_field_types];
-    return ne_record_type(all_fields);
-  }
+  // NeType deep_state_type(Database data_base) {
+  //   state_var_field_types = [object(bare_id(v)) -> info.type : v, info <- data_base.state_vars];
+  //   rel_var_field_types = [
+  //       object(bare_id(v)) -> {
+  //         sgns = info.signatures;
+  //         return type_set(ne_union_superset([only(s) : s <- sgns])) if sgns :: [+(NeType)];
+  //         return type_bin_rel(sgns, false)  if sgns :: [+(NeType, NeType)];
+  //         return type_tern_rel(sgns, false) if sgns :: [+(NeType, NeType, NeType)];
+  //         fail; ## BAD BAD BAD
+  //       }
+  //     : v, info <- data_base.rel_vars
+  //   ];
+  //   nested_db_field_types = [object(bare_id(v)) -> deep_state_type(automaton_by_id(s)) : v, s <- data_base.nested_dbs];
+  //   all_field_types = state_var_field_types & rel_var_field_types & nested_db_field_types;
+  //   return empty_rel_type if all_field_types == [];
+  //   all_fields = [s -> (type: t, optional: false) : s, t <- all_field_types];
+  //   return ne_record_type(all_fields);
+  // }
 
 
   NeType deep_state_type(Automaton auto) {
     inputs = [v -> i.type : v, i <- auto.inputs, not i.discrete and not i.volatile];
     state_vars = [v -> s.type : v, s <- auto.state, not s.volatile];
     nested_autos = [v -> deep_state_type(automaton_by_id(a.type)) : v, a <- auto.nested_autos, not a.volatile];
-    nested_dbs = [v -> deep_state_type(automaton_by_id(a.type)) : v, a <- auto.nested_dbs, not a.volatile];
+    nested_dbs = [v -> type_ref(schema_type_symbol(untag(a.type))) : v, a <- auto.nested_dbs, not a.volatile];
 
     fields = inputs & state_vars & nested_autos & nested_dbs;
     return empty_rel_type if fields == [];

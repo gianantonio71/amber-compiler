@@ -63,7 +63,9 @@ ParsingRule keyword_print     = rule_keyword(:print);
 ParsingRule keyword_protocol  = rule_keyword(:protocol);
 ParsingRule keyword_reactive  = rule_keyword(:reactive);
 ParsingRule keyword_return    = rule_keyword(:return);
+ParsingRule keyword_sans      = rule_keyword(:sans);
 ParsingRule keyword_schema    = rule_keyword(:schema);
+ParsingRule keyword_set       = rule_keyword(:set);
 ParsingRule keyword_since     = rule_keyword(:since);
 ParsingRule keyword_then      = rule_keyword(:then);
 ParsingRule keyword_true      = rule_keyword(true);
@@ -78,7 +80,7 @@ ParsingRule keyword_while     = rule_keyword(:while);
 ParsingRule keyword_apply     = rule_keyword(:apply);
 ParsingRule keyword_clear     = rule_keyword(:clear);
 ParsingRule keyword_read      = rule_keyword(:read);
-ParsingRule keyword_restore   = rule_keyword(:restore);
+ParsingRule keyword_write     = rule_keyword(:write);
 
 // These are not real keyword, more like labels
 ParsingRule keyword_dynamic   = rule_keyword(:dynamic);
@@ -501,37 +503,37 @@ type StmtCtx = pure, auto_method, db_method, update, proc;
 ParsingRule rule_stmt(StmtCtx ctx) =
   rule_choice((
     (:asgnm,              rule_asgnm_stmt),
-    (:ret_val,            rule_ret_val_stmt)            if ctx != :update,
-    (:break_stmt,         rule_break_stmt)              if ctx != :auto_method,
+    (:ret_val,            rule_ret_val_stmt)                if ctx != :update,
+    (:break_stmt,         rule_break_stmt)                  if ctx != :auto_method,
     (:fail_stmt,          rule_fail_stmt),
     (:assert_stmt,        rule_assert_stmt),
     (:print_stmt,         rule_print_stmt),
     (:seq_update,         rule_seq_update_stmt),
 
-    (:no_val_ret,         rule_no_val_ret_stmt)         if in(ctx, [:update, :proc]),
-    (:proc_call,          rule_proc_call_stmt)          if ctx == :proc,
+    (:no_val_ret,         rule_no_val_ret_stmt)             if in(ctx, [:update, :proc]),
+    (:proc_call,          rule_proc_call_stmt)              if ctx == :proc,
 
-    (:send_msg,           rule_send_msg_stmt)           if ctx == :update,
-    (:try_update,         rule_try_update_stmt)         if ctx == :update,
-    (:set_memb_var,       rule_set_memb_var_stmt)       if ctx == :update,
+    (:send_msg,           rule_send_msg_stmt)               if ctx == :update,
+    (:try_update,         rule_try_update_stmt)             if ctx == :update,
+    (:set_memb_var,       rule_set_memb_var_stmt)           if ctx == :update,
 
-    (:delete,             rule_delete_stmt)             if ctx == :update,
-    (:insert,             rule_insert_stmt)             if ctx == :update,
+    (:delete,             rule_delete_stmt)                 if ctx == :update,
+    (:insert,             rule_insert_stmt)                 if ctx == :update,
 
-    (:ctrl_set_input,     rule_set_input_ctrl_stmt)     if ctx == :proc,
-    (:ctrl_clear_input,   rule_clear_input_ctrl_stmt)   if ctx == :proc,
+    (:ctrl_set_input,     rule_set_input_ctrl_stmt)         if ctx == :proc,
+    (:ctrl_clear_input,   rule_clear_input_ctrl_stmt)       if ctx == :proc,
     (:ctrl_set_elapsed,   rule_set_elapsed_time_ctrl_stmt)  if ctx == :proc,
-    (:ctrl_apply,         rule_apply_ctrl_stmt)         if ctx == :proc,
-    (:ctrl_send_msg,      rule_send_msg_ctrl_stmt)      if ctx == :proc,
-    (:ctrl_read,          rule_read_state_ctrl_stmt)    if ctx == :proc,
-    (:ctrl_restore,       rule_restore_state_ctrl_stmt) if ctx == :proc,
+    (:ctrl_apply,         rule_apply_ctrl_stmt)             if ctx == :proc,
+    (:ctrl_send_msg,      rule_send_msg_ctrl_stmt)          if ctx == :proc,
+    (:ctrl_read,          rule_read_state_ctrl_stmt)        if ctx == :proc,
+    (:ctrl_write,         rule_write_state_ctrl_stmt)       if ctx == :proc,
 
     (:if_stmt,            rule_if_stmt(ctx)),
 
-    (:loop_stmt,          rule_loop_stmt(ctx))          if ctx != :auto_method,
-    (:while_stmt,         rule_while_stmt(ctx))         if ctx != :auto_method,
-    (:let_stmt,           rule_let_stmt(ctx))           if ctx != :auto_method,
-    (:for_stmt,           rule_for_stmt(ctx))           if ctx != :auto_method
+    (:loop_stmt,          rule_loop_stmt(ctx))              if ctx != :auto_method,
+    (:while_stmt,         rule_while_stmt(ctx))             if ctx != :auto_method,
+    (:let_stmt,           rule_let_stmt(ctx))               if ctx != :auto_method,
+    (:for_stmt,           rule_for_stmt(ctx))               if ctx != :auto_method
   ));
 
 ParsingRule rule_asgnm_stmt =
@@ -686,7 +688,7 @@ ParsingRule rule_try_update_stmt =
 
 ParsingRule rule_set_memb_var_stmt =
   rule_seq((
-    keyword_update,
+    keyword_set,
     rule_lc_id,
     rule_equals,
     rule_expr,
@@ -742,8 +744,9 @@ ParsingRule rule_set_elapsed_time_ctrl_stmt =
 
 ParsingRule rule_apply_ctrl_stmt =
   rule_seq((
-    keyword_apply,
     rule_lc_id,
+    rule_equals,
+    keyword_apply,
     rule_lc_id,
     rule_semicolon
   ));
@@ -760,18 +763,18 @@ ParsingRule rule_send_msg_ctrl_stmt =
 
 ParsingRule rule_read_state_ctrl_stmt =
   rule_seq((
-    keyword_read,
     rule_lc_id,
-    rule_left_arrow,
+    rule_equals,
+    keyword_read,
     rule_lc_id,
     rule_semicolon
   ));
 
-ParsingRule rule_restore_state_ctrl_stmt =
+ParsingRule rule_write_state_ctrl_stmt =
   rule_seq((
-    keyword_restore,
     rule_lc_id,
     rule_equals,
+    keyword_write,
     rule_lc_id,
     rule_left_arrow,
     rule_expr,
@@ -1213,7 +1216,6 @@ ParsingRule rule_rule_decl =
     (:when_rule,          rule_when_rule),
     (:cond_rule,          rule_cond_rule),
     (:foreach_rule,       rule_foreach_rule),
-    (:inactive_for_rule,  rule_inactive_for_rule),
     (:time_varying_rule,  rule_time_varying_rule),
     (:since_rule,         rule_time_varying_since_rule),
     (:nested_auto,        rule_nested_auto),
@@ -1311,16 +1313,6 @@ ParsingRule rule_foreach_rule =
     rule_semicolon
   ));
 
-ParsingRule rule_inactive_for_rule =
-  rule_seq((
-    rule_lc_id,
-    rule_equals,
-    rep_rule(rule_seq((keyword_not, rule_lc_id, rule_question_mark)), keyword_and, true, false),
-    keyword_for,
-    rule_time_expr,
-    rule_semicolon
-  ));
-
 ParsingRule rule_time_varying_rule =
   rule_seq((
     rule_lc_id,
@@ -1336,8 +1328,8 @@ ParsingRule rule_time_varying_since_rule =
     rule_lc_id,
     rule_equals,
     rule_time_expr,
-    keyword_since,
-    rep_rule(rule_lc_id, keyword_or, true, false),
+    rule_anon_choice((keyword_sans, keyword_since)),
+    comma_sep_seq(rule_lc_id),
     rule_semicolon
   ));
 
